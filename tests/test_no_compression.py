@@ -1,9 +1,16 @@
-from audio_processing import process_sermon_audio
-
+import os
+import pytest
 
 def test_no_compression():
-    input_path = 'tests/2024-12-12 - Zechariah - Mark Hogan (1212241923147168).mp3'
-    output_path = 'tests/test_no_compression_output.mp3'
+    """Test that would use audio file - skip if no test audio available"""
+    input_path = "tests/2024-12-12 - Zechariah - Mark Hogan (1212241923147168).mp3"
+    
+    if not os.path.exists(input_path):
+        pytest.skip("Test audio file not available - audio files excluded from repository")
+        
+    output_path = "tests/test_no_compression_output.mp3"
+    
+    from audio_processing import process_sermon_audio
     result = process_sermon_audio(
         input_path,
         output_path,
@@ -16,5 +23,5 @@ def test_no_compression():
     print(f"Test no compression result: {result}")
     print(f"Output file: {output_path}")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_no_compression()
