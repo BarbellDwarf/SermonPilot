@@ -1,0 +1,8 @@
+api_key: 8c878489-99cc-4fcf-8237-9879e47b33b6
+audio_amplify: true
+audio_noise_reduction: true
+audio_normalize: true
+broadcaster_id: gracebaptistvan
+dry_run: true
+llm_provider: ollama
+ollama_model: llama3

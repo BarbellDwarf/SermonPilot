@@ -1,0 +1,91 @@
+# SermonAudio Updater - LLM Provider Examples
+# Copy the section you want to use to your config.yaml
+
+# Example 1: xAI Grok as primary, OpenAI as fallback
+llm_xai_example:
+  primary:
+    provider: "openai"
+    openai:
+      api_key: "xai-your-api-key-here"
+      model: "grok-beta"
+      base_url: "https://api.x.ai/v1"
+  fallback:
+    enabled: true
+    provider: "openai"
+    openai:
+      api_key: "sk-your-openai-key-here"
+      model: "gpt-4o"
+
+# Example 2: Anthropic Claude as primary, Ollama as fallback
+llm_anthropic_example:
+  primary:
+    provider: "openai"
+    openai:
+      api_key: "sk-ant-your-anthropic-key-here"
+      model: "claude-3-5-sonnet-20241022"
+      base_url: "https://api.anthropic.com/v1"
+  fallback:
+    enabled: true
+    provider: "ollama"
+    ollama:
+      host: "http://localhost:11434"
+      model: "llama3.1:8b"
+
+# Example 3: Groq as primary, xAI as fallback
+llm_groq_example:
+  primary:
+    provider: "openai"
+    openai:
+      api_key: "gsk-your-groq-key-here"
+      model: "llama-3.1-70b-versatile"
+      base_url: "https://api.groq.com/openai/v1"
+  fallback:
+    enabled: true
+    provider: "openai"
+    openai:
+      api_key: "xai-your-xai-key-here"
+      model: "grok-beta"
+      base_url: "https://api.x.ai/v1"
+
+# Example 4: Local OpenAI-compatible API
+llm_local_example:
+  primary:
+    provider: "openai"
+    openai:
+      api_key: "local-key"  # Can be anything for local APIs
+      model: "llama-3.1-8b-instruct"
+      base_url: "http://localhost:8000/v1"
+  fallback:
+    enabled: true
+    provider: "ollama"
+    ollama:
+      host: "http://localhost:11434"
+      model: "llama3.1:8b"
+
+# Example 5: Multiple Ollama servers for redundancy
+llm_ollama_redundant:
+  primary:
+    provider: "ollama"
+    ollama:
+      host: "http://192.168.1.100:11434"  # Main Ollama server
+      model: "llama3.1:8b"
+  fallback:
+    enabled: true
+    provider: "ollama"
+    ollama:
+      host: "http://192.168.1.200:11434"  # Backup Ollama server
+      model: "llama3.1:8b"
+
+# Example 6: Premium model with budget fallback
+llm_premium_budget:
+  primary:
+    provider: "openai"
+    openai:
+      api_key: "sk-your-openai-key-here"
+      model: "gpt-4o"  # Premium model
+  fallback:
+    enabled: true
+    provider: "openai"
+    openai:
+      api_key: "sk-your-openai-key-here"
+      model: "gpt-3.5-turbo"  # Budget model

@@ -1,0 +1,83 @@
+[project]
+name = "sermon-audio-updater"
+version = "0.1.0"
+description = "Automated sermon processing tool for SermonAudio"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+
+dependencies = [
+    "sermonaudio>=1.0.0",
+    "requests>=2.28.0",
+    "PyYAML>=6.0",
+    "python-dotenv>=0.19.0",
+    "pydub>=0.25.1",
+    "numpy>=1.21.0",
+    "scipy>=1.7.0",
+    "noisereduce>=2.0.0",
+    "soundfile>=0.12.1",
+    "librosa>=0.10.0",
+    "ollama>=0.1.0",
+    "openai>=1.0.0",
+    "langchain>=0.0.200",
+    "langchain-community>=0.0.1",
+    "tenacity>=8.2.0",
+    "tqdm>=4.65.0",
+    "colorlog>=6.7.0",
+    "schedule>=1.1.0",
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
+    "deepfilternet>=0.5.0",
+    "psutil>=5.8.0",
+]
+
+[project.optional-dependencies]
+audacity = ["PyAudacity>=0.1.3"]
+dev = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+    "pylint>=2.15.0",
+    "ruff>=0.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+include = [
+    "*.py",
+    "config.yaml",
+    "requirements.txt",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+    "ruff>=0.1.0",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312']
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]

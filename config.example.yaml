@@ -1,0 +1,50 @@
+# SermonAudio Updater Configuration
+# Copy this to config.yaml and update with your settings
+
+# SermonAudio API credentials
+api_key: "your-api-key-here"
+broadcaster_id: "your-broadcaster-id"
+
+# LLM Configuration
+llm:
+  # Primary LLM settings
+  primary:
+    provider: "ollama"  # Options: "ollama", "openai"
+    ollama:
+      host: "http://localhost:11434"
+      model: "llama3"
+    openai:
+      api_key: "your-openai-key"
+      model: "gpt-3.5-turbo"
+      # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for xAI, Anthropic, etc.
+  
+  # Fallback LLM settings (used if primary fails)
+  fallback:
+    enabled: true
+    provider: "openai"  # Options: "ollama", "openai"
+    ollama:
+      host: "http://localhost:11434"
+      model: "llama2"
+    openai:
+      api_key: "your-fallback-openai-key"
+      model: "gpt-3.5-turbo"
+      # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for xAI, Anthropic, etc.
+
+# Audio Processing Settings
+use_audacity: false  # Set to true if Audacity with mod-script-pipe is available
+audio_noise_reduction: true
+audio_amplify: true
+audio_normalize: true
+audio_compress: true
+audio_gain_db: 3.0
+audio_target_level_db: -20.0
+
+# Processing Options
+dry_run: false  # Set to true to preview changes without updating
+debug: false    # Set to true to enable verbose debug output
+hashtag_verification: true  # Set to true to verify hashtags through a second LLM pass (recommended)
+
+# Default search criteria
+default_criteria:
+  event_type: "sunday_service"  # Options: sunday_service, sunday_school, midweek_service
+  date_range: 7  # Days back from today
