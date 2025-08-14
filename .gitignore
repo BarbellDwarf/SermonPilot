@@ -16,6 +16,14 @@ processed_sermons/
 processed_sermons/*
 **/processed_sermons/**
 
+# Audio Files
+*.mp3
+*.wav
+*.flac
+*.m4a
+*.aac
+*.ogg
+
 # Python
 __pycache__/
 *.py[cod]
