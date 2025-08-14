@@ -1,0 +1,8 @@
+api_key: REDACTED-SERMONAUDIO-KEY
+audio_amplify: true
+audio_noise_reduction: true
+audio_normalize: true
+broadcaster_id: examplebroadcaster
+dry_run: true
+llm_provider: ollama
+ollama_model: llama3

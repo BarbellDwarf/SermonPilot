@@ -1,0 +1,78 @@
+# Sensitive Configuration Files
+config.yaml
+.env
+*.env
+.env.*
+
+# API Keys and Secrets
+*.key
+*.secret
+*.token
+secrets/
+.secrets/
+
+# Processing Output
+processed_sermons/
+processed_sermons/*
+**/processed_sermons/**
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv_test/
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# IDE and Editor Files
+.vscode/settings.json
+.vscode/launch.json
+.vscode/.ropeproject
+.idea/
+*.swp
+*.swo
+*~
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+.logs/
+
+# Temporary Files
+*.tmp
+*.temp
+.cache/
+.pytest_cache/
