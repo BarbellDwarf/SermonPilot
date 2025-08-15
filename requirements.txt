@@ -1,35 +1,72 @@
+# SermonAudio AI Audio Processor Requirements
+# This file provides a comprehensive dependency list for all platforms
+
+# Platform-specific PyTorch installation
+# For CUDA (GPU) support, use: pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
+# For CPU-only support, use: pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cpu
+# For automatic detection, the packages below will install CPU versions by default
+
 # Core dependencies
 sermonaudio>=1.0.0
 requests>=2.28.0
 PyYAML>=6.0
 python-dotenv>=0.19.0
 
-# Audio processing
+# Audio processing core
 pydub>=0.25.1
-numpy>=1.21.0
-scipy>=1.7.0
+numpy>=1.26.2
+scipy>=1.11.4
+soundfile>=0.12.1
+librosa>=0.10.1
 noisereduce>=2.0.0
-soundfile>=0.12.0
-librosa>=0.10.0  # Optional, for advanced audio analysis
-deepfilternet>=0.5.6  # For AI-based noise suppression
+
+# PyTorch ecosystem (compatible versions)
+torch>=2.1.1
+torchaudio>=2.1.1
+torchvision>=0.16.1
+
+# AI Enhancement models (core)
+deepfilternet>=0.5.6
+
+# Note: resemble-enhance has deepspeed dependency that may cause build issues
+# Install separately if needed:
+# pip install resemble-enhance
+
+# Resemble-enhance dependencies
+celluloid>=0.2.0
+matplotlib>=3.8.1
+omegaconf>=2.3.0
+pandas>=2.1.3
+ptflops>=0.7.1.2
+rich>=13.7.0
+resampy>=0.4.2
+tabulate>=0.8.10
+gradio>=4.8.0
 
 # LLM providers
 ollama>=0.1.0
 openai>=1.0.0
-langchain>=0.0.200  # For better LLM integration
+langchain>=0.0.200
 langchain-community>=0.0.1
 
-# Audacity integration (optional)
-PyAudacity>=0.1.3
-
 # Utilities
-tenacity>=8.2.0  # For retries
-tqdm>=4.65.0  # For progress bars
-colorlog>=6.7.0  # For colored logging
-schedule>=1.1.0  # For scheduled tasks
-psutil>=5.9.0  # For system and process utilities
+tenacity>=8.2.0
+tqdm>=4.66.1
+colorlog>=6.7.0
+schedule>=1.1.0
+psutil>=5.9.0
 
-# Development
-pytest>=7.0.0
-black>=22.0.0
-pylint>=2.15.0
+# Development dependencies (uncomment for development)
+# pytest>=7.0.0
+# black>=22.0.0
+# pylint>=2.15.0
+# ruff>=0.1.0
+
+# Optional AI models (uncomment if needed)
+# voicefixer>=0.1.2
+# speechbrain>=0.5.0
+# demucs>=4.0.0
+# deepspeed>=0.12.4  # Install after torch: pip install deepspeed
+
+# Audacity integration (uncomment if needed)
+# PyAudacity>=0.1.3

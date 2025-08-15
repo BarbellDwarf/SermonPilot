@@ -1,0 +1,16 @@
+# Linux-specific requirements for SermonAudio AI Audio Processor
+# Install with: pip install -r requirements-linux.txt
+
+# Use PyTorch CUDA index for GPU support on Linux
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+# Core dependencies
+-r requirements.txt
+
+# Linux-specific system packages may be needed:
+# Ubuntu/Debian: sudo apt-get install ffmpeg libsndfile1 libasound2-dev portaudio19-dev
+# CentOS/RHEL: sudo yum install ffmpeg libsndfile portaudio-devel
+# Arch: sudo pacman -S ffmpeg libsndfile portaudio
+
+# For development on Linux
+# Additional system packages may be needed for some AI models

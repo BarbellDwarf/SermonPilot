@@ -1,0 +1,28 @@
+# Development requirements with all optional dependencies
+# Install with: pip install -r requirements-dev.txt
+
+# Include base requirements
+-r requirements.txt
+
+# Development tools
+pytest>=7.0.0
+black>=22.0.0
+pylint>=2.15.0
+ruff>=0.1.0
+
+# Optional AI models for testing (install manually due to complex dependencies)
+# voicefixer>=0.1.2
+# speechbrain>=0.5.0  # May pull in deepspeed as dependency
+# demucs>=4.0.0
+
+# Advanced training (install after torch)
+# deepspeed>=0.12.4
+
+# Audacity integration
+PyAudacity>=0.1.3
+
+# Manual installation recommended for AI models:
+# pip install voicefixer speechbrain demucs deepspeed
+
+# For GPU development, also install:
+# pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
