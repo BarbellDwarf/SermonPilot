@@ -28,45 +28,97 @@ Clone the repository:
 
 ```bash
 git clone <repository-url>
-cd sa-updater
+cd sermon-ai-audio-processor
 ```
 
-Set up virtual environment:
+### Quick Install (Recommended)
 
-### Using UV (Recommended)
+For most users, use UV for fast dependency management:
 
 ```bash
 # Install UV if you haven't already
-curl -LsSf https://astral.sh/uv/install.sh | sh
+curl -LsSf https://astral.sh/uv/install.sh | sh  # Linux/Mac
+# or download from https://github.com/astral-sh/uv for Windows
 
 # Create venv with specific Python version
-uv venv --python 3.11  # or 3.10, 3.12, etc.
+uv venv --python 3.11
 
 # Activate the virtual environment
-# Windows
-.venv\Scripts\activate
-# Linux/Mac
-source .venv/bin/activate
+source .venv/bin/activate  # Linux/Mac
+# or .venv\Scripts\activate  # Windows
 
-# Install dependencies with UV
+# Install all dependencies
 uv pip install -r requirements.txt
 ```
 
-### Using standard venv
+### Platform-Specific Installation
+
+#### Linux with GPU Support
+```bash
+# Install system dependencies (Ubuntu/Debian)
+sudo apt update && sudo apt install -y ffmpeg libsndfile1 portaudio19-dev python3-dev
+
+# Install with CUDA support
+uv pip install -r requirements-linux.txt
+```
+
+#### CPU-Only (Any Platform)
+```bash
+# For systems without GPU or for testing
+uv pip install -r requirements-cpu.txt
+```
+
+#### Development Setup
+```bash
+# Install all dependencies including optional AI models
+uv pip install -r requirements-dev.txt
+```
+
+### Standard pip Installation
 
 ```bash
 # Create virtual environment
 python -m venv .venv
 
 # Activate
-# Windows
-.venv\Scripts\activate
-# Linux/Mac
-source .venv/bin/activate
+source .venv/bin/activate  # Linux/Mac
+# or .venv\Scripts\activate  # Windows
 
-# Install dependencies
-pip install -r requirements.txt
+# Choose your installation:
+pip install -r requirements.txt         # Standard installation
+pip install -r requirements-linux.txt   # Linux with GPU support  
+pip install -r requirements-cpu.txt     # CPU-only
+pip install -r requirements-dev.txt     # Development
 ```
+
+### Verify Installation
+
+```bash
+# Test core functionality
+python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
+python -c "import deepfilternet; print('DeepFilterNet: OK')"
+
+# Test resemble-enhance (if installed separately)
+python -c "import resemble_enhance; print('Resemble Enhance: OK')" 2>/dev/null || echo "Resemble Enhance: Not installed (install manually)"
+```
+
+### Enhanced AI Models
+
+For the highest quality audio enhancement, install additional AI models:
+
+```bash
+# Install Resemble Enhance (best quality, complex installation)
+pip install resemble-enhance
+
+# Other optional models
+pip install voicefixer speechbrain demucs
+```
+
+**Note**: Some AI models have complex dependencies. See our detailed installation guides:
+- [Linux Installation Guide](docs/LINUX_INSTALLATION.md)
+- [AI Models Installation Guide](docs/AI_MODELS_INSTALLATION.md)
+
+For detailed Linux installation instructions, see [docs/LINUX_INSTALLATION.md](docs/LINUX_INSTALLATION.md).
 
 Install Ollama (recommended):
 

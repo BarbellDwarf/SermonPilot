@@ -1,0 +1,11 @@
+# CPU-only requirements (for servers without GPU or testing)
+# Install with: pip install -r requirements-cpu.txt
+
+# Use PyTorch CPU-only index
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# Core dependencies  
+-r requirements.txt
+
+# Note: This will install CPU-only versions of PyTorch
+# Performance will be significantly slower for AI enhancement models
