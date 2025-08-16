@@ -29,6 +29,18 @@ llm:
       api_key: "your-fallback-openai-key"
       model: "gpt-3.5-turbo"
       # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for xAI, Anthropic, etc.
+  
+  # Validation LLM settings (smaller model for description validation)
+  validator:
+    enabled: true
+    provider: "ollama"  # Options: "ollama", "openai"
+    ollama:
+      host: "http://localhost:11434"
+      model: "gemma2:2b"  # Smaller, faster model for validation
+    openai:
+      api_key: "your-openai-key"
+      model: "gpt-4o-mini"  # Smaller OpenAI model for validation
+      # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint
 
 # Audio Processing Settings
 use_audacity: false  # Set to true if Audacity with mod-script-pipe is available
@@ -58,6 +70,14 @@ metadata_processing:
     update_if_minimal: true  # Update if less than min_length_threshold chars
     force_update: false     # Update even if substantial content exists
     min_length_threshold: 50  # Characters to consider "minimal"
+    validation:
+      enabled: true  # Enable description validation with smaller model
+      criteria:
+        - "Contains specific theological content or Bible references"
+        - "Mentions the speaker's main message or key points"
+        - "Is written in a professional, engaging style"
+        - "Avoids generic Christian phrases without substance"
+        - "Has clear application or takeaway for listeners"
   hashtags:
     update_if_missing: true  # Update only if null/empty  
     update_if_minimal: true  # Update if less than min_length_threshold chars
