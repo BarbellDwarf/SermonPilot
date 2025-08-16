@@ -58,6 +58,7 @@ print("   ⚙️  Configuring environment...")
 load_dotenv()
 
 print("✅ Initialization complete!")
+print("📃Retrieving Sermon List....")
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -672,6 +673,98 @@ def generate_hashtags(text: str) -> str:
         return "#faith #hope #worship #christian #jesus"
 
 
+def generate_validated_summary(
+    transcript: str,
+    event_type: str | None = None,
+    speaker_name: str | None = None,
+) -> tuple[str, dict]:
+    """
+    Generate a sermon summary with validation through smaller model.
+    
+    Returns:
+        Tuple of (final_summary, validation_info)
+        validation_info contains details about the validation process
+    """
+    validation_info = {
+        'primary_attempts': 0,
+        'fallback_used': False,
+        'validation_attempts': [],
+        'final_status': 'pending',
+        'needs_review': False
+    }
+    
+    # Check if validation is enabled
+    metadata_config = config.get('metadata_processing', {})
+    desc_config = metadata_config.get('description', {})
+    validation_config = desc_config.get('validation', {})
+    validation_enabled = validation_config.get('enabled', False)
+    validation_criteria = validation_config.get('criteria', [])
+    
+    if not validation_enabled:
+        # If validation is disabled, use the original generation method
+        summary = generate_summary(transcript, event_type, speaker_name)
+        validation_info['final_status'] = 'no_validation'
+        return summary, validation_info
+    
+    def try_generate_summary(use_fallback=False):
+        """Helper function to generate summary with specific provider."""
+        if use_fallback and llm_manager.fallback_provider:
+            # Temporarily swap providers for fallback generation
+            original_primary = llm_manager.primary_provider
+            llm_manager.primary_provider = llm_manager.fallback_provider
+            try:
+                summary = generate_summary(transcript, event_type, speaker_name)
+                return summary
+            finally:
+                llm_manager.primary_provider = original_primary
+        else:
+            return generate_summary(transcript, event_type, speaker_name)
+    
+    # Try primary model first
+    validation_info['primary_attempts'] = 1
+    primary_summary = try_generate_summary(use_fallback=False)
+    
+    # Validate the primary summary
+    is_valid, reason = llm_manager.validate_description(primary_summary, validation_criteria)
+    validation_info['validation_attempts'].append({
+        'provider': 'primary',
+        'valid': is_valid,
+        'reason': reason,
+        'summary_length': len(primary_summary)
+    })
+    
+    if is_valid:
+        validation_info['final_status'] = 'approved_primary'
+        return primary_summary, validation_info
+    
+    # If primary failed validation, try fallback
+    if llm_manager.fallback_provider:
+        logger.debug("Primary summary failed validation, trying fallback model...")
+        validation_info['fallback_used'] = True
+        fallback_summary = try_generate_summary(use_fallback=True)
+        
+        # Validate the fallback summary
+        is_valid, reason = llm_manager.validate_description(fallback_summary, validation_criteria)
+        validation_info['validation_attempts'].append({
+            'provider': 'fallback',
+            'valid': is_valid,
+            'reason': reason,
+            'summary_length': len(fallback_summary)
+        })
+        
+        if is_valid:
+            validation_info['final_status'] = 'approved_fallback'
+            return fallback_summary, validation_info
+    
+    # If both failed validation, mark for manual review
+    validation_info['final_status'] = 'needs_review'
+    validation_info['needs_review'] = True
+    
+    # Return the primary summary but mark it as needing review
+    logger.warning("Both primary and fallback summaries failed validation - needs manual review")
+    return primary_summary, validation_info
+
+
 def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool = False,
                          skip_audio: bool = False, force_description: bool = False,
                          force_hashtags: bool = False, no_metadata: bool = False,
@@ -743,6 +836,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
     summary = None
     hashtags = None
     transcript = None
+    validation_info = None
     
     # Determine if we need transcript for metadata or saving
     needs_transcript = needs_desc_update or needs_hash_update
@@ -765,9 +859,11 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
             if needs_desc_update:
                 if not verbose:
                     print("   ✨ Generating description...")
-                summary = generate_summary(transcript, event_type=event_type,
-                                         speaker_name=speaker_name)
-                logger.debug("Generated description (%d chars)", len(summary))
+                summary, validation_info = generate_validated_summary(
+                    transcript, event_type=event_type, speaker_name=speaker_name
+                )
+                logger.debug("Generated description (%d chars), validation: %s",
+                           len(summary), validation_info['final_status'])
             
             if needs_hash_update:
                 if not verbose:
@@ -941,7 +1037,8 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
     return {
         "action": "processed",
         "completed": completed_actions,
-        "skipped": [action for action in processing_actions if action not in completed_actions]
+        "skipped": [action for action in processing_actions if action not in completed_actions],
+        "validation_info": validation_info if validation_info else None
     }
 
 
@@ -1501,6 +1598,13 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
 
     success = 0
     errors = 0
+    needs_review = []  # Track sermons that need manual review
+    validation_stats = {
+        'approved_primary': 0,
+        'approved_fallback': 0,
+        'needs_review': 0,
+        'no_validation': 0
+    }
 
     # Process each sermon with individual progress updates
     for idx, s in enumerate(sermons, 1):
@@ -1520,6 +1624,19 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
                 save_transcript=save_transcript
             )
             success += 1
+            
+            # Track validation results for summary
+            if result and result.get("validation_info"):
+                val_info = result["validation_info"]
+                status = val_info.get('final_status', 'unknown')
+                if status in validation_stats:
+                    validation_stats[status] += 1
+                if val_info.get('needs_review'):
+                    needs_review.append({
+                        'id': s.sermonID,
+                        'title': s.displayTitle,
+                        'validation_attempts': val_info.get('validation_attempts', [])
+                    })
             
             # Display meaningful completion message based on what was done
             if not args.verbose:
@@ -1557,6 +1674,31 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
         console_print(f"❌ Errors encountered: {errors} sermons", "error")
     else:
         console_print("🎉 All sermons processed without errors!", "success")
+    
+    # Validation summary
+    total_validated = sum(validation_stats.values())
+    if total_validated > 0:
+        console_print("\n📋 Description Validation Summary:", "info")
+        if validation_stats['approved_primary'] > 0:
+            count = validation_stats['approved_primary']
+            console_print(f"   ✅ Approved (Primary): {count}", "success")
+        if validation_stats['approved_fallback'] > 0:
+            count = validation_stats['approved_fallback']
+            console_print(f"   ✅ Approved (Fallback): {count}", "success")
+        if validation_stats['no_validation'] > 0:
+            console_print(f"   ℹ️  No Validation: {validation_stats['no_validation']}", "info")
+        if validation_stats['needs_review'] > 0:
+            console_print(f"   ⚠️  Needs Review: {validation_stats['needs_review']}", "warning")
+    
+    # Manual review items
+    if needs_review:
+        console_print("\n⚠️  Sermons requiring manual review:", "warning")
+        for item in needs_review:
+            console_print(f"   📝 {item['title']} (ID: {item['id']})", "warning")
+            for attempt in item['validation_attempts']:
+                provider = attempt['provider'].title()
+                reason = attempt['reason']
+                console_print(f"      {provider}: {reason}", "info")
 
 
 if __name__ == '__main__':  # pragma: no cover
