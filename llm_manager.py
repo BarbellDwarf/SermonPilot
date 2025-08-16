@@ -191,6 +191,7 @@ class LLMManager:
         self.config = config
         self.primary_provider = None
         self.fallback_provider = None
+        self.validator_provider = None
 
         self._initialize_providers()
 
@@ -223,6 +224,23 @@ class LLMManager:
             except Exception as e:
                 warning_msg = (
                     f"Failed to initialize fallback provider {fallback_provider_type}: {e}"
+                )
+                logger.warning(warning_msg)
+
+        # Initialize validator provider (smaller model for validation)
+        validator_config = llm_config.get('validator', {})
+        if validator_config.get('enabled', False):
+            validator_provider_type = validator_config.get('provider', 'ollama')
+
+            try:
+                self.validator_provider = self._create_provider(
+                    validator_provider_type,
+                    validator_config.get(validator_provider_type, {})
+                )
+                logger.info(f"Validator LLM provider initialized: {validator_provider_type}")
+            except Exception as e:
+                warning_msg = (
+                    f"Failed to initialize validator provider {validator_provider_type}: {e}"
                 )
                 logger.warning(warning_msg)
 
@@ -269,11 +287,60 @@ class LLMManager:
         )
         raise Exception(error_msg)
 
+    def validate_description(self, description: str, criteria: list[str]) -> tuple[bool, str]:
+        """
+        Validate a description using the validator model.
+        
+        Args:
+            description: The description to validate
+            criteria: List of validation criteria
+            
+        Returns:
+            Tuple of (is_valid, reason)
+        """
+        if not self.validator_provider:
+            logger.warning("Validator provider not available, skipping validation")
+            return True, "Validator not configured"
+            
+        criteria_text = "\n".join([f"- {criterion}" for criterion in criteria])
+        
+        validation_prompt = (
+            "You are a description validator. Review the following sermon description and "
+            "determine if it meets the quality criteria. Respond with only 'APPROVED' or "
+            "'REJECTED' followed by a brief reason.\n\n"
+            f"Criteria:\n{criteria_text}\n\n"
+            f"Description to validate:\n{description}\n\n"
+            "Response format: APPROVED/REJECTED - [brief reason]\n"
+            "Response:"
+        )
+        
+        try:
+            response = self.validator_provider.chat([
+                {'role': 'user', 'content': validation_prompt}
+            ])
+            
+            response = response.strip()
+            if response.upper().startswith('APPROVED'):
+                reason = response.split('-', 1)[1].strip() if '-' in response else "Meets criteria"
+                return True, reason
+            elif response.upper().startswith('REJECTED'):
+                reason = (response.split('-', 1)[1].strip() if '-' in response
+                         else "Does not meet criteria")
+                return False, reason
+            else:
+                # If response format is unexpected, assume rejected for safety
+                return False, f"Unexpected validation response: {response}"
+                
+        except Exception as e:
+            logger.warning(f"Description validation failed: {e}")
+            return True, f"Validation error: {e}"  # Default to approved on error
+
     def get_provider_info(self) -> dict[str, Any]:
         """Get information about configured providers."""
         info = {
             'primary': None,
-            'fallback': None
+            'fallback': None,
+            'validator': None
         }
 
         if self.primary_provider:
@@ -289,6 +356,14 @@ class LLMManager:
             info['fallback'] = {
                 'type': provider_type,
                 'model': getattr(self.fallback_provider, 'model', 'unknown'),
+                'available': True
+            }
+
+        if self.validator_provider:
+            provider_type = type(self.validator_provider).__name__.replace('Provider', '').lower()
+            info['validator'] = {
+                'type': provider_type,
+                'model': getattr(self.validator_provider, 'model', 'unknown'),
                 'available': True
             }
 
