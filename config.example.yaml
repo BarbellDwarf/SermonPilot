@@ -32,17 +32,37 @@ llm:
 
 # Audio Processing Settings
 use_audacity: false  # Set to true if Audacity with mod-script-pipe is available
+audio_enhancement_method: "deepfilternet"  # Options: "deepfilternet", "resemble_enhance", "none"
 audio_noise_reduction: true
 audio_amplify: true
 audio_normalize: true
-audio_compress: true
-audio_gain_db: 3.0
-audio_target_level_db: -20.0
+audio_gain_db: 0.5
+audio_target_level_db: -22.0
 
 # Processing Options
 dry_run: false  # Set to true to preview changes without updating
 debug: false    # Set to true to enable verbose debug output
 hashtag_verification: true  # Set to true to verify hashtags through a second LLM pass (recommended)
+
+# Output Settings
+output_directory: "processed_sermons"  # Directory to store processed sermon files (relative to script or absolute path)
+save_original_audio: true  # Save the original downloaded audio file alongside processed audio
+save_transcript: true  # Save the sermon transcript as a text file alongside other outputs
+
+# Metadata Processing Settings
+metadata_processing:
+  enabled: true  # Enable metadata processing (descriptions and hashtags)
+  process_audio: true  # Whether to process audio (can be overridden by CLI)
+  description:
+    update_if_missing: true  # Update only if null/empty
+    update_if_minimal: true  # Update if less than min_length_threshold chars
+    force_update: false     # Update even if substantial content exists
+    min_length_threshold: 50  # Characters to consider "minimal"
+  hashtags:
+    update_if_missing: true  # Update only if null/empty  
+    update_if_minimal: true  # Update if less than min_length_threshold chars
+    force_update: false     # Update even if substantial content exists
+    min_length_threshold: 10  # Characters to consider "minimal"
 
 # Default search criteria
 default_criteria:

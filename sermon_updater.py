@@ -31,12 +31,16 @@ from typing import Any
 from collections.abc import Iterable
 from io import StringIO
 
+print("🔄 Initializing SermonAudio Processor...")
+print("   📦 Loading dependencies...")
+
 import requests
 import sermonaudio
 import yaml
 from dotenv import load_dotenv
 from sermonaudio.node.requests import Node
 
+print("   🤖 Loading AI components...")
 # Suppress ML library import noise
 with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_warnings():
     warnings.simplefilter("ignore")
@@ -50,7 +54,10 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     from audio_processing import process_sermon_audio
     from llm_manager import LLMManager, migrate_legacy_config
 
+print("   ⚙️  Configuring environment...")
 load_dotenv()
+
+print("✅ Initialization complete!")
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -128,6 +135,159 @@ def console_print(message: str, level: str = "info"):
         print(f"ℹ️  {message}")
 
 
+def is_content_missing_or_minimal(content: str | None, min_length: int) -> bool:
+    """Check if content is missing or too minimal to be useful.
+    
+    Args:
+        content: The content to check (description or hashtags)
+        min_length: Minimum length threshold for substantial content
+        
+    Returns:
+        True if content is missing or minimal, False otherwise
+    """
+    if content is None or content.strip() == "":
+        return True
+    return len(content.strip()) < min_length
+
+
+def should_update_description(
+    existing_description: str | None, config: dict, force_flag: bool = False
+) -> bool:
+    """Determine if description should be updated based on existing content and config.
+
+    Args:
+        existing_description: Current description from sermon
+        config: Configuration dictionary
+        force_flag: Whether to force update regardless of config
+
+    Returns:
+        True if description should be updated, False otherwise
+    """
+    if force_flag:
+        return True
+
+    metadata_config = config.get('metadata_processing', {})
+    description_config = metadata_config.get('description', {})
+
+    if not metadata_config.get('enabled', True):
+        return False
+
+    if description_config.get('force_update', False):
+        return True
+
+    min_length = description_config.get('min_length_threshold', 50)
+
+    if is_content_missing_or_minimal(existing_description, min_length):
+        return (description_config.get('update_if_missing', True) or
+                description_config.get('update_if_minimal', True))
+
+    return False
+
+
+def should_update_hashtags(
+    existing_hashtags: str | None, config: dict, force_flag: bool = False
+) -> bool:
+    """Determine if hashtags should be updated based on existing content and config.
+
+    Args:
+        existing_hashtags: Current hashtags from sermon
+        config: Configuration dictionary
+        force_flag: Whether to force update regardless of config
+
+    Returns:
+        True if hashtags should be updated, False otherwise
+    """
+    if force_flag:
+        return True
+
+    metadata_config = config.get('metadata_processing', {})
+    hashtags_config = metadata_config.get('hashtags', {})
+
+    if not metadata_config.get('enabled', True):
+        return False
+
+    if hashtags_config.get('force_update', False):
+        return True
+
+    min_length = hashtags_config.get('min_length_threshold', 10)
+
+    if is_content_missing_or_minimal(existing_hashtags, min_length):
+        return (hashtags_config.get('update_if_missing', True) or
+                hashtags_config.get('update_if_minimal', True))
+
+    return False
+
+
+def get_sermon_transcript(sermon_id: str) -> str:
+    """Retrieve transcript for a sermon from the SermonAudio API.
+    
+    Args:
+        sermon_id: The sermon ID to get transcript for
+        
+    Returns:
+        Transcript text if available, empty string otherwise
+    """
+    try:
+        api_url = f"{BASE_URL}node/sermons/{sermon_id}"
+        resp = requests.get(api_url, headers={'X-Api-Key': SERMON_AUDIO_API_KEY}, timeout=60)
+        if resp.status_code == 200:
+            data = resp.json()
+            t_obj = data.get('transcript')
+            if t_obj and t_obj.get('downloadURL'):
+                t_resp = requests.get(t_obj['downloadURL'], timeout=60)
+                if t_resp.status_code == 200:
+                    logger.debug("Transcript retrieved successfully")
+                    return t_resp.text
+        logger.debug("No transcript available")
+        return ""
+    except Exception as e:
+        logger.error("Transcript retrieval error: %s", e)
+        return ""
+
+
+def needs_metadata_processing(
+    sermon_details, config: dict, force_description: bool = False, force_hashtags: bool = False
+) -> tuple[bool, bool]:
+    """Determine if metadata processing is needed for a sermon.
+
+    Args:
+        sermon_details: Sermon details from API
+        config: Configuration dictionary
+        force_description: Force description update
+        force_hashtags: Force hashtags update
+
+    Returns:
+        Tuple of (needs_description_update, needs_hashtags_update)
+    """
+    if not config.get('metadata_processing', {}).get('enabled', True):
+        return False, False
+
+    existing_description = (getattr(sermon_details, 'moreInfoText', None) or
+                           getattr(sermon_details, 'more_info_text', None))
+    existing_hashtags = getattr(sermon_details, 'keywords', None)
+
+    needs_description = should_update_description(existing_description, config, force_description)
+    needs_hashtags = should_update_hashtags(existing_hashtags, config, force_hashtags)
+
+    return needs_description, needs_hashtags
+
+
+def needs_audio_processing(config: dict, skip_audio: bool = False) -> bool:
+    """Determine if audio processing is needed.
+    
+    Args:
+        config: Configuration dictionary
+        skip_audio: CLI flag to skip audio processing
+        
+    Returns:
+        True if audio should be processed, False otherwise
+    """
+    if skip_audio:
+        return False
+        
+    return config.get('metadata_processing', {}).get('process_audio', True)
+
+
 def get_api_headers() -> dict[str, str]:
     return {'X-Api-Key': SERMON_AUDIO_API_KEY, 'Content-Type': 'application/json'}
 
@@ -140,7 +300,20 @@ def update_sermon_metadata(sermon_id: str, description: str, hashtags: str | lis
     resp = requests.patch(url, headers=headers, json=payload, timeout=60)
     logger.debug("Update sermon status: %d", resp.status_code)
     if resp.status_code not in (200, 204):
-        logger.error("Update error: %s", resp.text[:200])
+        # Check if we got an HTML error page instead of JSON
+        content_type = resp.headers.get('content-type', '').lower()
+        if 'html' in content_type:
+            logger.error("Received HTML error page (likely auth/rate limit issue): %s",
+                        resp.status_code)
+            # Extract title or first part of HTML for context
+            html_snippet = resp.text[:500]
+            if '<title>' in html_snippet:
+                import re
+                title_match = re.search(r'<title>(.*?)</title>', html_snippet, re.IGNORECASE)
+                if title_match:
+                    logger.error("HTML page title: %s", title_match.group(1))
+        else:
+            logger.error("Update error: %s", resp.text[:200])
     return resp.status_code in (200, 204)
 
 
@@ -183,6 +356,154 @@ def download_file(url: str, local_path: str):
                 f.write(chunk)
 
 
+def _clean_llm_thinking_response(response: str) -> str:
+    """
+    Clean up LLM responses that include thinking/reasoning before the final answer.
+    Uses a two-step approach: detection + LLM cleanup if needed.
+    """
+    if not response:
+        return response
+        
+    # Common patterns that indicate thinking/reasoning sections
+    thinking_indicators = [
+        "Okay, let me",
+        "Let me think",
+        "Let me start by",
+        "First, I need to",
+        "Now, the guidelines:",
+        "I need to identify",
+        "Let me piece",
+        "Check the character count",
+        "Avoid any markdown",
+        "Make sure it's",
+        "Let me",
+        "First,",
+        "Now,",
+        "I should",
+        "I'll",
+        "Looking at this",
+        "The speaker",
+        "The sermon is",
+        "The main points",
+        "based on",
+        "seem to be",
+        "carefully.",
+        "The transcript",
+        "reading through",
+    ]
+    
+    # Check if response contains thinking patterns
+    has_thinking = any(indicator.lower() in response.lower() for indicator in thinking_indicators)
+    
+    if has_thinking:
+        logger.debug("Detected thinking patterns in LLM response, attempting cleanup with second LLM call")
+        
+        # Try to use LLM to extract just the description
+        cleanup_prompt = (
+            "The following text contains both reasoning/thinking and a sermon description. "
+            "Extract ONLY the final sermon description paragraph. Do not include any "
+            "reasoning, analysis, or commentary. Return only the description itself.\n\n"
+            f"Text: {response}\n\n"
+            "Instructions:\n"
+            "- Return ONLY the sermon description\n"
+            "- Start directly with the description content\n"
+            "- Maximum 1600 characters\n"
+            "- One paragraph format\n"
+            "- No reasoning or explanation"
+        )
+        
+        try:
+            cleaned_response = llm_manager.chat([{'role': 'user', 'content': cleanup_prompt}])
+            
+            # Verify the cleaned response is shorter and doesn't have thinking patterns
+            if len(cleaned_response) < len(response):
+                # Check if cleaned response still has thinking patterns
+                still_has_thinking = any(indicator.lower() in cleaned_response.lower()
+                                       for indicator in thinking_indicators)
+                
+                if not still_has_thinking:
+                    logger.debug("LLM cleanup successful (original: %d chars, cleaned: %d chars)",
+                                len(response), len(cleaned_response))
+                    return cleaned_response
+                else:
+                    logger.debug("LLM cleanup still contains thinking patterns, falling back to regex cleanup")
+            else:
+                logger.debug("LLM cleanup didn't reduce length, falling back to regex cleanup")
+                
+        except Exception as e:
+            logger.warning("LLM cleanup failed: %s, falling back to regex cleanup", e)
+    
+    # Fallback to original regex-based cleanup if LLM cleanup failed or wasn't needed
+    return _regex_cleanup_thinking(response)
+
+
+def _regex_cleanup_thinking(response: str) -> str:
+    """
+    Fallback regex-based cleanup for LLM thinking patterns.
+    """
+    # Try to find transition phrases and extract content after them
+    transition_phrases = [
+        " Mark Hogan emphasizes",
+        " Mark Hogan stresses",
+        " Mark Hogan teaches",
+        " Mark Hogan explains",
+        " The speaker emphasizes",
+        " This sermon",
+        " Hogan emphasizes",
+        " Hogan stresses",
+    ]
+    
+    for phrase in transition_phrases:
+        if phrase in response:
+            # Find where this phrase starts and take everything from there
+            start_idx = response.find(phrase)
+            if start_idx > 0:  # Make sure it's not at the very beginning
+                result = response[start_idx:].strip()
+                if len(result) > 100:  # Make sure we have substantial content
+                    logger.debug("Found transition phrase, cleaned response (original: %d chars, cleaned: %d chars)",
+                                len(response), len(result))
+                    return result
+    
+    # Try splitting by sentences and look for the actual content
+    sentences = [s.strip() for s in response.split('.') if s.strip()]
+    
+    thinking_indicators = [
+        "Okay, let me", "Let me start by", "First, I need to", "Now, the guidelines:",
+        "I need to identify", "The sermon is", "The main points", "based on",
+        "seem to be", "carefully.", "The transcript", "reading through"
+    ]
+    
+    # Look for the transition from thinking to actual content
+    for i, sentence in enumerate(sentences):
+        # Check if this sentence contains thinking indicators
+        has_thinking = any(indicator.lower() in sentence.lower() for indicator in thinking_indicators)
+        
+        # If we find a sentence that doesn't have thinking and is substantial
+        if not has_thinking and len(sentence) > 30:
+            # Check if it starts with speaker name or substantive content
+            if any(word in sentence for word in ["Mark Hogan", "emphasizes", "stresses", "teaches", "explains"]):
+                remaining_sentences = sentences[i:]
+                result = '. '.join(remaining_sentences)
+                if not result.endswith('.'):
+                    result += '.'
+                
+                logger.debug("Regex cleanup found content (original: %d chars, cleaned: %d chars)",
+                            len(response), len(result))
+                return result
+    
+    # If all else fails, look for the last substantial paragraph
+    paragraphs = [p.strip() for p in response.split('\n\n') if p.strip()]
+    if len(paragraphs) > 1:
+        last_para = paragraphs[-1]
+        if len(last_para) > 100:  # Substantial content
+            logger.debug("Using last paragraph as summary (original: %d chars, cleaned: %d chars)",
+                        len(response), len(last_para))
+            return last_para
+    
+    # Return original if no cleanup was possible
+    return response
+
+
 def generate_summary(
     transcript: str,
     event_type: str | None = None,
@@ -199,26 +520,54 @@ def generate_summary(
     if is_class_event(event_type):
         role_desc = 'Bible class summarization assistant'
         body_desc = 'Sunday School, Midweek, or class/lecture event'
-        person_label = speaker_name or 'the instructor'
     else:
         role_desc = 'sermon summarization assistant'
         body_desc = 'sermon'
-        person_label = speaker_name or 'the preacher'
 
+    # Build speaker instruction
+    speaker_instruction = (
+        f"- The speaker's name is {speaker_name}\n"
+        if speaker_name
+        else "- Identify the primary speaker from the transcript\n"
+    )
+    
     prompt = (
         f"You are a {role_desc}. Read the following {body_desc} transcript and write a single, "
-        f"concise description of {person_label}'s main message and application. Focus on what "
-        f"they wanted the audience to understand, believe, or do. Avoid generic statements; "
+        f"concise description of the main message and application. Focus on what "
+        f"the speaker wanted the audience to understand, believe, or do. Avoid generic statements; "
         f"emphasize unique focus.\n\nTranscript:\n{transcript}\n\nGuidelines:\n"
-        f"- One paragraph (150-300 words).\n- Use the speaker's name.\n"
-        f"- No intro/closing words.\n- No markdown or bullets.\n"
-        f"- Do not prefix with 'Summary:'.\n- If incomplete, infer likely main message."
+        f"- Maximum 1600 characters (STRICT LIMIT - API will reject longer text)\n"
+        f"- One paragraph format\n"
+        + speaker_instruction +
+        "- No intro/closing words\n- No markdown or bullets\n"
+        "- Do not prefix with 'Summary:'\n- If incomplete, infer likely main message\n"
+        "- Keep under 1600 characters or the upload will fail\n"
+        "- Use the actual speaker name, not placeholder text\n"
+        "- IMPORTANT: Return ONLY the final summary paragraph. Do not include any reasoning, "
+        "thinking process, explanations, or commentary. Start directly with the summary content."
     )
     try:
         provider_info = llm_manager.get_provider_info()
         primary_provider = provider_info.get('primary', {}).get('type', 'unknown')
         logger.debug("Generating summary using %s LLM...", primary_provider)
         response = llm_manager.chat([{'role': 'user', 'content': prompt}])
+        
+        # Clean up responses that include thinking/reasoning (common with some models)
+        response = _clean_llm_thinking_response(response)
+        
+        # Ensure the response doesn't exceed SermonAudio's character limit
+        max_chars = 1600  # Conservative limit (API limit is 1700)
+        if len(response) > max_chars:
+            logger.warning("Generated summary too long (%d chars), truncating to %d",
+                          len(response), max_chars)
+            # Truncate at word boundary to avoid cutting words in half
+            truncated = response[:max_chars]
+            last_space = truncated.rfind(' ')
+            if last_space > max_chars - 100:  # If we can find a reasonable word boundary
+                response = truncated[:last_space] + "..."
+            else:
+                response = truncated[:-3] + "..."
+        
         logger.debug("Summary generated (%d chars)", len(response))
         return response
     except Exception as e:  # pragma: no cover
@@ -323,7 +672,11 @@ def generate_hashtags(text: str) -> str:
         return "#faith #hope #worship #christian #jesus"
 
 
-def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool = False):
+def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool = False,
+                         skip_audio: bool = False, force_description: bool = False,
+                         force_hashtags: bool = False, no_metadata: bool = False,
+                         output_dir: str = None, save_original_audio: bool = None,
+                         save_transcript: bool = None):
     logger.debug(f"Processing sermon_id={sermon_id}")
     details = Node.get_sermon(sermon_id)
     speaker_name = None
@@ -341,112 +694,255 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
     event_type = getattr(details, 'event_type', None) or getattr(details, 'eventType', None)
     logger.info("Processing: %s (%s) event=%s", sermon_name, sermon_id, event_type)
 
-    base_dir = os.path.abspath(os.path.dirname(__file__))
-    processed_root = os.path.join(base_dir, "processed_sermons")
+    # Determine what processing is needed
+    needs_desc_update, needs_hash_update = needs_metadata_processing(
+        details, config, force_description, force_hashtags
+    )
+    needs_audio = needs_audio_processing(config, skip_audio)
+    
+    # Override metadata processing if disabled
+    if no_metadata:
+        needs_desc_update = False
+        needs_hash_update = False
+    
+    # Skip entirely if nothing to do
+    if not (needs_desc_update or needs_hash_update or needs_audio):
+        logger.info("No processing needed for sermon %s - skipping", sermon_id)
+        return {"action": "skipped", "reason": "No updates needed - adequate content exists"}
+
+    # Show what will be processed
+    processing_actions = []
+    if needs_desc_update:
+        processing_actions.append("description")
+    if needs_hash_update:
+        processing_actions.append("hashtags")
+    if needs_audio:
+        processing_actions.append("audio")
+    
+    if processing_actions:
+        logger.info("Will process: %s", ", ".join(processing_actions))
+
+    # Determine output directory from parameter, config, or default
+    if output_dir:
+        output_root = output_dir
+    else:
+        output_root = config.get('output_directory', 'processed_sermons')
+    
+    # Make path absolute if it's relative
+    if not os.path.isabs(output_root):
+        base_dir = os.path.abspath(os.path.dirname(__file__))
+        processed_root = os.path.join(base_dir, output_root)
+    else:
+        processed_root = output_root
+        
     os.makedirs(processed_root, exist_ok=True)
     sermon_dir = os.path.join(processed_root, sermon_id)
     os.makedirs(sermon_dir, exist_ok=True)
-    input_audio = os.path.join(sermon_dir, f"temp_{sermon_id}.mp3")
-    output_audio = os.path.join(sermon_dir, f"processed_{sermon_id}.mp3")
+    
+    # Initialize variables for metadata processing
+    summary = None
+    hashtags = None
+    transcript = None
+    
+    # Determine if we need transcript for metadata or saving
+    needs_transcript = needs_desc_update or needs_hash_update
+    if not needs_transcript:
+        # Check if we need transcript for saving
+        should_save_transcript = save_transcript
+        if should_save_transcript is None:
+            should_save_transcript = config.get('save_transcript', False)
+        needs_transcript = should_save_transcript
+    
+    # Get transcript if needed
+    if needs_transcript:
+        if not verbose:
+            print("   📄 Retrieving transcript...")
+        transcript = get_sermon_transcript(sermon_id)
+        if not transcript:
+            logger.warning("No transcript available for sermon %s", sermon_id)
+        else:
+            # Process metadata if needed and transcript is available
+            if needs_desc_update:
+                if not verbose:
+                    print("   ✨ Generating description...")
+                summary = generate_summary(transcript, event_type=event_type,
+                                         speaker_name=speaker_name)
+                logger.debug("Generated description (%d chars)", len(summary))
+            
+            if needs_hash_update:
+                if not verbose:
+                    print("   🏷️  Generating hashtags...")
+                hashtags = generate_hashtags(transcript)
+                logger.debug("Generated hashtags: %s", hashtags)
+    
+    # Audio processing (if needed)
+    output_audio = None
+    if needs_audio:
+        if not verbose:
+            print("   🎵 Downloading audio...")
+        input_audio = os.path.join(sermon_dir, f"temp_{sermon_id}.mp3")
+        output_audio = os.path.join(sermon_dir, f"processed_{sermon_id}.mp3")
 
-    # Gather potential audio URLs
-    audio_url = None
-    candidates: list[str] = []
-    if hasattr(details, 'media') and details.media and hasattr(details.media, 'audio'):
-        for audio_obj in details.media.audio:
-            for key in ('downloadURL', 'download_url', 'streamURL', 'url'):
-                if hasattr(audio_obj, key) and getattr(audio_obj, key):
-                    candidates.append(getattr(audio_obj, key))
-    if hasattr(details, 'audio_url') and details.audio_url:
-        candidates.append(details.audio_url)
-    for c in candidates:
-        logger.debug("Trying audio URL: %s", c)
+        # Gather potential audio URLs
+        audio_url = None
+        candidates: list[str] = []
+        if hasattr(details, 'media') and details.media and hasattr(details.media, 'audio'):
+            for audio_obj in details.media.audio:
+                for key in ('downloadURL', 'download_url', 'streamURL', 'url'):
+                    if hasattr(audio_obj, key) and getattr(audio_obj, key):
+                        candidates.append(getattr(audio_obj, key))
+        if hasattr(details, 'audio_url') and details.audio_url:
+            candidates.append(details.audio_url)
+        for c in candidates:
+            logger.debug("Trying audio URL: %s", c)
+            try:
+                download_file(c, input_audio)
+                audio_url = c
+                logger.debug("Audio download succeeded")
+                break
+            except Exception as e:
+                logger.debug("Failed: %s", e)
+        if not audio_url:
+            logger.warning("No audio available; skipping audio processing for sermon %s",
+                          sermon_id)
+            needs_audio = False
+        else:
+            # Determine if we should save original audio
+            should_save_original = save_original_audio
+            if should_save_original is None:
+                should_save_original = config.get('save_original_audio', True)
+            
+            # Save original audio if requested
+            if should_save_original:
+                original_audio_path = os.path.join(sermon_dir, f"original_{sermon_id}.mp3")
+                try:
+                    import shutil
+                    shutil.copy2(input_audio, original_audio_path)
+                    logger.debug("Saved original audio to: %s", original_audio_path)
+                except Exception as e:
+                    logger.warning("Failed to save original audio: %s", e)
+            
+            # Process audio
+            if not verbose:
+                print("   🔧 Processing audio...")
+            try:
+                processing_success = process_sermon_audio(
+                    input_audio,
+                    output_audio,
+                    skip_on_error=True,
+                    verbose=verbose,
+                    **AUDIO_PARAMS
+                )
+                if not processing_success:
+                    logger.warning("Audio processing issues; continuing with original audio")
+            except Exception as e:
+                logger.error("Audio processing failed: %s", e)
+                needs_audio = False
+
+    # Save local copies of generated content
+    if summary is not None:
         try:
-            download_file(c, input_audio)
-            audio_url = c
-            logger.debug("Audio download succeeded")
-            break
-        except Exception as e:
-            logger.debug("Failed: %s", e)
-    if not audio_url:
-        logger.warning("No audio available; skipping sermon %s", sermon_id)
-        return
+            with open(
+                os.path.join(sermon_dir, f"{sermon_id}_description.txt"),
+                'w',
+                encoding='utf-8',
+            ) as fh:
+                fh.write(summary)
+        except Exception as e:  # pragma: no cover
+            logger.error("Failed writing description file: %s", e)
+    
+    if hashtags is not None:
+        try:
+            with open(
+                os.path.join(sermon_dir, f"{sermon_id}_hashtags.txt"),
+                'w',
+                encoding='utf-8',
+            ) as fh:
+                fh.write(hashtags)
+        except Exception as e:  # pragma: no cover
+            logger.error("Failed writing hashtags file: %s", e)
 
-    # Process audio
-    try:
-        processing_success = process_sermon_audio(
-            input_audio,
-            output_audio,
-            skip_on_error=True,
-            verbose=verbose,
-            **AUDIO_PARAMS
-        )
-        if not processing_success:
-            logger.warning("Audio processing issues; continuing with original audio")
-    except Exception as e:
-        logger.error("Audio processing failed: %s", e)
-        return
-
-    # Pull transcript
-    transcript = ""
-    try:
-        api_url = f"{BASE_URL}node/sermons/{sermon_id}"
-        resp = requests.get(api_url, headers={'X-Api-Key': SERMON_AUDIO_API_KEY}, timeout=60)
-        if resp.status_code == 200:
-            data = resp.json()
-            t_obj = data.get('transcript')
-            if t_obj and t_obj.get('downloadURL'):
-                t_resp = requests.get(t_obj['downloadURL'], timeout=60)
-                if t_resp.status_code == 200:
-                    transcript = t_resp.text
-                    logger.debug("Transcript retrieved")
-    except Exception as e:  # pragma: no cover
-        logger.error("Transcript retrieval error: %s", e)
-    if not transcript:
-        logger.warning("No transcript; skipping summary + hashtags.")
-        return
-
-    summary = generate_summary(transcript, event_type=event_type, speaker_name=speaker_name)
-    hashtags = generate_hashtags(transcript)
-
-    # Save local copies
-    try:
-        with open(
-            os.path.join(sermon_dir, f"{sermon_id}_description.txt"),
-            'w',
-            encoding='utf-8',
-        ) as fh:
-            fh.write(summary)
-        with open(
-            os.path.join(sermon_dir, f"{sermon_id}_hashtags.txt"),
-            'w',
-            encoding='utf-8',
-        ) as fh:
-            fh.write(hashtags)
-    except Exception as e:  # pragma: no cover
-        logger.error("Failed writing local files: %s", e)
+    # Save transcript if requested and available
+    if transcript is not None:
+        # Determine if we should save transcript
+        should_save_transcript = save_transcript
+        if should_save_transcript is None:
+            should_save_transcript = config.get('save_transcript', False)
+        
+        if should_save_transcript:
+            try:
+                with open(
+                    os.path.join(sermon_dir, f"{sermon_id}_transcript.txt"),
+                    'w',
+                    encoding='utf-8',
+                ) as fh:
+                    fh.write(transcript)
+                logger.debug("Saved transcript to: %s",
+                           os.path.join(sermon_dir, f"{sermon_id}_transcript.txt"))
+            except Exception as e:  # pragma: no cover
+                logger.error("Failed writing transcript file: %s", e)
 
     if DRY_RUN or no_upload:
-        logger.info("Dry-run / no-upload: skipping metadata+audio update")
+        logger.info("Dry-run / no-upload: skipping remote updates")
         return
 
+    # Update metadata if we generated any
+    if summary is not None or hashtags is not None:
+        if not verbose:
+            print("   📤 Updating metadata...")
+        try:
+            # Get current values to preserve what we're not updating
+            current_desc = (getattr(details, 'moreInfoText', None) or
+                           getattr(details, 'more_info_text', None))
+            current_hash = getattr(details, 'keywords', None)
+            
+            # Use generated values or preserve existing ones
+            final_desc = summary if summary is not None else current_desc
+            final_hash = hashtags if hashtags is not None else current_hash
+            
+            if update_sermon_metadata(sermon_id, final_desc, final_hash):
+                logger.debug("Metadata updated successfully")
+            else:
+                logger.error("Metadata update failed")
+        except Exception as e:  # pragma: no cover
+            logger.error("Metadata update error: %s", e)
+    
+    # Upload audio if we processed it
+    if needs_audio and output_audio and os.path.exists(output_audio):
+        if not verbose:
+            print("   📤 Uploading audio...")
+        try:
+            if upload_audio_file(sermon_id, output_audio):
+                logger.debug("Audio uploaded successfully")
+            else:
+                logger.error("Audio upload failed")
+        except Exception as e:  # pragma: no cover
+            logger.error("Audio upload error: %s", e)
+    
+    # Cleanup temp audio file
     try:
-        if update_sermon_metadata(sermon_id, summary, hashtags):
-            logger.debug("Metadata updated")
-    except Exception as e:  # pragma: no cover
-        logger.error("Metadata update error: %s", e)
-    try:
-        if upload_audio_file(sermon_id, output_audio):
-            logger.debug("Audio uploaded")
-    except Exception as e:  # pragma: no cover
-        logger.error("Audio upload error: %s", e)
-    try:
+        input_audio = os.path.join(sermon_dir, f"temp_{sermon_id}.mp3")
         if os.path.exists(input_audio):
             os.remove(input_audio)
     except Exception:  # pragma: no cover
         pass
 
-    logger.info("Sermon %s complete", sermon_id)
+    logger.info("Sermon %s processing complete", sermon_id)
+    
+    # Return summary of what was processed
+    completed_actions = []
+    if needs_desc_update and summary is not None:
+        completed_actions.append("description")
+    if needs_hash_update and hashtags is not None:
+        completed_actions.append("hashtags")
+    if needs_audio and output_audio and os.path.exists(output_audio):
+        completed_actions.append("audio")
+    
+    return {
+        "action": "processed",
+        "completed": completed_actions,
+        "skipped": [action for action in processing_actions if action not in completed_actions]
+    }
 
 
 def get_sermons_in_date_range(start_date, end_date):
@@ -507,7 +1003,8 @@ def process_year(year, no_upload=False):
     if input(f"Process all {len(sermons)} sermons from {year}? (y/N): ").lower() != 'y':
         return
     for s in sermons:
-        process_single_sermon(s['sermonID'], no_upload=no_upload)
+        process_single_sermon(s['sermonID'], no_upload=no_upload, output_dir=None,
+                             save_original_audio=None, save_transcript=None)
 
 
 def process_date_range(start_date, end_date, no_upload=False):
@@ -518,7 +1015,8 @@ def process_date_range(start_date, end_date, no_upload=False):
     if input(f"Process all {len(sermons)} sermons? (y/N): ").lower() != 'y':
         return
     for s in sermons:
-        process_single_sermon(s['sermonID'], no_upload=no_upload)
+        process_single_sermon(s['sermonID'], no_upload=no_upload, output_dir=None,
+                             save_original_audio=None, save_transcript=None)
 
 
 @dataclass
@@ -566,8 +1064,8 @@ SERMON_FILTER_ARG_MAP = {
     'lite': ('lite', 'flag', 'Lite sermons'),
     'lite_broadcaster': ('liteBroadcaster', 'flag', 'Lite broadcaster'),
     'cache': ('cache', 'flag', 'Enable API cache'),
-    'preached_after': ('preachedAfterTimestamp', int, 'Preached after UNIX timestamp'),
-    'preached_before': ('preachedBeforeTimestamp', int, 'Preached before UNIX timestamp'),
+    'preached_after': ('preachedAfterTimestamp', str, 'Preached after date (YYYY-MM-DD)'),
+    'preached_before': ('preachedBeforeTimestamp', str, 'Preached before date (YYYY-MM-DD)'),
     'collection_id': ('collectionID', int, 'Collection ID'),
     'include_drafts': ('includeDrafts', 'flag', 'Include drafts'),
     'include_scheduled': ('includeScheduled', 'flag', 'Include scheduled'),
@@ -616,6 +1114,22 @@ def build_sermon_query_params(args: argparse.Namespace) -> dict[str, Any]:
     if getattr(args, 'since_days', None):
         after = dt.datetime.utcnow() - dt.timedelta(days=args.since_days)
         params.setdefault('preachedAfterTimestamp', int(after.timestamp()))
+
+    # Handle user-friendly date strings for preached_after/preached_before
+    if getattr(args, 'preached_after', None):
+        try:
+            after_dt = dt.datetime.strptime(args.preached_after, '%Y-%m-%d')
+            params['preachedAfterTimestamp'] = int(after_dt.timestamp())
+        except ValueError as e:
+            logger.warning("Invalid --preached-after date format (expected YYYY-MM-DD): %s", e)
+
+    if getattr(args, 'preached_before', None):
+        try:
+            before_dt = dt.datetime.strptime(args.preached_before, '%Y-%m-%d')
+            before_dt = before_dt.replace(hour=23, minute=59, second=59)
+            params['preachedBeforeTimestamp'] = int(before_dt.timestamp())
+        except ValueError as e:
+            logger.warning("Invalid --preached-before date format (expected YYYY-MM-DD): %s", e)
 
     if getattr(args, 'limit', None):
         params.setdefault('pageSize', args.limit)
@@ -691,6 +1205,44 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     core.add_argument('--config', default=CONFIG_PATH, help='Alternate config file')
     core.add_argument('-v', '--verbose', action='store_true', help='Verbose debug output')
+    core.add_argument('--output-dir',
+                     help='Directory to store processed sermon files (overrides config)')
+    core.add_argument('--save-original-audio', action='store_true',
+                     help='Save original downloaded audio alongside processed audio')
+    core.add_argument('--no-save-original-audio', action='store_true',
+                     help='Skip saving original audio (overrides config)')
+    core.add_argument('--save-transcript', action='store_true',
+                     help='Save sermon transcript as text file alongside other outputs')
+    core.add_argument('--no-save-transcript', action='store_true',
+                     help='Skip saving transcript (overrides config)')
+
+    # Metadata processing options
+    metadata = p.add_argument_group('Metadata Processing Options')
+    metadata.add_argument(
+        '--metadata-only',
+        action='store_true',
+        help='Process only metadata (descriptions/hashtags), skip audio processing'
+    )
+    metadata.add_argument(
+        '--skip-audio',
+        action='store_true',
+        help='Skip audio processing (alias for --metadata-only)'
+    )
+    metadata.add_argument(
+        '--force-description',
+        action='store_true',
+        help='Force update description even if substantial content exists'
+    )
+    metadata.add_argument(
+        '--force-hashtags',
+        action='store_true',
+        help='Force update hashtags even if substantial content exists'
+    )
+    metadata.add_argument(
+        '--no-metadata',
+        action='store_true',
+        help='Disable metadata processing entirely (audio processing only)'
+    )
 
     filt = p.add_argument_group('Sermon Filters (map to API query params)')
     for cli_name, (_api, kind, help_txt) in SERMON_FILTER_ARG_MAP.items():
@@ -700,8 +1252,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         else:
             numeric_names = {
                 'page','page_size','chapter','chapter_end','verse','verse_end','year','month','day',
-                'speaker_id','collection_id','audio_min_duration','audio_max_duration',
-                'preached_after','preached_before'
+                'speaker_id','collection_id','audio_min_duration','audio_max_duration'
             }
             typ = (
                 int
@@ -756,7 +1307,51 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
             console_print("Cancelled")
             return
         console_print(f"Processing sermon {args.sermon_id}...")
-        process_single_sermon(args.sermon_id, no_upload=args.no_upload or args.dry_run)
+        
+        # Handle metadata-only and skip-audio flags
+        skip_audio = args.metadata_only or args.skip_audio
+        
+        # Determine save_original_audio setting
+        if args.no_save_original_audio:
+            save_original_audio = False
+        elif args.save_original_audio:
+            save_original_audio = True
+        else:
+            save_original_audio = None  # Use config default
+            
+        # Determine save_transcript setting
+        if args.no_save_transcript:
+            save_transcript = False
+        elif args.save_transcript:
+            save_transcript = True
+        else:
+            save_transcript = None  # Use config default
+        
+        result = process_single_sermon(
+            args.sermon_id,
+            no_upload=args.no_upload or args.dry_run,
+            verbose=args.verbose,
+            skip_audio=skip_audio,
+            force_description=args.force_description,
+            force_hashtags=args.force_hashtags,
+            no_metadata=args.no_metadata,
+            output_dir=args.output_dir,
+            save_original_audio=save_original_audio,
+            save_transcript=save_transcript
+        )
+        
+        # Display result summary for single sermon processing
+        if result:
+            if result.get("action") == "skipped":
+                console_print(f"⏭️  Skipped: {result.get('reason', 'No updates needed')}", "info")
+            elif result.get("action") == "processed":
+                completed = result.get("completed", [])
+                if completed:
+                    actions_text = ", ".join(completed)
+                    console_print(f"✅ Completed: Updated {actions_text}", "success")
+                else:
+                    console_print("✅ Processing completed", "success")
+        
         return
 
     # Year shortcut -> preached_year (pure filter) so --limit & other filters apply
@@ -796,7 +1391,10 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
     params = build_sermon_query_params(args)
     params.setdefault('broadcasterID', SERMON_AUDIO_BROADCASTER_ID)
 
-    if not any(k in params for k in ('preachedAfterTimestamp', 'preachedBeforeTimestamp', 'year')):
+    # Only set default time filter if no explicit time/year filters AND not using multi-year
+    filter_keys = ('preachedAfterTimestamp', 'preachedBeforeTimestamp', 'year')
+    has_time_or_year_filter = any(k in params for k in filter_keys)
+    if not multi_years and not has_time_or_year_filter:
         after = dt.datetime.utcnow() - dt.timedelta(days=30)
         params['preachedAfterTimestamp'] = int(after.timestamp())
         params.setdefault('cache', 'true')
@@ -834,12 +1432,72 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
         console_print('Cancelled')
         return
 
-    # Show processing summary
+    # Handle metadata-only and skip-audio flags for batch processing
+    skip_audio = args.metadata_only or args.skip_audio
+    
+    # Determine save_original_audio setting
+    if args.no_save_original_audio:
+        save_original_audio = False
+    elif args.save_original_audio:
+        save_original_audio = True
+    else:
+        save_original_audio = None  # Use config default
+        
+    # Determine save_transcript setting
+    if args.no_save_transcript:
+        save_transcript = False
+    elif args.save_transcript:
+        save_transcript = True
+    else:
+        save_transcript = None  # Use config default
+
+    # Show processing summary and settings
     console_print(f"🎯 Processing {len(sermons)} sermons...")
     if args.dry_run:
         console_print("🔍 DRY RUN MODE - No changes will be made", "warning")
     if args.no_upload:
         console_print("📁 NO UPLOAD MODE - Audio will not be uploaded", "warning")
+    
+    # Show processing settings summary
+    settings_info = []
+    if skip_audio:
+        settings_info.append("⚙️ Metadata only (no audio processing)")
+    else:
+        settings_info.append("⚙️ Full processing (metadata + audio)")
+    
+    # LLM provider info
+    provider_info = llm_manager.get_provider_info()
+    if provider_info['primary']:
+        primary = provider_info['primary']
+        llm_text = f"LLM: {primary['type'].title()}/{primary['model']}"
+        if provider_info['fallback']:
+            fallback = provider_info['fallback']
+            llm_text += f" (fallback: {fallback['type'].title()}/{fallback['model']})"
+        settings_info.append(llm_text)
+    
+    # Output directory
+    output_path = args.output_dir or config.get('output_directory', 'processed_sermons')
+    settings_info.append(f"Output: {output_path}")
+    
+    # File saving options
+    save_opts = []
+    original_audio_enabled = (save_original_audio or
+                             (save_original_audio is None and
+                              config.get('save_original_audio', True)))
+    if original_audio_enabled:
+        save_opts.append("original audio")
+    transcript_enabled = (save_transcript or
+                         (save_transcript is None and
+                          config.get('save_transcript', False)))
+    if transcript_enabled:
+        save_opts.append("transcript")
+    if save_opts:
+        settings_info.append(f"Saving: {', '.join(save_opts)}")
+    
+    # Display settings
+    for setting in settings_info:
+        console_print(f"   {setting}")
+    console_print("")  # Extra line for readability
 
     success = 0
     errors = 0
@@ -849,14 +1507,39 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
         if not args.verbose:
             console_print(f"[{idx}/{len(sermons)}] Processing: {s.displayTitle}")
         try:
-            process_single_sermon(
+            result = process_single_sermon(
                 s.sermonID,
                 no_upload=args.no_upload or args.dry_run,
-                verbose=args.verbose
+                verbose=args.verbose,
+                skip_audio=skip_audio,
+                force_description=args.force_description,
+                force_hashtags=args.force_hashtags,
+                no_metadata=args.no_metadata,
+                output_dir=args.output_dir,
+                save_original_audio=save_original_audio,
+                save_transcript=save_transcript
             )
             success += 1
+            
+            # Display meaningful completion message based on what was done
             if not args.verbose:
-                console_print(f"[{idx}/{len(sermons)}] ✅ Completed: {s.displayTitle}", "success")
+                if result and result.get("action") == "skipped":
+                    reason = result.get('reason', 'No updates needed')
+                    msg = f"[{idx}/{len(sermons)}] ⏭️  Skipped: {s.displayTitle} - {reason}"
+                    console_print(msg, "info")
+                elif result and result.get("action") == "processed":
+                    completed = result.get("completed", [])
+                    if completed:
+                        actions_text = ", ".join(completed)
+                        msg = (f"[{idx}/{len(sermons)}] ✅ Updated: {s.displayTitle} - "
+                               f"{actions_text}")
+                        console_print(msg, "success")
+                    else:
+                        msg = f"[{idx}/{len(sermons)}] ✅ Completed: {s.displayTitle}"
+                        console_print(msg, "success")
+                else:
+                    msg = f"[{idx}/{len(sermons)}] ✅ Completed: {s.displayTitle}"
+                    console_print(msg, "success")
         except Exception as e:  # pragma: no cover
             errors += 1
             error_msg = f"[{idx}/{len(sermons)}] ❌ Error: {s.displayTitle} - {e}"
