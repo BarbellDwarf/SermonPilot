@@ -15,6 +15,8 @@ secrets/
 processed_sermons/
 processed_sermons/*
 **/processed_sermons/**
+test_output/
+test_*/
 
 # Audio Files
 *.mp3

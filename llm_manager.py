@@ -5,6 +5,7 @@ Supports OpenAI and Ollama providers with configurable primary and fallback opti
 
 import logging
 import os
+import sys
 from typing import Any
 
 import openai
@@ -41,6 +42,33 @@ class OllamaProvider(LLMProvider):
             logger.error("Ollama library not installed. Install with: pip install ollama")
             self.ollama = None
 
+    def __str__(self) -> str:
+        """String representation of the provider."""
+        return f"OllamaProvider(model={self.model}, host={self.host})"
+
+    def list_models(self) -> list[str]:
+        """List available models from Ollama."""
+        try:
+            # Try using ollama library first
+            if self.ollama:
+                response = self.ollama.list()
+                return [model['name'] for model in response.get('models', [])]
+        except Exception:
+            logger.debug("Ollama library failed for model listing, trying HTTP...")
+
+        # Fallback to HTTP request
+        try:
+            response = requests.get(f"{self.host}/api/tags", timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                return [model['name'] for model in data.get('models', [])]
+            else:
+                logger.error(f"Failed to list Ollama models: {response.status_code}")
+                return []
+        except Exception as e:
+            logger.error(f"Failed to connect to Ollama for model listing: {e}")
+            return []
+
     def chat(self, messages: list[dict[str, str]]) -> str:
         """Send chat request to Ollama."""
         if not self.ollama:
@@ -50,6 +78,16 @@ class OllamaProvider(LLMProvider):
             response = self.ollama.chat(model=self.model, messages=messages)
             return response['message']['content']
         except Exception as e:
+            # Check if it's a model not found error from ollama library
+            error_str = str(e).lower()
+            if ("model" in error_str and
+                ("not found" in error_str or "does not exist" in error_str)):
+                available_models = self.list_models()
+                if available_models:
+                    print(f"\nError: Model '{self.model}' not found in Ollama.")
+                    print(f"Available models: {', '.join(available_models)}")
+                    sys.exit(1)
+            
             logger.warning(f"Ollama library failed: {e}. Trying direct HTTP request...")
 
             payload = {
@@ -67,6 +105,18 @@ class OllamaProvider(LLMProvider):
             if response.status_code == 200:
                 result = response.json()
                 return result['message']['content']
+            elif response.status_code == 404:
+                # Check if it's a model not found error
+                available_models = self.list_models()
+                if available_models:
+                    print(f"\nError: Model '{self.model}' not found in Ollama.")
+                    print(f"Available models: {', '.join(available_models)}")
+                    sys.exit(1)
+                else:
+                    # If we can't list models, it might be an endpoint issue
+                    error_msg = (f"Ollama server appears to be down or unreachable: "
+                                f"{response.status_code}")
+                    raise Exception(error_msg) from None
             else:
                 error_msg = f"Ollama HTTP request failed: {response.status_code} - {response.text}"
                 raise Exception(error_msg) from e
@@ -96,13 +146,42 @@ class OpenAIProvider(LLMProvider):
             return f"OpenAIProvider(model={self.model}, base_url={self.base_url})"
         return f"OpenAIProvider(model={self.model})"
 
+    def list_models(self) -> list[str]:
+        """List available models from OpenAI-compatible API."""
+        try:
+            models = self.client.models.list()
+            return [model.id for model in models.data]
+        except Exception as e:
+            logger.error(f"Failed to list OpenAI models: {e}")
+            return []
+
     def chat(self, messages: list[dict[str, str]]) -> str:
         """Send chat request to OpenAI."""
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages
-        )
-        return response.choices[0].message.content
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages
+            )
+            return response.choices[0].message.content
+        except openai.NotFoundError as e:
+            # Model not found error
+            if "model" in str(e).lower():
+                available_models = self.list_models()
+                if available_models:
+                    print(f"\nError: Model '{self.model}' not found.")
+                    print(f"Available models: {', '.join(available_models)}")
+                    sys.exit(1)
+                else:
+                    # If we can't list models, re-raise as general error for fallback
+                    raise Exception("Unable to verify model availability") from e
+            else:
+                raise Exception(f"OpenAI API error: {e}") from e
+        except (openai.APIConnectionError, openai.APITimeoutError) as e:
+            # Connection/timeout errors - let fallback handle
+            raise Exception(f"OpenAI API connection error: {e}") from e
+        except Exception as e:
+            # Other errors
+            raise Exception(f"OpenAI API error: {e}") from e
 
 
 class LLMManager:
