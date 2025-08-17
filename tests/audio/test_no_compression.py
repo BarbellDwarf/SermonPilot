@@ -10,6 +10,11 @@ def test_no_compression():
         
     output_path = "tests/test_no_compression_output.mp3"
     
+# Add src directory to path
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
     from audio_processing import process_sermon_audio
     result = process_sermon_audio(
         input_path,

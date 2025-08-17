@@ -152,6 +152,11 @@ class OptimizedAudioEnhancer:
     def process_audio_optimized(self, audio_file: str, output_file: str, max_duration_minutes: float | None = None):
         """Process audio with optimized memory management"""
 
+# Add src directory to path
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
         from audio_processing import AudioProcessor
 
         logger.info("🚀 Starting optimized audio processing...")

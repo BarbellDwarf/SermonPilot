@@ -47,6 +47,9 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     os.environ["PYTHONWARNINGS"] = "ignore"
     # Suppress torchaudio warning specifically
     os.environ["TORCHAUDIO_USE_BACKEND_DISPATCHER"] = "1"
+    # Add src directory to Python path
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+    
     # Pre-configure DF logging before import
     import logging
     logging.getLogger("df").setLevel(logging.CRITICAL)
