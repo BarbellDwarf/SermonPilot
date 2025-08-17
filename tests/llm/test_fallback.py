@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Test script for LLM fallback functionality."""
 
+# Add src directory to path
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
 from llm_manager import LLMManager
 
 def test_valid_model():

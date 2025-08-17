@@ -2,6 +2,11 @@
 """Test script for LLM error handling with invalid models and endpoints."""
 
 import yaml
+# Add src directory to path
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
 from llm_manager import LLMManager
 
 def test_invalid_model():

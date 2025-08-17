@@ -5,6 +5,11 @@ This script tests the LLM configuration and switching functionality.
 """
 
 import yaml
+# Add src directory to path
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
 from llm_manager import LLMManager, migrate_legacy_config
 
 def test_llm_configuration():

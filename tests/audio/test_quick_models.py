@@ -116,6 +116,11 @@ def test_deepfilternet():
         start_time = time.time()
 
         # Use our existing audio processor
+# Add src directory to path
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
         from audio_processing import AudioProcessor
 
         processor = AudioProcessor(enhancement_method="deepfilternet")
