@@ -304,7 +304,8 @@ def show_llm_settings():
     validator_enabled = st.checkbox(
         "Enable Validation Provider",
         value=validator_config.get('enabled', False),
-        help="Use smaller model for description validation"
+        help="Use smaller model for description validation",
+        key="validator_enabled"
     )
     
     if validator_enabled:
