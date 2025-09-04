@@ -577,17 +577,35 @@ class SermonRepository:
     def search_sermons(self, query_text: str, limit: int = 50) -> List[Dict[str, Any]]:
         """Full-text search across sermon content"""
         with self.db.get_connection() as conn:
-            search_results = conn.execute("""
-                SELECT sermon_id, 
-                       title,
-                       speaker,
-                       snippet(sermon_search, 2, '<mark>', '</mark>', '...', 32) as snippet,
-                       rank
-                FROM sermon_search 
-                WHERE sermon_search MATCH ?
-                ORDER BY rank
-                LIMIT ?
-            """, (query_text, limit)).fetchall()
+            # Try FTS search first, fall back to LIKE search if FTS fails
+            try:
+                search_results = conn.execute("""
+                    SELECT sermon_id, 
+                           title,
+                           speaker,
+                           snippet(sermon_search, 2, '<mark>', '</mark>', '...', 32) as snippet,
+                           rank
+                    FROM sermon_search 
+                    WHERE sermon_search MATCH ?
+                    ORDER BY rank
+                    LIMIT ?
+                """, (query_text, limit)).fetchall()
+            except Exception:
+                # Fallback to simple LIKE search if FTS fails
+                search_results = conn.execute("""
+                    SELECT sc.sermon_id,
+                           s.title,
+                           s.speaker,
+                           '' as snippet,
+                           1 as rank
+                    FROM sermon_content sc
+                    JOIN sermons s ON sc.sermon_id = s.id
+                    WHERE sc.transcript_text LIKE ? 
+                       OR sc.description LIKE ?
+                       OR s.title LIKE ?
+                       OR s.speaker LIKE ?
+                    LIMIT ?
+                """, (f'%{query_text}%', f'%{query_text}%', f'%{query_text}%', f'%{query_text}%', limit)).fetchall()
             
             # Get full sermon data for results
             sermon_ids = [row['sermon_id'] for row in search_results]
