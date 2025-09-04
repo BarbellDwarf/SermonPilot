@@ -202,9 +202,9 @@ class UIProcessor:
                 f"Error: {str(e)}"
             )
     
-    def get_processing_status(self, sermon_id: str = None) -> List[Dict]:
+    def get_processing_status(self, sermon_id: str = None, operation: str = None) -> List[Dict]:
         """Get current processing status"""
-        return self.db.get_processing_status(sermon_id)
+        return self.db.get_processing_status(sermon_id, operation)
     
     def get_validation_results(self, sermon_ids: List[str] = None) -> List[Dict]:
         """Get validation results"""
