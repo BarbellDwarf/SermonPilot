@@ -90,7 +90,7 @@ st.markdown("""
 def initialize_session_state():
     """Initialize Streamlit session state variables"""
     if 'config' not in st.session_state:
-        st.session_state.config = None
+        st.session_state.config = {}  # Initialize with empty dict instead of None
     
     if 'llm_manager' not in st.session_state:
         st.session_state.llm_manager = None
@@ -115,18 +115,30 @@ def load_configuration():
             example_config = project_root / "config.example.yaml"
             if example_config.exists():
                 st.warning(f"⚠️ No config.yaml found. Please copy {example_config} to {config_path} and update with your settings.")
-                return None
+                # Return empty config instead of None
+                config = {}
+                st.session_state.config = config
+                return config
             else:
                 st.error("❌ No configuration file found. Please create config.yaml.")
-                return None
+                # Return empty config instead of None
+                config = {}
+                st.session_state.config = config
+                return config
         
         config = load_config(str(config_path))
+        # Ensure config is never None
+        if config is None:
+            config = {}
         st.session_state.config = config
         return config
         
     except Exception as e:
         st.error(f"❌ Failed to load configuration: {e}")
-        return None
+        # Return empty config instead of None
+        config = {}
+        st.session_state.config = config
+        return config
 
 def check_system_status():
     """Check system status and dependencies"""
