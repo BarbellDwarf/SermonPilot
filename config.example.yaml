@@ -84,6 +84,22 @@ audio_normalize: true
 audio_gain_db: 0.5
 audio_target_level_db: -22.0
 
+# Q&A Audio Normalization Settings
+qa_normalization:
+  enabled: false  # Enable Q&A audio normalization
+  detection_method: "level_based"  # Options: "level_based", "speaker_diarization", "hybrid"
+  target_lufs: -23.0  # Target LUFS level for normalized audio
+  main_speaker_threshold: -12.0  # dB threshold for main speaker audio
+  question_threshold: -30.0  # dB threshold for audience questions
+  look_ahead_ms: 100  # Look-ahead time for transition detection
+  transition_smoothing: true  # Apply smoothing at Q&A transitions
+  
+  # Speaker diarization settings (for future implementation)
+  speaker_diarization:
+    model: "pyannote/speaker-diarization"  # Model for speaker diarization
+    min_speakers: 1  # Minimum number of speakers to detect
+    max_speakers: 10  # Maximum number of speakers to detect
+
 # Processing Options
 dry_run: false  # Set to true to preview changes without updating
 debug: false    # Set to true to enable verbose debug output
