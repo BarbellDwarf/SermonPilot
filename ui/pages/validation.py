@@ -374,11 +374,14 @@ def start_real_validation(scope: str, options: dict):
                 # Use get_sermons_in_date_range to get real sermon data
                 sermons = sermon_updater.get_sermons_in_date_range(
                     start_date.strftime('%Y-%m-%d'),
-                    end_date.strftime('%Y-%m-%d'),
-                    limit=max_sermons
+                    end_date.strftime('%Y-%m-%d')
                 )
                 
-                sermon_ids = [str(sermon.sermon_id) for sermon in sermons]
+                # Apply limit after fetching
+                if len(sermons) > max_sermons:
+                    sermons = sermons[:max_sermons]
+                
+                sermon_ids = [str(sermon['sermonID']) for sermon in sermons if sermon.get('sermonID')]
                 
                 if not sermon_ids:
                     st.info("✅ No recent sermons found!")
