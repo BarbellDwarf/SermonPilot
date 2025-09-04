@@ -891,9 +891,10 @@ def show_backup_restore():
             
             if st.button("🔄 Apply Configuration", type="primary"):
                 st.session_state.config = new_config
-                save_config_to_file(new_config)
-                st.success("Configuration applied and saved!")
-                st.rerun()
+                from config_utils import save_config_to_file
+                if save_config_to_file(new_config):
+                    st.success("Configuration applied and saved!")
+                    st.rerun()
         
         except Exception as e:
             st.error(f"❌ Failed to load configuration: {e}")
@@ -947,7 +948,7 @@ def save_general_settings(api_key, broadcaster_id, dry_run, debug,
     })
     
     save_config_to_file(st.session_state.config)
-    st.success("✅ General settings saved!")
+    st.success("✅ General settings saved and configuration reloaded!")
 
 def save_llm_settings():
     """Save LLM settings to configuration"""
@@ -992,8 +993,8 @@ def save_llm_settings():
         save_provider_settings(llm_config['validator'], validator_provider, 'validator')
     
     # Save to file
-    save_config_to_file(st.session_state.config)
-    st.success("✅ LLM settings saved!")
+    if save_config_to_file(st.session_state.config):
+        st.success("✅ LLM settings saved and configuration reloaded!")
 
 def save_provider_settings(provider_config, provider_type, key_prefix):
     """Save provider-specific settings from session state"""
@@ -1063,7 +1064,7 @@ def save_audio_settings(enhancement_method, use_audacity, audio_noise_reduction,
     })
     
     save_config_to_file(st.session_state.config)
-    st.success("✅ Audio settings saved!")
+    st.success("✅ Audio settings saved and configuration reloaded!")
 
 def save_validation_settings():
     """Save validation settings to configuration"""
@@ -1071,17 +1072,9 @@ def save_validation_settings():
     st.success("✅ Validation settings saved!")
 
 def save_config_to_file(config):
-    """Save configuration to config.yaml file"""
-    try:
-        project_root = Path(__file__).parent.parent.parent
-        config_path = project_root / "config.yaml"
-        
-        with open(config_path, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=True)
-        
-        st.info(f"Configuration saved to {config_path}")
-    except Exception as e:
-        st.error(f"Failed to save configuration: {e}")
+    """Save configuration to config.yaml file and reload in session"""
+    from config_utils import save_config_to_file as _save_config
+    return _save_config(config)
 
 def reset_to_defaults():
     """Reset configuration to default values"""
@@ -1094,6 +1087,7 @@ def reset_to_defaults():
             default_config = yaml.safe_load(f)
         
         st.session_state.config = default_config
+        from config_utils import save_config_to_file
         save_config_to_file(default_config)
         
     except Exception as e:
