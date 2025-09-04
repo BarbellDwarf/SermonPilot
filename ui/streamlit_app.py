@@ -119,41 +119,21 @@ def initialize_session_state():
     if 'theme' not in st.session_state:
         st.session_state.theme = "light"
 
-def load_configuration():
+def load_configuration(force_reload=False):
     """Load configuration from config.yaml"""
-    try:
-        from sermon_updater import load_config, CONFIG_PATH
-        
-        config_path = project_root / "config.yaml"
-        if not config_path.exists():
-            # Try example config
-            example_config = project_root / "config.example.yaml"
-            if example_config.exists():
-                st.warning(f"⚠️ No config.yaml found. Please copy {example_config} to {config_path} and update with your settings.")
-                # Return empty config instead of None
-                config = {}
-                st.session_state.config = config
-                return config
-            else:
-                st.error("❌ No configuration file found. Please create config.yaml.")
-                # Return empty config instead of None
-                config = {}
-                st.session_state.config = config
-                return config
-        
-        config = load_config(str(config_path))
-        # Ensure config is never None
-        if config is None:
-            config = {}
+    from config_utils import load_config_from_file, reload_configuration
+    
+    if force_reload:
+        return reload_configuration()
+    else:
+        config = load_config_from_file()
         st.session_state.config = config
         return config
-        
-    except Exception as e:
-        st.error(f"❌ Failed to load configuration: {e}")
-        # Return empty config instead of None
-        config = {}
-        st.session_state.config = config
-        return config
+
+def reload_configuration():
+    """Force reload configuration from file and clear cached objects"""
+    from config_utils import reload_configuration as _reload_config
+    return _reload_config()
 
 def check_system_status():
     """Check system status and dependencies"""
@@ -226,6 +206,8 @@ def render_sidebar():
     # Quick Actions
     st.sidebar.markdown("### ⚡ Quick Actions")
     if st.sidebar.button("🔄 Refresh Status", width='stretch'):
+        # Reload configuration to pick up any changes
+        reload_configuration()
         st.rerun()
     
     if st.sidebar.button("📁 Open Config Folder", width='stretch'):
