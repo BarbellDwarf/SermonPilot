@@ -16,8 +16,23 @@ Features:
 
 import os
 import sys
-import streamlit as st
+import warnings
 from pathlib import Path
+
+# Suppress PyTorch/Torchaudio warnings before any imports
+warnings.filterwarnings('ignore', category=UserWarning, message='.*Torchaudio.*backend.*')
+warnings.filterwarnings('ignore', category=UserWarning, message='.*torchaudio.*')
+warnings.filterwarnings('ignore', category=UserWarning, message='.*backend dispatch.*')
+warnings.filterwarnings('ignore', category=RuntimeWarning)
+os.environ["TORCHAUDIO_USE_BACKEND_DISPATCHER"] = "1"
+os.environ["TORCHAUDIO_ENABLE_BACKEND_DISPATCH"] = "1"
+os.environ["TORCHAUDIO_BACKEND"] = "soundfile"
+
+# Suppress Windows path warnings
+warnings.filterwarnings('ignore', message='.*commonpath.*')
+warnings.filterwarnings('ignore', message='.*path.*dispatcher.*')
+
+import streamlit as st
 
 # Add project root and src to Python path for imports
 project_root = Path(__file__).parent.parent
@@ -104,41 +119,21 @@ def initialize_session_state():
     if 'theme' not in st.session_state:
         st.session_state.theme = "light"
 
-def load_configuration():
+def load_configuration(force_reload=False):
     """Load configuration from config.yaml"""
-    try:
-        from sermon_updater import load_config, CONFIG_PATH
-        
-        config_path = project_root / "config.yaml"
-        if not config_path.exists():
-            # Try example config
-            example_config = project_root / "config.example.yaml"
-            if example_config.exists():
-                st.warning(f"⚠️ No config.yaml found. Please copy {example_config} to {config_path} and update with your settings.")
-                # Return empty config instead of None
-                config = {}
-                st.session_state.config = config
-                return config
-            else:
-                st.error("❌ No configuration file found. Please create config.yaml.")
-                # Return empty config instead of None
-                config = {}
-                st.session_state.config = config
-                return config
-        
-        config = load_config(str(config_path))
-        # Ensure config is never None
-        if config is None:
-            config = {}
+    from config_utils import load_config_from_file, reload_configuration
+    
+    if force_reload:
+        return reload_configuration()
+    else:
+        config = load_config_from_file()
         st.session_state.config = config
         return config
-        
-    except Exception as e:
-        st.error(f"❌ Failed to load configuration: {e}")
-        # Return empty config instead of None
-        config = {}
-        st.session_state.config = config
-        return config
+
+def reload_configuration():
+    """Force reload configuration from file and clear cached objects"""
+    from config_utils import reload_configuration as _reload_config
+    return _reload_config()
 
 def check_system_status():
     """Check system status and dependencies"""
@@ -196,7 +191,7 @@ def render_sidebar():
     
     # Create navigation buttons
     for page_name, page_key in pages.items():
-        if st.sidebar.button(page_name, key=f"nav_{page_key}", use_container_width=True):
+        if st.sidebar.button(page_name, key=f"nav_{page_key}", width='stretch'):
             st.session_state.current_page = page_key
     
     # System Status
@@ -210,10 +205,12 @@ def render_sidebar():
     
     # Quick Actions
     st.sidebar.markdown("### ⚡ Quick Actions")
-    if st.sidebar.button("🔄 Refresh Status", use_container_width=True):
+    if st.sidebar.button("🔄 Refresh Status", width='stretch'):
+        # Reload configuration to pick up any changes
+        reload_configuration()
         st.rerun()
     
-    if st.sidebar.button("📁 Open Config Folder", use_container_width=True):
+    if st.sidebar.button("📁 Open Config Folder", width='stretch'):
         st.info(f"Config location: {project_root}/config.yaml")
 
 def main():
@@ -253,7 +250,7 @@ def main():
 def show_dashboard():
     """Dashboard page"""
     try:
-        from pages.dashboard import show_dashboard as dashboard_main
+        from ui_pages.dashboard import show_dashboard as dashboard_main
         dashboard_main()
     except ImportError:
         # Fallback if pages module not available
@@ -263,7 +260,7 @@ def show_dashboard():
 def show_new_sermon():
     """New sermon page"""
     try:
-        from pages.new_sermon import show_new_sermon as new_sermon_main
+        from ui_pages.new_sermon import show_new_sermon as new_sermon_main
         new_sermon_main()
     except ImportError:
         # Fallback if pages module not available
@@ -273,7 +270,7 @@ def show_new_sermon():
 def show_batch_update():
     """Batch update page"""
     try:
-        from pages.batch_update import show_batch_update as batch_main
+        from ui_pages.batch_update import show_batch_update as batch_main
         batch_main()
     except ImportError:
         # Fallback if pages module not available
@@ -283,7 +280,7 @@ def show_batch_update():
 def show_validation():
     """Validation page"""
     try:
-        from pages.validation import show_validation as validation_main
+        from ui_pages.validation import show_validation as validation_main
         validation_main()
     except ImportError:
         # Fallback if pages module not available
@@ -293,7 +290,7 @@ def show_validation():
 def show_analytics():
     """Analytics page"""
     try:
-        from pages.analytics import show_analytics as analytics_main
+        from ui_pages.analytics import show_analytics as analytics_main
         analytics_main()
     except ImportError:
         # Fallback if pages module not available
@@ -303,7 +300,7 @@ def show_analytics():
 def show_settings():
     """Settings page"""
     try:
-        from pages.settings import show_settings as settings_main
+        from ui_pages.settings import show_settings as settings_main
         settings_main()
     except ImportError:
         # Fallback if pages module not available
