@@ -2,11 +2,12 @@
 """Test that the enhancement method routing fix is working correctly"""
 
 
-import numpy as np
-
 # Add src directory to path
 import sys
 from pathlib import Path
+
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from audio_processing import AudioProcessor

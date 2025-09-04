@@ -19,6 +19,7 @@ For help with all validation options:
 """
 import sys
 
+
 def main():
     """Show deprecation message and provide alternatives."""
     print(__doc__)

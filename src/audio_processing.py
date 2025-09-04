@@ -113,14 +113,14 @@ class AudioProcessor:
                 logger.info(f"Initializing DeepFilterNet on {device}")
 
                 logger.info("Using legacy df package for DeepFilterNet")
-                
+
                 # Suppress DF initialization logs if not in debug mode
                 if logger.level > logging.DEBUG:
                     with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
                         self.df_model, self.df_state, _ = init_df()
                 else:
                     self.df_model, self.df_state, _ = init_df()
-                    
+
                 logger.info("DeepFilterNet initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize DeepFilterNet: {e}")
