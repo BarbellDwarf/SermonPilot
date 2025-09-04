@@ -1,0 +1,9 @@
+# Streamlit Web UI Requirements
+# Additional dependencies for the web interface
+
+streamlit>=1.49.0
+plotly>=5.0.0
+pandas>=1.4.0
+PyYAML>=6.0
+pathlib
+datetime
