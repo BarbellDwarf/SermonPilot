@@ -110,9 +110,11 @@ def refresh_metadata_from_api() -> bool:
             return False
             
         # Test if we can make API calls by checking if API key is configured
-        sermon_audio_config = st.session_state.config.get('sermon_audio', {})
-        if not sermon_audio_config.get('api_key'):
-            logger.warning("SermonAudio API key not configured")
+        api_key = st.session_state.config.get('api_key')
+        broadcaster_id = st.session_state.config.get('broadcaster_id')
+        
+        if not api_key or not broadcaster_id:
+            logger.warning(f"SermonAudio API credentials not configured - api_key: {'present' if api_key else 'missing'}, broadcaster_id: {'present' if broadcaster_id else 'missing'}")
             return False
         
         with st.spinner('🔄 Refreshing metadata from SermonAudio API...'):
