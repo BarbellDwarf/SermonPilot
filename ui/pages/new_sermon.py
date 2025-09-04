@@ -270,15 +270,15 @@ def show_process_and_review():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("▶️ Start Processing", type="primary", use_container_width=True):
+        if st.button("▶️ Start Processing", type="primary", width='stretch'):
             start_processing()
     
     with col2:
-        if st.button("⏸️ Pause", use_container_width=True, disabled=True):
+        if st.button("⏸️ Pause", width='stretch', disabled=True):
             st.info("Pause functionality will be implemented")
     
     with col3:
-        if st.button("🔄 Reset", use_container_width=True):
+        if st.button("🔄 Reset", width='stretch'):
             reset_form()
     
     # Show processing status if active
@@ -386,15 +386,15 @@ def show_processing_results():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("💾 Save Changes", use_container_width=True):
+            if st.button("💾 Save Changes", width='stretch'):
                 st.success("Changes saved!")
         
         with col2:
-            if st.button("🔄 Regenerate Metadata", use_container_width=True):
+            if st.button("🔄 Regenerate Metadata", width='stretch'):
                 st.info("Regenerating metadata...")
         
         with col3:
-            if st.button("📤 Upload to SermonAudio", use_container_width=True):
+            if st.button("📤 Upload to SermonAudio", width='stretch'):
                 st.success("Uploaded successfully!")
         
         # Generated files

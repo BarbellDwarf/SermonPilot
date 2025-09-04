@@ -196,7 +196,7 @@ def render_sidebar():
     
     # Create navigation buttons
     for page_name, page_key in pages.items():
-        if st.sidebar.button(page_name, key=f"nav_{page_key}", use_container_width=True):
+        if st.sidebar.button(page_name, key=f"nav_{page_key}", width='stretch'):
             st.session_state.current_page = page_key
     
     # System Status
@@ -210,10 +210,10 @@ def render_sidebar():
     
     # Quick Actions
     st.sidebar.markdown("### ⚡ Quick Actions")
-    if st.sidebar.button("🔄 Refresh Status", use_container_width=True):
+    if st.sidebar.button("🔄 Refresh Status", width='stretch'):
         st.rerun()
     
-    if st.sidebar.button("📁 Open Config Folder", use_container_width=True):
+    if st.sidebar.button("📁 Open Config Folder", width='stretch'):
         st.info(f"Config location: {project_root}/config.yaml")
 
 def main():

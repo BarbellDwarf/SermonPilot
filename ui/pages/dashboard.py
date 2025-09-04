@@ -134,7 +134,7 @@ def show_recent_activity():
                 'action': 'Action',
                 'duration': 'Duration'
             }),
-            use_container_width=True,
+            width='stretch',
             hide_index=True
         )
         
@@ -142,7 +142,7 @@ def show_recent_activity():
     else:
         # Show real data
         df = pd.DataFrame(processing_history[-10:])  # Show last 10 items
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, width='stretch')
 
 def show_quick_actions():
     """Show quick action buttons"""
@@ -151,17 +151,17 @@ def show_quick_actions():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("🎵 Process New Sermon", type="primary", use_container_width=True):
+        if st.button("🎵 Process New Sermon", type="primary", width='stretch'):
             st.session_state.current_page = 'new_sermon'
             st.rerun()
     
     with col2:
-        if st.button("🔄 Batch Update", use_container_width=True):
+        if st.button("🔄 Batch Update", width='stretch'):
             st.session_state.current_page = 'batch_update'
             st.rerun()
     
     with col3:
-        if st.button("✅ Validate Descriptions", use_container_width=True):
+        if st.button("✅ Validate Descriptions", width='stretch'):
             st.session_state.current_page = 'validation'
             st.rerun()
 
@@ -227,12 +227,12 @@ def show_setup_guide():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("📁 Go to Settings", type="primary", use_container_width=True):
+        if st.button("📁 Go to Settings", type="primary", width='stretch'):
             st.session_state.current_page = 'settings'
             st.rerun()
     
     with col2:
-        if st.button("📖 View Documentation", use_container_width=True):
+        if st.button("📖 View Documentation", width='stretch'):
             st.info("Documentation will open in your browser")
 
 def check_system_components():

@@ -114,7 +114,7 @@ def show_quality_metrics():
             'speaker': 'Speaker',
             'validation_time': 'Validation Time'
         }),
-        use_container_width=True,
+        width='stretch',
         hide_index=True
     )
 

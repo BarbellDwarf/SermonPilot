@@ -118,14 +118,14 @@ def show_filter_and_select():
     col1, col2, col3 = st.columns([2, 1, 1])
     
     with col1:
-        if st.button("🔍 Search Sermons", type="primary", use_container_width=True):
+        if st.button("🔍 Search Sermons", type="primary", width='stretch'):
             search_sermons()
     
     with col2:
         max_results = st.number_input("Max Results", min_value=1, max_value=1000, value=100)
     
     with col3:
-        if st.button("📥 Export List", use_container_width=True):
+        if st.button("📥 Export List", width='stretch'):
             export_sermon_list()
     
     # Display results
@@ -274,19 +274,19 @@ def show_execute_batch():
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if st.button("▶️ Start Batch", type="primary", use_container_width=True):
+        if st.button("▶️ Start Batch", type="primary", width='stretch'):
             start_batch_processing()
     
     with col2:
-        if st.button("⏸️ Pause", use_container_width=True, disabled=not st.session_state.get('batch_processing')):
+        if st.button("⏸️ Pause", width='stretch', disabled=not st.session_state.get('batch_processing')):
             pause_batch_processing()
     
     with col3:
-        if st.button("⏹️ Stop", use_container_width=True, disabled=not st.session_state.get('batch_processing')):
+        if st.button("⏹️ Stop", width='stretch', disabled=not st.session_state.get('batch_processing')):
             stop_batch_processing()
     
     with col4:
-        if st.button("🔄 Reset Queue", use_container_width=True):
+        if st.button("🔄 Reset Queue", width='stretch'):
             reset_batch_queue()
     
     # Show processing status
@@ -348,7 +348,7 @@ def show_batch_results():
         
         st.dataframe(
             filtered_df[['sermon_id', 'title', 'speaker', 'Status', 'processing_time', 'actions_performed']],
-            use_container_width=True,
+            width='stretch',
             hide_index=True
         )
     
@@ -356,11 +356,11 @@ def show_batch_results():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("📥 Export Results (CSV)", use_container_width=True):
+        if st.button("📥 Export Results (CSV)", width='stretch'):
             export_results_csv()
     
     with col2:
-        if st.button("📄 Generate Report", use_container_width=True):
+        if st.button("📄 Generate Report", width='stretch'):
             generate_batch_report()
 
 def search_sermons():
@@ -430,7 +430,7 @@ def show_search_results():
             "has_audio": st.column_config.CheckboxColumn("Has Audio"),
         },
         hide_index=True,
-        use_container_width=True
+        width='stretch'
     )
     
     # Update selected sermons
