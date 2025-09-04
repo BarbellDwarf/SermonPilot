@@ -17,6 +17,7 @@ processed_sermons/*
 **/processed_sermons/**
 test_output/
 test_*/
+*.db # Database files 
 
 # Audio Files
 *.mp3
