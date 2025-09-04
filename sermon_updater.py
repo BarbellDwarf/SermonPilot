@@ -961,6 +961,59 @@ Generate a compelling sermon title:"""
         return fallback[:85]
 
 
+def transcribe_audio(audio_path: str, model_size: str = "base") -> str:
+    """Transcribe audio file using OpenAI Whisper.
+    
+    Args:
+        audio_path: Path to audio file
+        model_size: Whisper model size ("tiny", "base", "small", "medium", "large")
+        
+    Returns:
+        Transcribed text if successful, empty string if failed
+    """
+    try:
+        import whisper
+        import warnings
+        
+        logger.info("Starting audio transcription with Whisper...")
+        console_print("🎙️  Transcribing audio...")
+        
+        # Suppress warnings during model loading
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                model = whisper.load_model(model_size)
+            except Exception as e:
+                if "connection" in str(e).lower() or "network" in str(e).lower():
+                    logger.warning("Network error loading Whisper model, trying smaller model")
+                    console_print("⚠️  Network issues with model download, trying 'tiny' model...")
+                    model = whisper.load_model("tiny")
+                else:
+                    raise e
+        
+        # Transcribe the audio
+        result = model.transcribe(audio_path)
+        transcript = result["text"].strip()
+        
+        logger.info("Transcription completed (%d characters)", len(transcript))
+        console_print(f"✅ Transcription completed ({len(transcript)} characters)")
+        
+        return transcript
+        
+    except ImportError:
+        logger.warning("Whisper not available for transcription")
+        console_print("⚠️  Whisper not available - skipping transcription")
+        return ""
+    except Exception as e:
+        if "connection" in str(e).lower() or "network" in str(e).lower() or "address" in str(e).lower():
+            logger.warning("Network error during transcription, skipping: %s", e)
+            console_print("⚠️  Network error - skipping transcription")
+        else:
+            logger.error("Transcription failed: %s", e)
+            console_print(f"❌ Transcription failed: {e}")
+        return ""
+
+
 def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str, 
                          event_type: str = "Sunday Service", bible_text: str = None,
                          subtitle: str = None, description: str = None, 
@@ -1029,7 +1082,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       event_type: str = "Sunday Service", bible_text: str = None,
                       title: str = None, subtitle: str = None,
                       description: str = None, hashtags: str = None,
-                      dry_run: bool = False) -> bool:
+                      dry_run: bool = False, skip_transcription: bool = False,
+                      whisper_model: str = "base") -> bool:
     """Process a new sermon from audio file with automatic metadata generation.
     
     Args:
@@ -1043,6 +1097,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         description: Sermon description (optional, will be generated if not provided)
         hashtags: Hashtags/keywords (optional, will be generated if not provided)
         dry_run: If True, process but don't upload
+        skip_transcription: If True, skip audio transcription for faster processing
+        whisper_model: Whisper model size for transcription
         
     Returns:
         True if successful, False if failed
@@ -1077,33 +1133,82 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             logger.warning("Audio processing failed, using original file")
             enhanced_audio_path = audio_path
         
-        # Step 2: Generate metadata if not provided
+        # Step 2: Transcribe audio for metadata generation
         transcript = ""
-        if not title or not description or not hashtags:
-            console_print("🤖 Generating metadata with LLM...")
+        if (not title or not description or not hashtags) and not skip_transcription:
+            # Try to get transcript from processed audio
+            try:
+                transcript = transcribe_audio(str(enhanced_audio_path), model_size=whisper_model)
+                if not transcript:
+                    # If transcription failed, try original audio
+                    transcript = transcribe_audio(str(audio_path), model_size=whisper_model)
+            except Exception as e:
+                logger.warning("Transcription failed: %s", e)
+                transcript = ""
+        elif skip_transcription:
+            console_print("⏭️  Skipping transcription (--skip-transcription enabled)")
             
-            # For metadata generation, we need some content
-            # Since we don't have transcription here, we'll use a placeholder
-            # In a real implementation, you might want to add transcription
+        # Step 3: Generate metadata using transcript or fallback
+        if transcript:
+            console_print("🤖 Generating metadata from transcript...")
+            
             if not title:
-                title = generate_title(
-                    transcript="Audio sermon content",  # Placeholder
-                    speaker_name=speaker_name,
-                    event_type=event_type,
-                    bible_text=bible_text
-                )
+                try:
+                    title = generate_title(
+                        transcript=transcript,
+                        speaker_name=speaker_name,
+                        event_type=event_type,
+                        bible_text=bible_text
+                    )
+                except Exception as e:
+                    logger.warning("LLM title generation failed: %s", e)
+                    title = None
             
             if not description:
-                description = f"A sermon by {speaker_name}"
-                if bible_text:
-                    description += f" on {bible_text}"
-                description += f" from {event_type} on {recorded_date}."
+                try:
+                    description = generate_summary(
+                        transcript,
+                        event_type=event_type,
+                        speaker_name=speaker_name
+                    )
+                except Exception as e:
+                    logger.warning("LLM description generation failed: %s", e)
+                    description = None
             
             if not hashtags:
-                hashtags = f"sermon, {speaker_name.replace(' ', '')}, {event_type.replace(' ', '')}"
+                try:
+                    hashtags = generate_hashtags(transcript)
+                except Exception as e:
+                    logger.warning("LLM hashtag generation failed: %s", e)
+                    hashtags = None
+        else:
+            console_print("⚠️  No transcript available, using basic metadata...")
+        
+        # Fallback metadata generation for any missing fields
+        if not title:
+            title = f"Sermon by {speaker_name}"
+            if bible_text:
+                title += f" - {bible_text}"
+        
+        if not description:
+            description = f"A sermon by {speaker_name}"
+            if bible_text:
+                description += f" on {bible_text}"
+            description += f" from {event_type} on {recorded_date}."
+        
+        if not hashtags:
+            base_tags = ["#sermon", f"#{speaker_name.replace(' ', '')}", f"#{event_type.replace(' ', '').replace('-', '')}"]
+            if bible_text:
+                # Extract book name for hashtag
+                book = bible_text.split()[0] if bible_text else ""
+                if book:
+                    base_tags.append(f"#{book}")
+            hashtags = " ".join(base_tags[:5])  # Limit to 5 tags
         
         console_print(f"📝 Generated title: {title}")
         console_print(f"📝 Generated description: {description[:100]}...")
+        if hashtags:
+            console_print(f"🏷️  Generated hashtags: {hashtags}")
         
         if dry_run:
             console_print("🔍 DRY RUN - Would create sermon with:")
@@ -1112,10 +1217,13 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             console_print(f"  Date: {recorded_date}")
             console_print(f"  Event: {event_type}")
             console_print(f"  Bible Text: {bible_text}")
+            console_print(f"  Description: {description[:100]}...")
+            console_print(f"  Hashtags: {hashtags}")
             console_print(f"  Audio: {enhanced_audio_path}")
+            console_print(f"  Transcript: {len(transcript)} characters" if transcript else "  Transcript: None")
             return True
         
-        # Step 3: Create sermon via API
+        # Step 4: Create sermon via API
         console_print("📤 Creating sermon on SermonAudio...")
         sermon_id = create_new_sermon_api(
             title=title,
@@ -1132,7 +1240,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             logger.error("Failed to create sermon")
             return False
         
-        # Step 4: Upload the audio
+        # Step 5: Upload the audio
         console_print(f"📤 Uploading audio for sermon {sermon_id}...")
         upload_success = upload_audio_file(sermon_id, str(enhanced_audio_path))
         
@@ -1164,12 +1272,20 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'description': description,
                 'hashtags': hashtags,
                 'original_audio': str(audio_path),
-                'processed_audio': str(final_audio_path)
+                'processed_audio': str(final_audio_path),
+                'transcript_length': len(transcript) if transcript else 0,
+                'has_transcript': bool(transcript)
             }
             
             import json
             with open(output_dir / "metadata.json", 'w') as f:
                 json.dump(metadata, f, indent=2)
+            
+            # Save transcript if available
+            if transcript:
+                with open(output_dir / f"{sermon_id}_transcript.txt", 'w', encoding='utf-8') as f:
+                    f.write(transcript)
+                console_print(f"📝 Transcript saved ({len(transcript)} characters)")
             
             console_print(f"📁 Sermon files saved to: {output_dir}")
             return True
@@ -2147,6 +2263,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     new_sermon.add_argument('--subtitle', help='Sermon subtitle')
     new_sermon.add_argument('--description', help='Sermon description (will be generated if not provided)')
     new_sermon.add_argument('--hashtags', help='Hashtags/keywords (will be generated if not provided)')
+    new_sermon.add_argument('--skip-transcription', action='store_true', 
+                          help='Skip audio transcription (faster but less accurate metadata)')
+    new_sermon.add_argument('--whisper-model', default='base', 
+                          choices=['tiny', 'base', 'small', 'medium', 'large'],
+                          help='Whisper model size for transcription (default: base)')
     
     # SERMON UPDATE subcommand  
     update_sermon = subparsers.add_parser(
@@ -2348,7 +2469,9 @@ def handle_new_sermon(args):
         subtitle=args.subtitle,
         description=args.description,
         hashtags=args.hashtags,
-        dry_run=args.dry_run
+        dry_run=args.dry_run,
+        skip_transcription=args.skip_transcription,
+        whisper_model=args.whisper_model
     )
     
     if success:
