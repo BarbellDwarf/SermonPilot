@@ -52,25 +52,50 @@ DEFAULT_SERIES = [
 
 def get_cached_metadata() -> Dict[str, List[str]]:
     """
-    Get cached sermon metadata (pastors, events, series) from session state.
+    Get cached sermon metadata (pastors, events, series) from SQLite database.
+    Falls back to session state and defaults if database is unavailable.
     
     Returns:
         Dictionary with 'pastors', 'event_types', and 'series' lists
     """
-    if 'sermon_metadata' not in st.session_state:
-        st.session_state.sermon_metadata = {
-            'pastors': DEFAULT_PASTORS.copy(),
-            'event_types': DEFAULT_EVENT_TYPES.copy(),  
-            'series': DEFAULT_SERIES.copy(),
-            'last_refresh': None
+    try:
+        from database import get_db
+        db = get_db()
+        
+        # Try to get from SQLite cache first
+        pastors = db.get_cached_metadata('pastors')
+        event_types = db.get_cached_metadata('event_types')
+        series = db.get_cached_metadata('series')
+        
+        # Use cached data if available, otherwise use defaults
+        result = {
+            'pastors': pastors if pastors is not None else DEFAULT_PASTORS.copy(),
+            'event_types': event_types if event_types is not None else DEFAULT_EVENT_TYPES.copy(),
+            'series': series if series is not None else DEFAULT_SERIES.copy(),
+            'last_refresh': None  # TODO: Track refresh time in database
         }
-    
-    return st.session_state.sermon_metadata
+        
+        return result
+        
+    except Exception as e:
+        logger.warning(f"Could not access SQLite cache, falling back to session state: {e}")
+        
+        # Fallback to session state if database fails
+        if 'sermon_metadata' not in st.session_state:
+            st.session_state.sermon_metadata = {
+                'pastors': DEFAULT_PASTORS.copy(),
+                'event_types': DEFAULT_EVENT_TYPES.copy(),  
+                'series': DEFAULT_SERIES.copy(),
+                'last_refresh': None
+            }
+        
+        return st.session_state.sermon_metadata
 
 
 def refresh_metadata_from_api() -> bool:
     """
     Refresh metadata by fetching fresh data from SermonAudio API.
+    Stores results in SQLite cache for persistence across sessions.
     
     Returns:
         True if successful, False if failed (will use cached/default data)
@@ -115,7 +140,28 @@ def refresh_metadata_from_api() -> bool:
             # Clear progress indicators
             progress_bar.empty()
             
-            # Update session state with fresh data
+            # Store in SQLite cache for persistence
+            try:
+                from database import get_db
+                db = get_db()
+                
+                # Cache with 24-hour expiration
+                if pastors:
+                    db.cache_metadata('pastors', pastors, expires_hours=24)
+                    logger.info(f"Cached {len(pastors)} pastors to SQLite")
+                    
+                if event_types:
+                    db.cache_metadata('event_types', event_types, expires_hours=24)
+                    logger.info(f"Cached {len(event_types)} event types to SQLite")
+                    
+                if series:
+                    db.cache_metadata('series', series, expires_hours=24)
+                    logger.info(f"Cached {len(series)} series to SQLite")
+                    
+            except Exception as db_error:
+                logger.warning(f"Could not cache to SQLite, using session state: {db_error}")
+            
+            # Also update session state for immediate use
             metadata = get_cached_metadata()
             
             # Use fetched data if available, otherwise keep defaults
@@ -139,6 +185,9 @@ def refresh_metadata_from_api() -> bool:
             
             import datetime
             metadata['last_refresh'] = datetime.datetime.now()
+            
+            # Update session state
+            st.session_state.sermon_metadata = metadata
             
             st.success(f'✅ Metadata refreshed successfully! Found {len(metadata["pastors"])} pastors, {len(metadata["event_types"])} event types, and {len(metadata["series"])} series.')
             return True
