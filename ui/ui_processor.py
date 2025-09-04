@@ -10,9 +10,12 @@ import asyncio
 import threading
 import time
 import logging
+import warnings
 from typing import Dict, List, Optional, Callable
 from pathlib import Path
 import sys
+import os
+from contextlib import contextmanager
 
 # Add src directory for imports
 ui_dir = Path(__file__).parent
@@ -23,6 +26,24 @@ sys.path.insert(0, str(ui_dir.parent))
 from database import get_db
 
 logger = logging.getLogger(__name__)
+
+@contextmanager
+def suppress_file_warnings():
+    """Suppress file watcher and path-related warnings during processing"""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=UserWarning)
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        # Suppress specific torchaudio warnings
+        warnings.filterwarnings("ignore", message=".*Torchaudio.*")
+        warnings.filterwarnings("ignore", message=".*backend dispatch.*")
+        try:
+            yield
+        except Exception as e:
+            # Handle Windows path errors gracefully
+            if "commonpath" in str(e) or "path" in str(e).lower():
+                logger.debug(f"Path handling warning suppressed: {e}")
+            else:
+                raise
 
 class UIProcessor:
     """Handles real processing operations with UI feedback"""
@@ -43,17 +64,18 @@ class UIProcessor:
         Returns:
             Validation results summary
         """
-        try:
-            # Import validation functions
-            import sermon_updater
-            from sermon_updater import DescriptionValidator
-            
-            # Initialize validator
-            config = st.session_state.get('config', {})
-            if not config:
-                raise ValueError("No configuration available")
-            
-            validator = DescriptionValidator(config)
+        with suppress_file_warnings():
+            try:
+                # Import validation functions from sermon_updater
+                from sermon_updater import DescriptionValidator
+                
+                # Get config from session state
+                config = st.session_state.get('config', {})
+                if not config:
+                    raise ValueError("No configuration available")
+                
+                # Initialize validator with config dict (not file path)
+                validator = DescriptionValidator(config)
             
             results = {
                 'total': len(sermon_ids),
@@ -89,8 +111,8 @@ class UIProcessor:
                             validation_result.is_valid,
                             validation_result.validation_score,
                             validation_result.validation_reason,
-                            [], # criteria_met - would need to be extracted from result
-                            []  # criteria_failed - would need to be extracted from result
+                            validation_result.criteria_met, 
+                            validation_result.criteria_failed
                         )
                         
                         results['details'].append({
@@ -233,41 +255,42 @@ def show_validation_progress(sermon_ids: List[str]):
     Args:
         sermon_ids: List of sermon IDs being validated
     """
-    processor = get_processor()
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    def progress_callback(progress: float, message: str):
-        progress_bar.progress(progress)
-        status_text.text(message)
-    
-    # Run validation
-    with st.spinner('🔍 Running validation...'):
-        try:
-            results = processor.validate_sermons(sermon_ids, progress_callback)
-            
-            # Show results
-            progress_bar.progress(1.0)
-            status_text.text("✅ Validation completed!")
-            
-            # Display summary
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Total", results['total'])
-            with col2:
-                st.metric("Valid", results['valid'])
-            with col3:
-                st.metric("Invalid", results['invalid'])
-            with col4:
-                st.metric("Errors", results['errors'])
-            
-            return results
-            
-        except Exception as e:
-            st.error(f"❌ Validation failed: {e}")
-            return None
+    with suppress_file_warnings():
+        processor = get_processor()
+        
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        def progress_callback(progress: float, message: str):
+            progress_bar.progress(progress)
+            status_text.text(message)
+        
+        # Run validation
+        with st.spinner('🔍 Running validation...'):
+            try:
+                results = processor.validate_sermons(sermon_ids, progress_callback)
+                
+                # Show results
+                progress_bar.progress(1.0)
+                status_text.text("✅ Validation completed!")
+                
+                # Display summary
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Total", results['total'])
+                with col2:
+                    st.metric("Valid", results['valid'])
+                with col3:
+                    st.metric("Invalid", results['invalid'])
+                with col4:
+                    st.metric("Errors", results['errors'])
+                
+                return results
+                
+            except Exception as e:
+                st.error(f"❌ Validation failed: {e}")
+                return None
 
 
 def show_processing_status():

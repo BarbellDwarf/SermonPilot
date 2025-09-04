@@ -22,9 +22,15 @@ from pathlib import Path
 # Suppress PyTorch/Torchaudio warnings before any imports
 warnings.filterwarnings('ignore', category=UserWarning, message='.*Torchaudio.*backend.*')
 warnings.filterwarnings('ignore', category=UserWarning, message='.*torchaudio.*')
+warnings.filterwarnings('ignore', category=UserWarning, message='.*backend dispatch.*')
+warnings.filterwarnings('ignore', category=RuntimeWarning)
 os.environ["TORCHAUDIO_USE_BACKEND_DISPATCHER"] = "1"
 os.environ["TORCHAUDIO_ENABLE_BACKEND_DISPATCH"] = "1"
 os.environ["TORCHAUDIO_BACKEND"] = "soundfile"
+
+# Suppress Windows path warnings
+warnings.filterwarnings('ignore', message='.*commonpath.*')
+warnings.filterwarnings('ignore', message='.*path.*dispatcher.*')
 
 import streamlit as st
 
