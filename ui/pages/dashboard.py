@@ -145,8 +145,9 @@ def show_recent_activity():
         st.dataframe(df, width='stretch')
 
 def show_quick_actions():
-    """Show quick action buttons"""
-    st.markdown("### ⚡ Quick Actions")
+    """Show quick action shortcuts for common tasks"""
+    st.markdown("### ⚡ Quick Start")
+    st.markdown("*Quick shortcuts to get started with common tasks*")
     
     col1, col2, col3 = st.columns(3)
     
@@ -154,16 +155,19 @@ def show_quick_actions():
         if st.button("🎵 Process New Sermon", type="primary", width='stretch'):
             st.session_state.current_page = 'new_sermon'
             st.rerun()
+        st.caption("Upload and process a single sermon")
     
     with col2:
         if st.button("🔄 Batch Update", width='stretch'):
             st.session_state.current_page = 'batch_update'
             st.rerun()
+        st.caption("Update multiple sermons at once")
     
     with col3:
         if st.button("✅ Validate Descriptions", width='stretch'):
             st.session_state.current_page = 'validation'
             st.rerun()
+        st.caption("Check description quality and errors")
 
 def show_system_status():
     """Show detailed system status"""
