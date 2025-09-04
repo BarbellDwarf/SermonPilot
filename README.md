@@ -4,13 +4,20 @@ Automated sermon processing tool that enhances audio quality, generates AI summa
 
 ## Features
 
+- **Complete Sermon Workflow**:
+  - **Create new sermons** from audio files with AI-generated metadata
+  - **Update existing sermons** with enhanced audio and improved descriptions
+  - **Metadata-only processing** for quick content updates
+  - **Validation and regeneration** of sermon descriptions
+
 - **Audio Enhancement**:
-  - AI-powered noise reduction
+  - AI-powered noise reduction (DeepFilterNet, Resemble Enhance)
   - Audio amplification and normalization
   - Dynamic range compression
   - Support for both native Python processing and Audacity integration
 
 - **AI-Powered Content Generation**:
+  - **Audio transcription** using OpenAI Whisper (multiple model sizes)
   - Automatic sermon transcript summarization
   - Intelligent hashtag generation with verification system
   - Two-pass hashtag processing: generation + verification for clean output
@@ -21,6 +28,7 @@ Automated sermon processing tool that enhances audio quality, generates AI summa
   - Pull sermons by date, event type, or custom criteria
   - Update sermon descriptions and keywords
   - Upload processed audio files
+  - Create new sermons directly from audio files
 
 ## Installation
 
@@ -155,41 +163,77 @@ Edit `config.yaml` or `.env` with your settings:
 
 ## Usage
 
-### Quick Start
+### Creating New Sermons from Audio Files
+
+Create a new sermon with AI-generated metadata:
+```bash
+python sermon_updater.py new-sermon audio.mp3 --speaker "Pastor Smith" --date "2024-01-15"
+```
+
+With Bible reference for better content generation:
+```bash
+python sermon_updater.py new-sermon audio.mp3 --speaker "Pastor Smith" --date "2024-01-15" --bible-text "John 3:16"
+```
+
+Fast processing without transcription:
+```bash
+python sermon_updater.py new-sermon audio.mp3 --speaker "Pastor Smith" --date "2024-01-15" --skip-transcription
+```
+
+Test what would be created (dry run):
+```bash
+python sermon_updater.py --dry-run new-sermon audio.mp3 --speaker "Pastor Smith" --date "2024-01-15"
+```
+
+### Processing Existing Sermons
 
 List sermons from last 30 days (default window):
 ```bash
-python sermon_updater.py --list-only
+python sermon_updater.py list
 ```
 
 Process a single sermon by ID:
 ```bash
-python sermon_updater.py --sermon-id 1234567890123
+python sermon_updater.py sermon-update --sermon-id 1234567890123
 ```
 
 Process all Sunday AM sermons in last 14 days (dry run):
 ```bash
-python sermon_updater.py --since-days 14 --event-type "Sunday - AM" --require-audio --dry-run
+python sermon_updater.py sermon-update --since-days 14 --event-type "Sunday - AM" --require-audio --dry-run
 ```
+
+Update only metadata (skip audio processing):
+```bash
+python sermon_updater.py metadata-update --speaker-name "Pastor Smith" --since-days 7
+```
+
+### Validation and Quality Control
+
+Validate sermon descriptions:
+```bash
+python sermon_updater.py validation --validate-descriptions --limit 10
+```
+
+### Additional Examples
 
 Process sermons in an explicit date range:
 ```bash
-python sermon_updater.py --date-range 2024-01-01 2024-01-31 --auto-yes
+python sermon_updater.py sermon-update --date-range 2024-01-01 2024-01-31 --auto-yes
 ```
 
 Skip uploads (keep local files only):
 ```bash
-python sermon_updater.py --sermon-id 1234567890123 --no-upload
+python sermon_updater.py sermon-update --sermon-id 1234567890123 --no-upload
 ```
 
 Use alternate config:
 ```bash
-python sermon_updater.py --config custom-config.yaml --list-only
+python sermon_updater.py --config custom-config.yaml list
 ```
 
 Verbose / debug output:
 ```bash
-python sermon_updater.py -v --sermon-id 1234567890123
+python sermon_updater.py -v sermon-update --sermon-id 1234567890123
 ```
 
 ### Core CLI Flags
