@@ -9,6 +9,7 @@ import streamlit as st
 import yaml
 from pathlib import Path
 import json
+import sys
 
 def show_settings():
     """Main settings management interface"""
@@ -140,10 +141,17 @@ def show_llm_settings():
     col1, col2 = st.columns(2)
     
     with col1:
+        provider_options = ["ollama", "openai", "anthropic", "xai", "google", "groq"]
+        current_provider = primary_config.get('provider', 'ollama')
+        try:
+            provider_index = provider_options.index(current_provider)
+        except ValueError:
+            provider_index = 0  # Default to ollama if unknown provider
+            
         primary_provider = st.selectbox(
             "Primary Provider",
-            options=["ollama", "openai"],
-            index=0 if primary_config.get('provider') == 'ollama' else 1,
+            options=provider_options,
+            index=provider_index,
             key="primary_provider"
         )
     
@@ -154,8 +162,16 @@ def show_llm_settings():
     # Provider-specific settings
     if primary_provider == "ollama":
         show_ollama_settings("Primary", primary_config.get('ollama', {}), "primary")
-    else:
+    elif primary_provider == "openai":
         show_openai_settings("Primary", primary_config.get('openai', {}), "primary")
+    elif primary_provider == "anthropic":
+        show_anthropic_settings("Primary", primary_config.get('anthropic', {}), "primary")
+    elif primary_provider == "xai":
+        show_xai_settings("Primary", primary_config.get('xai', {}), "primary")
+    elif primary_provider == "google":
+        show_google_settings("Primary", primary_config.get('google', {}), "primary")
+    elif primary_provider == "groq":
+        show_groq_settings("Primary", primary_config.get('groq', {}), "primary")
     
     # Fallback Provider
     st.markdown("#### 🥈 Fallback Provider")
@@ -173,18 +189,33 @@ def show_llm_settings():
     
     with col2:
         if fallback_enabled:
+            provider_options = ["openai", "ollama", "anthropic", "xai", "google", "groq"]
+            current_fallback_provider = fallback_config.get('provider', 'openai')
+            try:
+                fallback_provider_index = provider_options.index(current_fallback_provider)
+            except ValueError:
+                fallback_provider_index = 0  # Default to openai if unknown provider
+                
             fallback_provider = st.selectbox(
                 "Fallback Provider",
-                options=["openai", "ollama"],
-                index=0 if fallback_config.get('provider') == 'openai' else 1,
+                options=provider_options,
+                index=fallback_provider_index,
                 key="fallback_provider"
             )
     
     if fallback_enabled:
         if fallback_provider == "ollama":
             show_ollama_settings("Fallback", fallback_config.get('ollama', {}), "fallback")
-        else:
+        elif fallback_provider == "openai":
             show_openai_settings("Fallback", fallback_config.get('openai', {}), "fallback")
+        elif fallback_provider == "anthropic":
+            show_anthropic_settings("Fallback", fallback_config.get('anthropic', {}), "fallback")
+        elif fallback_provider == "xai":
+            show_xai_settings("Fallback", fallback_config.get('xai', {}), "fallback")
+        elif fallback_provider == "google":
+            show_google_settings("Fallback", fallback_config.get('google', {}), "fallback")
+        elif fallback_provider == "groq":
+            show_groq_settings("Fallback", fallback_config.get('groq', {}), "fallback")
     
     # Validator Provider
     st.markdown("#### ✅ Validator Provider (Optional)")
@@ -201,24 +232,39 @@ def show_llm_settings():
         col1, col2 = st.columns(2)
         
         with col1:
+            provider_options = ["ollama", "openai", "anthropic", "xai", "google", "groq"]
+            current_validator_provider = validator_config.get('provider', 'ollama')
+            try:
+                validator_provider_index = provider_options.index(current_validator_provider)
+            except ValueError:
+                validator_provider_index = 0  # Default to ollama if unknown provider
+                
             validator_provider = st.selectbox(
                 "Validator Provider",
-                options=["ollama", "openai"],
-                index=0 if validator_config.get('provider') == 'ollama' else 1,
+                options=provider_options,
+                index=validator_provider_index,
                 key="validator_provider"
             )
         
         if validator_provider == "ollama":
             show_ollama_settings("Validator", validator_config.get('ollama', {}), "validator")
-        else:
+        elif validator_provider == "openai":
             show_openai_settings("Validator", validator_config.get('openai', {}), "validator")
+        elif validator_provider == "anthropic":
+            show_anthropic_settings("Validator", validator_config.get('anthropic', {}), "validator")
+        elif validator_provider == "xai":
+            show_xai_settings("Validator", validator_config.get('xai', {}), "validator")
+        elif validator_provider == "google":
+            show_google_settings("Validator", validator_config.get('google', {}), "validator")
+        elif validator_provider == "groq":
+            show_groq_settings("Validator", validator_config.get('groq', {}), "validator")
     
     # Save button
     if st.button("💾 Save LLM Settings", type="primary"):
         save_llm_settings()
 
 def show_ollama_settings(label, config, key_prefix):
-    """Show Ollama-specific settings"""
+    """Show Ollama-specific settings with model auto-detection"""
     col1, col2 = st.columns(2)
     
     with col1:
@@ -229,11 +275,49 @@ def show_ollama_settings(label, config, key_prefix):
         )
     
     with col2:
-        model = st.text_input(
-            f"{label} Ollama Model",
-            value=config.get('model', 'llama3'),
-            key=f"{key_prefix}_ollama_model"
-        )
+        # Try to get available models from Ollama
+        available_models = []
+        if st.button(f"🔄 Refresh {label} Models", key=f"{key_prefix}_refresh_models"):
+            try:
+                # Import here to avoid issues if not installed
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+                from llm_manager import OllamaProvider
+                
+                ollama_provider = OllamaProvider({'host': host})
+                available_models = ollama_provider.list_models()
+                st.session_state[f"{key_prefix}_ollama_models"] = available_models
+                
+                if available_models:
+                    st.success(f"Found {len(available_models)} models")
+                else:
+                    st.warning("No models found - check Ollama connection")
+            except Exception as e:
+                st.error(f"Failed to fetch models: {e}")
+        
+        # Get cached models if available
+        cached_models = st.session_state.get(f"{key_prefix}_ollama_models", [])
+        
+        if cached_models:
+            current_model = config.get('model', 'llama3')
+            try:
+                model_index = cached_models.index(current_model)
+            except ValueError:
+                model_index = 0 if cached_models else None
+                
+            model = st.selectbox(
+                f"{label} Ollama Model",
+                options=cached_models,
+                index=model_index,
+                key=f"{key_prefix}_ollama_model",
+                help="Select from available Ollama models"
+            )
+        else:
+            model = st.text_input(
+                f"{label} Ollama Model",
+                value=config.get('model', 'llama3'),
+                key=f"{key_prefix}_ollama_model",
+                help="Enter model name (click Refresh to see available models)"
+            )
 
 def show_openai_settings(label, config, key_prefix):
     """Show OpenAI-specific settings"""
@@ -261,6 +345,161 @@ def show_openai_settings(label, config, key_prefix):
             value=config.get('model', 'gpt-3.5-turbo'),
             key=f"{key_prefix}_openai_model"
         )
+
+def show_anthropic_settings(label, config, key_prefix):
+    """Show Anthropic-specific settings with auto-populated defaults"""
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        api_key = st.text_input(
+            f"{label} API Key",
+            value=config.get('api_key', ''),
+            type="password",
+            key=f"{key_prefix}_anthropic_key",
+            help="Your Anthropic API key (sk-ant-...)"
+        )
+    
+    with col2:
+        # Auto-populate default model for Anthropic
+        default_model = 'claude-3-5-sonnet-20241022'
+        model_options = [
+            'claude-3-5-sonnet-20241022',
+            'claude-3-5-haiku-20241022', 
+            'claude-3-opus-20240229',
+            'claude-3-sonnet-20240229',
+            'claude-3-haiku-20240307'
+        ]
+        
+        current_model = config.get('model', default_model)
+        try:
+            model_index = model_options.index(current_model)
+        except ValueError:
+            model_index = 0
+            
+        model = st.selectbox(
+            f"{label} Model",
+            options=model_options,
+            index=model_index,
+            key=f"{key_prefix}_anthropic_model",
+            help="Claude model to use (auto-configured endpoint)"
+        )
+    
+    st.info("💡 Anthropic endpoint (https://api.anthropic.com/v1) is automatically configured")
+
+def show_xai_settings(label, config, key_prefix):
+    """Show xAI-specific settings with auto-populated defaults"""
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        api_key = st.text_input(
+            f"{label} API Key",
+            value=config.get('api_key', ''),
+            type="password",
+            key=f"{key_prefix}_xai_key",
+            help="Your xAI API key"
+        )
+    
+    with col2:
+        # Auto-populate default model for xAI
+        default_model = 'grok-beta'
+        model_options = [
+            'grok-beta',
+            'grok-vision-beta'
+        ]
+        
+        current_model = config.get('model', default_model)
+        try:
+            model_index = model_options.index(current_model)
+        except ValueError:
+            model_index = 0
+            
+        model = st.selectbox(
+            f"{label} Model",
+            options=model_options,
+            index=model_index,
+            key=f"{key_prefix}_xai_model",
+            help="Grok model to use (auto-configured endpoint)"
+        )
+    
+    st.info("💡 xAI endpoint (https://api.x.ai/v1) is automatically configured")
+
+def show_google_settings(label, config, key_prefix):
+    """Show Google-specific settings with auto-populated defaults"""
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        api_key = st.text_input(
+            f"{label} API Key",
+            value=config.get('api_key', ''),
+            type="password",
+            key=f"{key_prefix}_google_key",
+            help="Your Google AI Studio API key"
+        )
+    
+    with col2:
+        # Auto-populate default model for Google
+        default_model = 'gemini-1.5-flash'
+        model_options = [
+            'gemini-1.5-flash',
+            'gemini-1.5-pro',
+            'gemini-1.0-pro'
+        ]
+        
+        current_model = config.get('model', default_model)
+        try:
+            model_index = model_options.index(current_model)
+        except ValueError:
+            model_index = 0
+            
+        model = st.selectbox(
+            f"{label} Model",
+            options=model_options,
+            index=model_index,
+            key=f"{key_prefix}_google_model",
+            help="Gemini model to use (auto-configured endpoint)"
+        )
+    
+    st.info("💡 Google AI endpoint (https://generativelanguage.googleapis.com/v1beta) is automatically configured")
+
+def show_groq_settings(label, config, key_prefix):
+    """Show Groq-specific settings with auto-populated defaults"""
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        api_key = st.text_input(
+            f"{label} API Key",
+            value=config.get('api_key', ''),
+            type="password",
+            key=f"{key_prefix}_groq_key",
+            help="Your Groq API key (gsk-...)"
+        )
+    
+    with col2:
+        # Auto-populate default model for Groq
+        default_model = 'llama-3.1-70b-versatile'
+        model_options = [
+            'llama-3.1-70b-versatile',
+            'llama-3.1-8b-instant',
+            'llama-3.2-90b-text-preview',
+            'mixtral-8x7b-32768',
+            'gemma2-9b-it'
+        ]
+        
+        current_model = config.get('model', default_model)
+        try:
+            model_index = model_options.index(current_model)
+        except ValueError:
+            model_index = 0
+            
+        model = st.selectbox(
+            f"{label} Model",
+            options=model_options,
+            index=model_index,
+            key=f"{key_prefix}_groq_model",
+            help="Groq model to use (auto-configured endpoint)"
+        )
+    
+    st.info("💡 Groq endpoint (https://api.groq.com/openai/v1) is automatically configured")
 
 def show_audio_settings():
     """Audio processing configuration"""
