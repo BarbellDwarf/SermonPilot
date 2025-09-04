@@ -1,0 +1,15 @@
+Defaulting to user installation because normal site-packages is not writeable
+Collecting sermonaudio
+  Downloading sermonaudio-6.15.2-py3-none-any.whl.metadata
+     - 4.0 kB ? 0:00:00
+Requirement already satisfied: requests>=2.19.1 in /usr/lib/python3/dist-packages (from sermonaudio) (2.31.0)
+Requirement already satisfied: pytz>=2018.5 in /usr/lib/python3/dist-packages (from sermonaudio) (2024.1)
+Collecting osis-book-tools>=1.0.1 (from sermonaudio)
+  Downloading osis_book_tools-1.0.1-py3-none-any.whl.metadata
+     - 2.3 kB ? 0:00:00
+Downloading sermonaudio-6.15.2-py3-none-any.whl
+   - 27.5 kB 47.8 MB/s 0:00:00
+Downloading osis_book_tools-1.0.1-py3-none-any.whl
+   - 7.2 kB 27.8 MB/s 0:00:00
+Installing collected packages: osis-book-tools, sermonaudio
+Successfully installed osis-book-tools-1.0.1 sermonaudio-6.15.2

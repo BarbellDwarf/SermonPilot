@@ -76,7 +76,11 @@ class AudioProcessor:
     """Advanced audio processor for sermon audio enhancement with multiple AI models."""
 
     def __init__(self, enhancement_method: str = "resemble_enhance"):
-        """Initialize the audio processor with specified enhancement method."""
+        """Initialize the audio processor with specified enhancement method.
+        
+        Note: Models are loaded lazily when first needed to avoid unnecessary 
+        initialization during validation-only operations.
+        """
         self.sample_rate = 44100  # Default sample rate
         self.enhancement_method = enhancement_method.lower()
 
@@ -91,19 +95,33 @@ class AudioProcessor:
         self.df_model = None
         self.df_state = None
         self.resemble_model = None
+        self._models_initialized = False
 
+        # Validate enhancement method but don't initialize models yet
+        if self.enhancement_method not in ["deepfilternet", "resemble_enhance", "none"]:
+            logger.warning(
+                f"Unknown enhancement method: {enhancement_method}, "
+                f"falling back to DeepFilterNet"
+            )
+            self.enhancement_method = "deepfilternet"
+        
+        logger.info(f"AudioProcessor initialized with {self.enhancement_method} method (models will load on first use)")
+
+    def _ensure_models_initialized(self):
+        """Ensure models are initialized before use. Called lazily on first processing."""
+        if self._models_initialized:
+            return
+            
+        logger.info(f"Initializing {self.enhancement_method} model for audio processing...")
+        
         if self.enhancement_method == "deepfilternet":
             self._init_deepfilternet()
         elif self.enhancement_method == "resemble_enhance":
             self._init_resemble_enhance()
         elif self.enhancement_method == "none":
             logger.info("No AI enhancement method selected")
-        else:
-            logger.warning(
-                f"Unknown enhancement method: {enhancement_method}, "
-                f"falling back to DeepFilterNet"
-            )
-            self._init_deepfilternet()
+        
+        self._models_initialized = True
 
     def _init_deepfilternet(self):
         """Initialize DeepFilterNet model."""
@@ -961,10 +979,10 @@ class AudioProcessor:
                            normalize: bool = True,
                            gain_db: float = 0.0,
                            target_level_db: float = -22.0,
-                    max_duration_minutes: int | None = None) -> bool:
+                           max_duration_minutes: int | None = None) -> bool:
         """
         Complete sermon audio processing pipeline with safeguards for large files.
-                        max_duration_minutes: Optional[int] = None) -> bool:
+
         Args:
             input_path: Input audio file path
             output_path: Output audio file path
@@ -973,11 +991,14 @@ class AudioProcessor:
             normalize: Apply normalization
             gain_db: Amplification gain in dB
             target_level_db: Target normalization level in dB
-            max_duration_minutes: Maximum duration to process in minutes (for safety)
+            max_duration_minutes: Maximum duration to process in minutes (None for no limit)
 
         Returns:
-                        max_duration_minutes: Maximum duration to process in minutes (None for no limit)
+            Success status
         """
+        # Ensure models are initialized before processing
+        self._ensure_models_initialized()
+        
         try:
             # Load audio
             audio_data, sample_rate = self.load_audio(input_path)

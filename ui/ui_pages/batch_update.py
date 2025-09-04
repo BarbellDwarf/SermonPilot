@@ -9,6 +9,17 @@ import streamlit as st
 import pandas as pd
 import datetime
 from pathlib import Path
+import sys
+
+# Add parent directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent))
+from sermon_metadata import (
+    create_pastor_selectbox, 
+    create_event_type_selectbox,
+    get_pastors,
+    get_event_types,
+    show_metadata_refresh_section
+)
 
 def show_batch_update():
     """Main batch processing interface"""
@@ -42,6 +53,9 @@ def show_filter_and_select():
     """Sermon filtering and selection interface"""
     st.markdown("### 🔍 Filter Sermons")
     
+    # Show metadata refresh section
+    show_metadata_refresh_section()
+    
     # Date range filter
     col1, col2 = st.columns(2)
     
@@ -63,16 +77,32 @@ def show_filter_and_select():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        speaker_filter = st.text_input(
+        # Dynamic pastor filter
+        pastors = get_pastors()
+        pastor_options = ["All"] + pastors
+        speaker_filter_select = st.selectbox(
             "Speaker Name (optional)",
-            placeholder="Pastor John Smith",
-            key="batch_speaker_filter"
+            options=pastor_options,
+            key="batch_speaker_filter_select"
         )
+        
+        # Allow custom input if "All" is not selected
+        if speaker_filter_select != "All":
+            speaker_filter = speaker_filter_select
+        else:
+            speaker_filter = st.text_input(
+                "Or enter custom speaker:",
+                placeholder="Custom speaker name",
+                key="batch_speaker_filter_custom"
+            )
     
     with col2:
+        # Dynamic event type filter
+        event_types = get_event_types()
+        event_options = ["All"] + event_types
         event_type_filter = st.selectbox(
             "Event Type (optional)",
-            options=["All", "Sunday - AM", "Sunday - PM", "Wednesday Service", "Bible Study", "Special Event"],
+            options=event_options,
             key="batch_event_filter"
         )
     
@@ -118,14 +148,14 @@ def show_filter_and_select():
     col1, col2, col3 = st.columns([2, 1, 1])
     
     with col1:
-        if st.button("🔍 Search Sermons", type="primary", use_container_width=True):
+        if st.button("🔍 Search Sermons", type="primary", width='stretch'):
             search_sermons()
     
     with col2:
         max_results = st.number_input("Max Results", min_value=1, max_value=1000, value=100)
     
     with col3:
-        if st.button("📥 Export List", use_container_width=True):
+        if st.button("📥 Export List", width='stretch'):
             export_sermon_list()
     
     # Display results
@@ -274,19 +304,19 @@ def show_execute_batch():
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if st.button("▶️ Start Batch", type="primary", use_container_width=True):
+        if st.button("▶️ Start Batch", type="primary", width='stretch'):
             start_batch_processing()
     
     with col2:
-        if st.button("⏸️ Pause", use_container_width=True, disabled=not st.session_state.get('batch_processing')):
+        if st.button("⏸️ Pause", width='stretch', disabled=not st.session_state.get('batch_processing')):
             pause_batch_processing()
     
     with col3:
-        if st.button("⏹️ Stop", use_container_width=True, disabled=not st.session_state.get('batch_processing')):
+        if st.button("⏹️ Stop", width='stretch', disabled=not st.session_state.get('batch_processing')):
             stop_batch_processing()
     
     with col4:
-        if st.button("🔄 Reset Queue", use_container_width=True):
+        if st.button("🔄 Reset Queue", width='stretch'):
             reset_batch_queue()
     
     # Show processing status
@@ -348,7 +378,7 @@ def show_batch_results():
         
         st.dataframe(
             filtered_df[['sermon_id', 'title', 'speaker', 'Status', 'processing_time', 'actions_performed']],
-            use_container_width=True,
+            width='stretch',
             hide_index=True
         )
     
@@ -356,54 +386,101 @@ def show_batch_results():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("📥 Export Results (CSV)", use_container_width=True):
+        if st.button("📥 Export Results (CSV)", width='stretch'):
             export_results_csv()
     
     with col2:
-        if st.button("📄 Generate Report", use_container_width=True):
+        if st.button("📄 Generate Report", width='stretch'):
             generate_batch_report()
 
 def search_sermons():
     """Search for sermons based on filters"""
-    # Mock search results
-    mock_sermons = [
-        {
-            'sermon_id': '1234567890123',
-            'title': 'The Grace of God',
-            'speaker': 'Pastor John Smith',
-            'date': '2024-01-10',
-            'event_type': 'Sunday - AM',
-            'has_description': False,
-            'has_hashtags': True,
-            'has_audio': True,
-            'duration': 32
-        },
-        {
-            'sermon_id': '1234567890124', 
-            'title': 'Walking in Faith',
-            'speaker': 'Dr. Sarah Johnson',
-            'date': '2024-01-08',
-            'event_type': 'Sunday - PM',
-            'has_description': True,
-            'has_hashtags': False,
-            'has_audio': True,
-            'duration': 28
-        },
-        {
-            'sermon_id': '1234567890125',
-            'title': 'Hope in Trials', 
-            'speaker': 'Rev. Michael Brown',
-            'date': '2024-01-05',
-            'event_type': 'Wednesday Service',
-            'has_description': False,
-            'has_hashtags': False,
-            'has_audio': True,
-            'duration': 35
-        }
-    ]
-    
-    st.session_state.search_results = mock_sermons
-    st.success(f"Found {len(mock_sermons)} matching sermons")
+    try:
+        # Import sermon_updater functions
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+        import sermon_updater
+        
+        # Get filter values from session state
+        start_date = st.session_state.get('batch_start_date')
+        end_date = st.session_state.get('batch_end_date')
+        speaker_filter_custom = st.session_state.get('batch_speaker_filter_custom', '').strip()
+        speaker_filter_select = st.session_state.get('batch_speaker_filter_select', 'All')
+        event_type_filter = st.session_state.get('batch_event_filter', 'All')
+        content_requirement = st.session_state.get('batch_content_filter', 'Any')
+        
+        # Determine speaker filter
+        speaker_filter = None
+        if speaker_filter_select != "All":
+            speaker_filter = speaker_filter_select
+        elif speaker_filter_custom:
+            speaker_filter = speaker_filter_custom
+        
+        # Use real SermonAudio API
+        with st.spinner('🔍 Searching SermonAudio...'):
+            progress_bar = st.progress(0)
+            progress_bar.progress(0.2)
+            
+            # Use the existing date range function from sermon_updater
+            if start_date and end_date:
+                start_str = start_date.strftime('%Y-%m-%d')
+                end_str = end_date.strftime('%Y-%m-%d')
+                sermons = sermon_updater.get_sermons_in_date_range(start_str, end_str)
+            else:
+                # Default to last 30 days
+                end_date = datetime.date.today()
+                start_date = end_date - datetime.timedelta(days=30)
+                start_str = start_date.strftime('%Y-%m-%d')
+                end_str = end_date.strftime('%Y-%m-%d')
+                sermons = sermon_updater.get_sermons_in_date_range(start_str, end_str)
+            
+            progress_bar.progress(0.6)
+            
+            # Filter results based on criteria
+            filtered_sermons = []
+            for sermon in sermons:
+                # Apply speaker filter
+                if speaker_filter and sermon.get('speakerName'):
+                    if speaker_filter.lower() not in sermon['speakerName'].lower():
+                        continue
+                
+                # Apply event type filter
+                if event_type_filter != "All" and sermon.get('eventType'):
+                    if event_type_filter != sermon['eventType']:
+                        continue
+                
+                # Convert to UI format
+                filtered_sermons.append({
+                    'sermon_id': sermon.get('sermonID', ''),
+                    'title': sermon.get('displayTitle', 'Untitled'),
+                    'speaker': sermon.get('speakerName', 'Unknown'),
+                    'date': sermon.get('preachDate', ''),
+                    'event_type': sermon.get('eventType', ''),
+                    'has_description': False,  # TODO: Check actual metadata
+                    'has_hashtags': False,    # TODO: Check actual metadata
+                    'has_audio': True,        # Assume true from API
+                    'duration': 0             # Not available in lite API
+                })
+            
+            # Apply content filters
+            if content_requirement == "Missing Description":
+                filtered_sermons = [s for s in filtered_sermons if not s['has_description']]
+            elif content_requirement == "Missing Hashtags":
+                filtered_sermons = [s for s in filtered_sermons if not s['has_hashtags']]
+            elif content_requirement == "Both Missing":
+                filtered_sermons = [s for s in filtered_sermons if not s['has_description'] and not s['has_hashtags']]
+            
+            progress_bar.progress(1.0)
+            progress_bar.empty()
+            
+            st.session_state.search_results = filtered_sermons
+            st.success(f"✅ Found {len(filtered_sermons)} matching sermons")
+            
+    except Exception as e:
+        st.error(f"❌ Error searching sermons: {str(e)}")
+        # Fallback to empty results
+        st.session_state.search_results = []
 
 def show_search_results():
     """Display search results with selection"""
@@ -430,7 +507,7 @@ def show_search_results():
             "has_audio": st.column_config.CheckboxColumn("Has Audio"),
         },
         hide_index=True,
-        use_container_width=True
+        width='stretch'
     )
     
     # Update selected sermons

@@ -184,6 +184,82 @@ class OpenAIProvider(LLMProvider):
             raise Exception(f"OpenAI API error: {e}") from e
 
 
+class AnthropicProvider(OpenAIProvider):
+    """Anthropic Claude LLM provider."""
+
+    def __init__(self, config: dict[str, Any]):
+        # Set default model if not specified
+        if 'model' not in config:
+            config['model'] = 'claude-3-5-sonnet-20241022'
+        
+        # Set Anthropic API base URL if not specified
+        if 'base_url' not in config:
+            config['base_url'] = 'https://api.anthropic.com/v1'
+        
+        super().__init__(config)
+
+    def __str__(self) -> str:
+        """String representation of the provider."""
+        return f"AnthropicProvider(model={self.model})"
+
+
+class XAIProvider(OpenAIProvider):
+    """xAI Grok LLM provider."""
+
+    def __init__(self, config: dict[str, Any]):
+        # Set default model if not specified
+        if 'model' not in config:
+            config['model'] = 'grok-beta'
+        
+        # Set xAI API base URL if not specified
+        if 'base_url' not in config:
+            config['base_url'] = 'https://api.x.ai/v1'
+        
+        super().__init__(config)
+
+    def __str__(self) -> str:
+        """String representation of the provider."""
+        return f"XAIProvider(model={self.model})"
+
+
+class GoogleProvider(OpenAIProvider):
+    """Google Gemini LLM provider."""
+
+    def __init__(self, config: dict[str, Any]):
+        # Set default model if not specified
+        if 'model' not in config:
+            config['model'] = 'gemini-1.5-flash'
+        
+        # Set Google AI API base URL if not specified
+        if 'base_url' not in config:
+            config['base_url'] = 'https://generativelanguage.googleapis.com/v1beta'
+        
+        super().__init__(config)
+
+    def __str__(self) -> str:
+        """String representation of the provider."""
+        return f"GoogleProvider(model={self.model})"
+
+
+class GroqProvider(OpenAIProvider):
+    """Groq LLM provider."""
+
+    def __init__(self, config: dict[str, Any]):
+        # Set default model if not specified
+        if 'model' not in config:
+            config['model'] = 'llama-3.1-70b-versatile'
+        
+        # Set Groq API base URL if not specified
+        if 'base_url' not in config:
+            config['base_url'] = 'https://api.groq.com/openai/v1'
+        
+        super().__init__(config)
+
+    def __str__(self) -> str:
+        """String representation of the provider."""
+        return f"GroqProvider(model={self.model})"
+
+
 class LLMManager:
     """Manages LLM providers with primary and fallback support."""
 
@@ -214,18 +290,34 @@ class LLMManager:
         fallback_config = llm_config.get('fallback', {})
         if fallback_config.get('enabled', False):
             fallback_provider_type = fallback_config.get('provider', 'openai')
+            fallback_provider_config = fallback_config.get(fallback_provider_type, {})
 
+            # Check if fallback provider has required configuration
             try:
-                self.fallback_provider = self._create_provider(
-                    fallback_provider_type,
-                    fallback_config.get(fallback_provider_type, {})
-                )
-                logger.info(f"Fallback LLM provider initialized: {fallback_provider_type}")
+                if fallback_provider_type in ['openai', 'anthropic', 'xai', 'google', 'groq']:
+                    # These providers require an API key
+                    if not fallback_provider_config.get('api_key'):
+                        logger.info(f"Fallback provider {fallback_provider_type} disabled: no API key configured")
+                        self.fallback_provider = None
+                    else:
+                        self.fallback_provider = self._create_provider(
+                            fallback_provider_type,
+                            fallback_provider_config
+                        )
+                        logger.info(f"Fallback LLM provider initialized: {fallback_provider_type}")
+                else:
+                    # Ollama or other providers that may not require API keys
+                    self.fallback_provider = self._create_provider(
+                        fallback_provider_type,
+                        fallback_provider_config
+                    )
+                    logger.info(f"Fallback LLM provider initialized: {fallback_provider_type}")
             except Exception as e:
                 warning_msg = (
                     f"Failed to initialize fallback provider {fallback_provider_type}: {e}"
                 )
-                logger.warning(warning_msg)
+                logger.info(warning_msg)  # Changed from warning to info to reduce noise
+                self.fallback_provider = None
 
         # Initialize validator provider (smaller model for validation)
         validator_config = llm_config.get('validator', {})
@@ -250,6 +342,14 @@ class LLMManager:
             return OllamaProvider(provider_config)
         elif provider_type == 'openai':
             return OpenAIProvider(provider_config)
+        elif provider_type == 'anthropic':
+            return AnthropicProvider(provider_config)
+        elif provider_type == 'xai':
+            return XAIProvider(provider_config)
+        elif provider_type == 'google':
+            return GoogleProvider(provider_config)
+        elif provider_type == 'groq':
+            return GroqProvider(provider_config)
         else:
             raise ValueError(f"Unsupported provider type: {provider_type}")
 

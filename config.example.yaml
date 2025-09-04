@@ -9,31 +9,55 @@ broadcaster_id: "your-broadcaster-id"
 llm:
   # Primary LLM settings
   primary:
-    provider: "ollama"  # Options: "ollama", "openai"
+    provider: "ollama"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
     ollama:
       host: "http://localhost:11434"
       model: "llama3"
     openai:
       api_key: "your-openai-key"
       model: "gpt-3.5-turbo"
-      # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for xAI, Anthropic, etc.
+      # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for other providers
+    anthropic:
+      api_key: "your-anthropic-key"
+      model: "claude-3-5-sonnet-20241022"  # Default model, can be overridden
+    xai:
+      api_key: "your-xai-key"
+      model: "grok-beta"  # Default model, can be overridden
+    google:
+      api_key: "your-google-key"
+      model: "gemini-1.5-flash"  # Default model, can be overridden
+    groq:
+      api_key: "your-groq-key"
+      model: "llama-3.1-70b-versatile"  # Default model, can be overridden
   
   # Fallback LLM settings (used if primary fails)
   fallback:
     enabled: true
-    provider: "openai"  # Options: "ollama", "openai"
+    provider: "openai"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
     ollama:
       host: "http://localhost:11434"
       model: "llama2"
     openai:
       api_key: "your-fallback-openai-key"
       model: "gpt-3.5-turbo"
-      # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for xAI, Anthropic, etc.
+      # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for other providers
+    anthropic:
+      api_key: "your-anthropic-key"
+      model: "claude-3-haiku-20240307"  # Faster/cheaper model for fallback
+    xai:
+      api_key: "your-xai-key"
+      model: "grok-beta"
+    google:
+      api_key: "your-google-key"
+      model: "gemini-1.5-flash"
+    groq:
+      api_key: "your-groq-key"
+      model: "llama-3.1-8b-instant"  # Faster model for fallback
   
   # Validation LLM settings (smaller model for description validation)
   validator:
     enabled: true
-    provider: "ollama"  # Options: "ollama", "openai"
+    provider: "ollama"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
     ollama:
       host: "http://localhost:11434"
       model: "gemma2:2b"  # Smaller, faster model for validation
@@ -41,6 +65,15 @@ llm:
       api_key: "your-openai-key"
       model: "gpt-4o-mini"  # Smaller OpenAI model for validation
       # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint
+    anthropic:
+      api_key: "your-anthropic-key"
+      model: "claude-3-haiku-20240307"  # Fast, affordable model for validation
+    google:
+      api_key: "your-google-key"
+      model: "gemini-1.5-flash"  # Fast model for validation
+    groq:
+      api_key: "your-groq-key"
+      model: "llama-3.1-8b-instant"  # Fast model for validation
 
 # Audio Processing Settings
 use_audacity: false  # Set to true if Audacity with mod-script-pipe is available

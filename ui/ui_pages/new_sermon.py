@@ -10,6 +10,16 @@ import os
 import tempfile
 from pathlib import Path
 import datetime
+import sys
+
+# Add parent directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent))
+from sermon_metadata import (
+    create_pastor_selectbox, 
+    create_event_type_selectbox, 
+    create_series_selectbox,
+    show_metadata_refresh_section
+)
 
 def show_new_sermon():
     """Main new sermon processing interface"""
@@ -63,14 +73,16 @@ def show_upload_and_metadata():
     
     st.markdown("### 📝 Sermon Metadata")
     
+    # Show metadata refresh section
+    show_metadata_refresh_section()
+    
     # Required metadata
     col1, col2 = st.columns(2)
     
     with col1:
-        speaker_name = st.text_input(
+        speaker_name = create_pastor_selectbox(
             "Speaker Name *", 
-            key="speaker_name",
-            placeholder="Pastor John Smith"
+            key="speaker_name"
         )
         
         recorded_date = st.date_input(
@@ -79,21 +91,9 @@ def show_upload_and_metadata():
             value=datetime.date.today()
         )
         
-        event_type = st.selectbox(
+        event_type = create_event_type_selectbox(
             "Event Type *",
-            key="event_type",
-            options=[
-                "Sunday Service",
-                "Sunday - AM",
-                "Sunday - PM", 
-                "Wednesday Service",
-                "Bible Study",
-                "Prayer Meeting",
-                "Special Event",
-                "Conference",
-                "Other"
-            ],
-            index=0
+            key="event_type"
         )
     
     with col2:
@@ -117,6 +117,12 @@ def show_upload_and_metadata():
     
     # Optional metadata
     st.markdown("#### Optional Fields")
+    
+    # Series selection
+    series = create_series_selectbox(
+        "Series (optional)",
+        key="sermon_series"
+    )
     
     description = st.text_area(
         "Description",
@@ -270,15 +276,15 @@ def show_process_and_review():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("▶️ Start Processing", type="primary", use_container_width=True):
+        if st.button("▶️ Start Processing", type="primary", width='stretch'):
             start_processing()
     
     with col2:
-        if st.button("⏸️ Pause", use_container_width=True, disabled=True):
+        if st.button("⏸️ Pause", width='stretch', disabled=True):
             st.info("Pause functionality will be implemented")
     
     with col3:
-        if st.button("🔄 Reset", use_container_width=True):
+        if st.button("🔄 Reset", width='stretch'):
             reset_form()
     
     # Show processing status if active
@@ -386,15 +392,15 @@ def show_processing_results():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("💾 Save Changes", use_container_width=True):
+            if st.button("💾 Save Changes", width='stretch'):
                 st.success("Changes saved!")
         
         with col2:
-            if st.button("🔄 Regenerate Metadata", use_container_width=True):
+            if st.button("🔄 Regenerate Metadata", width='stretch'):
                 st.info("Regenerating metadata...")
         
         with col3:
-            if st.button("📤 Upload to SermonAudio", use_container_width=True):
+            if st.button("📤 Upload to SermonAudio", width='stretch'):
                 st.success("Uploaded successfully!")
         
         # Generated files
