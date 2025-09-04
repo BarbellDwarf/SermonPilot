@@ -83,95 +83,95 @@ class UIProcessor:
                 
                 # Initialize validator with config dict (not file path)
                 validator = DescriptionValidator(config)
-            
-            results = {
-                'total': len(sermon_ids),
-                'completed': 0,
-                'valid': 0,
-                'invalid': 0,
-                'errors': 0,
-                'details': []
-            }
-            
-            for i, sermon_id in enumerate(sermon_ids):
-                try:
-                    # Update progress
-                    progress = (i + 1) / len(sermon_ids)
-                    self.db.update_processing_status(
-                        sermon_id, 
-                        'validation', 
-                        'processing', 
-                        progress * 100,
-                        f"Validating {i+1}/{len(sermon_ids)}"
-                    )
-                    
-                    if progress_callback:
-                        progress_callback(progress, f"Validating sermon {sermon_id}")
-                    
-                    # Validate single sermon
-                    validation_result = validator.validate_single_sermon(sermon_id)
-                    
-                    if validation_result:
-                        # Save to database
-                        self.db.save_validation_result(
-                            sermon_id,
-                            validation_result.is_valid,
-                            validation_result.validation_score,
-                            validation_result.validation_reason,
-                            validation_result.criteria_met, 
-                            validation_result.criteria_failed
+                
+                results = {
+                    'total': len(sermon_ids),
+                    'completed': 0,
+                    'valid': 0,
+                    'invalid': 0,
+                    'errors': 0,
+                    'details': []
+                }
+                
+                for i, sermon_id in enumerate(sermon_ids):
+                    try:
+                        # Update progress
+                        progress = (i + 1) / len(sermon_ids)
+                        self.db.update_processing_status(
+                            sermon_id, 
+                            'validation', 
+                            'processing', 
+                            progress * 100,
+                            f"Validating {i+1}/{len(sermon_ids)}"
                         )
                         
-                        results['details'].append({
-                            'sermon_id': sermon_id,
-                            'is_valid': validation_result.is_valid,
-                            'score': validation_result.validation_score,
-                            'reason': validation_result.validation_reason
-                        })
+                        if progress_callback:
+                            progress_callback(progress, f"Validating sermon {sermon_id}")
                         
-                        if validation_result.is_valid:
-                            results['valid'] += 1
+                        # Validate single sermon
+                        validation_result = validator.validate_single_sermon(sermon_id)
+                        
+                        if validation_result:
+                            # Save to database
+                            self.db.save_validation_result(
+                                sermon_id,
+                                validation_result.is_valid,
+                                validation_result.validation_score,
+                                validation_result.validation_reason,
+                                validation_result.criteria_met, 
+                                validation_result.criteria_failed
+                            )
+                            
+                            results['details'].append({
+                                'sermon_id': sermon_id,
+                                'is_valid': validation_result.is_valid,
+                                'score': validation_result.validation_score,
+                                'reason': validation_result.validation_reason
+                            })
+                            
+                            if validation_result.is_valid:
+                                results['valid'] += 1
+                            else:
+                                results['invalid'] += 1
                         else:
-                            results['invalid'] += 1
-                    else:
+                            results['errors'] += 1
+                            results['details'].append({
+                                'sermon_id': sermon_id,
+                                'error': 'Could not validate sermon'
+                            })
+                        
+                        results['completed'] += 1
+                        
+                        # Mark as completed
+                        self.db.update_processing_status(
+                            sermon_id, 
+                            'validation', 
+                            'completed', 
+                            100.0,
+                            f"Validation complete"
+                        )
+                        
+                    except Exception as e:
+                        logger.error(f"Error validating sermon {sermon_id}: {e}")
                         results['errors'] += 1
                         results['details'].append({
                             'sermon_id': sermon_id,
-                            'error': 'Could not validate sermon'
+                            'error': str(e)
                         })
-                    
-                    results['completed'] += 1
-                    
-                    # Mark as completed
-                    self.db.update_processing_status(
-                        sermon_id, 
-                        'validation', 
-                        'completed', 
-                        100.0,
-                        f"Validation complete"
-                    )
-                    
-                except Exception as e:
-                    logger.error(f"Error validating sermon {sermon_id}: {e}")
-                    results['errors'] += 1
-                    results['details'].append({
-                        'sermon_id': sermon_id,
-                        'error': str(e)
-                    })
-                    
-                    self.db.update_processing_status(
-                        sermon_id, 
-                        'validation', 
-                        'failed', 
-                        0.0,
-                        f"Error: {str(e)}"
-                    )
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Validation process failed: {e}")
-            raise
+                        
+                        self.db.update_processing_status(
+                            sermon_id, 
+                            'validation', 
+                            'failed', 
+                            0.0,
+                            f"Error: {str(e)}"
+                        )
+                
+                return results
+                
+            except Exception as e:
+                logger.error(f"Validation process failed: {e}")
+                raise
     
     def process_sermon_async(self, sermon_id: str, options: Dict) -> None:
         """
