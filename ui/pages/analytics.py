@@ -86,55 +86,72 @@ def show_content_analysis():
     st.markdown("#### 👤 Speaker Activity")
     
     speaker_stats = content_data['speaker_stats']
-    df_speakers = pd.DataFrame(speaker_stats)
     
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        # Mock plotly chart (would use actual plotly when installed)
         st.markdown("**Speaker Processing Volume (Last 30 Days)**")
-        st.bar_chart(df_speakers.set_index('speaker')['sermons_processed'])
+        if speaker_stats:
+            df_speakers = pd.DataFrame(speaker_stats)
+            if 'speaker' in df_speakers.columns and 'sermons_processed' in df_speakers.columns:
+                st.bar_chart(df_speakers.set_index('speaker')['sermons_processed'])
+            else:
+                st.info("No speaker data available with required columns")
+        else:
+            st.info("No speaker processing data available yet")
     
     with col2:
         st.markdown("**Top Speakers**")
-        for speaker in speaker_stats[:5]:
-            st.metric(
-                speaker['speaker'], 
-                f"{speaker['sermons_processed']} sermons",
-                f"{speaker['avg_quality_score']:.1f} quality"
-            )
+        if speaker_stats:
+            for speaker in speaker_stats[:5]:
+                st.metric(
+                    speaker['speaker'], 
+                    f"{speaker['sermons_processed']} sermons",
+                    f"{speaker['avg_quality_score']:.1f} quality"
+                )
+        else:
+            st.info("No speaker data available")
     
     # Event type distribution
     st.markdown("#### 📅 Event Type Distribution")
     
     event_data = content_data['event_types']
-    df_events = pd.DataFrame(event_data)
     
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("**Event Type Breakdown**")
-        # Mock pie chart
-        for event in event_data:
-            st.write(f"• {event['event_type']}: {event['count']} ({event['percentage']:.1f}%)")
+        if event_data:
+            for event in event_data:
+                st.write(f"• {event['event_type']}: {event['count']} ({event['percentage']:.1f}%)")
+        else:
+            st.info("No event type data available yet")
     
     with col2:
         st.markdown("**Quality by Event Type**")
-        for event in event_data:
-            st.metric(
-                event['event_type'],
-                f"{event['avg_quality']:.1f}/10",
-                f"{event['success_rate']:.1f}% success"
-            )
+        if event_data:
+            for event in event_data:
+                st.metric(
+                    event['event_type'],
+                    f"{event['avg_quality']:.1f}/10",
+                    f"{event['success_rate']:.1f}% success"
+                )
+        else:
+            st.info("No quality metrics available yet")
     
     # Content quality trends
     st.markdown("#### ✅ Content Quality Trends")
     
     quality_data = content_data['quality_trends']
-    df_quality = pd.DataFrame(quality_data)
     
-    # Mock line chart
-    st.line_chart(df_quality.set_index('date')[['description_quality', 'hashtag_quality']])
+    if quality_data:
+        df_quality = pd.DataFrame(quality_data)
+        if 'date' in df_quality.columns and any(col in df_quality.columns for col in ['description_quality', 'hashtag_quality']):
+            st.line_chart(df_quality.set_index('date')[['description_quality', 'hashtag_quality']])
+        else:
+            st.info("Quality trend data structure is incomplete")
+    else:
+        st.info("No quality trend data available yet")
 
 def show_cost_tracking():
     """LLM API usage and cost analysis"""
@@ -457,9 +474,9 @@ def get_real_metrics_data(time_range):
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from database import DatabaseManager
+        from database import get_db
         
-        db = DatabaseManager()
+        db = get_db()
         
         # Calculate date range
         from datetime import datetime, timedelta
@@ -538,39 +555,54 @@ def get_real_content_data():
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from database import DatabaseManager
+        from database import get_db
         sys.path.insert(0, str(Path(__file__).parent.parent.parent))
         from sermon_updater import SermonUpdater
         
-        db = DatabaseManager()
+        db = get_db()
         
         # Get processing status data
         processing_data = db.get_processing_status()
         
-        # Group by speaker
-        speaker_stats = {}
-        for item in processing_data:
-            speaker = item.get('details', {}).get('speaker', 'Unknown Speaker')
-            if speaker not in speaker_stats:
-                speaker_stats[speaker] = {'count': 0, 'scores': []}
-            speaker_stats[speaker]['count'] += 1
-            
-            # Try to get quality score
-            score = item.get('details', {}).get('quality_score', 8.0)
-            speaker_stats[speaker]['scores'].append(float(score))
-        
-        # Convert to list format
+        # Try to get speaker data from SermonAudio API
         speaker_list = []
-        for speaker, stats in speaker_stats.items():
-            avg_score = sum(stats['scores']) / len(stats['scores']) if stats['scores'] else 8.0
-            speaker_list.append({
-                'speaker': speaker,
-                'sermons_processed': stats['count'],
-                'avg_quality_score': avg_score
-            })
-        
-        # Sort by count and take top speakers
-        speaker_list.sort(key=lambda x: x['sermons_processed'], reverse=True)
+        try:
+            config = st.session_state.get('config', {})
+            if config.get('api_key') and config.get('broadcaster_id'):
+                sermon_updater = SermonUpdater(config)
+                from datetime import datetime, timedelta
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=30)
+                recent_sermons = sermon_updater.get_sermons_in_date_range(start_date, end_date)
+                
+                # Group by speaker from API data
+                speaker_stats = {}
+                for sermon in recent_sermons:
+                    speaker = sermon.get('speaker', sermon.get('preacher', 'Unknown Speaker'))
+                    if speaker not in speaker_stats:
+                        speaker_stats[speaker] = {'count': 0, 'scores': []}
+                    speaker_stats[speaker]['count'] += 1
+                    speaker_stats[speaker]['scores'].append(8.0)  # Default quality score
+                
+                # Convert to list format
+                for speaker, stats in speaker_stats.items():
+                    avg_score = sum(stats['scores']) / len(stats['scores']) if stats['scores'] else 8.0
+                    speaker_list.append({
+                        'speaker': speaker,
+                        'sermons_processed': stats['count'],
+                        'avg_quality_score': avg_score
+                    })
+                
+                # Sort by count and take top speakers
+                speaker_list.sort(key=lambda x: x['sermons_processed'], reverse=True)
+        except Exception as e:
+            # If API fails, create a simple list from processing data if available
+            if processing_data:
+                speaker_list = [{
+                    'speaker': 'System Processed',
+                    'sermons_processed': len(processing_data),
+                    'avg_quality_score': 8.0
+                }]
         
         # Get event type distribution from config or recent sermons
         try:
@@ -637,9 +669,9 @@ def get_real_cost_data():
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from database import DatabaseManager
+        from database import get_db
         
-        db = DatabaseManager()
+        db = get_db()
         
         # This would need to be enhanced with actual cost tracking
         # For now, return minimal data indicating no cost tracking yet
@@ -677,9 +709,9 @@ def get_real_performance_data():
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from database import DatabaseManager
+        from database import get_db
         
-        db = DatabaseManager()
+        db = get_db()
         processing_data = db.get_processing_status()
         
         # Calculate real metrics
