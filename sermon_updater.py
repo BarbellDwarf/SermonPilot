@@ -59,6 +59,9 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     os.environ["PYTHONWARNINGS"] = "ignore"
     # Suppress torchaudio warning specifically
     os.environ["TORCHAUDIO_USE_BACKEND_DISPATCHER"] = "1"
+    # Suppress additional PyTorch audio warnings
+    os.environ["TORCHAUDIO_ENABLE_BACKEND_DISPATCH"] = "1"
+    os.environ["TORCHAUDIO_BACKEND"] = "soundfile"
     # Add src directory to Python path
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
@@ -66,6 +69,9 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     import logging
     logging.getLogger("df").setLevel(logging.CRITICAL)
     logging.getLogger("df").disabled = True
+    # Also suppress torchaudio warnings in logging
+    logging.getLogger("torchaudio").setLevel(logging.CRITICAL)
+    logging.getLogger("torchaudio").disabled = True
     from audio_processing import process_sermon_audio
     from llm_manager import LLMManager, migrate_legacy_config
 

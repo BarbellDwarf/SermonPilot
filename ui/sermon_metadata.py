@@ -126,18 +126,21 @@ def refresh_metadata_from_api() -> bool:
             progress_bar.progress(0.1)
             pastors = sermon_updater.get_broadcaster_pastors(limit=200)
             progress_bar.progress(0.4)
+            logger.info(f"Fetched {len(pastors) if pastors else 0} pastors")
             
             # Fetch event types  
             st.text('📅 Fetching event types...')
             progress_bar.progress(0.5)
             event_types = sermon_updater.get_broadcaster_event_types(limit=200)
             progress_bar.progress(0.7)
+            logger.info(f"Fetched {len(event_types) if event_types else 0} event types")
             
             # Fetch series
             st.text('📚 Fetching series...')
             progress_bar.progress(0.8)
             series = sermon_updater.get_broadcaster_series(limit=200)
             progress_bar.progress(1.0)
+            logger.info(f"Fetched {len(series) if series else 0} series")
             
             # Clear progress indicators
             progress_bar.empty()
@@ -172,18 +175,21 @@ def refresh_metadata_from_api() -> bool:
                 logger.info(f"Refreshed {len(pastors)} pastors from API")
             else:
                 logger.warning("No pastors found from API, keeping defaults")
+                st.warning("⚠️ No pastors found - keeping default list")
                 
             if event_types:
                 metadata['event_types'] = event_types
                 logger.info(f"Refreshed {len(event_types)} event types from API")
             else:
                 logger.warning("No event types found from API, keeping defaults")
+                st.warning("⚠️ No event types found - keeping default list")
                 
             if series:
                 metadata['series'] = series
                 logger.info(f"Refreshed {len(series)} series from API")
             else:
                 logger.warning("No series found from API, keeping defaults")
+                st.warning("⚠️ No series found - keeping default list")
             
             import datetime
             metadata['last_refresh'] = datetime.datetime.now()
@@ -191,7 +197,12 @@ def refresh_metadata_from_api() -> bool:
             # Update session state
             st.session_state.sermon_metadata = metadata
             
-            st.success(f'✅ Metadata refreshed successfully! Found {len(metadata["pastors"])} pastors, {len(metadata["event_types"])} event types, and {len(metadata["series"])} series.')
+            # Show detailed success message
+            success_msg = f'✅ Metadata refreshed successfully!\n'
+            success_msg += f'📋 Pastors: {len(metadata["pastors"])}\n'
+            success_msg += f'📅 Event Types: {len(metadata["event_types"])}\n'
+            success_msg += f'📚 Series: {len(metadata["series"])}'
+            st.success(success_msg)
             return True
             
     except ImportError as e:
