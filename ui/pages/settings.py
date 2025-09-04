@@ -42,7 +42,7 @@ def show_general_settings():
     """General configuration settings"""
     st.markdown("### 🔧 General Configuration")
     
-    config = st.session_state.get('config', {})
+    config = st.session_state.get('config') or {}
     
     # API Configuration
     st.markdown("#### 🔗 SermonAudio API")
@@ -129,7 +129,7 @@ def show_llm_settings():
     """LLM provider configuration"""
     st.markdown("### 🤖 LLM Provider Configuration")
     
-    config = st.session_state.get('config', {})
+    config = st.session_state.get('config') or {}
     llm_config = config.get('llm', {})
     
     # Primary Provider
@@ -266,7 +266,7 @@ def show_audio_settings():
     """Audio processing configuration"""
     st.markdown("### 🎵 Audio Processing Configuration")
     
-    config = st.session_state.get('config', {})
+    config = st.session_state.get('config') or {}
     
     # Enhancement Method
     st.markdown("#### 🔧 Enhancement Method")
@@ -337,7 +337,7 @@ def show_validation_settings():
     """Validation criteria configuration"""
     st.markdown("### ✅ Validation Configuration")
     
-    config = st.session_state.get('config', {})
+    config = st.session_state.get('config') or {}
     metadata_config = config.get('metadata_processing', {})
     
     # Description validation
@@ -436,7 +436,7 @@ def show_backup_restore():
     # Current config display
     st.markdown("#### 📄 Current Configuration")
     
-    config = st.session_state.get('config', {})
+    config = st.session_state.get('config') or {}
     
     if config:
         # Show config as YAML
@@ -512,7 +512,7 @@ def save_general_settings(api_key, broadcaster_id, dry_run, debug,
                          hashtag_verification, output_directory, 
                          save_original_audio, save_transcript):
     """Save general settings to configuration"""
-    if not st.session_state.config:
+    if not st.session_state.get('config'):
         st.session_state.config = {}
     
     st.session_state.config.update({
@@ -537,7 +537,7 @@ def save_llm_settings():
 def save_audio_settings(enhancement_method, use_audacity, audio_noise_reduction,
                        audio_amplify, audio_normalize, audio_gain_db, target_level_db):
     """Save audio settings to configuration"""
-    if not st.session_state.config:
+    if not st.session_state.get('config'):
         st.session_state.config = {}
     
     st.session_state.config.update({
