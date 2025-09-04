@@ -4,6 +4,7 @@ Core capabilities:
 * List sermons with comprehensive filtering (all public API query params exposed).
 * Process sermons: download audio, enhance, summarize, hashtag, update metadata, upload audio.
 * Multi‑year support: ``--year`` (single) or ``--years`` (comma/range list).
+* AI-powered description validation with automatic quality assessment and regeneration.
 
 Examples:
     python sermon_updater.py --sermon-id 1234567890123
@@ -11,6 +12,16 @@ Examples:
     python sermon_updater.py --search-keyword grace --language-code eng --dry-run --list-only
     python sermon_updater.py --date-range 2024-01-01 2024-01-31 --auto-yes
     python sermon_updater.py --years 2022-2023,2025 --limit 10 --list-only
+
+Validation examples (all validation tools now integrated):
+    python sermon_updater.py --validate-descriptions --validation-report
+    python sermon_updater.py --validate-and-regenerate --dry-run
+    python sermon_updater.py --validate-descriptions --export-validation-csv results.csv
+    python sermon_updater.py --validate-and-regenerate --validation-sermon-ids 123,456,789
+
+Processing with validation (requires validator LLM configuration):
+    python sermon_updater.py --sermon-id 1234567890123 --force-description
+    (Automatically validates and may regenerate descriptions using fallback LLM if primary fails)
 
 Config: defaults to ``config.yaml`` (override with ``--config`` or SA_UPDATER_CONFIG env var).
 """
@@ -30,6 +41,7 @@ from dataclasses import dataclass
 from typing import Any
 from collections.abc import Iterable
 from io import StringIO
+from pathlib import Path
 
 print("🔄 Initializing SermonAudio Processor...")
 print("   📦 Loading dependencies...")
@@ -296,6 +308,528 @@ def get_api_headers() -> dict[str, str]:
     return {'X-Api-Key': SERMON_AUDIO_API_KEY, 'Content-Type': 'application/json'}
 
 
+# Validation Classes and Functions
+@dataclass
+class ValidationResult:
+    """Result of a description validation check."""
+    sermon_id: str
+    title: str
+    speaker: str
+    description: str
+    description_length: int
+    is_valid: bool
+    validation_reason: str
+    validation_score: float
+    criteria_met: list[str]
+    criteria_failed: list[str]
+    needs_regeneration: bool
+    validated_at: str
+    source: str  # 'local' or 'api'
+
+
+@dataclass
+class ValidationSummary:
+    """Summary of validation results."""
+    total_sermons: int
+    valid_descriptions: int
+    invalid_descriptions: int
+    validation_rate: float
+    needs_regeneration: int
+    average_score: float
+    criteria_performance: dict[str, float]
+
+
+class DescriptionValidator:
+    """Main class for validating sermon descriptions."""
+    
+    def __init__(self, config: dict):
+        """Initialize the validator with configuration."""
+        self.config = config
+        self.llm_manager = llm_manager  # Use global LLM manager
+        self.validation_criteria = self._get_validation_criteria()
+        self.output_dir = config.get('output_directory', 'processed_sermons')
+        
+        # Validation thresholds
+        metadata_config = config.get('metadata_processing', {})
+        desc_config = metadata_config.get('description', {})
+        validation_config = desc_config.get('validation', {})
+        self.min_length = validation_config.get('min_length_threshold', 50)
+        self.max_length = validation_config.get('max_length_threshold', 1600)
+        self.regeneration_threshold = validation_config.get('regeneration_threshold', 0.6)
+        
+    def _get_validation_criteria(self) -> list[str]:
+        """Get validation criteria from config."""
+        metadata_config = self.config.get('metadata_processing', {})
+        desc_config = metadata_config.get('description', {})
+        validation_config = desc_config.get('validation', {})
+        
+        default_criteria = [
+            "Contains specific theological content or Bible references",
+            "Mentions the speaker's main message or key points", 
+            "Is written in a professional, engaging style",
+            "Avoids generic Christian phrases without substance",
+            "Has clear application or takeaway for listeners"
+        ]
+        
+        return validation_config.get('criteria', default_criteria)
+    
+    def validate_description(self, description: str, context: dict = None) -> tuple[bool, str, float, list[str], list[str]]:
+        """
+        Validate a single description against criteria.
+        
+        Args:
+            description: The description text to validate
+            context: Additional context (title, speaker, etc.)
+            
+        Returns:
+            Tuple of (is_valid, reason, score, criteria_met, criteria_failed)
+        """
+        if not description or len(description.strip()) < self.min_length:
+            return False, "Description too short or empty", 0.0, [], self.validation_criteria
+            
+        if len(description) > self.max_length:
+            return False, "Description exceeds maximum length", 0.2, [], self.validation_criteria
+            
+        # Enhanced validation prompt for detailed analysis
+        context_info = ""
+        if context:
+            if context.get('title'):
+                context_info += f"Sermon Title: {context['title']}\n"
+            if context.get('speaker'):
+                context_info += f"Speaker: {context['speaker']}\n"
+        
+        criteria_text = "\n".join([f"{i+1}. {criterion}" for i, criterion in enumerate(self.validation_criteria)])
+        
+        validation_prompt = f"""You are a sermon description quality validator. Evaluate the following description against specific criteria and provide a detailed assessment.
+
+{context_info}
+Validation Criteria:
+{criteria_text}
+
+Description to validate:
+{description}
+
+Please provide your assessment in this exact format:
+SCORE: [0.0-1.0]
+STATUS: [APPROVED/REJECTED]
+REASON: [brief explanation]
+CRITERIA_MET: [comma-separated list of criterion numbers that are met, e.g., "1,3,5"]
+CRITERIA_FAILED: [comma-separated list of criterion numbers that failed, e.g., "2,4"]
+
+Guidelines:
+- Score 0.8+ = APPROVED (high quality)
+- Score 0.6-0.79 = APPROVED but could be improved
+- Score <0.6 = REJECTED (needs regeneration)
+- Consider theological depth, specificity, professional tone, and practical application
+- Be specific about which criteria are met or failed
+"""
+        
+        try:
+            if not llm_manager.validator_provider:
+                logger.warning("No validator LLM configured, using primary provider")
+                response = llm_manager.chat([{'role': 'user', 'content': validation_prompt}])
+            else:
+                response = llm_manager.validator_provider.chat([
+                    {'role': 'user', 'content': validation_prompt}
+                ])
+            
+            # Parse the structured response
+            score, is_valid, reason, criteria_met, criteria_failed = self._parse_validation_response(response)
+            
+            return is_valid, reason, score, criteria_met, criteria_failed
+            
+        except Exception as e:
+            logger.warning(f"Validation failed: {e}")
+            return True, f"Validation error: {e}", 0.5, [], []
+    
+    def _parse_validation_response(self, response: str) -> tuple[float, bool, str, list[str], list[str]]:
+        """Parse the LLM validation response into structured data."""
+        lines = [line.strip() for line in response.strip().split('\n') if line.strip()]
+        
+        score = 0.5
+        is_valid = True
+        reason = "Parsed response"
+        criteria_met = []
+        criteria_failed = []
+        
+        for line in lines:
+            if line.startswith('SCORE:'):
+                try:
+                    score = float(line.split(':', 1)[1].strip())
+                    score = max(0.0, min(1.0, score))  # Clamp to 0-1
+                except ValueError:
+                    score = 0.5
+                    
+            elif line.startswith('STATUS:'):
+                status = line.split(':', 1)[1].strip().upper()
+                is_valid = status == 'APPROVED'
+                
+            elif line.startswith('REASON:'):
+                reason = line.split(':', 1)[1].strip()
+                
+            elif line.startswith('CRITERIA_MET:'):
+                met_text = line.split(':', 1)[1].strip()
+                if met_text and met_text != 'None':
+                    try:
+                        met_indices = [int(x.strip()) - 1 for x in met_text.split(',') if x.strip().isdigit()]
+                        criteria_met = [self.validation_criteria[i] for i in met_indices 
+                                      if 0 <= i < len(self.validation_criteria)]
+                    except (ValueError, IndexError):
+                        pass
+                        
+            elif line.startswith('CRITERIA_FAILED:'):
+                failed_text = line.split(':', 1)[1].strip()
+                if failed_text and failed_text != 'None':
+                    try:
+                        failed_indices = [int(x.strip()) - 1 for x in failed_text.split(',') if x.strip().isdigit()]
+                        criteria_failed = [self.validation_criteria[i] for i in failed_indices 
+                                         if 0 <= i < len(self.validation_criteria)]
+                    except (ValueError, IndexError):
+                        pass
+        
+        # If score is below threshold, ensure it's marked as invalid
+        if score < self.regeneration_threshold:
+            is_valid = False
+            
+        return score, is_valid, reason, criteria_met, criteria_failed
+    
+    def validate_local_sermons(self, sermon_ids: list[str] = None) -> list[ValidationResult]:
+        """Validate descriptions from local processed sermon directories."""
+        results = []
+        processed_dir = Path(self.output_dir)
+        
+        if not processed_dir.exists():
+            logger.warning(f"Processed sermons directory not found: {processed_dir}")
+            return results
+            
+        sermon_dirs = [d for d in processed_dir.iterdir() if d.is_dir()]
+        
+        if sermon_ids:
+            sermon_dirs = [d for d in sermon_dirs if d.name in sermon_ids]
+            
+        logger.info(f"Validating {len(sermon_dirs)} local sermons...")
+        
+        for sermon_dir in sermon_dirs:
+            try:
+                result = self._validate_local_sermon(sermon_dir)
+                if result:
+                    results.append(result)
+            except Exception as e:
+                logger.error(f"Error validating sermon {sermon_dir.name}: {e}")
+                
+        return results
+    
+    def _validate_local_sermon(self, sermon_dir: Path) -> ValidationResult | None:
+        """Validate a single local sermon directory."""
+        sermon_id = sermon_dir.name
+        description_file = sermon_dir / f"{sermon_id}_description.txt"
+        
+        if not description_file.exists():
+            logger.debug(f"No description file found for sermon {sermon_id}")
+            return None
+            
+        try:
+            description = description_file.read_text(encoding='utf-8').strip()
+            
+            # Try to get additional context from API or files
+            context = {'sermon_id': sermon_id}
+            
+            is_valid, reason, score, criteria_met, criteria_failed = self.validate_description(description, context)
+            
+            return ValidationResult(
+                sermon_id=sermon_id,
+                title=f"Sermon {sermon_id}",  # Could enhance this with API call
+                speaker="Unknown",  # Could enhance this with API call
+                description=description,
+                description_length=len(description),
+                is_valid=is_valid,
+                validation_reason=reason,
+                validation_score=score,
+                criteria_met=criteria_met,
+                criteria_failed=criteria_failed,
+                needs_regeneration=score < self.regeneration_threshold,
+                validated_at=dt.datetime.now().isoformat(),
+                source="local"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error reading description for sermon {sermon_id}: {e}")
+            return None
+    
+    def generate_summary(self, results: list[ValidationResult]) -> ValidationSummary:
+        """Generate a summary of validation results."""
+        if not results:
+            return ValidationSummary(0, 0, 0, 0.0, 0, 0.0, {})
+            
+        total = len(results)
+        valid = sum(1 for r in results if r.is_valid)
+        invalid = total - valid
+        validation_rate = (valid / total) * 100
+        needs_regen = sum(1 for r in results if r.needs_regeneration)
+        avg_score = sum(r.validation_score for r in results) / total
+        
+        # Calculate criteria performance
+        criteria_performance = {}
+        for criterion in self.validation_criteria:
+            met_count = sum(1 for r in results if criterion in r.criteria_met)
+            criteria_performance[criterion] = (met_count / total) * 100
+            
+        return ValidationSummary(
+            total_sermons=total,
+            valid_descriptions=valid,
+            invalid_descriptions=invalid,
+            validation_rate=validation_rate,
+            needs_regeneration=needs_regen,
+            average_score=avg_score,
+            criteria_performance=criteria_performance
+        )
+    
+    def print_detailed_report(self, results: list[ValidationResult], summary: ValidationSummary):
+        """Print a detailed validation report to console."""
+        print("\n" + "="*80)
+        print("📊 DESCRIPTION VALIDATION REPORT")
+        print("="*80)
+        
+        # Summary section
+        print(f"\n📈 SUMMARY:")
+        print(f"   Total Sermons Validated: {summary.total_sermons}")
+        print(f"   ✅ Valid Descriptions: {summary.valid_descriptions} ({summary.validation_rate:.1f}%)")
+        print(f"   ❌ Invalid Descriptions: {summary.invalid_descriptions}")
+        print(f"   🔄 Need Regeneration: {summary.needs_regeneration}")
+        print(f"   📊 Average Score: {summary.average_score:.2f}/1.0")
+        
+        # Criteria performance
+        print(f"\n📋 CRITERIA PERFORMANCE:")
+        for criterion, performance in summary.criteria_performance.items():
+            status_icon = "✅" if performance >= 80 else "⚠️" if performance >= 60 else "❌"
+            print(f"   {status_icon} {criterion}: {performance:.1f}%")
+        
+        # Individual results (failed validations)
+        failed_results = [r for r in results if not r.is_valid]
+        if failed_results:
+            print(f"\n❌ FAILED VALIDATIONS ({len(failed_results)} sermons):")
+            for result in failed_results[:10]:  # Show first 10
+                print(f"\n   📝 Sermon ID: {result.sermon_id}")
+                print(f"      Score: {result.validation_score:.2f}/1.0")
+                print(f"      Reason: {result.validation_reason}")
+                print(f"      Length: {result.description_length} chars")
+                if result.criteria_failed:
+                    print(f"      Failed Criteria: {', '.join(result.criteria_failed[:2])}...")
+                print(f"      Description: {result.description[:100]}...")
+                
+            if len(failed_results) > 10:
+                print(f"\n   ... and {len(failed_results) - 10} more failed validations")
+        
+        # Low scoring but passed validations
+        low_score_passed = [r for r in results if r.is_valid and r.validation_score < 0.8]
+        if low_score_passed:
+            print(f"\n⚠️  PASSED BUT LOW SCORING ({len(low_score_passed)} sermons):")
+            for result in low_score_passed[:5]:  # Show first 5
+                print(f"   📝 {result.sermon_id}: {result.validation_score:.2f}/1.0 - {result.validation_reason}")
+        
+        print("\n" + "="*80)
+    
+    def export_to_csv(self, results: list[ValidationResult], filename: str):
+        """Export validation results to CSV file."""
+        import csv
+        with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = [
+                'sermon_id', 'title', 'speaker', 'description_length', 
+                'is_valid', 'validation_score', 'validation_reason',
+                'needs_regeneration', 'criteria_met_count', 'criteria_failed_count',
+                'validated_at', 'source'
+            ]
+            
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            
+            for result in results:
+                writer.writerow({
+                    'sermon_id': result.sermon_id,
+                    'title': result.title,
+                    'speaker': result.speaker,
+                    'description_length': result.description_length,
+                    'is_valid': result.is_valid,
+                    'validation_score': result.validation_score,
+                    'validation_reason': result.validation_reason,
+                    'needs_regeneration': result.needs_regeneration,
+                    'criteria_met_count': len(result.criteria_met),
+                    'criteria_failed_count': len(result.criteria_failed),
+                    'validated_at': result.validated_at,
+                    'source': result.source
+                })
+        
+        logger.info(f"Results exported to {filename}")
+    
+    def export_to_json(self, results: list[ValidationResult], summary: ValidationSummary, filename: str):
+        """Export detailed validation results to JSON file."""
+        import json
+        from dataclasses import asdict
+        
+        export_data = {
+            'summary': asdict(summary),
+            'validation_criteria': self.validation_criteria,
+            'results': [asdict(result) for result in results],
+            'exported_at': dt.datetime.now().isoformat(),
+            'validator_config': {
+                'min_length': self.min_length,
+                'max_length': self.max_length,
+                'regeneration_threshold': self.regeneration_threshold
+            }
+        }
+        
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(export_data, f, indent=2, ensure_ascii=False)
+            
+        logger.info(f"Detailed results exported to {filename}")
+
+
+def validate_and_regenerate_descriptions(
+    validator: DescriptionValidator,
+    sermon_ids: list[str] = None,
+    regenerate_failed: bool = False,
+    dry_run: bool = False,
+    upload_to_sermonaudio: bool = True
+) -> dict:
+    """
+    Validate existing descriptions and optionally regenerate failed ones.
+    
+    Args:
+        validator: Description validator instance
+        sermon_ids: Specific sermon IDs to process (None for all)
+        regenerate_failed: Whether to regenerate descriptions that fail validation
+        dry_run: If True, don't actually update descriptions locally or on SermonAudio
+        upload_to_sermonaudio: If True, upload regenerated descriptions to SermonAudio
+        
+    Returns:
+        Dictionary with processing results including links to changed sermons
+    """
+    console_print("🔍 Starting description validation and regeneration process...")
+    
+    # Validate existing descriptions
+    console_print("📋 Validating existing descriptions...")
+    results = validator.validate_local_sermons(sermon_ids)
+    
+    if not results:
+        console_print("❌ No sermons found to validate", "error")
+        return {'validated': 0, 'regenerated': 0, 'failed': 0}
+    
+    # Generate summary
+    summary = validator.generate_summary(results)
+    
+    # Print validation summary
+    console_print(f"📊 Validation Results:")
+    console_print(f"   Total validated: {summary.total_sermons}")
+    console_print(f"   ✅ Valid: {summary.valid_descriptions} ({summary.validation_rate:.1f}%)")
+    console_print(f"   ❌ Invalid: {summary.invalid_descriptions}")
+    console_print(f"   🔄 Need regeneration: {summary.needs_regeneration}")
+    
+    regenerated_count = 0
+    failed_regeneration = 0
+    regenerated_sermons = []  # Track successfully regenerated sermons
+    validation_failures = []  # Track double-validation failures
+
+    if regenerate_failed and summary.invalid_descriptions > 0:
+        console_print(f"🔄 Regenerating {summary.invalid_descriptions} failed descriptions...")
+        
+        failed_results = [r for r in results if not r.is_valid]
+        
+        for i, result in enumerate(failed_results, 1):
+            sermon_id = result.sermon_id
+            console_print(f"   [{i}/{len(failed_results)}] Processing sermon {sermon_id}...")
+            
+            try:
+                if dry_run:
+                    console_print(f"      🔍 DRY RUN: Would regenerate description for {sermon_id}")
+                    regenerated_count += 1
+                    continue
+                
+                # Get sermon transcript for regeneration
+                transcript = get_sermon_transcript(sermon_id)
+                if not transcript:
+                    console_print(f"      ❌ Could not get transcript for {sermon_id}", "error")
+                    failed_regeneration += 1
+                    continue
+                
+                # Generate new description with validation
+                console_print(f"      🤖 Generating new description...")
+                new_description, validation_info = generate_validated_summary(
+                    transcript,
+                    event_type=None,  # Could enhance this with API data
+                    speaker_name=None
+                )
+                
+                # Double-validate the newly generated description
+                console_print(f"      🔍 Double-validating new description...")
+                is_valid, reason, score, criteria_met, criteria_failed = validator.validate_description(
+                    new_description, 
+                    {'sermon_id': sermon_id}
+                )
+                
+                # Check if the new description actually passes validation
+                if not is_valid:
+                    console_print(f"      ⚠️  WARNING: New description still fails validation!", "warning")
+                    console_print(f"               Score: {score:.2f}, Reason: {reason}", "warning")
+                    validation_failures.append({
+                        'sermon_id': sermon_id,
+                        'new_description': new_description,
+                        'score': score,
+                        'reason': reason,
+                        'criteria_failed': criteria_failed
+                    })
+                
+                if validation_info.get('final_status') == 'approved_primary':
+                    status_icon = "✅"
+                elif validation_info.get('final_status') == 'approved_fallback':
+                    status_icon = "⚠️"
+                else:
+                    status_icon = "❌"
+                    
+                console_print(f"      {status_icon} Generated new description "
+                      f"({len(new_description)} chars, score: {score:.2f})")
+                
+                # Save the new description locally
+                sermon_dir = Path(validator.output_dir) / sermon_id
+                description_file = sermon_dir / f"{sermon_id}_description.txt"
+                
+                if description_file.exists():
+                    # Backup old description
+                    backup_file = sermon_dir / f"{sermon_id}_description_backup.txt"
+                    description_file.rename(backup_file)
+                    console_print(f"      💾 Backed up original to {backup_file.name}")
+                
+                description_file.write_text(new_description, encoding='utf-8')
+                
+                # Update SermonAudio if not in dry run mode and upload is enabled
+                upload_success = False
+                if upload_to_sermonaudio and not dry_run:
+                    console_print(f"      📤 Uploading to SermonAudio...")
+                    try:
+                        upload_success = update_sermon_metadata(sermon_id, new_description, None)
+                        if upload_success:
+                            console_print(f"      ✅ Updated SermonAudio successfully", "success")
+                        else:
+                            console_print(f"      ⚠️  SermonAudio update failed", "warning")
+                    except Exception as e:
+                        console_print(f"      ❌ SermonAudio upload error: {e}", "error")
+                
+                regenerated_count += 1
+                console_print(f"      ✅ Updated description for sermon {sermon_id}", "success")
+                
+            except Exception as e:
+                console_print(f"      ❌ Failed to regenerate description for {sermon_id}: {e}", "error")
+                failed_regeneration += 1
+    
+    return {
+        'validated': summary.total_sermons,
+        'regenerated': regenerated_count,
+        'failed': failed_regeneration,
+        'validation_rate': summary.validation_rate,
+        'regenerated_sermons': regenerated_sermons,
+        'validation_failures': validation_failures
+    }
+
+
 def update_sermon_metadata(sermon_id: str, description: str, hashtags: str | list[str]) -> bool:
     url = BASE_URL + f'node/sermons/{sermon_id}'
     headers = get_api_headers()
@@ -349,6 +883,311 @@ def upload_audio_file(sermon_id: str, audio_path: str) -> bool:
     except Exception as e:  # pragma: no cover
         logger.error("Error uploading file: %s", e)
         return False
+
+
+def generate_title(transcript: str, speaker_name: str = None, event_type: str = None, 
+                  bible_text: str = None) -> str:
+    """Generate a sermon title using the LLM based on transcript content.
+    
+    Args:
+        transcript: The sermon transcript
+        speaker_name: Name of the speaker (optional)
+        event_type: Type of event (optional)
+        bible_text: Bible reference (optional)
+        
+    Returns:
+        Generated title string
+    """
+    # Build context information
+    context_parts = []
+    if speaker_name:
+        context_parts.append(f"Speaker: {speaker_name}")
+    if event_type:
+        context_parts.append(f"Event: {event_type}")
+    if bible_text:
+        context_parts.append(f"Bible Text: {bible_text}")
+    
+    context = "\n".join(context_parts) if context_parts else ""
+    
+    prompt = f"""You are a sermon title generator. Create a compelling, descriptive title for this sermon.
+
+{context}
+
+Guidelines for the title:
+- Maximum 85 characters (STRICT LIMIT for API)
+- Capture the main theme or message
+- Be specific and engaging, not generic
+- Avoid cliché Christian phrases
+- Focus on the practical application or key insight
+- If a Bible reference is given, you may include it briefly
+- Do not use quotation marks around the title
+- Return ONLY the title, no explanation or commentary
+
+Sermon content (first 1000 characters):
+{transcript[:1000]}...
+
+Generate a compelling sermon title:"""
+
+    try:
+        provider_info = llm_manager.get_provider_info()
+        primary_provider = provider_info.get('primary', {}).get('type', 'unknown')
+        logger.debug("Generating title using %s LLM...", primary_provider)
+        
+        response = llm_manager.chat([{'role': 'user', 'content': prompt}])
+        
+        # Clean up the response
+        title = response.strip().strip('"').strip("'")
+        
+        # Ensure title doesn't exceed API limit
+        if len(title) > 85:
+            logger.warning("Generated title too long (%d chars), truncating to 85", len(title))
+            # Try to truncate at word boundary
+            truncated = title[:82]
+            last_space = truncated.rfind(' ')
+            if last_space > 60:  # Reasonable word boundary
+                title = truncated[:last_space] + "..."
+            else:
+                title = title[:85]
+        
+        logger.debug("Generated title (%d chars): %s", len(title), title)
+        return title
+        
+    except Exception as e:
+        logger.error("Title generation failed: %s", e)
+        # Fallback title
+        fallback = f"Sermon by {speaker_name}" if speaker_name else "New Sermon"
+        if bible_text:
+            fallback += f" - {bible_text}"
+        return fallback[:85]
+
+
+def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str, 
+                         event_type: str = "Sunday Service", bible_text: str = None,
+                         subtitle: str = None, description: str = None, 
+                         hashtags: str = None) -> str:
+    """Create a new sermon via the SermonAudio API.
+    
+    Args:
+        title: Full sermon title (max 85 chars)
+        speaker_name: Name of the speaker (max 50 chars)
+        recorded_date: Date recorded (YYYY-MM-DD format)
+        event_type: Type of event (default "Sunday Service")
+        bible_text: Bible reference text (optional)
+        subtitle: Sermon subtitle (max 30 chars, optional)
+        description: Sermon description (optional)
+        hashtags: Hashtags/keywords (optional)
+        
+    Returns:
+        Created sermon ID if successful, None if failed
+    """
+    url = BASE_URL + 'node/sermons'
+    headers = get_api_headers()
+    
+    # Build payload
+    payload = {
+        'acceptCopyright': True,
+        'fullTitle': title[:85],  # Ensure limit
+        'speakerName': speaker_name[:50],  # Ensure limit
+        'preachDate': recorded_date,
+        'eventType': event_type,
+        'languageCode': 'eng'  # Default to English
+    }
+    
+    # Add optional fields
+    if bible_text:
+        payload['bibleText'] = bible_text
+    if subtitle:
+        payload['subtitle'] = subtitle[:30]  # Ensure limit
+    if description:
+        payload['moreInfoText'] = description
+    if hashtags:
+        payload['keywords'] = hashtags
+    
+    # Generate display title from full title
+    display_title = title[:30] if len(title) <= 30 else title[:27] + "..."
+    payload['displayTitle'] = display_title
+    
+    try:
+        logger.debug("Creating new sermon with title: %s", title)
+        resp = requests.post(url, headers=headers, json=payload, timeout=60)
+        
+        if resp.status_code == 201:
+            sermon_data = resp.json()
+            sermon_id = sermon_data.get('sermonID')
+            logger.info("Successfully created sermon with ID: %s", sermon_id)
+            return sermon_id
+        else:
+            logger.error("Failed to create sermon: %d - %s", resp.status_code, resp.text[:200])
+            return None
+            
+    except Exception as e:
+        logger.error("Error creating sermon: %s", e)
+        return None
+
+
+def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
+                      event_type: str = "Sunday Service", bible_text: str = None,
+                      title: str = None, subtitle: str = None,
+                      description: str = None, hashtags: str = None,
+                      dry_run: bool = False) -> bool:
+    """Process a new sermon from audio file with automatic metadata generation.
+    
+    Args:
+        audio_file: Path to audio file
+        speaker_name: Name of the speaker
+        recorded_date: Date recorded (YYYY-MM-DD format)
+        event_type: Type of event (default "Sunday Service")
+        bible_text: Bible reference text (optional)
+        title: Sermon title (optional, will be generated if not provided)
+        subtitle: Sermon subtitle (optional)
+        description: Sermon description (optional, will be generated if not provided)
+        hashtags: Hashtags/keywords (optional, will be generated if not provided)
+        dry_run: If True, process but don't upload
+        
+    Returns:
+        True if successful, False if failed
+    """
+    from pathlib import Path
+    from src.audio_processing import AudioProcessor
+    
+    audio_path = Path(audio_file)
+    if not audio_path.exists():
+        logger.error("Audio file not found: %s", audio_file)
+        return False
+    
+    logger.info("Processing new sermon from audio file: %s", audio_file)
+    
+    try:
+        # Step 1: Process the audio
+        console_print("🎵 Processing audio...")
+        processor = AudioProcessor()
+        
+        # Create temporary output directory
+        temp_dir = Path("temp_sermon_processing")
+        temp_dir.mkdir(exist_ok=True)
+        
+        # Process audio with enhancement
+        enhanced_audio_path = temp_dir / f"enhanced_{audio_path.name}"
+        success = processor.process_sermon_audio(
+            str(audio_path),
+            str(enhanced_audio_path)
+        )
+        
+        if not success:
+            logger.warning("Audio processing failed, using original file")
+            enhanced_audio_path = audio_path
+        
+        # Step 2: Generate metadata if not provided
+        transcript = ""
+        if not title or not description or not hashtags:
+            console_print("🤖 Generating metadata with LLM...")
+            
+            # For metadata generation, we need some content
+            # Since we don't have transcription here, we'll use a placeholder
+            # In a real implementation, you might want to add transcription
+            if not title:
+                title = generate_title(
+                    transcript="Audio sermon content",  # Placeholder
+                    speaker_name=speaker_name,
+                    event_type=event_type,
+                    bible_text=bible_text
+                )
+            
+            if not description:
+                description = f"A sermon by {speaker_name}"
+                if bible_text:
+                    description += f" on {bible_text}"
+                description += f" from {event_type} on {recorded_date}."
+            
+            if not hashtags:
+                hashtags = f"sermon, {speaker_name.replace(' ', '')}, {event_type.replace(' ', '')}"
+        
+        console_print(f"📝 Generated title: {title}")
+        console_print(f"📝 Generated description: {description[:100]}...")
+        
+        if dry_run:
+            console_print("🔍 DRY RUN - Would create sermon with:")
+            console_print(f"  Title: {title}")
+            console_print(f"  Speaker: {speaker_name}")
+            console_print(f"  Date: {recorded_date}")
+            console_print(f"  Event: {event_type}")
+            console_print(f"  Bible Text: {bible_text}")
+            console_print(f"  Audio: {enhanced_audio_path}")
+            return True
+        
+        # Step 3: Create sermon via API
+        console_print("📤 Creating sermon on SermonAudio...")
+        sermon_id = create_new_sermon_api(
+            title=title,
+            speaker_name=speaker_name,
+            recorded_date=recorded_date,
+            event_type=event_type,
+            bible_text=bible_text,
+            subtitle=subtitle,
+            description=description,
+            hashtags=hashtags
+        )
+        
+        if not sermon_id:
+            logger.error("Failed to create sermon")
+            return False
+        
+        # Step 4: Upload the audio
+        console_print(f"📤 Uploading audio for sermon {sermon_id}...")
+        upload_success = upload_audio_file(sermon_id, str(enhanced_audio_path))
+        
+        if upload_success:
+            console_print(f"✅ Successfully created and uploaded sermon {sermon_id}")
+            
+            # Create local output directory
+            output_dir = Path("processed_sermons") / sermon_id
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Copy audio to output directory
+            final_audio_path = output_dir / f"sermon_{sermon_id}.mp3"
+            if enhanced_audio_path != audio_path:
+                import shutil
+                shutil.copy2(enhanced_audio_path, final_audio_path)
+            else:
+                import shutil
+                shutil.copy2(audio_path, final_audio_path)
+            
+            # Save metadata
+            metadata = {
+                'sermonID': sermon_id,
+                'title': title,
+                'speaker': speaker_name,
+                'recorded_date': recorded_date,
+                'event_type': event_type,
+                'bible_text': bible_text,
+                'subtitle': subtitle,
+                'description': description,
+                'hashtags': hashtags,
+                'original_audio': str(audio_path),
+                'processed_audio': str(final_audio_path)
+            }
+            
+            import json
+            with open(output_dir / "metadata.json", 'w') as f:
+                json.dump(metadata, f, indent=2)
+            
+            console_print(f"📁 Sermon files saved to: {output_dir}")
+            return True
+        else:
+            logger.error("Failed to upload audio")
+            return False
+            
+    except Exception as e:
+        logger.error("Error processing new sermon: %s", e)
+        return False
+    finally:
+        # Clean up temporary files
+        if 'temp_dir' in locals() and temp_dir.exists():
+            import shutil
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass  # Ignore cleanup errors
 
 
 def download_file(url: str, local_path: str):
@@ -1277,74 +2116,64 @@ def fetch_sermons(params: dict[str, Any], max_results: int | None = None) -> lis
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Process or list SermonAudio sermons with rich filtering.",
+        description=(
+            "SermonAudio Processor - Process, create, and manage sermons with AI-powered enhancement. "
+            "Use subcommands for different operations."
+        ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    core = p.add_argument_group('Core Actions')
-    core.add_argument('--sermon-id', help='Process a single sermon ID')
-    core.add_argument('--list-only', action='store_true', help='Only list results (no processing)')
-    core.add_argument('--limit', type=int, help='Max sermons to list/process (caps pageSize)')
-    core.add_argument('--since-days', dest='since_days', type=int, help='Preached after N days ago')
-    core.add_argument(
-        '--date-range',
-        nargs=2,
-        metavar=('START', 'END'),
-        help='Date range YYYY-MM-DD YYYY-MM-DD',
+    
+    # Global options that apply to all subcommands
+    p.add_argument('--config', default=CONFIG_PATH, help='Alternate config file')
+    p.add_argument('-v', '--verbose', action='store_true', help='Verbose debug output')
+    p.add_argument('--dry-run', action='store_true', help='Skip remote updates')
+    p.add_argument('--auto-yes', action='store_true', help='Skip confirmation prompts')
+    
+    # Create subcommands
+    subparsers = p.add_subparsers(dest='command', help='Available commands')
+    
+    # NEW SERMON subcommand
+    new_sermon = subparsers.add_parser(
+        'new-sermon',
+        help='Create a new sermon from audio file',
+        description='Process an audio file and create a new sermon with AI-generated metadata'
     )
-    core.add_argument('--year', type=int, help='Process entire year (short-cut)')
-    core.add_argument(
-        '--years',
-        help='Multiple years: 2021,2023 or 2020-2022 (comma/range; combines)'
+    new_sermon.add_argument('audio_file', help='Path to audio file')
+    new_sermon.add_argument('--speaker', required=True, help='Speaker name')
+    new_sermon.add_argument('--date', required=True, help='Recording date (YYYY-MM-DD)')
+    new_sermon.add_argument('--event-type', default='Sunday Service', help='Event type')
+    new_sermon.add_argument('--bible-text', help='Bible reference text')
+    new_sermon.add_argument('--title', help='Sermon title (will be generated if not provided)')
+    new_sermon.add_argument('--subtitle', help='Sermon subtitle')
+    new_sermon.add_argument('--description', help='Sermon description (will be generated if not provided)')
+    new_sermon.add_argument('--hashtags', help='Hashtags/keywords (will be generated if not provided)')
+    
+    # SERMON UPDATE subcommand  
+    update_sermon = subparsers.add_parser(
+        'sermon-update',
+        help='Update existing sermons',
+        description='Process existing sermons with audio enhancement and metadata updates'
     )
-    core.add_argument('--auto-yes', action='store_true', help='Skip confirmation prompts')
-    core.add_argument('--no-upload', action='store_true', help='Skip metadata & audio upload')
-    core.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Skip remote updates (implies --no-upload)',
-    )
-    core.add_argument('--config', default=CONFIG_PATH, help='Alternate config file')
-    core.add_argument('-v', '--verbose', action='store_true', help='Verbose debug output')
-    core.add_argument('--output-dir',
-                     help='Directory to store processed sermon files (overrides config)')
-    core.add_argument('--save-original-audio', action='store_true',
-                     help='Save original downloaded audio alongside processed audio')
-    core.add_argument('--no-save-original-audio', action='store_true',
-                     help='Skip saving original audio (overrides config)')
-    core.add_argument('--save-transcript', action='store_true',
-                     help='Save sermon transcript as text file alongside other outputs')
-    core.add_argument('--no-save-transcript', action='store_true',
-                     help='Skip saving transcript (overrides config)')
-
-    # Metadata processing options
-    metadata = p.add_argument_group('Metadata Processing Options')
-    metadata.add_argument(
-        '--metadata-only',
-        action='store_true',
-        help='Process only metadata (descriptions/hashtags), skip audio processing'
-    )
-    metadata.add_argument(
-        '--skip-audio',
-        action='store_true',
-        help='Skip audio processing (alias for --metadata-only)'
-    )
-    metadata.add_argument(
-        '--force-description',
-        action='store_true',
-        help='Force update description even if substantial content exists'
-    )
-    metadata.add_argument(
-        '--force-hashtags',
-        action='store_true',
-        help='Force update hashtags even if substantial content exists'
-    )
-    metadata.add_argument(
-        '--no-metadata',
-        action='store_true',
-        help='Disable metadata processing entirely (audio processing only)'
-    )
-
-    filt = p.add_argument_group('Sermon Filters (map to API query params)')
+    update_sermon.add_argument('--sermon-id', help='Process a single sermon ID')
+    update_sermon.add_argument('--limit', type=int, help='Max sermons to process')
+    update_sermon.add_argument('--since-days', type=int, help='Preached after N days ago')
+    update_sermon.add_argument('--date-range', nargs=2, metavar=('START', 'END'), 
+                              help='Date range YYYY-MM-DD YYYY-MM-DD')
+    update_sermon.add_argument('--year', type=int, help='Process entire year')
+    update_sermon.add_argument('--years', help='Multiple years: 2021,2023 or 2020-2022')
+    update_sermon.add_argument('--no-upload', action='store_true', help='Skip upload')
+    update_sermon.add_argument('--output-dir', help='Directory to store processed files')
+    update_sermon.add_argument('--save-original-audio', action='store_true', 
+                              help='Save original audio')
+    update_sermon.add_argument('--no-save-original-audio', action='store_true',
+                              help='Skip saving original audio')
+    update_sermon.add_argument('--save-transcript', action='store_true',
+                              help='Save transcript as text file')
+    update_sermon.add_argument('--no-save-transcript', action='store_true',
+                              help='Skip saving transcript')
+    
+    # Add filter arguments to sermon-update
+    filt = update_sermon.add_argument_group('Sermon Filters')
     for cli_name, (_api, kind, help_txt) in SERMON_FILTER_ARG_MAP.items():
         arg = f"--{cli_name.replace('_', '-')}"
         if kind in ('flag', 'negflag'):
@@ -1355,15 +2184,96 @@ def build_arg_parser() -> argparse.ArgumentParser:
                 'speaker_id','collection_id','audio_min_duration','audio_max_duration'
             }
             typ = (
-                int
-                if (
-                    kind is int
-                    or 'duration' in cli_name
-                    or cli_name in numeric_names
-                )
+                int if (kind is int or 'duration' in cli_name or cli_name in numeric_names)
                 else str
             )
             filt.add_argument(arg, type=typ, help=help_txt)
+    
+    # METADATA UPDATE subcommand
+    metadata_update = subparsers.add_parser(
+        'metadata-update',
+        help='Update only metadata for existing sermons',
+        description='Update descriptions and hashtags with AI validation, skip audio processing'
+    )
+    metadata_update.add_argument('--sermon-id', help='Process a single sermon ID')
+    metadata_update.add_argument('--limit', type=int, help='Max sermons to process')
+    metadata_update.add_argument('--since-days', type=int, help='Preached after N days ago')
+    metadata_update.add_argument('--date-range', nargs=2, metavar=('START', 'END'),
+                                help='Date range YYYY-MM-DD YYYY-MM-DD')
+    metadata_update.add_argument('--year', type=int, help='Process entire year')
+    metadata_update.add_argument('--years', help='Multiple years: 2021,2023 or 2020-2022')
+    metadata_update.add_argument('--force-description', action='store_true',
+                                help='Force update description even if exists')
+    metadata_update.add_argument('--force-hashtags', action='store_true',
+                                help='Force update hashtags even if exists')
+    
+    # Add filter arguments to metadata-update
+    meta_filt = metadata_update.add_argument_group('Sermon Filters')
+    for cli_name, (_api, kind, help_txt) in SERMON_FILTER_ARG_MAP.items():
+        arg = f"--{cli_name.replace('_', '-')}"
+        if kind in ('flag', 'negflag'):
+            meta_filt.add_argument(arg, action='store_true', help=help_txt)
+        else:
+            numeric_names = {
+                'page','page_size','chapter','chapter_end','verse','verse_end','year','month','day',
+                'speaker_id','collection_id','audio_min_duration','audio_max_duration'
+            }
+            typ = (
+                int if (kind is int or 'duration' in cli_name or cli_name in numeric_names)
+                else str
+            )
+            meta_filt.add_argument(arg, type=typ, help=help_txt)
+    
+    # VALIDATION subcommand
+    validation = subparsers.add_parser(
+        'validation',
+        help='Validate sermon descriptions',
+        description='Validate existing descriptions and optionally regenerate poor quality ones'
+    )
+    validation.add_argument('--validate-descriptions', action='store_true',
+                           help='Validate existing descriptions without processing sermons')
+    validation.add_argument('--validate-and-regenerate', action='store_true',
+                           help='Validate descriptions and regenerate those that fail')
+    validation.add_argument('--validation-report', action='store_true',
+                           help='Generate detailed validation report')
+    validation.add_argument('--export-validation-csv', type=str, metavar='FILENAME',
+                           help='Export validation results to CSV file')
+    validation.add_argument('--export-validation-json', type=str, metavar='FILENAME',
+                           help='Export detailed validation results to JSON file')
+    validation.add_argument('--validation-sermon-ids', type=str,
+                           help='Comma-separated sermon IDs for validation')
+    validation.add_argument('--limit', type=int, help='Max sermons to validate')
+    
+    # LIST subcommand  
+    list_sermons = subparsers.add_parser(
+        'list',
+        help='List sermons without processing',
+        description='Search and list sermons based on filters'
+    )
+    list_sermons.add_argument('--limit', type=int, help='Max sermons to list')
+    list_sermons.add_argument('--since-days', type=int, help='Preached after N days ago')
+    list_sermons.add_argument('--date-range', nargs=2, metavar=('START', 'END'),
+                             help='Date range YYYY-MM-DD YYYY-MM-DD')
+    list_sermons.add_argument('--year', type=int, help='List entire year')
+    list_sermons.add_argument('--years', help='Multiple years: 2021,2023 or 2020-2022')
+    
+    # Add filter arguments to list
+    list_filt = list_sermons.add_argument_group('Sermon Filters')
+    for cli_name, (_api, kind, help_txt) in SERMON_FILTER_ARG_MAP.items():
+        arg = f"--{cli_name.replace('_', '-')}"
+        if kind in ('flag', 'negflag'):
+            list_filt.add_argument(arg, action='store_true', help=help_txt)
+        else:
+            numeric_names = {
+                'page','page_size','chapter','chapter_end','verse','verse_end','year','month','day',
+                'speaker_id','collection_id','audio_min_duration','audio_max_duration'
+            }
+            typ = (
+                int if (kind is int or 'duration' in cli_name or cli_name in numeric_names)
+                else str
+            )
+            list_filt.add_argument(arg, type=typ, help=help_txt)
+    
     return p
 
 
@@ -1374,12 +2284,14 @@ def confirm(prompt: str, auto_yes: bool) -> bool:
 
 
 def cli_main(argv: Iterable[str] | None = None):  # orchestration
-    """CLI entry point.
+    """CLI entry point with subcommand support.
 
-    1. Parse args
-    2. Optional config reload
-    3. Single-sermon path OR build query params and list
-    4. Optional batch processing with confirmation unless --auto-yes
+    Handles different subcommands:
+    - new-sermon: Create new sermon from audio file
+    - sermon-update: Update existing sermons with audio processing
+    - metadata-update: Update only metadata for existing sermons  
+    - validation: Validate sermon descriptions
+    - list: List sermons without processing
     """
     global config, llm_manager, DRY_RUN, DEBUG
     parser = build_arg_parser()
@@ -1401,6 +2313,165 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
         DEBUG = True
     if args.dry_run:
         DRY_RUN = True
+
+    # Check if no subcommand was provided
+    if not hasattr(args, 'command') or args.command is None:
+        parser.print_help()
+        return
+
+    # Dispatch to appropriate handler based on subcommand
+    if args.command == 'new-sermon':
+        handle_new_sermon(args)
+    elif args.command == 'sermon-update':
+        handle_sermon_update(args)
+    elif args.command == 'metadata-update':
+        handle_metadata_update(args)
+    elif args.command == 'validation':
+        handle_validation(args)
+    elif args.command == 'list':
+        handle_list_sermons(args)
+    else:
+        parser.error(f"Unknown command: {args.command}")
+
+
+def handle_new_sermon(args):
+    """Handle new-sermon subcommand."""
+    console_print("🎵 Creating new sermon from audio file...")
+    
+    success = process_new_sermon(
+        audio_file=args.audio_file,
+        speaker_name=args.speaker,
+        recorded_date=args.date,
+        event_type=args.event_type,
+        bible_text=args.bible_text,
+        title=args.title,
+        subtitle=args.subtitle,
+        description=args.description,
+        hashtags=args.hashtags,
+        dry_run=args.dry_run
+    )
+    
+    if success:
+        console_print("✅ New sermon created successfully!")
+    else:
+        console_print("❌ Failed to create new sermon", "error")
+        exit(1)
+
+
+def handle_sermon_update(args):
+    """Handle sermon-update subcommand (original functionality)."""
+    # Convert args to match original structure for backward compatibility
+    args.list_only = False
+    args.metadata_only = False
+    args.skip_audio = False
+    args.force_description = False
+    args.force_hashtags = False
+    args.no_metadata = False
+    
+    # Call the original processing logic
+    handle_original_processing(args)
+
+
+def handle_metadata_update(args):
+    """Handle metadata-update subcommand."""
+    # Set metadata-only flags
+    args.list_only = False
+    args.metadata_only = True
+    args.skip_audio = True
+    args.no_metadata = False
+    args.no_upload = False
+    
+    # Call the original processing logic
+    handle_original_processing(args)
+
+
+def handle_validation(args):
+    """Handle validation subcommand."""
+    # Initialize validator
+    try:
+        validator = DescriptionValidator(config)
+        
+        if not llm_manager.validator_provider:
+            console_print("⚠️  No validator LLM configured, using primary provider for validation", "warning")
+        
+        # Parse sermon IDs if provided
+        validation_sermon_ids = None
+        if args.validation_sermon_ids:
+            validation_sermon_ids = [id.strip() for id in args.validation_sermon_ids.split(',') if id.strip()]
+            console_print(f"🎯 Validating {len(validation_sermon_ids)} specific sermons")
+        
+        # Run validation
+        if args.validate_and_regenerate:
+            console_print("🔍 Validating descriptions and regenerating failed ones...")
+            results = validator.validate_and_regenerate_descriptions(
+                sermon_ids=validation_sermon_ids,
+                limit=getattr(args, 'limit', None)
+            )
+        else:
+            console_print("🔍 Validating descriptions...")
+            results = validator.validate_descriptions(
+                sermon_ids=validation_sermon_ids,
+                limit=getattr(args, 'limit', None)
+            )
+        
+        # Export results if requested
+        if args.export_validation_csv:
+            validator.export_results_csv(results, args.export_validation_csv)
+            console_print(f"📊 Validation results exported to {args.export_validation_csv}")
+        
+        if args.export_validation_json:
+            validator.export_results_json(results, args.export_validation_json)
+            console_print(f"📊 Detailed validation results exported to {args.export_validation_json}")
+        
+        if args.validation_report:
+            validator.print_validation_report(results)
+        
+        console_print("✅ Validation Complete!")
+        
+    except Exception as e:
+        console_print(f"❌ Validation failed: {e}", "error")
+        exit(1)
+
+
+def handle_list_sermons(args):
+    """Handle list subcommand."""
+    args.list_only = True
+    args.metadata_only = False
+    args.skip_audio = False
+    args.no_metadata = False
+    args.no_upload = True
+    
+    # Call the original processing logic
+    handle_original_processing(args)
+
+
+def handle_original_processing(args):
+    """Handle the original sermon processing logic for backward compatibility."""
+    # Set defaults for missing attributes that might not exist in subcommand args
+    if not hasattr(args, 'validate_descriptions'):
+        args.validate_descriptions = False
+    if not hasattr(args, 'validate_and_regenerate'):
+        args.validate_and_regenerate = False
+    if not hasattr(args, 'validation_report'):
+        args.validation_report = False
+    if not hasattr(args, 'export_validation_csv'):
+        args.export_validation_csv = None
+    if not hasattr(args, 'export_validation_json'):
+        args.export_validation_json = None
+    if not hasattr(args, 'validation_sermon_ids'):
+        args.validation_sermon_ids = None
+    if not hasattr(args, 'no_upload'):
+        args.no_upload = False
+    if not hasattr(args, 'output_dir'):
+        args.output_dir = None
+    if not hasattr(args, 'save_original_audio'):
+        args.save_original_audio = False
+    if not hasattr(args, 'no_save_original_audio'):
+        args.no_save_original_audio = False
+    if not hasattr(args, 'save_transcript'):
+        args.save_transcript = False
+    if not hasattr(args, 'no_save_transcript'):
+        args.no_save_transcript = False
 
     if args.sermon_id:
         if not confirm(f"Process sermon {args.sermon_id}?", args.auto_yes):
@@ -1432,13 +2503,261 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
             no_upload=args.no_upload or args.dry_run,
             verbose=args.verbose,
             skip_audio=skip_audio,
-            force_description=args.force_description,
-            force_hashtags=args.force_hashtags,
-            no_metadata=args.no_metadata,
+            force_description=getattr(args, 'force_description', False),
+            force_hashtags=getattr(args, 'force_hashtags', False),
+            no_metadata=getattr(args, 'no_metadata', False),
             output_dir=args.output_dir,
             save_original_audio=save_original_audio,
             save_transcript=save_transcript
         )
+        
+        # Display result summary for single sermon processing
+        if result:
+            if result.get("action") == "skipped":
+                console_print(f"⏭️  Skipped: {result.get('reason', 'No updates needed')}", "info")
+            elif result.get("action") == "processed":
+                completed = result.get("completed", [])
+                if completed:
+                    actions_text = ", ".join(completed)
+                    console_print(f"✅ Completed: Updated {actions_text}", "success")
+                else:
+                    console_print("✅ Processing completed", "success")
+        
+        return
+
+    # Year shortcut -> preached_year (pure filter) so --limit & other filters apply
+    if getattr(args, 'year', None):
+        if not hasattr(args, 'preached_year') or getattr(args, 'preached_year', None) in (None, 0):
+            args.preached_year = args.year
+        logger.debug(f"Using --year {args.year} as preached_year filter (respects --limit)")
+
+    # Multi-year support: --years accepts comma separated and/or single range (e.g. 2020-2022)
+    multi_years: list[int] = []
+    if getattr(args, 'years', None):
+        parts = [p.strip() for p in args.years.split(',') if p.strip()]
+        for p in parts:
+            if '-' in p:
+                try:
+                    a, b = p.split('-', 1)
+                    start_y = int(a)
+                    end_y = int(b)
+                    if start_y > end_y:
+                        start_y, end_y = end_y, start_y
+                    multi_years.extend(range(start_y, end_y + 1))
+                except ValueError:
+                    logger.warning("Invalid year range: %s", p)
+            else:
+                try:
+                    multi_years.append(int(p))
+                except ValueError:
+                    print(f"[WARN] Invalid year: {p}")
+        # Deduplicate & sort
+        multi_years = sorted(set(multi_years))
+        if multi_years:
+            logger.debug(f"Multi-year filter parsed: {multi_years}")
+            # Remove single-year preached_year if present to avoid conflict
+            if hasattr(args, 'preached_year'):
+                args.preached_year = None
+
+    params = build_sermon_query_params(args)
+    params.setdefault('broadcasterID', SERMON_AUDIO_BROADCASTER_ID)
+
+    # Only set default time filter if no explicit time/year filters AND not using multi-year
+    filter_keys = ('preachedAfterTimestamp', 'preachedBeforeTimestamp', 'year')
+    has_time_or_year_filter = any(k in params for k in filter_keys)
+    if not multi_years and not has_time_or_year_filter:
+        after = dt.datetime.utcnow() - dt.timedelta(days=30)
+        params['preachedAfterTimestamp'] = int(after.timestamp())
+        params.setdefault('cache', 'true')
+
+    # If multi-year list requested, perform separate queries per year and merge.
+    if multi_years:
+        combined: list[SermonLite] = []
+        for y in multi_years:
+            y_params = params.copy()
+            y_params['year'] = y
+            logger.debug(f"Fetching year {y} with params: {y_params}")
+            batch = fetch_sermons(y_params, max_results=None)
+            combined.extend(batch)
+            if getattr(args, 'limit', None) and len(combined) >= args.limit:
+                combined = combined[:args.limit]
+                break
+        sermons = combined
+    else:
+        sermons = fetch_sermons(params, max_results=getattr(args, 'limit', None))
+    
+    if not sermons:
+        print('No sermons matched filters.')
+        return
+
+    print(f"Matched {len(sermons)} sermons:")
+    for s in sermons:
+        print(
+            f"  {s.preachDate} | {s.sermonID} | {s.displayTitle} | "
+            f"{s.speakerName or '-'} | {s.eventType or '-'}"
+        )
+
+    if args.list_only:
+        return
+
+    if not confirm(f"Process {len(sermons)} sermons?", args.auto_yes):
+        console_print('Cancelled')
+        return
+
+    # Handle metadata-only and skip-audio flags for batch processing
+    skip_audio = getattr(args, 'metadata_only', False) or getattr(args, 'skip_audio', False)
+    
+    # Show processing summary and settings
+    console_print(f"🎯 Processing {len(sermons)} sermons...")
+    if args.dry_run:
+        console_print("🔍 DRY RUN MODE - No changes will be made", "warning")
+    if args.no_upload:
+        console_print("📁 NO UPLOAD MODE - Audio will not be uploaded", "warning")
+    
+    # Show processing settings summary
+    settings_info = []
+    if skip_audio:
+        settings_info.append("⚙️ Metadata only (no audio processing)")
+    else:
+        settings_info.append("⚙️ Full processing (metadata + audio)")
+    
+    # LLM provider info
+    provider_info = llm_manager.get_provider_info()
+    if provider_info['primary']:
+        primary = provider_info['primary']
+        llm_text = f"LLM: {primary['type'].title()}/{primary['model']}"
+        if provider_info['fallback']:
+            fallback = provider_info['fallback']
+            llm_text += f" (fallback: {fallback['type'].title()}/{fallback['model']})"
+        settings_info.append(llm_text)
+    
+    # Output directory
+    output_path = args.output_dir or config.get('output_directory', 'processed_sermons')
+    settings_info.append(f"Output: {output_path}")
+    
+    # File saving options
+    save_opts = []
+    original_audio_enabled = (save_original_audio or
+                             (save_original_audio is None and
+                              config.get('save_original_audio', True)))
+    if original_audio_enabled:
+        save_opts.append("original audio")
+    transcript_enabled = (save_transcript or
+                         (save_transcript is None and
+                          config.get('save_transcript', False)))
+    if transcript_enabled:
+        save_opts.append("transcript")
+    if save_opts:
+        settings_info.append(f"Saving: {', '.join(save_opts)}")
+    
+    # Display settings
+    for setting in settings_info:
+        console_print(f"   {setting}")
+    console_print("")  # Extra line for readability
+
+    success = 0
+    errors = 0
+    needs_review = []  # Track sermons that need manual review
+    validation_stats = {
+        'approved_primary': 0,
+        'approved_fallback': 0,
+        'needs_review': 0,
+        'no_validation': 0
+    }
+
+    # Process each sermon with individual progress updates
+    for idx, s in enumerate(sermons, 1):
+        if not args.verbose:
+            console_print(f"[{idx}/{len(sermons)}] Processing: {s.displayTitle}")
+        try:
+            result = process_single_sermon(
+                s.sermonID,
+                no_upload=args.no_upload or args.dry_run,
+                verbose=args.verbose,
+                skip_audio=skip_audio,
+                force_description=getattr(args, 'force_description', False),
+                force_hashtags=getattr(args, 'force_hashtags', False),
+                no_metadata=getattr(args, 'no_metadata', False),
+                output_dir=args.output_dir,
+                save_original_audio=save_original_audio,
+                save_transcript=save_transcript
+            )
+            success += 1
+            
+            # Track validation results for summary
+            if result and result.get("validation_info"):
+                val_info = result["validation_info"]
+                status = val_info.get('final_status', 'unknown')
+                if status in validation_stats:
+                    validation_stats[status] += 1
+                if val_info.get('needs_review'):
+                    needs_review.append({
+                        'id': s.sermonID,
+                        'title': s.displayTitle,
+                        'validation_attempts': val_info.get('validation_attempts', [])
+                    })
+            
+            # Display meaningful completion message based on what was done
+            if not args.verbose:
+                if result and result.get("action") == "skipped":
+                    reason = result.get('reason', 'No updates needed')
+                    msg = f"[{idx}/{len(sermons)}] ⏭️  Skipped: {s.displayTitle} - {reason}"
+                    console_print(msg, "info")
+                elif result and result.get("action") == "processed":
+                    completed = result.get("completed", [])
+                    if completed:
+                        actions_text = ", ".join(completed)
+                        msg = (f"[{idx}/{len(sermons)}] ✅ Updated: {s.displayTitle} - "
+                               f"{actions_text}")
+                        console_print(msg, "success")
+                    else:
+                        msg = f"[{idx}/{len(sermons)}] ✅ Completed: {s.displayTitle}"
+                        console_print(msg, "success")
+                else:
+                    msg = f"[{idx}/{len(sermons)}] ✅ Completed: {s.displayTitle}"
+                    console_print(msg, "success")
+        except Exception as e:  # pragma: no cover
+            errors += 1
+            error_msg = f"[{idx}/{len(sermons)}] ❌ Error: {s.displayTitle} - {e}"
+            if args.verbose:
+                console_print(error_msg, "error")
+                traceback.print_exc()
+            else:
+                console_print(error_msg, "error")
+        time.sleep(1)
+
+    # Final summary
+    if success > 0:
+        console_print(f"✅ Completed successfully: {success} sermons", "success")
+    if errors > 0:
+        console_print(f"❌ Errors encountered: {errors} sermons", "error")
+    else:
+        console_print("🎉 All sermons processed without errors!", "success")
+    
+    # Validation summary
+    total_validated = sum(validation_stats.values())
+    if total_validated > 0:
+        console_print("\n📋 Description Validation Summary:", "info")
+        if validation_stats['approved_primary'] > 0:
+            count = validation_stats['approved_primary']
+            console_print(f"   ✅ Approved (Primary): {count}", "success")
+        if validation_stats['approved_fallback'] > 0:
+            count = validation_stats['approved_fallback']
+            console_print(f"   ✅ Approved (Fallback): {count}", "success")
+        if validation_stats['no_validation'] > 0:
+            console_print(f"   ℹ️  No Validation: {validation_stats['no_validation']}", "info")
+        if validation_stats['needs_review'] > 0:
+            console_print(f"   ⚠️  Needs Review: {validation_stats['needs_review']}", "warning")
+    
+    # Manual review items
+    if needs_review:
+        console_print("\n⚠️  Sermons requiring manual review:", "warning")
+        for item in needs_review:
+            console_print(f"   📝 {item['title']} (ID: {item['id']})", "warning")
+            for attempt in item['validation_attempts']:
+                provider = attempt['provider'].title()
+                reason = attempt['reason']
+                console_print(f"      {provider}: {reason}", "info")
         
         # Display result summary for single sermon processing
         if result:
