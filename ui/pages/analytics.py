@@ -218,7 +218,7 @@ def show_cost_tracking():
             "avg_tokens_per_call": st.column_config.NumberColumn("Avg Tokens/Call", format="%.0f")
         },
         hide_index=True,
-        use_container_width=True
+        width='stretch'
     )
 
 def show_performance_metrics():
@@ -293,7 +293,7 @@ def show_performance_metrics():
                 "bottleneck_score": st.column_config.NumberColumn("Bottleneck Score", format="%.2f")
             },
             hide_index=True,
-            use_container_width=True
+            width='stretch'
         )
     
     # Resource usage
