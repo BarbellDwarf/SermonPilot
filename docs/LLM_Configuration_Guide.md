@@ -229,6 +229,29 @@ llm:
 
 ✅ **Debug Mode**: Enable verbose debugging output for troubleshooting
 
+## Model Recommendations by Use Case
+
+### 🎯 Sermon Processing (Primary)
+- **Best Quality**: `anthropic` with `claude-3-5-sonnet-20241022` - Excellent at theological content
+- **Best Value**: `groq` with `llama-3.1-70b-versatile` - Fast and cost-effective
+- **Best Speed**: `groq` with `llama-3.1-8b-instant` - Ultra-fast responses
+- **Privacy/Local**: `ollama` with `llama3.1:8b` - No data leaves your network
+
+### ⚡ Fallback Providers
+- **Reliable**: `openai` with `gpt-3.5-turbo` - Stable and widely available
+- **Budget**: `groq` with `llama-3.1-8b-instant` - Cheap and fast
+- **Offline**: `ollama` with smaller models like `gemma2:2b`
+
+### 🔍 Validation (Smaller Models)
+- **Fast Validation**: `groq` with `llama-3.1-8b-instant`
+- **Local Validation**: `ollama` with `gemma2:2b` or `phi3:mini`
+- **Budget Validation**: `google` with `gemini-1.5-flash`
+
+### 💰 Cost Optimization Strategies
+1. **Primary**: Fast/cheap model like Groq
+2. **Fallback**: Premium model like Claude for quality assurance
+3. **Validator**: Tiny local model for basic checks
+
 ## Debug Mode
 
 The SermonAudio Updater includes a debug mode to help with troubleshooting. Set `debug: true` in your `config.yaml` to enable verbose output that shows:
