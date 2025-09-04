@@ -262,7 +262,7 @@ def main():
 def show_dashboard():
     """Dashboard page"""
     try:
-        from pages.dashboard import show_dashboard as dashboard_main
+        from ui_pages.dashboard import show_dashboard as dashboard_main
         dashboard_main()
     except ImportError:
         # Fallback if pages module not available
@@ -272,7 +272,7 @@ def show_dashboard():
 def show_new_sermon():
     """New sermon page"""
     try:
-        from pages.new_sermon import show_new_sermon as new_sermon_main
+        from ui_pages.new_sermon import show_new_sermon as new_sermon_main
         new_sermon_main()
     except ImportError:
         # Fallback if pages module not available
@@ -282,7 +282,7 @@ def show_new_sermon():
 def show_batch_update():
     """Batch update page"""
     try:
-        from pages.batch_update import show_batch_update as batch_main
+        from ui_pages.batch_update import show_batch_update as batch_main
         batch_main()
     except ImportError:
         # Fallback if pages module not available
@@ -292,7 +292,7 @@ def show_batch_update():
 def show_validation():
     """Validation page"""
     try:
-        from pages.validation import show_validation as validation_main
+        from ui_pages.validation import show_validation as validation_main
         validation_main()
     except ImportError:
         # Fallback if pages module not available
@@ -302,7 +302,7 @@ def show_validation():
 def show_analytics():
     """Analytics page"""
     try:
-        from pages.analytics import show_analytics as analytics_main
+        from ui_pages.analytics import show_analytics as analytics_main
         analytics_main()
     except ImportError:
         # Fallback if pages module not available
@@ -312,7 +312,7 @@ def show_analytics():
 def show_settings():
     """Settings page"""
     try:
-        from pages.settings import show_settings as settings_main
+        from ui_pages.settings import show_settings as settings_main
         settings_main()
     except ImportError:
         # Fallback if pages module not available
