@@ -7,7 +7,7 @@ and batch validation with detailed reporting.
 
 import streamlit as st
 import pandas as pd
-import datetime
+import datetime as dt
 
 def show_validation():
     """Main validation interface"""
@@ -41,183 +41,236 @@ def show_quality_metrics():
     """Display validation metrics and quality scores"""
     st.markdown("### 📊 Quality Metrics Overview")
     
-    # Generate mock validation data
-    validation_data = generate_mock_validation_data()
-    
-    # Key metrics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric(
-            "Overall Quality Score",
-            f"{validation_data['overall_score']:.1f}/10",
-            f"{validation_data['score_change']:+.1f} vs last week"
-        )
-    
-    with col2:
-        st.metric(
-            "Validation Rate",
-            f"{validation_data['validation_rate']:.1f}%",
-            f"{validation_data['validation_change']:+.1f}% vs last week"
-        )
-    
-    with col3:
-        st.metric(
-            "Auto-Pass Rate",
-            f"{validation_data['auto_pass_rate']:.1f}%",
-            f"{validation_data['auto_pass_change']:+.1f}% vs last week"
-        )
-    
-    with col4:
-        st.metric(
-            "Avg Validation Time",
-            f"{validation_data['avg_validation_time']:.1f}s",
-            f"{validation_data['time_change']:+.1f}s vs last week"
-        )
-    
-    # Quality criteria breakdown
-    st.markdown("#### 🎯 Quality Criteria Performance")
-    
-    criteria_data = validation_data['criteria_performance']
-    df_criteria = pd.DataFrame(criteria_data)
-    
-    # Display criteria performance
-    for idx, criterion in df_criteria.iterrows():
-        col1, col2, col3 = st.columns([3, 1, 1])
+    try:
+        from ui_processor import get_processor
+        processor = get_processor()
+        
+        # Get real validation results
+        validation_results = processor.get_validation_results()
+        
+        if not validation_results:
+            st.info("📊 No validation data available yet. Run some validations to see metrics here.")
+            return
+        
+        # Calculate real metrics
+        total_results = len(validation_results)
+        valid_count = sum(1 for r in validation_results if r.get('is_valid', False))
+        invalid_count = total_results - valid_count
+        
+        if total_results > 0:
+            validation_rate = (valid_count / total_results) * 100
+            avg_score = sum(r.get('score', 0) for r in validation_results) / total_results
+        else:
+            validation_rate = 0
+            avg_score = 0
+        
+        # Key metrics
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.write(f"**{criterion['criterion']}**")
+            st.metric(
+                "Overall Quality Score",
+                f"{avg_score:.1f}/1.0",
+                help="Average validation score across all tested sermons"
+            )
         
         with col2:
-            score_color = "🟢" if criterion['score'] >= 8 else "🟡" if criterion['score'] >= 6 else "🔴"
-            st.write(f"{score_color} {criterion['score']:.1f}/10")
+            st.metric(
+                "Validation Rate",
+                f"{validation_rate:.1f}%",
+                help="Percentage of sermons that passed validation"
+            )
         
         with col3:
-            st.write(f"{criterion['pass_rate']:.1f}% pass")
-    
-    # Recent validation results
-    st.markdown("#### 📋 Recent Validation Results")
-    
-    recent_results = validation_data['recent_results']
-    df_results = pd.DataFrame(recent_results)
-    
-    # Add status styling
-    df_results['Status'] = df_results.apply(
-        lambda row: f"✅ Pass ({row['score']:.1f}/10)" if row['passed'] 
-                   else f"❌ Fail ({row['score']:.1f}/10)", axis=1
-    )
-    
-    st.dataframe(
-        df_results[['sermon_id', 'title', 'speaker', 'Status', 'validation_time']].rename(columns={
-            'sermon_id': 'Sermon ID',
-            'title': 'Title',
-            'speaker': 'Speaker',
-            'validation_time': 'Validation Time'
-        }),
-        width='stretch',
-        hide_index=True
-    )
+            st.metric(
+                "Total Validated",
+                total_results,
+                help="Total number of sermons validated"
+            )
+        
+        with col4:
+            st.metric(
+                "Failed Validation",
+                invalid_count,
+                help="Number of sermons that failed validation"
+            )
+        
+        # Recent validation results
+        st.markdown("#### 📋 Recent Validation Results")
+        
+        if validation_results:
+            # Show most recent results
+            recent_results = validation_results[-10:] if len(validation_results) > 10 else validation_results
+            
+            results_data = []
+            for result in recent_results:
+                results_data.append({
+                    'Sermon ID': result.get('sermon_id', 'Unknown'),
+                    'Status': '✅ Pass' if result.get('is_valid', False) else '❌ Fail',
+                    'Score': f"{result.get('score', 0):.2f}/1.0",
+                    'Reason': result.get('reason', 'No reason provided')[:50] + '...' if len(result.get('reason', '')) > 50 else result.get('reason', 'No reason provided'),
+                    'Validated': result.get('validated_at', 'Unknown')[:10] if result.get('validated_at') else 'Unknown'
+                })
+            
+            import pandas as pd
+            df_results = pd.DataFrame(results_data)
+            
+            st.dataframe(
+                df_results,
+                width='stretch',
+                hide_index=True
+            )
+        else:
+            st.info("No validation results to display")
+            
+    except Exception as e:
+        st.error(f"❌ Error loading validation metrics: {e}")
+        st.info("📊 No validation data available. Run some validations to see metrics here.")
 
 def show_failed_descriptions():
     """Show descriptions that failed validation"""
     st.markdown("### ❌ Failed Descriptions")
     
-    # Failed descriptions data
-    failed_data = generate_mock_failed_data()
-    
-    # Summary stats
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Total Failed", len(failed_data))
-    
-    with col2:
-        priority_count = sum(1 for item in failed_data if item['priority'] == 'High')
-        st.metric("High Priority", priority_count)
-    
-    with col3:
-        regenerated = sum(1 for item in failed_data if item.get('regenerated', False))
-        st.metric("Regenerated", regenerated)
-    
-    # Filter options
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        priority_filter = st.selectbox(
-            "Filter by Priority",
-            options=["All", "High", "Medium", "Low"]
-        )
-    
-    with col2:
-        speaker_filter = st.selectbox(
-            "Filter by Speaker",
-            options=["All"] + list(set(item['speaker'] for item in failed_data))
-        )
-    
-    with col3:
-        status_filter = st.selectbox(
-            "Filter by Status",
-            options=["All", "Pending", "Regenerated", "Manual Review"]
-        )
-    
-    # Apply filters
-    filtered_data = failed_data.copy()
-    if priority_filter != "All":
-        filtered_data = [item for item in filtered_data if item['priority'] == priority_filter]
-    if speaker_filter != "All":
-        filtered_data = [item for item in filtered_data if item['speaker'] == speaker_filter]
-    if status_filter != "All":
-        filtered_data = [item for item in filtered_data if item.get('status', 'Pending') == status_filter]
-    
-    # Display failed descriptions
-    st.markdown("#### 📋 Failed Descriptions List")
-    
-    for item in filtered_data[:10]:  # Show first 10 items
-        with st.expander(f"🔴 {item['title']} - {item['speaker']} (Score: {item['score']:.1f}/10)"):
+    try:
+        from ui_processor import get_processor
+        processor = get_processor()
+        
+        # Get real failed validation results
+        all_results = processor.get_validation_results()
+        failed_results = [r for r in all_results if not r.get('is_valid', True)]
+        
+        if not failed_results:
+            st.success("🎉 No failed descriptions found! All validated sermons passed.")
+            return
+        
+        # Summary stats
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Total Failed", len(failed_results))
+        
+        with col2:
+            # Count high priority (very low scores)
+            high_priority = sum(1 for r in failed_results if r.get('score', 1.0) < 0.4)
+            st.metric("High Priority", high_priority)
+        
+        with col3:
+            # Check if any have been marked for regeneration (this would need to be tracked)
+            st.metric("Available", len(failed_results))
+        
+        # Filter options
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            priority_filter = st.selectbox(
+                "Filter by Priority",
+                options=["All", "High Priority (<0.4)", "Medium Priority (0.4-0.6)", "Low Priority (>0.6)"]
+            )
+        
+        with col2:
+            # Get unique sermon IDs for filtering (speaker info may not be available)
+            sermon_ids = list(set(r.get('sermon_id', 'Unknown') for r in failed_results))
+            sermon_filter = st.selectbox(
+                "Filter by Sermon ID",
+                options=["All"] + sermon_ids[:20]  # Limit to first 20 for UI performance
+            )
+        
+        with col3:
+            score_filter = st.selectbox(
+                "Filter by Score Range",
+                options=["All", "Very Low (0.0-0.2)", "Low (0.2-0.4)", "Medium (0.4-0.6)", "High (0.6-0.8)"]
+            )
+        
+        # Apply filters
+        filtered_results = failed_results.copy()
+        
+        if priority_filter == "High Priority (<0.4)":
+            filtered_results = [r for r in filtered_results if r.get('score', 1.0) < 0.4]
+        elif priority_filter == "Medium Priority (0.4-0.6)":
+            filtered_results = [r for r in filtered_results if 0.4 <= r.get('score', 1.0) < 0.6]
+        elif priority_filter == "Low Priority (>0.6)":
+            filtered_results = [r for r in filtered_results if r.get('score', 1.0) >= 0.6]
+        
+        if sermon_filter != "All":
+            filtered_results = [r for r in filtered_results if r.get('sermon_id') == sermon_filter]
+        
+        if score_filter == "Very Low (0.0-0.2)":
+            filtered_results = [r for r in filtered_results if 0.0 <= r.get('score', 1.0) < 0.2]
+        elif score_filter == "Low (0.2-0.4)":
+            filtered_results = [r for r in filtered_results if 0.2 <= r.get('score', 1.0) < 0.4]
+        elif score_filter == "Medium (0.4-0.6)":
+            filtered_results = [r for r in filtered_results if 0.4 <= r.get('score', 1.0) < 0.6]
+        elif score_filter == "High (0.6-0.8)":
+            filtered_results = [r for r in filtered_results if 0.6 <= r.get('score', 1.0) < 0.8]
+        
+        # Display failed descriptions
+        st.markdown("#### 📋 Failed Descriptions List")
+        
+        if not filtered_results:
+            st.info("No failed descriptions match the current filters.")
+            return
+        
+        for i, result in enumerate(filtered_results[:10]):  # Show first 10 items
+            sermon_id = result.get('sermon_id', 'Unknown')
+            score = result.get('score', 0.0)
+            reason = result.get('reason', 'No reason provided')
             
-            col1, col2 = st.columns([2, 1])
+            priority = "🔴 High" if score < 0.4 else "🟡 Medium" if score < 0.6 else "🟠 Low"
             
-            with col1:
-                st.markdown("**Original Description:**")
-                st.write(item['description'])
+            with st.expander(f"{priority} - Sermon {sermon_id} (Score: {score:.2f}/1.0)"):
                 
-                st.markdown("**Validation Issues:**")
-                for issue in item['issues']:
-                    st.write(f"• {issue}")
-            
-            with col2:
-                st.markdown("**Details:**")
-                st.write(f"**Priority:** {item['priority']}")
-                st.write(f"**Date:** {item['date']}")
-                st.write(f"**Score:** {item['score']:.1f}/10")
+                col1, col2 = st.columns([2, 1])
                 
-                # Action buttons
-                col_a, col_b = st.columns(2)
+                with col1:
+                    st.markdown("**Validation Result:**")
+                    st.write(reason)
+                    
+                    # Show additional details if available
+                    if result.get('criteria_failed'):
+                        st.markdown("**Failed Criteria:**")
+                        for criterion in result.get('criteria_failed', []):
+                            st.write(f"• {criterion}")
                 
-                with col_a:
-                    if st.button("🔄 Regenerate", key=f"regen_{item['sermon_id']}"):
-                        regenerate_description(item['sermon_id'])
+                with col2:
+                    st.markdown("**Details:**")
+                    st.write(f"**Sermon ID:** {sermon_id}")
+                    st.write(f"**Score:** {score:.2f}/1.0")
+                    st.write(f"**Validated:** {result.get('validated_at', 'Unknown')[:10] if result.get('validated_at') else 'Unknown'}")
+                    
+                    # Action buttons
+                    col_a, col_b = st.columns(2)
+                    
+                    with col_a:
+                        if st.button("🔄 Regenerate", key=f"regen_{sermon_id}_{i}"):
+                            regenerate_description(sermon_id)
+                    
+                    with col_b:
+                        if st.button("👤 Manual Review", key=f"manual_{sermon_id}_{i}"):
+                            mark_for_manual_review(sermon_id)
+        
+        if len(filtered_results) > 10:
+            st.info(f"Showing first 10 of {len(filtered_results)} failed descriptions. Use filters to narrow down results.")
+        
+        # Bulk actions
+        st.markdown("#### 🔄 Bulk Actions")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("🔄 Regenerate All High Priority", type="primary"):
+                regenerate_high_priority()
+        
+        with col2:
+            if st.button("📧 Export Failed List"):
+                export_failed_list()
+        
+        with col3:
+            if st.button("📊 Generate Report"):
+                generate_validation_report()
                 
-                with col_b:
-                    if st.button("👤 Manual Review", key=f"manual_{item['sermon_id']}"):
-                        mark_for_manual_review(item['sermon_id'])
-    
-    # Bulk actions
-    st.markdown("#### 🔄 Bulk Actions")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("🔄 Regenerate All High Priority", type="primary"):
-            regenerate_high_priority()
-    
-    with col2:
-        if st.button("📧 Export Failed List"):
-            export_failed_list()
-    
-    with col3:
-        if st.button("📊 Generate Report"):
-            generate_validation_report()
+    except Exception as e:
+        st.error(f"❌ Error loading failed descriptions: {e}")
+        st.info("No failed descriptions data available.")
 
 def show_batch_validation():
     """Real batch validation interface with progress tracking"""
@@ -308,14 +361,57 @@ def start_real_validation(scope: str, options: dict):
                 return
         
         elif scope == "Recent Sermons (Last 30 days)":
-            # This would need to call SermonAudio API to get recent sermons
-            st.warning("⚠️ Recent sermons validation requires API integration - using demo IDs")
-            sermon_ids = ["demo123", "demo456", "demo789"]  # Demo for now
+            # Get recent sermons from SermonAudio API
+            try:
+                import sermon_updater
+                
+                # Get recent sermons using the API
+                end_date = dt.datetime.now()
+                start_date = end_date - dt.timedelta(days=30)
+                
+                max_sermons = options.get('max_sermons', 50)
+                
+                # Use get_sermons_in_date_range to get real sermon data
+                sermons = sermon_updater.get_sermons_in_date_range(
+                    start_date.strftime('%Y-%m-%d'),
+                    end_date.strftime('%Y-%m-%d'),
+                    limit=max_sermons
+                )
+                
+                sermon_ids = [str(sermon.sermon_id) for sermon in sermons]
+                
+                if not sermon_ids:
+                    st.info("✅ No recent sermons found!")
+                    return
+                    
+            except Exception as e:
+                st.error(f"❌ Failed to fetch recent sermons: {e}")
+                return
             
         elif scope == "All Processed Sermons":
-            st.warning("⚠️ Full sermon validation requires scanning processed_sermons directory")
-            # This would scan the processed_sermons directory
-            sermon_ids = ["demo123", "demo456"]  # Demo for now
+            # Scan the processed_sermons directory for real sermon IDs
+            try:
+                import os
+                from pathlib import Path
+                
+                config = st.session_state.get('config', {})
+                output_dir = config.get('output_directory', 'processed_sermons')
+                processed_dir = Path(output_dir)
+                
+                if processed_dir.exists():
+                    sermon_dirs = [d.name for d in processed_dir.iterdir() if d.is_dir()]
+                    sermon_ids = sermon_dirs
+                    
+                    if not sermon_ids:
+                        st.info("✅ No processed sermons found in local directory!")
+                        return
+                else:
+                    st.error(f"❌ Processed sermons directory not found: {processed_dir}")
+                    return
+                    
+            except Exception as e:
+                st.error(f"❌ Failed to scan processed sermons: {e}")
+                return
             
         elif scope == "Failed Descriptions Only":
             # Get previously failed validations from database
@@ -427,57 +523,118 @@ def show_validation_trends():
     """Show validation trends and historical data"""
     st.markdown("### 📈 Validation Trends")
     
-    # Time period selector
-    period = st.selectbox(
-        "Time Period",
-        options=["Last 7 Days", "Last 30 Days", "Last 90 Days", "Last Year"]
-    )
-    
-    trends_data = generate_mock_trends_data(period)
-    
-    # Trend charts
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("#### 📊 Quality Score Trends")
+    try:
+        from ui_processor import get_processor
+        processor = get_processor()
         
-        df_quality = pd.DataFrame(trends_data['quality_trends'])
-        st.line_chart(df_quality.set_index('date')[['avg_score', 'median_score']])
-    
-    with col2:
-        st.markdown("#### ✅ Pass Rate Trends") 
+        # Get real validation results
+        all_results = processor.get_validation_results()
         
-        df_pass_rate = pd.DataFrame(trends_data['pass_rate_trends'])
-        st.line_chart(df_pass_rate.set_index('date'))
-    
-    # Criteria performance over time
-    st.markdown("#### 🎯 Criteria Performance Over Time")
-    
-    df_criteria_trends = pd.DataFrame(trends_data['criteria_trends'])
-    st.line_chart(df_criteria_trends.set_index('date'))
-    
-    # Statistical summary
-    st.markdown("#### 📊 Statistical Summary")
-    
-    stats = trends_data['statistics']
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Mean Quality Score", f"{stats['mean_score']:.2f}")
-        st.metric("Score Std Dev", f"{stats['score_std']:.2f}")
-    
-    with col2:
-        st.metric("Best Day Score", f"{stats['best_day_score']:.1f}")
-        st.metric("Worst Day Score", f"{stats['worst_day_score']:.1f}")
-    
-    with col3:
-        st.metric("Improvement Rate", f"{stats['improvement_rate']:+.1f}%")
-        st.metric("Consistency Score", f"{stats['consistency']:.1f}/10")
-    
-    with col4:
-        st.metric("Total Validations", f"{stats['total_validations']:,}")
-        st.metric("Avg Daily Volume", f"{stats['avg_daily_volume']:.0f}")
+        if not all_results:
+            st.info("📈 No validation trend data available yet. Run validations over time to see trends here.")
+            return
+        
+        # Time period selector
+        period = st.selectbox(
+            "Time Period",
+            options=["Last 7 Days", "Last 30 Days", "Last 90 Days", "All Time"]
+        )
+        
+        # Filter results by period if we have datetime data
+        filtered_results = all_results  # For now, show all results
+        
+        if filtered_results:
+            # Basic statistics
+            total_count = len(filtered_results)
+            valid_count = sum(1 for r in filtered_results if r.get('is_valid', False))
+            invalid_count = total_count - valid_count
+            
+            if total_count > 0:
+                validation_rate = (valid_count / total_count) * 100
+                avg_score = sum(r.get('score', 0) for r in filtered_results) / total_count
+            else:
+                validation_rate = 0
+                avg_score = 0
+            
+            # Display summary statistics
+            st.markdown("#### 📊 Statistical Summary")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Validations", total_count)
+                st.metric("Mean Quality Score", f"{avg_score:.2f}")
+            
+            with col2:
+                st.metric("Valid Descriptions", valid_count)
+                st.metric("Validation Rate", f"{validation_rate:.1f}%")
+            
+            with col3:
+                st.metric("Invalid Descriptions", invalid_count)
+                if filtered_results:
+                    max_score = max(r.get('score', 0) for r in filtered_results)
+                    st.metric("Best Score", f"{max_score:.2f}")
+            
+            with col4:
+                needs_regen = sum(1 for r in filtered_results if r.get('score', 1.0) < 0.6)
+                st.metric("Needs Regeneration", needs_regen)
+                if filtered_results:
+                    min_score = min(r.get('score', 1.0) for r in filtered_results)
+                    st.metric("Lowest Score", f"{min_score:.2f}")
+            
+            # Score distribution
+            st.markdown("#### 📊 Score Distribution")
+            
+            scores = [r.get('score', 0) for r in filtered_results]
+            
+            if scores:
+                # Create score ranges
+                excellent = sum(1 for s in scores if s >= 0.8)
+                good = sum(1 for s in scores if 0.6 <= s < 0.8)
+                fair = sum(1 for s in scores if 0.4 <= s < 0.6)
+                poor = sum(1 for s in scores if s < 0.4)
+                
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("🟢 Excellent (≥0.8)", excellent, f"{excellent/total_count*100:.1f}%")
+                
+                with col2:
+                    st.metric("🟡 Good (0.6-0.8)", good, f"{good/total_count*100:.1f}%")
+                
+                with col3:
+                    st.metric("🟠 Fair (0.4-0.6)", fair, f"{fair/total_count*100:.1f}%")
+                
+                with col4:
+                    st.metric("🔴 Poor (<0.4)", poor, f"{poor/total_count*100:.1f}%")
+                
+                # Show recent validation activity
+                st.markdown("#### 📋 Recent Validation Activity")
+                
+                # Show last 20 validations
+                recent_validations = filtered_results[-20:] if len(filtered_results) > 20 else filtered_results
+                
+                activity_data = []
+                for result in recent_validations:
+                    activity_data.append({
+                        'Sermon ID': result.get('sermon_id', 'Unknown'),
+                        'Score': f"{result.get('score', 0):.2f}",
+                        'Status': '✅ Valid' if result.get('is_valid', False) else '❌ Invalid',
+                        'Date': result.get('validated_at', 'Unknown')[:10] if result.get('validated_at') else 'Unknown'
+                    })
+                
+                if activity_data:
+                    import pandas as pd
+                    df_activity = pd.DataFrame(activity_data)
+                    st.dataframe(df_activity, width='stretch', hide_index=True)
+            else:
+                st.info("No score data available for analysis")
+        else:
+            st.info(f"No validation data available for {period}")
+            
+    except Exception as e:
+        st.error(f"❌ Error loading validation trends: {e}")
+        st.info("📈 No trend data available. Run validations over time to see trends here.")
 
 def regenerate_description(sermon_id):
     """Regenerate description for a specific sermon"""
@@ -525,103 +682,6 @@ def show_batch_validation_progress():
     if progress >= 1.0:
         st.session_state.batch_validation_running = False
         st.success("✅ Batch validation completed!")
-
-def generate_mock_validation_data():
-    """Generate mock validation data"""
-    return {
-        'overall_score': 8.3,
-        'score_change': 0.4,
-        'validation_rate': 94.2,
-        'validation_change': 2.1,
-        'auto_pass_rate': 78.5,
-        'auto_pass_change': 5.3,
-        'avg_validation_time': 2.7,
-        'time_change': -0.2,
-        'criteria_performance': [
-            {'criterion': 'Contains theological content', 'score': 8.7, 'pass_rate': 87.3},
-            {'criterion': 'Mentions main message', 'score': 8.1, 'pass_rate': 82.1},
-            {'criterion': 'Professional style', 'score': 8.9, 'pass_rate': 91.2},
-            {'criterion': 'Avoids generic phrases', 'score': 7.4, 'pass_rate': 73.8},
-            {'criterion': 'Clear application', 'score': 8.0, 'pass_rate': 79.5}
-        ],
-        'recent_results': [
-            {'sermon_id': '123456', 'title': 'Grace in Trials', 'speaker': 'Pastor Smith', 
-             'score': 8.9, 'passed': True, 'validation_time': '2.3s'},
-            {'sermon_id': '123457', 'title': 'Walking in Faith', 'speaker': 'Dr. Johnson',
-             'score': 6.2, 'passed': False, 'validation_time': '3.1s'},
-            {'sermon_id': '123458', 'title': 'Hope Eternal', 'speaker': 'Rev. Brown',
-             'score': 9.1, 'passed': True, 'validation_time': '2.0s'}
-        ]
-    }
-
-def generate_mock_failed_data():
-    """Generate mock failed validation data"""
-    return [
-        {
-            'sermon_id': '123457',
-            'title': 'Walking in Faith',
-            'speaker': 'Dr. Johnson',
-            'description': 'A sermon about faith and walking with God in our daily lives.',
-            'score': 6.2,
-            'priority': 'High',
-            'date': '2024-01-15',
-            'issues': [
-                'Description too generic',
-                'Missing specific biblical references',
-                'No clear practical application mentioned'
-            ]
-        },
-        {
-            'sermon_id': '123459',
-            'title': 'Sunday Message',
-            'speaker': 'Pastor Wilson',
-            'description': 'God is good and we should trust Him.',
-            'score': 4.1,
-            'priority': 'High',
-            'date': '2024-01-14',
-            'issues': [
-                'Extremely brief and generic',
-                'No mention of specific content',
-                'Missing speaker insights'
-            ]
-        }
-    ]
-
-def generate_mock_trends_data(period):
-    """Generate mock trends data"""
-    return {
-        'quality_trends': [
-            {'date': '2024-01-01', 'avg_score': 7.8, 'median_score': 8.1},
-            {'date': '2024-01-08', 'avg_score': 8.0, 'median_score': 8.3},
-            {'date': '2024-01-15', 'avg_score': 8.2, 'median_score': 8.4},
-            {'date': '2024-01-22', 'avg_score': 8.1, 'median_score': 8.2},
-            {'date': '2024-01-29', 'avg_score': 8.3, 'median_score': 8.5}
-        ],
-        'pass_rate_trends': [
-            {'date': '2024-01-01', 'pass_rate': 76.2},
-            {'date': '2024-01-08', 'pass_rate': 78.5},
-            {'date': '2024-01-15', 'pass_rate': 81.3},
-            {'date': '2024-01-22', 'pass_rate': 79.7},
-            {'date': '2024-01-29', 'pass_rate': 83.1}
-        ],
-        'criteria_trends': [
-            {'date': '2024-01-01', 'theological': 8.1, 'style': 8.3, 'application': 7.9},
-            {'date': '2024-01-08', 'theological': 8.3, 'style': 8.5, 'application': 8.1},
-            {'date': '2024-01-15', 'theological': 8.5, 'style': 8.7, 'application': 8.0},
-            {'date': '2024-01-22', 'theological': 8.4, 'style': 8.6, 'application': 8.2},
-            {'date': '2024-01-29', 'theological': 8.6, 'style': 8.8, 'application': 8.3}
-        ],
-        'statistics': {
-            'mean_score': 8.17,
-            'score_std': 1.23,
-            'best_day_score': 9.2,
-            'worst_day_score': 7.1,
-            'improvement_rate': 12.3,
-            'consistency': 8.4,
-            'total_validations': 1247,
-            'avg_daily_volume': 28.5
-        }
-    }
 
 if __name__ == "__main__":
     show_validation()
