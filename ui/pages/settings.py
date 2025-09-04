@@ -264,7 +264,7 @@ def show_llm_settings():
         save_llm_settings()
 
 def show_ollama_settings(label, config, key_prefix):
-    """Show Ollama-specific settings with model auto-detection"""
+    """Show Ollama-specific settings with automatic model refresh"""
     col1, col2 = st.columns(2)
     
     with col1:
@@ -275,9 +275,11 @@ def show_ollama_settings(label, config, key_prefix):
         )
     
     with col2:
-        # Try to get available models from Ollama
+        # Auto-refresh models when host changes or button clicked
         available_models = []
-        if st.button(f"🔄 Refresh {label} Models", key=f"{key_prefix}_refresh_models"):
+        refresh_clicked = st.button(f"🔄 Refresh {label} Models", key=f"{key_prefix}_refresh_models")
+        
+        if refresh_clicked or not st.session_state.get(f"{key_prefix}_ollama_models"):
             try:
                 # Import here to avoid issues if not installed
                 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
@@ -293,6 +295,7 @@ def show_ollama_settings(label, config, key_prefix):
                     st.warning("No models found - check Ollama connection")
             except Exception as e:
                 st.error(f"Failed to fetch models: {e}")
+                st.info(f"Make sure Ollama is running at {host}")
         
         # Get cached models if available
         cached_models = st.session_state.get(f"{key_prefix}_ollama_models", [])
@@ -320,7 +323,7 @@ def show_ollama_settings(label, config, key_prefix):
             )
 
 def show_openai_settings(label, config, key_prefix):
-    """Show OpenAI-specific settings"""
+    """Show OpenAI-specific settings with automatic model loading"""
     col1, col2 = st.columns(2)
     
     with col1:
@@ -340,11 +343,65 @@ def show_openai_settings(label, config, key_prefix):
         )
     
     with col2:
-        model = st.text_input(
-            f"{label} Model",
-            value=config.get('model', 'gpt-3.5-turbo'),
-            key=f"{key_prefix}_openai_model"
-        )
+        # Auto-load models if API key is provided
+        available_models = []
+        model_options = ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo', 'gpt-3.5-turbo-16k']  # Default options
+        
+        if api_key and st.button(f"🔄 Load {label} Models", key=f"{key_prefix}_load_models"):
+            try:
+                # Import OpenAI provider to list models
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+                from llm_manager import OpenAIProvider
+                
+                provider_config = {'api_key': api_key}
+                if base_url:
+                    provider_config['base_url'] = base_url
+                
+                openai_provider = OpenAIProvider(provider_config)
+                available_models = openai_provider.list_models()
+                
+                if available_models:
+                    st.session_state[f"{key_prefix}_openai_models"] = available_models
+                    st.success(f"Loaded {len(available_models)} models")
+                    # Filter to commonly used models for better UX
+                    model_options = [m for m in available_models if any(x in m.lower() for x in ['gpt-4', 'gpt-3.5', 'claude', 'grok', 'gemini', 'llama'])]
+                    if not model_options:
+                        model_options = available_models[:10]  # Take first 10 if no common ones found
+                else:
+                    st.warning("No models found - check API credentials")
+            except Exception as e:
+                st.error(f"Failed to load models: {e}")
+        
+        # Get cached models if available
+        cached_models = st.session_state.get(f"{key_prefix}_openai_models", [])
+        if cached_models:
+            # Filter to commonly used models
+            model_options = [m for m in cached_models if any(x in m.lower() for x in ['gpt-4', 'gpt-3.5', 'claude', 'grok', 'gemini', 'llama'])]
+            if not model_options:
+                model_options = cached_models[:10]
+        
+        # Model selection
+        current_model = config.get('model', 'gpt-3.5-turbo')
+        if model_options and len(model_options) > 1:
+            try:
+                model_index = model_options.index(current_model)
+            except ValueError:
+                model_index = 0
+                
+            model = st.selectbox(
+                f"{label} Model",
+                options=model_options,
+                index=model_index,
+                key=f"{key_prefix}_openai_model",
+                help="Select from available models"
+            )
+        else:
+            model = st.text_input(
+                f"{label} Model",
+                value=current_model,
+                key=f"{key_prefix}_openai_model",
+                help="Enter model name or click 'Load Models' to see available options"
+            )
 
 def show_anthropic_settings(label, config, key_prefix):
     """Show Anthropic-specific settings with auto-populated defaults"""
@@ -360,8 +417,7 @@ def show_anthropic_settings(label, config, key_prefix):
         )
     
     with col2:
-        # Auto-populate default model for Anthropic
-        default_model = 'claude-3-5-sonnet-20241022'
+        # Auto-populate model list for Anthropic
         model_options = [
             'claude-3-5-sonnet-20241022',
             'claude-3-5-haiku-20241022', 
@@ -370,7 +426,7 @@ def show_anthropic_settings(label, config, key_prefix):
             'claude-3-haiku-20240307'
         ]
         
-        current_model = config.get('model', default_model)
+        current_model = config.get('model', 'claude-3-5-sonnet-20241022')
         try:
             model_index = model_options.index(current_model)
         except ValueError:
@@ -383,6 +439,18 @@ def show_anthropic_settings(label, config, key_prefix):
             key=f"{key_prefix}_anthropic_model",
             help="Claude model to use (auto-configured endpoint)"
         )
+        
+        # Show test button if API key is provided
+        if api_key and st.button(f"🔍 Test {label} Connection", key=f"{key_prefix}_test_anthropic"):
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+                from llm_manager import AnthropicProvider
+                
+                provider = AnthropicProvider({'api_key': api_key, 'model': model})
+                test_response = provider.chat([{"role": "user", "content": "Hello, this is a test."}])
+                st.success("✅ Anthropic connection successful!")
+            except Exception as e:
+                st.error(f"❌ Connection failed: {e}")
     
     st.info("💡 Anthropic endpoint (https://api.anthropic.com/v1) is automatically configured")
 
@@ -400,14 +468,13 @@ def show_xai_settings(label, config, key_prefix):
         )
     
     with col2:
-        # Auto-populate default model for xAI
-        default_model = 'grok-beta'
+        # Auto-populate model list for xAI
         model_options = [
             'grok-beta',
             'grok-vision-beta'
         ]
         
-        current_model = config.get('model', default_model)
+        current_model = config.get('model', 'grok-beta')
         try:
             model_index = model_options.index(current_model)
         except ValueError:
@@ -420,6 +487,18 @@ def show_xai_settings(label, config, key_prefix):
             key=f"{key_prefix}_xai_model",
             help="Grok model to use (auto-configured endpoint)"
         )
+        
+        # Show test button if API key is provided
+        if api_key and st.button(f"🔍 Test {label} Connection", key=f"{key_prefix}_test_xai"):
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+                from llm_manager import XAIProvider
+                
+                provider = XAIProvider({'api_key': api_key, 'model': model})
+                test_response = provider.chat([{"role": "user", "content": "Hello, this is a test."}])
+                st.success("✅ xAI connection successful!")
+            except Exception as e:
+                st.error(f"❌ Connection failed: {e}")
     
     st.info("💡 xAI endpoint (https://api.x.ai/v1) is automatically configured")
 
@@ -437,15 +516,14 @@ def show_google_settings(label, config, key_prefix):
         )
     
     with col2:
-        # Auto-populate default model for Google
-        default_model = 'gemini-1.5-flash'
+        # Auto-populate model list for Google
         model_options = [
             'gemini-1.5-flash',
             'gemini-1.5-pro',
             'gemini-1.0-pro'
         ]
         
-        current_model = config.get('model', default_model)
+        current_model = config.get('model', 'gemini-1.5-flash')
         try:
             model_index = model_options.index(current_model)
         except ValueError:
@@ -458,6 +536,18 @@ def show_google_settings(label, config, key_prefix):
             key=f"{key_prefix}_google_model",
             help="Gemini model to use (auto-configured endpoint)"
         )
+        
+        # Show test button if API key is provided
+        if api_key and st.button(f"🔍 Test {label} Connection", key=f"{key_prefix}_test_google"):
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+                from llm_manager import GoogleProvider
+                
+                provider = GoogleProvider({'api_key': api_key, 'model': model})
+                test_response = provider.chat([{"role": "user", "content": "Hello, this is a test."}])
+                st.success("✅ Google AI connection successful!")
+            except Exception as e:
+                st.error(f"❌ Connection failed: {e}")
     
     st.info("💡 Google AI endpoint (https://generativelanguage.googleapis.com/v1beta) is automatically configured")
 
@@ -475,8 +565,7 @@ def show_groq_settings(label, config, key_prefix):
         )
     
     with col2:
-        # Auto-populate default model for Groq
-        default_model = 'llama-3.1-70b-versatile'
+        # Auto-populate model list for Groq
         model_options = [
             'llama-3.1-70b-versatile',
             'llama-3.1-8b-instant',
@@ -485,7 +574,7 @@ def show_groq_settings(label, config, key_prefix):
             'gemma2-9b-it'
         ]
         
-        current_model = config.get('model', default_model)
+        current_model = config.get('model', 'llama-3.1-70b-versatile')
         try:
             model_index = model_options.index(current_model)
         except ValueError:
@@ -498,6 +587,18 @@ def show_groq_settings(label, config, key_prefix):
             key=f"{key_prefix}_groq_model",
             help="Groq model to use (auto-configured endpoint)"
         )
+        
+        # Show test button if API key is provided
+        if api_key and st.button(f"🔍 Test {label} Connection", key=f"{key_prefix}_test_groq"):
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+                from llm_manager import GroqProvider
+                
+                provider = GroqProvider({'api_key': api_key, 'model': model})
+                test_response = provider.chat([{"role": "user", "content": "Hello, this is a test."}])
+                st.success("✅ Groq connection successful!")
+            except Exception as e:
+                st.error(f"❌ Connection failed: {e}")
     
     st.info("💡 Groq endpoint (https://api.groq.com/openai/v1) is automatically configured")
 
