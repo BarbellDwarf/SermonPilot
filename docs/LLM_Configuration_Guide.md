@@ -2,7 +2,7 @@
 
 ## Overview
 
-The SermonAudio Updater now supports flexible LLM configuration with both primary and fallback providers. You can easily switch between OpenAI, Ollama, xAI, Anthropic, and other OpenAI-compatible providers by configuring different endpoints, models, and API keys.
+The SermonAudio Updater now supports flexible LLM configuration with both primary and fallback providers. You can easily switch between **6 major LLM providers** with dedicated provider types: OpenAI, Anthropic (Claude), xAI (Grok), Google (Gemini), Groq, and Ollama for local models. Each provider type comes with sensible defaults and simplified configuration.
 
 ## New Configuration Structure
 
@@ -12,7 +12,7 @@ The SermonAudio Updater now supports flexible LLM configuration with both primar
 llm:
   # Primary LLM settings
   primary:
-    provider: "ollama"  # Options: "ollama", "openai"
+    provider: "ollama"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
     ollama:
       host: "http://192.168.75.12:11434"
       model: "llama3.1:8b"
@@ -20,11 +20,23 @@ llm:
       api_key: "your-openai-key"
       model: "gpt-4o"
       # base_url: "https://api.openai.com/v1"  # Optional for custom endpoints
+    anthropic:
+      api_key: "your-anthropic-key"
+      model: "claude-3-5-sonnet-20241022"  # Default model
+    xai:
+      api_key: "your-xai-key"
+      model: "grok-beta"  # Default model
+    google:
+      api_key: "your-google-key"
+      model: "gemini-1.5-flash"  # Default model
+    groq:
+      api_key: "your-groq-key"
+      model: "llama-3.1-70b-versatile"  # Default model
   
   # Fallback LLM settings (used if primary fails)
   fallback:
     enabled: true
-    provider: "openai"  # Options: "ollama", "openai"
+    provider: "openai"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
     ollama:
       host: "http://192.168.75.12:11434"
       model: "llama2"
@@ -47,26 +59,44 @@ llm:
       # base_url is optional for OpenAI
 ```
 
-### xAI (Grok)
+### Anthropic (Claude) - NEW!
 ```yaml
 llm:
   primary:
-    provider: "openai"
-    openai:
-      api_key: "xai-..."
-      model: "grok-beta"
-      base_url: "https://api.x.ai/v1"
+    provider: "anthropic"
+    anthropic:
+      api_key: "sk-ant-..."
+      model: "claude-3-5-sonnet-20241022"  # Default, can be overridden
 ```
 
-### Anthropic (Claude)
+### xAI (Grok) - NEW!
 ```yaml
 llm:
   primary:
-    provider: "openai"
-    openai:
-      api_key: "sk-ant-..."
-      model: "claude-3-5-sonnet-20241022"
-      base_url: "https://api.anthropic.com/v1"
+    provider: "xai"
+    xai:
+      api_key: "xai-..."
+      model: "grok-beta"  # Default, can be overridden
+```
+
+### Google (Gemini) - NEW!
+```yaml
+llm:
+  primary:
+    provider: "google"
+    google:
+      api_key: "your-google-ai-key"
+      model: "gemini-1.5-flash"  # Default, can be overridden
+```
+
+### Groq - NEW!
+```yaml
+llm:
+  primary:
+    provider: "groq"
+    groq:
+      api_key: "gsk_..."
+      model: "llama-3.1-70b-versatile"  # Default, can be overridden
 ```
 
 ### Local/Self-hosted OpenAI API
@@ -80,8 +110,9 @@ llm:
       base_url: "http://localhost:8000/v1"
 ```
 
-### Groq
+### Legacy: Using OpenAI Provider with Custom URLs (Still Supported)
 ```yaml
+# This still works for backward compatibility or custom endpoints
 llm:
   primary:
     provider: "openai"
@@ -93,16 +124,49 @@ llm:
 
 ## How to Switch Providers
 
+### To use Anthropic as primary with Groq fallback
+
+```yaml
+llm:
+  primary:
+    provider: "anthropic"
+    anthropic:
+      api_key: "sk-ant-your-key"
+      model: "claude-3-5-sonnet-20241022"
+  fallback:
+    enabled: true
+    provider: "groq"
+    groq:
+      api_key: "gsk_your-groq-key"
+      model: "llama-3.1-8b-instant"  # Fast model for fallback
+```
+
+### To use Google Gemini as primary with OpenAI fallback
+
+```yaml
+llm:
+  primary:
+    provider: "google"
+    google:
+      api_key: "your-google-ai-key"
+      model: "gemini-1.5-pro"
+  fallback:
+    enabled: true
+    provider: "openai"
+    openai:
+      api_key: "sk-your-openai-key"
+      model: "gpt-3.5-turbo"
+```
+
 ### To use xAI as primary with OpenAI fallback
 
 ```yaml
 llm:
   primary:
-    provider: "openai"
-    openai:
-      api_key: "xai-your-api-key"
+    provider: "xai"
+    xai:
+      api_key: "xai-your-key"
       model: "grok-beta"
-      base_url: "https://api.x.ai/v1"
   fallback:
     enabled: true
     provider: "openai"
@@ -143,11 +207,15 @@ llm:
 
 ## Features Implemented
 
-✅ **Flexible Provider Configuration**: Switch between OpenAI and Ollama easily
+✅ **Dedicated Provider Types**: Native support for 6 major LLM providers with intuitive configuration
+
+✅ **Top LLM Provider Support**: OpenAI, Anthropic (Claude), xAI (Grok), Google (Gemini), Groq, and Ollama
+
+✅ **Smart Defaults**: Each provider comes with sensible default models and endpoints
+
+✅ **Flexible Provider Configuration**: Switch between any supported provider easily
 
 ✅ **Custom Endpoints**: Configure different server hosts for any OpenAI-compatible API
-
-✅ **Multi-Provider Support**: OpenAI, xAI, Anthropic, Groq, local APIs, and more
 
 ✅ **Model Selection**: Choose different models for each provider
 
