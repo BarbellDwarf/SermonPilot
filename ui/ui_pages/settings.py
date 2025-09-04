@@ -201,6 +201,14 @@ def initialize_provider_session_state(provider_config, provider_type, key_prefix
                 st.session_state[f'{key_prefix}_groq_key'] = settings.get('api_key', '')
             if f'{key_prefix}_groq_model' not in st.session_state:
                 st.session_state[f'{key_prefix}_groq_model'] = settings.get('model', 'llama-3.1-70b-versatile')
+        
+        # Clear cached models when API key changes for all providers that use API keys
+        if provider_type in ['openai', 'anthropic', 'xai', 'google', 'groq']:
+            current_key = st.session_state.get(f'{key_prefix}_{provider_type}_key', '')
+            stored_key = settings.get('api_key', '')
+            if current_key != stored_key and current_key:
+                # API key changed, clear cached models to force refresh
+                st.session_state.pop(f'{key_prefix}_{provider_type}_models', None)
 
 def show_llm_settings():
     """LLM provider configuration"""
@@ -484,7 +492,7 @@ def show_openai_settings(label, config, key_prefix):
             )
 
 def show_anthropic_settings(label, config, key_prefix):
-    """Show Anthropic-specific settings with auto-populated defaults"""
+    """Show Anthropic-specific settings with dynamic model loading"""
     col1, col2 = st.columns(2)
     
     with col1:
@@ -497,8 +505,9 @@ def show_anthropic_settings(label, config, key_prefix):
         )
     
     with col2:
-        # Auto-populate model list for Anthropic
-        model_options = [
+        # Dynamic model loading for Anthropic
+        available_models = []
+        model_options = [  # Default fallbacks
             'claude-3-5-sonnet-20241022',
             'claude-3-5-haiku-20241022', 
             'claude-3-opus-20240229',
@@ -506,19 +515,51 @@ def show_anthropic_settings(label, config, key_prefix):
             'claude-3-haiku-20240307'
         ]
         
+        if api_key and st.button(f"🔄 Load {label} Models", key=f"{key_prefix}_load_anthropic_models"):
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+                from llm_manager import AnthropicProvider
+                
+                provider = AnthropicProvider({'api_key': api_key})
+                available_models = provider.list_models()
+                
+                if available_models:
+                    st.session_state[f"{key_prefix}_anthropic_models"] = available_models
+                    st.success(f"Loaded {len(available_models)} models")
+                    model_options = available_models
+                else:
+                    st.warning("No models found - using default options")
+            except Exception as e:
+                st.error(f"Failed to load models: {e}")
+                st.info("Using default model options")
+        
+        # Get cached models if available
+        cached_models = st.session_state.get(f"{key_prefix}_anthropic_models", [])
+        if cached_models:
+            model_options = cached_models
+        
+        # Model selection
         current_model = config.get('model', 'claude-3-5-sonnet-20241022')
-        try:
-            model_index = model_options.index(current_model)
-        except ValueError:
-            model_index = 0
-            
-        model = st.selectbox(
-            f"{label} Model",
-            options=model_options,
-            index=model_index,
-            key=f"{key_prefix}_anthropic_model",
-            help="Claude model to use (auto-configured endpoint)"
-        )
+        if model_options and len(model_options) > 1:
+            try:
+                model_index = model_options.index(current_model)
+            except ValueError:
+                model_index = 0
+                
+            model = st.selectbox(
+                f"{label} Model",
+                options=model_options,
+                index=model_index,
+                key=f"{key_prefix}_anthropic_model",
+                help="Select from available Claude models"
+            )
+        else:
+            model = st.text_input(
+                f"{label} Model",
+                value=current_model,
+                key=f"{key_prefix}_anthropic_model",
+                help="Enter model name or click 'Load Models' to see available options"
+            )
         
         # Show test button if API key is provided
         if api_key and st.button(f"🔍 Test {label} Connection", key=f"{key_prefix}_test_anthropic"):
@@ -535,7 +576,7 @@ def show_anthropic_settings(label, config, key_prefix):
     st.info("💡 Anthropic endpoint (https://api.anthropic.com/v1) is automatically configured")
 
 def show_xai_settings(label, config, key_prefix):
-    """Show xAI-specific settings with auto-populated defaults"""
+    """Show xAI-specific settings with dynamic model loading"""
     col1, col2 = st.columns(2)
     
     with col1:
@@ -548,25 +589,55 @@ def show_xai_settings(label, config, key_prefix):
         )
     
     with col2:
-        # Auto-populate model list for xAI
-        model_options = [
-            'grok-beta',
-            'grok-vision-beta'
-        ]
+        # Dynamic model loading for xAI
+        available_models = []
+        model_options = ['grok-beta', 'grok-vision-beta']  # Default fallbacks
         
+        if api_key and st.button(f"🔄 Load {label} Models", key=f"{key_prefix}_load_xai_models"):
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+                from llm_manager import XAIProvider
+                
+                provider = XAIProvider({'api_key': api_key})
+                available_models = provider.list_models()
+                
+                if available_models:
+                    st.session_state[f"{key_prefix}_xai_models"] = available_models
+                    st.success(f"Loaded {len(available_models)} models")
+                    model_options = available_models
+                else:
+                    st.warning("No models found - using default options")
+            except Exception as e:
+                st.error(f"Failed to load models: {e}")
+                st.info("Using default model options")
+        
+        # Get cached models if available
+        cached_models = st.session_state.get(f"{key_prefix}_xai_models", [])
+        if cached_models:
+            model_options = cached_models
+        
+        # Model selection
         current_model = config.get('model', 'grok-beta')
-        try:
-            model_index = model_options.index(current_model)
-        except ValueError:
-            model_index = 0
-            
-        model = st.selectbox(
-            f"{label} Model",
-            options=model_options,
-            index=model_index,
-            key=f"{key_prefix}_xai_model",
-            help="Grok model to use (auto-configured endpoint)"
-        )
+        if model_options and len(model_options) > 1:
+            try:
+                model_index = model_options.index(current_model)
+            except ValueError:
+                model_index = 0
+                
+            model = st.selectbox(
+                f"{label} Model",
+                options=model_options,
+                index=model_index,
+                key=f"{key_prefix}_xai_model",
+                help="Select from available xAI models"
+            )
+        else:
+            model = st.text_input(
+                f"{label} Model",
+                value=current_model,
+                key=f"{key_prefix}_xai_model",
+                help="Enter model name or click 'Load Models' to see available options"
+            )
         
         # Show test button if API key is provided
         if api_key and st.button(f"🔍 Test {label} Connection", key=f"{key_prefix}_test_xai"):
@@ -583,7 +654,7 @@ def show_xai_settings(label, config, key_prefix):
     st.info("💡 xAI endpoint (https://api.x.ai/v1) is automatically configured")
 
 def show_google_settings(label, config, key_prefix):
-    """Show Google-specific settings with auto-populated defaults"""
+    """Show Google-specific settings with dynamic model loading"""
     col1, col2 = st.columns(2)
     
     with col1:
@@ -596,26 +667,59 @@ def show_google_settings(label, config, key_prefix):
         )
     
     with col2:
-        # Auto-populate model list for Google
-        model_options = [
+        # Dynamic model loading for Google
+        available_models = []
+        model_options = [  # Default fallbacks
             'gemini-1.5-flash',
             'gemini-1.5-pro',
             'gemini-1.0-pro'
         ]
         
+        if api_key and st.button(f"🔄 Load {label} Models", key=f"{key_prefix}_load_google_models"):
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+                from llm_manager import GoogleProvider
+                
+                provider = GoogleProvider({'api_key': api_key})
+                available_models = provider.list_models()
+                
+                if available_models:
+                    st.session_state[f"{key_prefix}_google_models"] = available_models
+                    st.success(f"Loaded {len(available_models)} models")
+                    model_options = available_models
+                else:
+                    st.warning("No models found - using default options")
+            except Exception as e:
+                st.error(f"Failed to load models: {e}")
+                st.info("Using default model options")
+        
+        # Get cached models if available
+        cached_models = st.session_state.get(f"{key_prefix}_google_models", [])
+        if cached_models:
+            model_options = cached_models
+        
+        # Model selection
         current_model = config.get('model', 'gemini-1.5-flash')
-        try:
-            model_index = model_options.index(current_model)
-        except ValueError:
-            model_index = 0
-            
-        model = st.selectbox(
-            f"{label} Model",
-            options=model_options,
-            index=model_index,
-            key=f"{key_prefix}_google_model",
-            help="Gemini model to use (auto-configured endpoint)"
-        )
+        if model_options and len(model_options) > 1:
+            try:
+                model_index = model_options.index(current_model)
+            except ValueError:
+                model_index = 0
+                
+            model = st.selectbox(
+                f"{label} Model",
+                options=model_options,
+                index=model_index,
+                key=f"{key_prefix}_google_model",
+                help="Select from available Gemini models"
+            )
+        else:
+            model = st.text_input(
+                f"{label} Model",
+                value=current_model,
+                key=f"{key_prefix}_google_model",
+                help="Enter model name or click 'Load Models' to see available options"
+            )
         
         # Show test button if API key is provided
         if api_key and st.button(f"🔍 Test {label} Connection", key=f"{key_prefix}_test_google"):
@@ -632,7 +736,7 @@ def show_google_settings(label, config, key_prefix):
     st.info("💡 Google AI endpoint (https://generativelanguage.googleapis.com/v1beta) is automatically configured")
 
 def show_groq_settings(label, config, key_prefix):
-    """Show Groq-specific settings with auto-populated defaults"""
+    """Show Groq-specific settings with dynamic model loading"""
     col1, col2 = st.columns(2)
     
     with col1:
@@ -645,8 +749,9 @@ def show_groq_settings(label, config, key_prefix):
         )
     
     with col2:
-        # Auto-populate model list for Groq
-        model_options = [
+        # Dynamic model loading for Groq
+        available_models = []
+        model_options = [  # Default fallbacks
             'llama-3.1-70b-versatile',
             'llama-3.1-8b-instant',
             'llama-3.2-90b-text-preview',
@@ -654,19 +759,51 @@ def show_groq_settings(label, config, key_prefix):
             'gemma2-9b-it'
         ]
         
+        if api_key and st.button(f"🔄 Load {label} Models", key=f"{key_prefix}_load_groq_models"):
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+                from llm_manager import GroqProvider
+                
+                provider = GroqProvider({'api_key': api_key})
+                available_models = provider.list_models()
+                
+                if available_models:
+                    st.session_state[f"{key_prefix}_groq_models"] = available_models
+                    st.success(f"Loaded {len(available_models)} models")
+                    model_options = available_models
+                else:
+                    st.warning("No models found - using default options")
+            except Exception as e:
+                st.error(f"Failed to load models: {e}")
+                st.info("Using default model options")
+        
+        # Get cached models if available
+        cached_models = st.session_state.get(f"{key_prefix}_groq_models", [])
+        if cached_models:
+            model_options = cached_models
+        
+        # Model selection
         current_model = config.get('model', 'llama-3.1-70b-versatile')
-        try:
-            model_index = model_options.index(current_model)
-        except ValueError:
-            model_index = 0
-            
-        model = st.selectbox(
-            f"{label} Model",
-            options=model_options,
-            index=model_index,
-            key=f"{key_prefix}_groq_model",
-            help="Groq model to use (auto-configured endpoint)"
-        )
+        if model_options and len(model_options) > 1:
+            try:
+                model_index = model_options.index(current_model)
+            except ValueError:
+                model_index = 0
+                
+            model = st.selectbox(
+                f"{label} Model",
+                options=model_options,
+                index=model_index,
+                key=f"{key_prefix}_groq_model",
+                help="Select from available Groq models"
+            )
+        else:
+            model = st.text_input(
+                f"{label} Model",
+                value=current_model,
+                key=f"{key_prefix}_groq_model",
+                help="Enter model name or click 'Load Models' to see available options"
+            )
         
         # Show test button if API key is provided
         if api_key and st.button(f"🔍 Test {label} Connection", key=f"{key_prefix}_test_groq"):
