@@ -87,7 +87,7 @@ class OllamaProvider(LLMProvider):
                     print(f"\nError: Model '{self.model}' not found in Ollama.")
                     print(f"Available models: {', '.join(available_models)}")
                     sys.exit(1)
-            
+
             logger.warning(f"Ollama library failed: {e}. Trying direct HTTP request...")
 
             payload = {
@@ -301,9 +301,9 @@ class LLMManager:
         if not self.validator_provider:
             logger.warning("Validator provider not available, skipping validation")
             return True, "Validator not configured"
-            
+
         criteria_text = "\n".join([f"- {criterion}" for criterion in criteria])
-        
+
         validation_prompt = (
             "You are a description validator. Review the following sermon description and "
             "determine if it meets the quality criteria. Respond with only 'APPROVED' or "
@@ -313,12 +313,12 @@ class LLMManager:
             "Response format: APPROVED/REJECTED - [brief reason]\n"
             "Response:"
         )
-        
+
         try:
             response = self.validator_provider.chat([
                 {'role': 'user', 'content': validation_prompt}
             ])
-            
+
             response = response.strip()
             if response.upper().startswith('APPROVED'):
                 reason = response.split('-', 1)[1].strip() if '-' in response else "Meets criteria"
@@ -330,7 +330,7 @@ class LLMManager:
             else:
                 # If response format is unexpected, assume rejected for safety
                 return False, f"Unexpected validation response: {response}"
-                
+
         except Exception as e:
             logger.warning(f"Description validation failed: {e}")
             return True, f"Validation error: {e}"  # Default to approved on error

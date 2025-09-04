@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Test script for LLM error handling with invalid models and endpoints."""
 
-import yaml
 # Add src directory to path
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from llm_manager import LLMManager
+
 
 def test_invalid_model():
     """Test with an invalid model name."""
@@ -30,9 +31,9 @@ def test_invalid_model():
             }
         }
     }
-    
+
     manager = LLMManager(config)
-    
+
     try:
         response = manager.chat([
             {"role": "user", "content": "Hello, how are you?"}
@@ -62,9 +63,9 @@ def test_invalid_endpoint():
             }
         }
     }
-    
+
     manager = LLMManager(config)
-    
+
     try:
         response = manager.chat([
             {"role": "user", "content": "Hello, how are you?"}
@@ -76,6 +77,6 @@ def test_invalid_endpoint():
 if __name__ == "__main__":
     print("Testing invalid model handling...")
     test_invalid_model()
-    
+
     print("\nTesting invalid endpoint handling...")
     test_invalid_endpoint()
