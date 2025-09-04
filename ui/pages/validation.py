@@ -220,93 +220,208 @@ def show_failed_descriptions():
             generate_validation_report()
 
 def show_batch_validation():
-    """Batch validation interface"""
+    """Real batch validation interface with progress tracking"""
     st.markdown("### 🔄 Batch Validation")
     
-    # Batch validation options
-    st.markdown("#### ⚙️ Validation Options")
+    # Validation scope selection
+    st.markdown("#### 📋 Select Validation Scope")
     
     col1, col2 = st.columns(2)
     
     with col1:
         validation_scope = st.selectbox(
             "Validation Scope",
-            options=[
-                "All Recent Descriptions", 
-                "Unvalidated Only", 
-                "Failed Previous Validation",
-                "Specific Date Range",
-                "Custom Selection"
-            ]
-        )
-        
-        strict_mode = st.checkbox(
-            "Strict Validation Mode",
-            help="Use stricter validation criteria"
+            ["Recent Sermons (Last 30 days)", "All Processed Sermons", "Specific Sermon IDs", "Failed Descriptions Only"],
+            key="validation_scope"
         )
     
     with col2:
-        auto_regenerate = st.checkbox(
-            "Auto-Regenerate Failed",
-            help="Automatically regenerate descriptions that fail validation"
-        )
-        
-        max_items = st.number_input(
-            "Max Items to Validate",
-            min_value=1,
-            max_value=1000,
-            value=100
-        )
+        if validation_scope == "Recent Sermons (Last 30 days)":
+            max_sermons = st.number_input("Max Sermons", 1, 1000, 50)
+        elif validation_scope == "Specific Sermon IDs":
+            sermon_ids_input = st.text_area(
+                "Sermon IDs (one per line or comma-separated)",
+                placeholder="1234567890123\n2345678901234\n...",
+                height=100
+            )
     
-    # Date range selection (if applicable)
-    if validation_scope == "Specific Date Range":
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            start_date = st.date_input("Start Date")
-        
-        with col2:
-            end_date = st.date_input("End Date")
+    # Validation options
+    st.markdown("#### ⚙️ Validation Options")
     
-    # Custom validation criteria
-    with st.expander("🎯 Custom Validation Criteria"):
-        st.markdown("Customize validation criteria for this batch:")
-        
-        criteria = [
-            "Contains specific theological content or Bible references",
-            "Mentions the speaker's main message or key points", 
-            "Is written in a professional, engaging style",
-            "Avoids generic Christian phrases without substance",
-            "Has clear application or takeaway for listeners"
-        ]
-        
-        selected_criteria = []
-        for criterion in criteria:
-            if st.checkbox(criterion, value=True, key=f"criteria_{criterion[:20]}"):
-                selected_criteria.append(criterion)
-        
-        custom_criterion = st.text_input("Add custom criterion:")
-        if custom_criterion:
-            selected_criteria.append(custom_criterion)
-    
-    # Start batch validation
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("▶️ Start Batch Validation", type="primary"):
-            start_batch_validation()
+        regenerate_failed = st.checkbox(
+            "Regenerate Failed Descriptions", 
+            value=False,
+            help="Automatically regenerate descriptions that fail validation"
+        )
     
     with col2:
-        if st.button("📋 Preview Selection"):
-            preview_validation_selection()
+        dry_run = st.checkbox(
+            "Dry Run Mode",
+            value=True,
+            help="Test validation without making changes"
+        )
     
     with col3:
-        if st.button("💾 Save as Template"):
-            save_validation_template()
+        detailed_report = st.checkbox(
+            "Detailed Report",
+            value=True,
+            help="Generate detailed validation report"
+        )
     
-    # Show batch progress if running
-    if st.session_state.get('batch_validation_running'):
-        show_batch_validation_progress()
+    # Start validation button
+    if st.button("🚀 Start Validation", type="primary", width='stretch'):
+        start_real_validation(validation_scope, {
+            'regenerate_failed': regenerate_failed,
+            'dry_run': dry_run,
+            'detailed_report': detailed_report,
+            'max_sermons': locals().get('max_sermons', 50),
+            'sermon_ids_input': locals().get('sermon_ids_input', '')
+        })
+    
+    # Show current validation status
+    st.markdown("#### 📊 Current Validation Status")
+    show_current_validation_status()
+
+
+def start_real_validation(scope: str, options: dict):
+    """Start real validation process with progress tracking"""
+    try:
+        from ui_processor import get_processor, show_validation_progress
+        
+        # Determine sermon IDs to validate
+        sermon_ids = []
+        
+        if scope == "Specific Sermon IDs":
+            ids_input = options.get('sermon_ids_input', '').strip()
+            if ids_input:
+                # Parse comma-separated or line-separated IDs
+                if ',' in ids_input:
+                    sermon_ids = [id.strip() for id in ids_input.split(',') if id.strip()]
+                else:
+                    sermon_ids = [id.strip() for id in ids_input.split('\n') if id.strip()]
+            
+            if not sermon_ids:
+                st.error("❌ Please provide sermon IDs to validate")
+                return
+        
+        elif scope == "Recent Sermons (Last 30 days)":
+            # This would need to call SermonAudio API to get recent sermons
+            st.warning("⚠️ Recent sermons validation requires API integration - using demo IDs")
+            sermon_ids = ["demo123", "demo456", "demo789"]  # Demo for now
+            
+        elif scope == "All Processed Sermons":
+            st.warning("⚠️ Full sermon validation requires scanning processed_sermons directory")
+            # This would scan the processed_sermons directory
+            sermon_ids = ["demo123", "demo456"]  # Demo for now
+            
+        elif scope == "Failed Descriptions Only":
+            # Get previously failed validations from database
+            processor = get_processor()
+            failed_results = [r for r in processor.get_validation_results() if not r['is_valid']]
+            sermon_ids = [r['sermon_id'] for r in failed_results]
+            
+            if not sermon_ids:
+                st.info("✅ No previously failed descriptions found!")
+                return
+        
+        if not sermon_ids:
+            st.error("❌ No sermons found for validation")
+            return
+        
+        st.info(f"🔍 Starting validation of {len(sermon_ids)} sermons...")
+        
+        # Show validation progress
+        results = show_validation_progress(sermon_ids)
+        
+        if results:
+            # Store results in session state for display
+            st.session_state['last_validation_results'] = results
+            st.rerun()  # Refresh to show results
+            
+    except Exception as e:
+        st.error(f"❌ Validation failed: {e}")
+
+
+def show_current_validation_status():
+    """Show current validation status and recent results"""
+    try:
+        from ui_processor import get_processor
+        
+        processor = get_processor()
+        
+        # Show processing status
+        validation_status = processor.get_processing_status(operation='validation')
+        
+        if validation_status:
+            st.markdown("##### 🔄 Active Validations")
+            
+            for status in validation_status[:5]:  # Show recent 5
+                col1, col2, col3, col4 = st.columns([2, 1, 2, 2])
+                
+                with col1:
+                    st.text(f"Sermon {status['sermon_id']}")
+                
+                with col2:
+                    status_icon = {
+                        'processing': '🟡',
+                        'completed': '🟢',
+                        'failed': '🔴',
+                        'starting': '🔵'
+                    }.get(status['status'], '⚪')
+                    st.text(f"{status_icon} {status['status']}")
+                
+                with col3:
+                    if status['status'] == 'processing':
+                        st.progress(status['progress'] / 100.0)
+                    else:
+                        st.text(f"{status['progress']:.1f}%")
+                
+                with col4:
+                    st.text(status['message'] or '')
+        
+        # Show recent validation results if available
+        if 'last_validation_results' in st.session_state:
+            st.markdown("##### 📊 Latest Validation Results")
+            results = st.session_state['last_validation_results']
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Validated", results['total'])
+            with col2:
+                st.metric("Valid", results['valid'], f"{results['valid']/results['total']*100:.1f}%")
+            with col3:
+                st.metric("Invalid", results['invalid'], f"{results['invalid']/results['total']*100:.1f}%")
+            with col4:
+                st.metric("Errors", results['errors'])
+            
+            # Show detailed results
+            if results.get('details'):
+                st.markdown("##### 📋 Detailed Results")
+                
+                details_df = []
+                for detail in results['details']:
+                    details_df.append({
+                        'Sermon ID': detail['sermon_id'],
+                        'Status': '✅ Valid' if detail.get('is_valid') else '❌ Invalid' if 'is_valid' in detail else '⚠️ Error',
+                        'Score': f"{detail.get('score', 0):.2f}" if 'score' in detail else 'N/A',
+                        'Reason': detail.get('reason', detail.get('error', ''))
+                    })
+                
+                if details_df:
+                    import pandas as pd
+                    df = pd.DataFrame(details_df)
+                    st.dataframe(df, width='stretch')
+                    
+                    # Clear results button
+                    if st.button("🗑️ Clear Results"):
+                        del st.session_state['last_validation_results']
+                        st.rerun()
+        
+    except Exception as e:
+        st.warning(f"Could not load validation status: {e}")
 
 def show_validation_trends():
     """Show validation trends and historical data"""
