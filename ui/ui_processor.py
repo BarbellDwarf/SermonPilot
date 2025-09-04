@@ -51,6 +51,13 @@ class UIProcessor:
     def __init__(self):
         self.db = get_db()
         self._active_operations = {}
+        self._config = None
+    
+    def get_config(self):
+        """Get the current configuration, refreshing from session state if needed"""
+        # Always get fresh config from session state
+        self._config = st.session_state.get('config', {})
+        return self._config
     
     def validate_sermons(self, sermon_ids: List[str], 
                         progress_callback: Optional[Callable] = None) -> Dict:
@@ -69,8 +76,8 @@ class UIProcessor:
                 # Import validation functions from sermon_updater
                 from sermon_updater import DescriptionValidator
                 
-                # Get config from session state
-                config = st.session_state.get('config', {})
+                # Get fresh config from session state (this will be updated when settings are saved)
+                config = self.get_config()
                 if not config:
                     raise ValueError("No configuration available")
                 
