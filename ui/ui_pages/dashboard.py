@@ -39,12 +39,12 @@ def show_quick_stats():
     """Display key metrics in a row"""
     st.markdown("### 📈 Quick Statistics")
     
-    # Calculate stats from processing history or mock data
+    # Calculate stats from processing history
     processing_history = st.session_state.get('processing_history', [])
     
-    # Mock data for demonstration
+    # Calculate real statistics
     total_sermons = len(processing_history) if processing_history else 0
-    success_count = sum(1 for item in processing_history if item.get('status') == 'success')
+    success_count = sum(1 for item in processing_history if item.get('status') == 'completed')
     success_rate = (success_count / total_sermons * 100) if total_sermons > 0 else 0
     
     # Calculate last 24h activity
@@ -52,8 +52,20 @@ def show_quick_stats():
     last_24h = sum(1 for item in processing_history 
                    if datetime.datetime.fromisoformat(item.get('timestamp', '2024-01-01')) > now - datetime.timedelta(hours=24))
     
-    # Average processing time (mock)
-    avg_time = 5.2 if total_sermons > 0 else 0
+    # Calculate average processing time from real data
+    processing_times = []
+    for item in processing_history:
+        if item.get('duration'):
+            try:
+                duration_str = item.get('duration', '0')
+                if 'min' in duration_str:
+                    processing_times.append(float(duration_str.replace('min', '').strip()))
+                elif 'sec' in duration_str:
+                    processing_times.append(float(duration_str.replace('sec', '').strip()) / 60)
+            except:
+                continue
+    
+    avg_time = sum(processing_times) / len(processing_times) if processing_times else 0
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -92,78 +104,56 @@ def show_recent_activity():
     processing_history = st.session_state.get('processing_history', [])
     
     if not processing_history:
-        # Show mock data for demonstration
-        mock_data = [
-            {
-                'timestamp': '2024-01-15 10:30:00',
-                'sermon_id': '1234567890123',
-                'title': 'The Grace of God',
-                'speaker': 'Pastor John Smith',
-                'action': 'Audio Enhancement',
-                'status': 'success',
-                'duration': '4.2 min'
-            },
-            {
-                'timestamp': '2024-01-15 09:15:00',
-                'sermon_id': '1234567890124',
-                'title': 'Walking in Faith',
-                'speaker': 'Dr. Sarah Johnson', 
-                'action': 'Metadata Update',
-                'status': 'success',
-                'duration': '2.1 min'
-            },
-            {
-                'timestamp': '2024-01-14 16:45:00',
-                'sermon_id': '1234567890125',
-                'title': 'Hope in Trials',
-                'speaker': 'Rev. Michael Brown',
-                'action': 'Full Processing',
-                'status': 'error',
-                'duration': '3.8 min'
-            }
-        ]
-        
-        df = pd.DataFrame(mock_data)
-        df['Status'] = df['status'].apply(lambda x: "✅ Success" if x == 'success' else "❌ Error")
-        
-        st.dataframe(
-            df[['timestamp', 'title', 'speaker', 'action', 'Status', 'duration']].rename(columns={
-                'timestamp': 'Time',
-                'title': 'Sermon Title',
-                'speaker': 'Speaker',
-                'action': 'Action',
-                'duration': 'Duration'
-            }),
-            use_container_width=True,
-            hide_index=True
-        )
-        
-        st.info("💡 This is sample data. Real activity will appear here after processing sermons.")
+        st.info("💡 No processing activity yet. Start processing sermons to see activity here.")
+        return
     else:
-        # Show real data
-        df = pd.DataFrame(processing_history[-10:])  # Show last 10 items
-        st.dataframe(df, use_container_width=True)
+        # Show real data from the last 10 processing events
+        recent_items = processing_history[-10:]
+        
+        # Format data for display
+        formatted_data = []
+        for item in recent_items:
+            formatted_data.append({
+                'Time': item.get('timestamp', 'Unknown'),
+                'Sermon ID': item.get('sermon_id', 'Unknown'),
+                'Operation': item.get('operation', 'Unknown'),
+                'Status': "✅ Success" if item.get('status') == 'completed' else 
+                         "❌ Error" if item.get('status') == 'failed' else 
+                         "⏳ Processing" if item.get('status') == 'processing' else 
+                         item.get('status', 'Unknown'),
+                'Duration': item.get('duration', 'N/A')
+            })
+        
+        if formatted_data:
+            df = pd.DataFrame(formatted_data)
+            st.dataframe(df, width='stretch', hide_index=True)
+        else:
+            st.info("💡 No processing activity yet. Start processing sermons to see activity here.")
 
 def show_quick_actions():
-    """Show quick action buttons"""
-    st.markdown("### ⚡ Quick Actions")
+    """Show quick action shortcuts for common tasks"""
+    st.markdown("### ⚡ Quick Start")
+    st.markdown("*Quick shortcuts to get started with common tasks*")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("🎵 Process New Sermon", type="primary", use_container_width=True):
+        if st.button("🎵 Process New Sermon", type="primary", width='stretch'):
             st.session_state.current_page = 'new_sermon'
             st.rerun()
+        st.caption("Upload and process a single sermon")
     
     with col2:
-        if st.button("🔄 Batch Update", use_container_width=True):
+        if st.button("🔄 Batch Update", width='stretch'):
             st.session_state.current_page = 'batch_update'
             st.rerun()
+        st.caption("Update multiple sermons at once")
     
     with col3:
-        if st.button("✅ Validate Descriptions", use_container_width=True):
+        if st.button("✅ Validate Descriptions", width='stretch'):
             st.session_state.current_page = 'validation'
             st.rerun()
+        st.caption("Check description quality and errors")
 
 def show_system_status():
     """Show detailed system status"""
@@ -195,7 +185,7 @@ def show_processing_queue():
     """Show current processing queue"""
     st.markdown("### 📤 Processing Queue")
     
-    # Mock queue data
+    # Real queue data from session state or database
     queue_items = st.session_state.get('processing_queue', [])
     
     if not queue_items:
@@ -205,10 +195,10 @@ def show_processing_queue():
             with st.container():
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    st.write(f"📄 {item.get('title', 'Unknown')}")
+                    st.write(f"📄 {item.get('title', item.get('sermon_id', 'Unknown'))}")
                     st.caption(f"Status: {item.get('status', 'Pending')}")
                 with col2:
-                    if st.button("⏸️", key=f"pause_{item.get('id')}"):
+                    if st.button("⏸️", key=f"pause_{item.get('id', item.get('sermon_id'))}"):
                         st.info("Paused processing")
 
 def show_setup_guide():
@@ -227,12 +217,12 @@ def show_setup_guide():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("📁 Go to Settings", type="primary", use_container_width=True):
+        if st.button("📁 Go to Settings", type="primary", width='stretch'):
             st.session_state.current_page = 'settings'
             st.rerun()
     
     with col2:
-        if st.button("📖 View Documentation", use_container_width=True):
+        if st.button("📖 View Documentation", width='stretch'):
             st.info("Documentation will open in your browser")
 
 def check_system_components():
