@@ -87,3 +87,4 @@ logs/
 *.temp
 .cache/
 .pytest_cache/
+sermon_processor.db
