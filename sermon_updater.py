@@ -2051,6 +2051,210 @@ def get_sermons_in_year(year):
     return get_sermons_in_date_range(f"{year}-01-01", f"{year}-12-31")
 
 
+def get_broadcaster_pastors(limit: int = 500) -> list[str]:
+    """
+    Retrieve a list of distinct pastors/speakers from the broadcaster's sermons.
+    
+    Args:
+        limit: Maximum number of sermons to fetch for analysis (default: 500)
+        
+    Returns:
+        Sorted list of unique speaker names
+    """
+    try:
+        params = {
+            'page': 1,
+            'pageSize': 50,
+            'lite': 'true'
+        }
+        headers = get_api_headers()
+        url = f"{BASE_URL}node/sermons"
+        speakers = set()
+        fetched_count = 0
+        
+        logger.debug(f"Fetching pastors from broadcaster's sermons (limit: {limit})")
+        
+        while fetched_count < limit:
+            try:
+                resp = requests.get(url, params=params, headers=headers, timeout=60)
+                if resp.status_code != 200:
+                    logger.warning(f"Failed to fetch sermons: {resp.status_code}")
+                    break
+                    
+                data = resp.json()
+                results = data.get('results', [])
+                
+                if not results:
+                    break
+                    
+                for sermon in results:
+                    speaker_info = sermon.get('speaker') or {}
+                    speaker_name = speaker_info.get('displayName')
+                    if speaker_name and speaker_name.strip():
+                        speakers.add(speaker_name.strip())
+                    fetched_count += 1
+                    
+                    if fetched_count >= limit:
+                        break
+                
+                if not data.get('next') or fetched_count >= limit:
+                    break
+                    
+                params['page'] += 1
+                
+            except Exception as e:
+                logger.error(f"Error fetching sermon data: {e}")
+                break
+        
+        speaker_list = sorted(list(speakers))
+        logger.debug(f"Found {len(speaker_list)} unique pastors")
+        return speaker_list
+        
+    except Exception as e:
+        logger.error(f"Error retrieving pastors: {e}")
+        return []
+
+
+def get_broadcaster_event_types(limit: int = 500) -> list[str]:
+    """
+    Retrieve a list of distinct event types from the broadcaster's sermons.
+    
+    Args:
+        limit: Maximum number of sermons to fetch for analysis (default: 500)
+        
+    Returns:
+        Sorted list of unique event types
+    """
+    try:
+        params = {
+            'page': 1,
+            'pageSize': 50,
+            'lite': 'true'
+        }
+        headers = get_api_headers()
+        url = f"{BASE_URL}node/sermons"
+        event_types = set()
+        fetched_count = 0
+        
+        logger.debug(f"Fetching event types from broadcaster's sermons (limit: {limit})")
+        
+        while fetched_count < limit:
+            try:
+                resp = requests.get(url, params=params, headers=headers, timeout=60)
+                if resp.status_code != 200:
+                    logger.warning(f"Failed to fetch sermons: {resp.status_code}")
+                    break
+                    
+                data = resp.json()
+                results = data.get('results', [])
+                
+                if not results:
+                    break
+                    
+                for sermon in results:
+                    event_type = sermon.get('eventType')
+                    if event_type and event_type.strip():
+                        event_types.add(event_type.strip())
+                    fetched_count += 1
+                    
+                    if fetched_count >= limit:
+                        break
+                
+                if not data.get('next') or fetched_count >= limit:
+                    break
+                    
+                params['page'] += 1
+                
+            except Exception as e:
+                logger.error(f"Error fetching sermon data: {e}")
+                break
+        
+        event_list = sorted(list(event_types))
+        logger.debug(f"Found {len(event_list)} unique event types")
+        return event_list
+        
+    except Exception as e:
+        logger.error(f"Error retrieving event types: {e}")
+        return []
+
+
+def get_broadcaster_series(limit: int = 500) -> list[str]:
+    """
+    Retrieve a list of distinct series from the broadcaster's sermons.
+    
+    Args:
+        limit: Maximum number of sermons to fetch for analysis (default: 500)
+        
+    Returns:
+        Sorted list of unique series names
+    """
+    try:
+        params = {
+            'page': 1,
+            'pageSize': 50,
+            'lite': 'false'  # Need full data to get series info
+        }
+        headers = get_api_headers()
+        url = f"{BASE_URL}node/sermons"
+        series_names = set()
+        fetched_count = 0
+        
+        logger.debug(f"Fetching series from broadcaster's sermons (limit: {limit})")
+        
+        while fetched_count < limit:
+            try:
+                resp = requests.get(url, params=params, headers=headers, timeout=60)
+                if resp.status_code != 200:
+                    logger.warning(f"Failed to fetch sermons: {resp.status_code}")
+                    break
+                    
+                data = resp.json()
+                results = data.get('results', [])
+                
+                if not results:
+                    break
+                    
+                for sermon in results:
+                    # Check for series information in various possible fields
+                    series_info = sermon.get('series')
+                    if series_info:
+                        if isinstance(series_info, dict):
+                            series_name = series_info.get('displayName') or series_info.get('name')
+                        else:
+                            series_name = str(series_info)
+                        
+                        if series_name and series_name.strip():
+                            series_names.add(series_name.strip())
+                    
+                    # Also check subtitle field which sometimes contains series info
+                    subtitle = sermon.get('subtitle')
+                    if subtitle and subtitle.strip() and len(subtitle.strip()) > 3:
+                        # Only include if it looks like a series name (not too short)
+                        series_names.add(subtitle.strip())
+                    
+                    fetched_count += 1
+                    
+                    if fetched_count >= limit:
+                        break
+                
+                if not data.get('next') or fetched_count >= limit:
+                    break
+                    
+                params['page'] += 1
+                
+            except Exception as e:
+                logger.error(f"Error fetching sermon data: {e}")
+                break
+        
+        series_list = sorted(list(series_names))
+        logger.debug(f"Found {len(series_list)} unique series")
+        return series_list
+        
+    except Exception as e:
+        logger.error(f"Error retrieving series: {e}")
+        return []
+
+
 def process_year(year, no_upload=False):
     """Legacy bulk processor. Prefer cli_main() with --year for new code."""
     sermons = get_sermons_in_year(year)

@@ -9,6 +9,17 @@ import streamlit as st
 import pandas as pd
 import datetime
 from pathlib import Path
+import sys
+
+# Add parent directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent))
+from sermon_metadata import (
+    create_pastor_selectbox, 
+    create_event_type_selectbox,
+    get_pastors,
+    get_event_types,
+    show_metadata_refresh_section
+)
 
 def show_batch_update():
     """Main batch processing interface"""
@@ -42,6 +53,9 @@ def show_filter_and_select():
     """Sermon filtering and selection interface"""
     st.markdown("### 🔍 Filter Sermons")
     
+    # Show metadata refresh section
+    show_metadata_refresh_section()
+    
     # Date range filter
     col1, col2 = st.columns(2)
     
@@ -63,16 +77,32 @@ def show_filter_and_select():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        speaker_filter = st.text_input(
+        # Dynamic pastor filter
+        pastors = get_pastors()
+        pastor_options = ["All"] + pastors
+        speaker_filter_select = st.selectbox(
             "Speaker Name (optional)",
-            placeholder="Pastor John Smith",
-            key="batch_speaker_filter"
+            options=pastor_options,
+            key="batch_speaker_filter_select"
         )
+        
+        # Allow custom input if "All" is not selected
+        if speaker_filter_select != "All":
+            speaker_filter = speaker_filter_select
+        else:
+            speaker_filter = st.text_input(
+                "Or enter custom speaker:",
+                placeholder="Custom speaker name",
+                key="batch_speaker_filter_custom"
+            )
     
     with col2:
+        # Dynamic event type filter
+        event_types = get_event_types()
+        event_options = ["All"] + event_types
         event_type_filter = st.selectbox(
             "Event Type (optional)",
-            options=["All", "Sunday - AM", "Sunday - PM", "Wednesday Service", "Bible Study", "Special Event"],
+            options=event_options,
             key="batch_event_filter"
         )
     
