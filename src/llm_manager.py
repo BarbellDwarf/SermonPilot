@@ -290,18 +290,34 @@ class LLMManager:
         fallback_config = llm_config.get('fallback', {})
         if fallback_config.get('enabled', False):
             fallback_provider_type = fallback_config.get('provider', 'openai')
+            fallback_provider_config = fallback_config.get(fallback_provider_type, {})
 
+            # Check if fallback provider has required configuration
             try:
-                self.fallback_provider = self._create_provider(
-                    fallback_provider_type,
-                    fallback_config.get(fallback_provider_type, {})
-                )
-                logger.info(f"Fallback LLM provider initialized: {fallback_provider_type}")
+                if fallback_provider_type in ['openai', 'anthropic', 'xai', 'google', 'groq']:
+                    # These providers require an API key
+                    if not fallback_provider_config.get('api_key'):
+                        logger.info(f"Fallback provider {fallback_provider_type} disabled: no API key configured")
+                        self.fallback_provider = None
+                    else:
+                        self.fallback_provider = self._create_provider(
+                            fallback_provider_type,
+                            fallback_provider_config
+                        )
+                        logger.info(f"Fallback LLM provider initialized: {fallback_provider_type}")
+                else:
+                    # Ollama or other providers that may not require API keys
+                    self.fallback_provider = self._create_provider(
+                        fallback_provider_type,
+                        fallback_provider_config
+                    )
+                    logger.info(f"Fallback LLM provider initialized: {fallback_provider_type}")
             except Exception as e:
                 warning_msg = (
                     f"Failed to initialize fallback provider {fallback_provider_type}: {e}"
                 )
-                logger.warning(warning_msg)
+                logger.info(warning_msg)  # Changed from warning to info to reduce noise
+                self.fallback_provider = None
 
         # Initialize validator provider (smaller model for validation)
         validator_config = llm_config.get('validator', {})
