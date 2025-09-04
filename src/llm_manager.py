@@ -184,6 +184,82 @@ class OpenAIProvider(LLMProvider):
             raise Exception(f"OpenAI API error: {e}") from e
 
 
+class AnthropicProvider(OpenAIProvider):
+    """Anthropic Claude LLM provider."""
+
+    def __init__(self, config: dict[str, Any]):
+        # Set default model if not specified
+        if 'model' not in config:
+            config['model'] = 'claude-3-5-sonnet-20241022'
+        
+        # Set Anthropic API base URL if not specified
+        if 'base_url' not in config:
+            config['base_url'] = 'https://api.anthropic.com/v1'
+        
+        super().__init__(config)
+
+    def __str__(self) -> str:
+        """String representation of the provider."""
+        return f"AnthropicProvider(model={self.model})"
+
+
+class XAIProvider(OpenAIProvider):
+    """xAI Grok LLM provider."""
+
+    def __init__(self, config: dict[str, Any]):
+        # Set default model if not specified
+        if 'model' not in config:
+            config['model'] = 'grok-beta'
+        
+        # Set xAI API base URL if not specified
+        if 'base_url' not in config:
+            config['base_url'] = 'https://api.x.ai/v1'
+        
+        super().__init__(config)
+
+    def __str__(self) -> str:
+        """String representation of the provider."""
+        return f"XAIProvider(model={self.model})"
+
+
+class GoogleProvider(OpenAIProvider):
+    """Google Gemini LLM provider."""
+
+    def __init__(self, config: dict[str, Any]):
+        # Set default model if not specified
+        if 'model' not in config:
+            config['model'] = 'gemini-1.5-flash'
+        
+        # Set Google AI API base URL if not specified
+        if 'base_url' not in config:
+            config['base_url'] = 'https://generativelanguage.googleapis.com/v1beta'
+        
+        super().__init__(config)
+
+    def __str__(self) -> str:
+        """String representation of the provider."""
+        return f"GoogleProvider(model={self.model})"
+
+
+class GroqProvider(OpenAIProvider):
+    """Groq LLM provider."""
+
+    def __init__(self, config: dict[str, Any]):
+        # Set default model if not specified
+        if 'model' not in config:
+            config['model'] = 'llama-3.1-70b-versatile'
+        
+        # Set Groq API base URL if not specified
+        if 'base_url' not in config:
+            config['base_url'] = 'https://api.groq.com/openai/v1'
+        
+        super().__init__(config)
+
+    def __str__(self) -> str:
+        """String representation of the provider."""
+        return f"GroqProvider(model={self.model})"
+
+
 class LLMManager:
     """Manages LLM providers with primary and fallback support."""
 
@@ -250,6 +326,14 @@ class LLMManager:
             return OllamaProvider(provider_config)
         elif provider_type == 'openai':
             return OpenAIProvider(provider_config)
+        elif provider_type == 'anthropic':
+            return AnthropicProvider(provider_config)
+        elif provider_type == 'xai':
+            return XAIProvider(provider_config)
+        elif provider_type == 'google':
+            return GoogleProvider(provider_config)
+        elif provider_type == 'groq':
+            return GroqProvider(provider_config)
         else:
             raise ValueError(f"Unsupported provider type: {provider_type}")
 
