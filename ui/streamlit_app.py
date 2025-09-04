@@ -16,8 +16,17 @@ Features:
 
 import os
 import sys
-import streamlit as st
+import warnings
 from pathlib import Path
+
+# Suppress PyTorch/Torchaudio warnings before any imports
+warnings.filterwarnings('ignore', category=UserWarning, message='.*Torchaudio.*backend.*')
+warnings.filterwarnings('ignore', category=UserWarning, message='.*torchaudio.*')
+os.environ["TORCHAUDIO_USE_BACKEND_DISPATCHER"] = "1"
+os.environ["TORCHAUDIO_ENABLE_BACKEND_DISPATCH"] = "1"
+os.environ["TORCHAUDIO_BACKEND"] = "soundfile"
+
+import streamlit as st
 
 # Add project root and src to Python path for imports
 project_root = Path(__file__).parent.parent

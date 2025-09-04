@@ -395,45 +395,92 @@ def show_batch_results():
 
 def search_sermons():
     """Search for sermons based on filters"""
-    # Mock search results
-    mock_sermons = [
-        {
-            'sermon_id': '1234567890123',
-            'title': 'The Grace of God',
-            'speaker': 'Pastor John Smith',
-            'date': '2024-01-10',
-            'event_type': 'Sunday - AM',
-            'has_description': False,
-            'has_hashtags': True,
-            'has_audio': True,
-            'duration': 32
-        },
-        {
-            'sermon_id': '1234567890124', 
-            'title': 'Walking in Faith',
-            'speaker': 'Dr. Sarah Johnson',
-            'date': '2024-01-08',
-            'event_type': 'Sunday - PM',
-            'has_description': True,
-            'has_hashtags': False,
-            'has_audio': True,
-            'duration': 28
-        },
-        {
-            'sermon_id': '1234567890125',
-            'title': 'Hope in Trials', 
-            'speaker': 'Rev. Michael Brown',
-            'date': '2024-01-05',
-            'event_type': 'Wednesday Service',
-            'has_description': False,
-            'has_hashtags': False,
-            'has_audio': True,
-            'duration': 35
-        }
-    ]
-    
-    st.session_state.search_results = mock_sermons
-    st.success(f"Found {len(mock_sermons)} matching sermons")
+    try:
+        # Import sermon_updater functions
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+        import sermon_updater
+        
+        # Get filter values from session state
+        start_date = st.session_state.get('batch_start_date')
+        end_date = st.session_state.get('batch_end_date')
+        speaker_filter_custom = st.session_state.get('batch_speaker_filter_custom', '').strip()
+        speaker_filter_select = st.session_state.get('batch_speaker_filter_select', 'All')
+        event_type_filter = st.session_state.get('batch_event_filter', 'All')
+        content_requirement = st.session_state.get('batch_content_filter', 'Any')
+        
+        # Determine speaker filter
+        speaker_filter = None
+        if speaker_filter_select != "All":
+            speaker_filter = speaker_filter_select
+        elif speaker_filter_custom:
+            speaker_filter = speaker_filter_custom
+        
+        # Use real SermonAudio API
+        with st.spinner('🔍 Searching SermonAudio...'):
+            progress_bar = st.progress(0)
+            progress_bar.progress(0.2)
+            
+            # Use the existing date range function from sermon_updater
+            if start_date and end_date:
+                start_str = start_date.strftime('%Y-%m-%d')
+                end_str = end_date.strftime('%Y-%m-%d')
+                sermons = sermon_updater.get_sermons_in_date_range(start_str, end_str)
+            else:
+                # Default to last 30 days
+                end_date = datetime.date.today()
+                start_date = end_date - datetime.timedelta(days=30)
+                start_str = start_date.strftime('%Y-%m-%d')
+                end_str = end_date.strftime('%Y-%m-%d')
+                sermons = sermon_updater.get_sermons_in_date_range(start_str, end_str)
+            
+            progress_bar.progress(0.6)
+            
+            # Filter results based on criteria
+            filtered_sermons = []
+            for sermon in sermons:
+                # Apply speaker filter
+                if speaker_filter and sermon.get('speakerName'):
+                    if speaker_filter.lower() not in sermon['speakerName'].lower():
+                        continue
+                
+                # Apply event type filter
+                if event_type_filter != "All" and sermon.get('eventType'):
+                    if event_type_filter != sermon['eventType']:
+                        continue
+                
+                # Convert to UI format
+                filtered_sermons.append({
+                    'sermon_id': sermon.get('sermonID', ''),
+                    'title': sermon.get('displayTitle', 'Untitled'),
+                    'speaker': sermon.get('speakerName', 'Unknown'),
+                    'date': sermon.get('preachDate', ''),
+                    'event_type': sermon.get('eventType', ''),
+                    'has_description': False,  # TODO: Check actual metadata
+                    'has_hashtags': False,    # TODO: Check actual metadata
+                    'has_audio': True,        # Assume true from API
+                    'duration': 0             # Not available in lite API
+                })
+            
+            # Apply content filters
+            if content_requirement == "Missing Description":
+                filtered_sermons = [s for s in filtered_sermons if not s['has_description']]
+            elif content_requirement == "Missing Hashtags":
+                filtered_sermons = [s for s in filtered_sermons if not s['has_hashtags']]
+            elif content_requirement == "Both Missing":
+                filtered_sermons = [s for s in filtered_sermons if not s['has_description'] and not s['has_hashtags']]
+            
+            progress_bar.progress(1.0)
+            progress_bar.empty()
+            
+            st.session_state.search_results = filtered_sermons
+            st.success(f"✅ Found {len(filtered_sermons)} matching sermons")
+            
+    except Exception as e:
+        st.error(f"❌ Error searching sermons: {str(e)}")
+        # Fallback to empty results
+        st.session_state.search_results = []
 
 def show_search_results():
     """Display search results with selection"""
