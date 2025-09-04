@@ -562,6 +562,33 @@ Guidelines:
             logger.error(f"Error reading description for sermon {sermon_id}: {e}")
             return None
 
+    def validate_single_sermon(self, sermon_id: str) -> ValidationResult | None:
+        """
+        Validate a single sermon by ID, either from local files or API.
+        
+        Args:
+            sermon_id: Sermon ID to validate
+            
+        Returns:
+            ValidationResult object or None if sermon not found
+        """
+        try:
+            # First try to validate from local files
+            processed_dir = Path(self.output_dir)
+            sermon_dir = processed_dir / sermon_id
+            
+            if sermon_dir.exists():
+                return self._validate_local_sermon(sermon_dir)
+            
+            # If not found locally, we could implement API validation here
+            # For now, return None
+            logger.warning(f"Sermon {sermon_id} not found in local processed directory")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error validating sermon {sermon_id}: {e}")
+            return None
+
     def generate_summary(self, results: list[ValidationResult]) -> ValidationSummary:
         """Generate a summary of validation results."""
         if not results:
