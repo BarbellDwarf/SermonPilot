@@ -126,12 +126,91 @@ def show_general_settings():
                             hashtag_verification, output_directory, 
                             save_original_audio, save_transcript)
 
+def initialize_llm_session_state(llm_config):
+    """Initialize session state values from config if not already set"""
+    
+    # Primary provider settings
+    primary_config = llm_config.get('primary', {})
+    if 'primary_provider' not in st.session_state:
+        st.session_state.primary_provider = primary_config.get('provider', 'ollama')
+    
+    # Initialize primary provider-specific session state
+    initialize_provider_session_state(primary_config, st.session_state.primary_provider, 'primary')
+    
+    # Fallback provider settings
+    fallback_config = llm_config.get('fallback', {})
+    if 'fallback_enabled' not in st.session_state:
+        st.session_state.fallback_enabled = fallback_config.get('enabled', False)
+    if 'fallback_provider' not in st.session_state:
+        st.session_state.fallback_provider = fallback_config.get('provider', 'openai')
+    
+    # Initialize fallback provider-specific session state
+    if st.session_state.fallback_enabled:
+        initialize_provider_session_state(fallback_config, st.session_state.fallback_provider, 'fallback')
+    
+    # Validator provider settings
+    validator_config = llm_config.get('validator', {})
+    if 'validator_enabled' not in st.session_state:
+        st.session_state.validator_enabled = validator_config.get('enabled', False)
+    if 'validator_provider' not in st.session_state:
+        st.session_state.validator_provider = validator_config.get('provider', 'ollama')
+    
+    # Initialize validator provider-specific session state
+    if st.session_state.validator_enabled:
+        initialize_provider_session_state(validator_config, st.session_state.validator_provider, 'validator')
+
+def initialize_provider_session_state(provider_config, provider_type, key_prefix):
+    """Initialize provider-specific session state values from config"""
+    if provider_type in provider_config:
+        settings = provider_config[provider_type]
+        
+        if provider_type == 'ollama':
+            if f'{key_prefix}_ollama_host' not in st.session_state:
+                st.session_state[f'{key_prefix}_ollama_host'] = settings.get('host', 'http://localhost:11434')
+            if f'{key_prefix}_ollama_model' not in st.session_state:
+                st.session_state[f'{key_prefix}_ollama_model'] = settings.get('model', 'llama3')
+                
+        elif provider_type == 'openai':
+            if f'{key_prefix}_openai_key' not in st.session_state:
+                st.session_state[f'{key_prefix}_openai_key'] = settings.get('api_key', '')
+            if f'{key_prefix}_openai_url' not in st.session_state:
+                st.session_state[f'{key_prefix}_openai_url'] = settings.get('base_url', '')
+            if f'{key_prefix}_openai_model' not in st.session_state:
+                st.session_state[f'{key_prefix}_openai_model'] = settings.get('model', 'gpt-3.5-turbo')
+                
+        elif provider_type == 'anthropic':
+            if f'{key_prefix}_anthropic_key' not in st.session_state:
+                st.session_state[f'{key_prefix}_anthropic_key'] = settings.get('api_key', '')
+            if f'{key_prefix}_anthropic_model' not in st.session_state:
+                st.session_state[f'{key_prefix}_anthropic_model'] = settings.get('model', 'claude-3-5-sonnet-20241022')
+                
+        elif provider_type == 'xai':
+            if f'{key_prefix}_xai_key' not in st.session_state:
+                st.session_state[f'{key_prefix}_xai_key'] = settings.get('api_key', '')
+            if f'{key_prefix}_xai_model' not in st.session_state:
+                st.session_state[f'{key_prefix}_xai_model'] = settings.get('model', 'grok-beta')
+                
+        elif provider_type == 'google':
+            if f'{key_prefix}_google_key' not in st.session_state:
+                st.session_state[f'{key_prefix}_google_key'] = settings.get('api_key', '')
+            if f'{key_prefix}_google_model' not in st.session_state:
+                st.session_state[f'{key_prefix}_google_model'] = settings.get('model', 'gemini-1.5-flash')
+                
+        elif provider_type == 'groq':
+            if f'{key_prefix}_groq_key' not in st.session_state:
+                st.session_state[f'{key_prefix}_groq_key'] = settings.get('api_key', '')
+            if f'{key_prefix}_groq_model' not in st.session_state:
+                st.session_state[f'{key_prefix}_groq_model'] = settings.get('model', 'llama-3.1-70b-versatile')
+
 def show_llm_settings():
     """LLM provider configuration"""
     st.markdown("### 🤖 LLM Provider Configuration")
     
     config = st.session_state.get('config') or {}
     llm_config = config.get('llm', {})
+    
+    # Initialize session state from config if not already set
+    initialize_llm_session_state(llm_config)
     
     # Primary Provider
     st.markdown("#### 🥇 Primary Provider")
@@ -871,8 +950,100 @@ def save_general_settings(api_key, broadcaster_id, dry_run, debug,
 
 def save_llm_settings():
     """Save LLM settings to configuration"""
-    # This would collect all LLM settings from session state and save them
+    if not st.session_state.get('config'):
+        st.session_state.config = {}
+    
+    # Initialize LLM config if it doesn't exist
+    if 'llm' not in st.session_state.config:
+        st.session_state.config['llm'] = {}
+    
+    llm_config = st.session_state.config['llm']
+    
+    # Save Primary Provider Settings
+    primary_provider = st.session_state.get('primary_provider', 'ollama')
+    if 'primary' not in llm_config:
+        llm_config['primary'] = {}
+    llm_config['primary']['provider'] = primary_provider
+    
+    # Save primary provider-specific settings
+    save_provider_settings(llm_config['primary'], primary_provider, 'primary')
+    
+    # Save Fallback Provider Settings
+    fallback_enabled = st.session_state.get('fallback_enabled', False)
+    if 'fallback' not in llm_config:
+        llm_config['fallback'] = {}
+    llm_config['fallback']['enabled'] = fallback_enabled
+    
+    if fallback_enabled:
+        fallback_provider = st.session_state.get('fallback_provider', 'openai')
+        llm_config['fallback']['provider'] = fallback_provider
+        save_provider_settings(llm_config['fallback'], fallback_provider, 'fallback')
+    
+    # Save Validator Provider Settings
+    validator_enabled = st.session_state.get('validator_enabled', False)
+    if 'validator' not in llm_config:
+        llm_config['validator'] = {}
+    llm_config['validator']['enabled'] = validator_enabled
+    
+    if validator_enabled:
+        validator_provider = st.session_state.get('validator_provider', 'ollama')
+        llm_config['validator']['provider'] = validator_provider
+        save_provider_settings(llm_config['validator'], validator_provider, 'validator')
+    
+    # Save to file
+    save_config_to_file(st.session_state.config)
     st.success("✅ LLM settings saved!")
+
+def save_provider_settings(provider_config, provider_type, key_prefix):
+    """Save provider-specific settings from session state"""
+    if provider_type not in provider_config:
+        provider_config[provider_type] = {}
+    
+    provider_settings = provider_config[provider_type]
+    
+    if provider_type == 'ollama':
+        host = st.session_state.get(f'{key_prefix}_ollama_host', 'http://localhost:11434')
+        model = st.session_state.get(f'{key_prefix}_ollama_model', 'llama3')
+        provider_settings['host'] = host
+        provider_settings['model'] = model
+        
+    elif provider_type == 'openai':
+        api_key = st.session_state.get(f'{key_prefix}_openai_key', '')
+        base_url = st.session_state.get(f'{key_prefix}_openai_url', '')
+        model = st.session_state.get(f'{key_prefix}_openai_model', 'gpt-3.5-turbo')
+        if api_key:
+            provider_settings['api_key'] = api_key
+        if base_url:
+            provider_settings['base_url'] = base_url
+        provider_settings['model'] = model
+        
+    elif provider_type == 'anthropic':
+        api_key = st.session_state.get(f'{key_prefix}_anthropic_key', '')
+        model = st.session_state.get(f'{key_prefix}_anthropic_model', 'claude-3-5-sonnet-20241022')
+        if api_key:
+            provider_settings['api_key'] = api_key
+        provider_settings['model'] = model
+        
+    elif provider_type == 'xai':
+        api_key = st.session_state.get(f'{key_prefix}_xai_key', '')
+        model = st.session_state.get(f'{key_prefix}_xai_model', 'grok-beta')
+        if api_key:
+            provider_settings['api_key'] = api_key
+        provider_settings['model'] = model
+        
+    elif provider_type == 'google':
+        api_key = st.session_state.get(f'{key_prefix}_google_key', '')
+        model = st.session_state.get(f'{key_prefix}_google_model', 'gemini-1.5-flash')
+        if api_key:
+            provider_settings['api_key'] = api_key
+        provider_settings['model'] = model
+        
+    elif provider_type == 'groq':
+        api_key = st.session_state.get(f'{key_prefix}_groq_key', '')
+        model = st.session_state.get(f'{key_prefix}_groq_model', 'llama-3.1-70b-versatile')
+        if api_key:
+            provider_settings['api_key'] = api_key
+        provider_settings['model'] = model
 
 def save_audio_settings(enhancement_method, use_audacity, audio_noise_reduction,
                        audio_amplify, audio_normalize, audio_gain_db, target_level_db):
