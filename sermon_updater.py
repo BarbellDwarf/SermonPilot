@@ -74,6 +74,23 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     logging.getLogger("torchaudio").disabled = True
     from audio_processing import process_sermon_audio
     from llm_manager import LLMManager, migrate_legacy_config
+    
+    # Import database for Q&A processing tracking
+    try:
+        sys.path.insert(0, str(Path(__file__).parent / "ui"))
+        from database import SermonRepository
+        database_available = True
+    except ImportError:
+        database_available = False
+        SermonRepository = None
+    
+    # Import enhanced audio processor
+    try:
+        from enhanced_audio_processor import EnhancedAudioProcessor
+        enhanced_processor_available = True
+    except ImportError:
+        enhanced_processor_available = False
+        EnhancedAudioProcessor = None
 
 print("   ⚙️  Configuring environment...")
 load_dotenv()
@@ -134,7 +151,8 @@ AUDIO_PARAMS = {
     'gain_db': config.get('audio_gain_db', 1.0),
     'target_level_db': config.get('audio_target_level_db', -22.0),
     'use_audacity': config.get('use_audacity', False),
-    'enhancement_method': config.get('audio_enhancement_method', 'resemble_enhance')
+    'enhancement_method': config.get('audio_enhancement_method', 'resemble_enhance'),
+    'config': config  # Pass full config for Q&A normalization
 }
 
 BASE_URL = 'https://api.sermonaudio.com/v2/'
@@ -1912,18 +1930,29 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                     logger.warning("Failed to save original audio: %s", e)
 
             # Process audio
+            qa_processing_info = None
             if not verbose:
                 print("   🔧 Processing audio...")
             try:
-                processing_success = process_sermon_audio(
+                result = process_sermon_audio(
                     input_audio,
                     output_audio,
                     skip_on_error=True,
                     verbose=verbose,
                     **AUDIO_PARAMS
                 )
+                
+                # Handle new return format (success, qa_info) vs old format (success only)
+                if isinstance(result, tuple):
+                    processing_success, qa_processing_info = result
+                else:
+                    processing_success = result
+                
                 if not processing_success:
                     logger.warning("Audio processing issues; continuing with original audio")
+                elif qa_processing_info:
+                    logger.info(f"Q&A processing: {qa_processing_info.get('total_segments', 0)} segments detected")
+                    
             except Exception as e:
                 logger.error("Audio processing failed: %s", e)
                 needs_audio = False
@@ -2017,6 +2046,68 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
         pass
 
     logger.info("Sermon %s processing complete", sermon_id)
+
+    # Save complete sermon record to database for UI access
+    if database_available and (qa_processing_info or summary or hashtags or transcript):
+        try:
+            repo = SermonRepository()
+            
+            # Build comprehensive sermon record
+            sermon_data = {
+                'id': sermon_id,
+                'title': sermon_name,
+                'speaker': speaker_name,
+                'recorded_date': getattr(details, 'preachDate', ''),
+                'event_type': event_type,
+                'bible_text': getattr(details, 'bibleText', ''),
+                'duration': getattr(details, 'durationSeconds', 0),
+                'status': 'processed' if not DRY_RUN else 'pending',
+                'file_paths': {
+                    'processed_audio': output_audio if os.path.exists(output_audio) else None,
+                    'original_audio': original_audio_path if 'original_audio_path' in locals() and os.path.exists(original_audio_path) else None,
+                    'transcript': os.path.join(sermon_dir, f"{sermon_id}_transcript.txt") if transcript else None,
+                    'description': os.path.join(sermon_dir, f"{sermon_id}_description.txt") if summary else None,
+                    'hashtags': os.path.join(sermon_dir, f"{sermon_id}_hashtags.txt") if hashtags else None
+                },
+                'processing_info': {
+                    'enhancement_method': AUDIO_PARAMS.get('enhancement_method', 'unknown'),
+                    'noise_reduction_applied': AUDIO_PARAMS.get('noise_reduction', False),
+                    'normalization_applied': AUDIO_PARAMS.get('normalize', False),
+                    'qa_normalization_applied': qa_processing_info is not None,
+                    'qa_segments_count': qa_processing_info.get('total_segments', 0) if qa_processing_info else 0,
+                    'qa_segments': qa_processing_info.get('qa_segments', []) if qa_processing_info else [],
+                    'processing_duration': None,  # Could be tracked with timing
+                    'quality_score': None,  # Could be calculated from processing metrics
+                    'processing_logs': qa_processing_info if qa_processing_info else {}
+                },
+                'content': {
+                    'transcript_text': transcript,
+                    'description': summary,
+                    'hashtags': hashtags,
+                    'key_topics': [],  # Could be extracted from LLM processing
+                    'summary': summary  # Using description as summary for now
+                },
+                'upload_info': {
+                    'sermonaudio_id': sermon_id,
+                    'upload_date': dt.datetime.now(),
+                    'upload_status': 'completed' if not DRY_RUN else 'pending',
+                    'upload_message': 'Processing completed successfully'
+                }
+            }
+            
+            # Remove None values from file_paths
+            sermon_data['file_paths'] = {k: v for k, v in sermon_data['file_paths'].items() if v}
+            
+            success = repo.save_sermon(sermon_data)
+            if success:
+                logger.debug("Sermon data saved to database successfully")
+                if qa_processing_info and qa_processing_info.get('total_segments', 0) > 0:
+                    logger.info(f"💾 Saved Q&A processing info: {qa_processing_info['total_segments']} segments")
+            else:
+                logger.warning("Failed to save sermon data to database")
+                
+        except Exception as e:
+            logger.warning(f"Database save failed: {e}")
 
     # Return summary of what was processed
     completed_actions = []
