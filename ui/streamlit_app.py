@@ -182,27 +182,44 @@ def render_sidebar():
     # Navigation
     st.sidebar.markdown("### 📋 Navigation")
     
+    # Core pages
+    st.sidebar.markdown("**📊 Core Pages**")
     pages = {
         "📊 Dashboard": "dashboard",
         "🎵 New Sermon": "new_sermon", 
         "🔄 Batch Update": "batch_update",
         "✅ Validation": "validation",
-        "📚 Library": "library",
-        "📖 Viewer": "viewer", 
-        "📈 Analytics": "analytics",
         "⚙️ Settings": "settings"
     }
     
-    # Create navigation buttons
     for page_name, page_key in pages.items():
         if st.sidebar.button(page_name, key=f"nav_{page_key}", use_container_width=True):
             st.session_state.current_page = page_key
-            if page_key == 'library':
-                st.switch_page("ui_pages/07_📚_Library.py")
-            elif page_key == 'viewer':
-                st.switch_page("ui_pages/08_📖_Viewer.py")
-            elif page_key == 'analytics':
-                st.switch_page("ui_pages/09_📈_Analytics.py")
+    
+    # New sermon management pages (highlighted)
+    st.sidebar.markdown("**🆕 Sermon Management (NEW)**")
+    new_pages = {
+        "📚 Library": "library",
+        "📖 Viewer": "viewer", 
+        "📈 Analytics": "analytics"
+    }
+    
+    for page_name, page_key in new_pages.items():
+        # Use colored buttons for new pages
+        button_style = "type='primary'" if page_key in ['library', 'viewer', 'analytics'] else ""
+        
+        col1, col2 = st.sidebar.columns([1, 8])
+        with col1:
+            st.markdown("🆕")
+        with col2:
+            if st.button(page_name, key=f"nav_{page_key}", use_container_width=True):
+                st.session_state.current_page = page_key
+                if page_key == 'library':
+                    st.switch_page("pages/07_📚_Library.py")
+                elif page_key == 'viewer':
+                    st.switch_page("pages/08_📖_Viewer.py")
+                elif page_key == 'analytics':
+                    st.switch_page("pages/09_📈_Analytics.py")
     
     # Enhanced System Status
     st.sidebar.markdown("### 🔍 System Status")
@@ -396,13 +413,13 @@ def main():
         show_validation()
     elif current_page == 'library':
         # Redirect to Library page
-        st.switch_page("ui_pages/07_📚_Library.py")
+        st.switch_page("pages/07_📚_Library.py")
     elif current_page == 'viewer':
         # Redirect to Viewer page  
-        st.switch_page("ui_pages/08_📖_Viewer.py")
+        st.switch_page("pages/08_📖_Viewer.py")
     elif current_page == 'analytics':
         # Redirect to Analytics page
-        st.switch_page("ui_pages/09_📈_Analytics.py")
+        st.switch_page("pages/09_📈_Analytics.py")
     elif current_page == 'settings':
         show_settings()
     else:
