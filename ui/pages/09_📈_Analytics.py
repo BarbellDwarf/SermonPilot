@@ -30,6 +30,7 @@ sys.path.insert(0, str(src_dir))
 from database import SermonRepository, get_db
 from analytics_manager import get_analytics_manager
 from sermon_manager import get_sermon_manager
+from shared_navigation import render_shared_sidebar, initialize_session_state
 
 # Page configuration
 st.set_page_config(page_title="Analytics Dashboard", page_icon="📈", layout="wide")
@@ -48,6 +49,41 @@ def get_managers():
     analytics_mgr = get_analytics_manager(config)
     sermon_mgr = get_sermon_manager(config)
     return analytics_mgr, sermon_mgr
+
+@st.cache_data
+def get_sermon_count():
+    """Get total count of sermons"""
+    try:
+        repo = SermonRepository()
+        sermons = repo.get_all_sermons()
+        return len(sermons)
+    except Exception as e:
+        st.error(f"Error getting sermon count: {e}")
+        return 0
+
+@st.cache_data
+def get_qa_session_count():
+    """Get count of sermons with Q&A sessions"""
+    try:
+        repo = SermonRepository()
+        sermons = repo.get_all_sermons()
+        qa_count = sum(1 for s in sermons if s.get('qa_segments'))
+        return qa_count
+    except Exception as e:
+        st.error(f"Error getting Q&A session count: {e}")
+        return 0
+
+@st.cache_data
+def get_total_duration():
+    """Get total duration of all sermons in hours"""
+    try:
+        repo = SermonRepository()
+        sermons = repo.get_all_sermons()
+        total_seconds = sum(s.get('duration', 0) for s in sermons if s.get('duration'))
+        return round(total_seconds / 3600, 1)  # Convert to hours
+    except Exception as e:
+        st.error(f"Error getting total duration: {e}")
+        return 0.0
 
 
 def show_content_analytics():
@@ -1061,7 +1097,12 @@ def show_content_analytics():
 
 
 if __name__ == "__main__":
+    # Initialize session state and render navigation
+    initialize_session_state()
+    render_shared_sidebar()
     show_content_analytics()
 else:
     # When imported as a page
+    initialize_session_state()
+    render_shared_sidebar()
     show_content_analytics()
