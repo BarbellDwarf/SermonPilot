@@ -83,6 +83,14 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     except ImportError:
         database_available = False
         SermonRepository = None
+    
+    # Import enhanced audio processor
+    try:
+        from enhanced_audio_processor import EnhancedAudioProcessor
+        enhanced_processor_available = True
+    except ImportError:
+        enhanced_processor_available = False
+        EnhancedAudioProcessor = None
 
 print("   ⚙️  Configuring environment...")
 load_dotenv()
