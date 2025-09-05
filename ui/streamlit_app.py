@@ -42,6 +42,7 @@ sys.path.insert(0, str(project_root / "src"))
 sys.path.insert(0, str(ui_dir))
 
 from datetime import datetime
+from shared_navigation import render_shared_sidebar, initialize_session_state
 
 # Configure Streamlit page
 st.set_page_config(
@@ -193,219 +194,20 @@ def check_system_status():
     
     return status
 
-def render_sidebar():
-    """Render enhanced sidebar with comprehensive system status"""
-    st.sidebar.markdown('<div class="main-header">🎵 SermonAudio<br>Processor</div>', unsafe_allow_html=True)
-    
-    # Navigation - Single continuous section
-    st.sidebar.markdown("### 📋 Navigation")
-    
-    # All pages in one continuous list
-    all_pages = {
-        "📊 Dashboard": "dashboard",
-        "🎵 New Sermon": "new_sermon", 
-        "🔄 Batch Update": "batch_update",
-        "✅ Validation": "validation",
-        "📚 Library 🆕": "library",
-        "📖 Viewer 🆕": "viewer", 
-        "📈 Analytics 🆕": "analytics",
-        "⚙️ Settings": "settings"
-    }
-    
-    for page_name, page_key in all_pages.items():
-        # Use primary button style for new pages
-        button_type = "primary" if page_key in ['library', 'viewer', 'analytics'] else "secondary"
-        
-        if st.sidebar.button(page_name, key=f"nav_{page_key}", use_container_width=True, type=button_type):
-            st.session_state.current_page = page_key
-            if page_key == 'library':
-                st.switch_page("pages/07_📚_Library.py")
-            elif page_key == 'viewer':
-                st.switch_page("pages/08_📖_Viewer.py")
-            elif page_key == 'analytics':
-                st.switch_page("pages/09_📈_Analytics.py")
-    
-    # Enhanced System Status
-    st.sidebar.markdown("### 🔍 System Status")
-    
-    # Get comprehensive status
-    try:
-        from system_status import get_status_manager, get_status_emoji
-        status_manager = get_status_manager(st.session_state.config)
-        
-        # Check if we should refresh status (every 60 seconds)
-        current_time = datetime.now()
-        if ('last_status_check' not in st.session_state or 
-            (current_time - st.session_state.last_status_check).seconds > 60):
-            
-            with st.sidebar:
-                with st.spinner("Checking system status..."):
-                    comprehensive_status = status_manager.get_comprehensive_status()
-                    st.session_state.system_status = comprehensive_status
-                    st.session_state.last_status_check = current_time
-        
-        # Display status from cache
-        if 'system_status' in st.session_state:
-            status_data = st.session_state.system_status
-            
-            # Core system components
-            core_components = [
-                ('sermonaudio_api', 'SermonAudio API'),
-                ('database', 'Database'),
-                ('llm_primary', 'Primary LLM'),
-                ('audio_enhancement', 'Audio Enhancement'),
-                ('local_storage', 'Local Storage')
-            ]
-            
-            for status_key, display_name in core_components:
-                if status_key in status_data:
-                    status_info = status_data[status_key]
-                    emoji = get_status_emoji(status_info['status'])
-                    
-                    # Create expandable status item
-                    with st.sidebar.expander(f"{emoji} {display_name}", expanded=False):
-                        st.write(f"**Status:** {status_info['status'].title()}")
-                        st.write(f"**Message:** {status_info['message']}")
-                        if status_info.get('details'):
-                            st.caption(status_info['details'])
-                        st.caption(f"Last checked: {status_info['timestamp'].strftime('%H:%M:%S')}")
-            
-            # Overall system health indicator
-            error_count = sum(1 for s in status_data.values() if s.get('status') == 'error')
-            warning_count = sum(1 for s in status_data.values() if s.get('status') == 'warning')
-            
-            if error_count > 0:
-                st.sidebar.error(f"⚠️ {error_count} system errors detected")
-            elif warning_count > 0:
-                st.sidebar.warning(f"⚠️ {warning_count} warnings")
-            else:
-                st.sidebar.success("✅ All systems operational")
-        
-    except Exception as e:
-        # Fallback to basic status check
-        st.sidebar.warning("⚠️ Status monitoring unavailable")
-        status = check_system_status()
-        
-        for component, is_healthy in status.items():
-            icon = "✅" if is_healthy else "❌"
-            color = "success-text" if is_healthy else "error-text"
-            st.sidebar.markdown(f'{icon} <span class="{color}">{component.replace("_", " ").title()}</span>', unsafe_allow_html=True)
-    
-    # Quick Actions
-    st.sidebar.markdown("### ⚡ Quick Actions")
-    
-    col1, col2 = st.sidebar.columns(2)
-    
-    with col1:
-        if st.button("🔄 Refresh", help="Refresh system status", use_container_width=True):
-            # Clear status cache to force refresh
-            if 'system_status' in st.session_state:
-                del st.session_state.system_status
-            if 'last_status_check' in st.session_state:
-                del st.session_state.last_status_check
-            st.rerun()
-    
-    with col2:
-        if st.button("📊 Status", help="View detailed system status", use_container_width=True):
-            st.session_state.show_detailed_status = True
-            st.rerun()
-    
-    # Show detailed status modal if requested
-    if st.session_state.get('show_detailed_status', False):
-        show_detailed_status_modal()
-    
-    if st.sidebar.button("📁 Config", help="Show config file location", use_container_width=True):
-        st.sidebar.info(f"Config: {project_root}/config.yaml")
-
-def show_detailed_status_modal():
-    """Show detailed system status in a modal"""
-    if 'system_status' in st.session_state:
-        st.subheader("🔍 Detailed System Status")
-        
-        status_data = st.session_state.system_status
-        
-        # Create tabs for different categories
-        tabs = st.tabs(["🔗 Connectivity", "💾 Storage", "🤖 AI Services", "⚙️ System"])
-        
-        with tabs[0]:  # Connectivity
-            st.markdown("#### SermonAudio API")
-            if 'sermonaudio_api' in status_data:
-                display_status_details(status_data['sermonaudio_api'])
-            
-            st.markdown("#### Database Connection") 
-            if 'database' in status_data:
-                display_status_details(status_data['database'])
-        
-        with tabs[1]:  # Storage
-            st.markdown("#### Local Storage")
-            if 'local_storage' in status_data:
-                display_status_details(status_data['local_storage'])
-            
-            st.markdown("#### Processing Queue")
-            if 'processing_queue' in status_data:
-                display_status_details(status_data['processing_queue'])
-        
-        with tabs[2]:  # AI Services
-            st.markdown("#### Primary LLM Provider")
-            if 'llm_primary' in status_data:
-                display_status_details(status_data['llm_primary'])
-            
-            st.markdown("#### Fallback LLM Provider")
-            if 'llm_fallback' in status_data:
-                display_status_details(status_data['llm_fallback'])
-            
-            st.markdown("#### Audio Enhancement")
-            if 'audio_enhancement' in status_data:
-                display_status_details(status_data['audio_enhancement'])
-        
-        with tabs[3]:  # System
-            st.markdown("#### System Resources")
-            if 'system_resources' in status_data:
-                display_status_details(status_data['system_resources'])
-        
-        if st.button("✖️ Close", type="primary"):
-            st.session_state.show_detailed_status = False
-            st.rerun()
-
-def display_status_details(status_info):
-    """Display detailed status information"""
-    from system_status import get_status_emoji
-    
-    emoji = get_status_emoji(status_info['status'])
-    status_color = {
-        'ok': 'green',
-        'warning': 'orange', 
-        'error': 'red',
-        'processing': 'blue'
-    }.get(status_info['status'], 'gray')
-    
-    st.markdown(f"""
-    **Status:** {emoji} ::{status_color}[{status_info['status'].upper()}]  
-    **Message:** {status_info['message']}  
-    **Details:** {status_info.get('details', 'No additional details')}  
-    **Last Updated:** {status_info['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}
-    """)
-    
-    st.divider()
-
 def main():
     """Main application entry point"""
     # Initialize session state
     initialize_session_state()
     
-    # Set default page if not set
-    if 'current_page' not in st.session_state:
-        st.session_state.current_page = 'dashboard'
-    
     # Load configuration
     if not st.session_state.config:
         load_configuration()
     
-    # Render sidebar
-    render_sidebar()
+    # Render shared sidebar navigation
+    render_shared_sidebar()
     
-    # Main content area
-    current_page = st.session_state.current_page
+    # Main content area - show the appropriate page based on session state
+    current_page = st.session_state.get('current_page', 'dashboard')
     
     if current_page == 'dashboard':
         show_dashboard()
@@ -415,18 +217,10 @@ def main():
         show_batch_update()
     elif current_page == 'validation':
         show_validation()
-    elif current_page == 'library':
-        # Redirect to Library page
-        st.switch_page("pages/07_📚_Library.py")
-    elif current_page == 'viewer':
-        # Redirect to Viewer page  
-        st.switch_page("pages/08_📖_Viewer.py")
-    elif current_page == 'analytics':
-        # Redirect to Analytics page
-        st.switch_page("pages/09_📈_Analytics.py")
     elif current_page == 'settings':
         show_settings()
     else:
+        # Default to dashboard
         show_dashboard()
 
 def show_dashboard():

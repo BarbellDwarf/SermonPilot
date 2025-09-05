@@ -28,6 +28,7 @@ from database import SermonRepository, get_db
 from sermon_metadata import get_pastors, get_event_types
 from sermon_manager import get_sermon_manager
 from analytics_manager import get_analytics_manager
+from shared_navigation import render_shared_sidebar, initialize_session_state
 
 # Import enhanced search engine
 try:
@@ -815,7 +816,12 @@ def show_sermon_library():
             st.info("Settings page coming soon!")
 
 if __name__ == "__main__":
+    # Initialize session state and render navigation
+    initialize_session_state()
+    render_shared_sidebar()
     show_sermon_library()
 else:
     # When imported as a page
+    initialize_session_state()
+    render_shared_sidebar()
     show_sermon_library()
