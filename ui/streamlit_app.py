@@ -101,6 +101,24 @@ st.markdown("""
     .sidebar .sidebar-content {
         background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
     }
+    
+    /* Continuous navigation styling */
+    .sidebar .stButton > button {
+        margin-bottom: 0.25rem;
+        border-radius: 0.5rem;
+        transition: all 0.2s ease;
+    }
+    
+    .sidebar .stButton > button[data-baseweb="button"][kind="primary"] {
+        background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+        border: none;
+        box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+    }
+    
+    .sidebar .stButton > button[data-baseweb="button"][kind="primary"]:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(59, 130, 246, 0.4);
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -179,47 +197,33 @@ def render_sidebar():
     """Render enhanced sidebar with comprehensive system status"""
     st.sidebar.markdown('<div class="main-header">🎵 SermonAudio<br>Processor</div>', unsafe_allow_html=True)
     
-    # Navigation
+    # Navigation - Single continuous section
     st.sidebar.markdown("### 📋 Navigation")
     
-    # Core pages
-    st.sidebar.markdown("**📊 Core Pages**")
-    pages = {
+    # All pages in one continuous list
+    all_pages = {
         "📊 Dashboard": "dashboard",
         "🎵 New Sermon": "new_sermon", 
         "🔄 Batch Update": "batch_update",
         "✅ Validation": "validation",
+        "📚 Library 🆕": "library",
+        "📖 Viewer 🆕": "viewer", 
+        "📈 Analytics 🆕": "analytics",
         "⚙️ Settings": "settings"
     }
     
-    for page_name, page_key in pages.items():
-        if st.sidebar.button(page_name, key=f"nav_{page_key}", use_container_width=True):
-            st.session_state.current_page = page_key
-    
-    # New sermon management pages (highlighted)
-    st.sidebar.markdown("**🆕 Sermon Management (NEW)**")
-    new_pages = {
-        "📚 Library": "library",
-        "📖 Viewer": "viewer", 
-        "📈 Analytics": "analytics"
-    }
-    
-    for page_name, page_key in new_pages.items():
-        # Use colored buttons for new pages
-        button_style = "type='primary'" if page_key in ['library', 'viewer', 'analytics'] else ""
+    for page_name, page_key in all_pages.items():
+        # Use primary button style for new pages
+        button_type = "primary" if page_key in ['library', 'viewer', 'analytics'] else "secondary"
         
-        col1, col2 = st.sidebar.columns([1, 8])
-        with col1:
-            st.markdown("🆕")
-        with col2:
-            if st.button(page_name, key=f"nav_{page_key}", use_container_width=True):
-                st.session_state.current_page = page_key
-                if page_key == 'library':
-                    st.switch_page("pages/07_📚_Library.py")
-                elif page_key == 'viewer':
-                    st.switch_page("pages/08_📖_Viewer.py")
-                elif page_key == 'analytics':
-                    st.switch_page("pages/09_📈_Analytics.py")
+        if st.sidebar.button(page_name, key=f"nav_{page_key}", use_container_width=True, type=button_type):
+            st.session_state.current_page = page_key
+            if page_key == 'library':
+                st.switch_page("pages/07_📚_Library.py")
+            elif page_key == 'viewer':
+                st.switch_page("pages/08_📖_Viewer.py")
+            elif page_key == 'analytics':
+                st.switch_page("pages/09_📈_Analytics.py")
     
     # Enhanced System Status
     st.sidebar.markdown("### 🔍 System Status")
