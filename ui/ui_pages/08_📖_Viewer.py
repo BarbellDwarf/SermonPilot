@@ -24,6 +24,17 @@ sys.path.insert(0, str(src_dir))
 
 from database import SermonRepository, get_db
 
+# Try to import PDF generation (optional)
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import inch
+    import io
+    pdf_available = True
+except ImportError:
+    pdf_available = False
+
 # Page configuration
 st.set_page_config(page_title="Sermon Viewer", page_icon="📖", layout="wide")
 
@@ -36,7 +47,64 @@ def format_time(seconds):
     seconds = int(seconds % 60)
     return f"{minutes:02d}:{seconds:02d}"
 
-def format_transcript_with_qa_highlights(transcript_text, qa_segments):
+def generate_pdf_transcript(sermon):
+    """Generate PDF transcript with Q&A highlighting"""
+    if not pdf_available:
+        return None
+    
+    try:
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Title page
+        title_style = styles['Title']
+        title = sermon.get('title', 'Untitled Sermon')
+        speaker = sermon.get('speaker', 'Unknown Speaker')
+        date = sermon.get('recorded_date', 'Unknown Date')
+        
+        story.append(Paragraph(title, title_style))
+        story.append(Spacer(1, 0.2*inch))
+        story.append(Paragraph(f"Speaker: {speaker}", styles['Normal']))
+        story.append(Paragraph(f"Date: {date}", styles['Normal']))
+        story.append(Spacer(1, 0.5*inch))
+        
+        # Q&A segments summary
+        qa_segments = sermon.get('processing_info', {}).get('qa_segments', [])
+        if qa_segments:
+            story.append(Paragraph("Q&A Segments Detected:", styles['Heading2']))
+            for i, segment in enumerate(qa_segments, 1):
+                start_time = format_time(segment.get('start_time', 0))
+                end_time = format_time(segment.get('end_time', 0))
+                gain = segment.get('gain_applied', 0)
+                story.append(Paragraph(
+                    f"Segment {i}: {start_time} - {end_time} (+{gain:.1f}dB boost)",
+                    styles['Normal']
+                ))
+            story.append(Spacer(1, 0.3*inch))
+        
+        # Transcript content
+        content = sermon.get('content', {})
+        transcript = content.get('transcript_text', '')
+        if transcript:
+            story.append(Paragraph("Full Transcript:", styles['Heading2']))
+            story.append(Spacer(1, 0.1*inch))
+            
+            # Split transcript into paragraphs for better formatting
+            paragraphs = transcript.split('\n\n')
+            for para in paragraphs:
+                if para.strip():
+                    story.append(Paragraph(para.strip(), styles['Normal']))
+                    story.append(Spacer(1, 0.1*inch))
+        
+        doc.build(story)
+        buffer.seek(0)
+        return buffer.getvalue()
+        
+    except Exception as e:
+        st.error(f"PDF generation failed: {e}")
+        return None
     """
     Format transcript with Q&A segment highlighting.
     
@@ -148,33 +216,45 @@ def show_transcript_viewer(sermon):
             )
         
         with col2:
-            # Create simple HTML version for download
-            html_content = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>{sermon.get('title', 'Sermon')} - Transcript</title>
-                <style>
-                    body {{ font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; }}
-                    .qa-segment {{ background-color: #e8f4fd; border-left: 4px solid #1f77b4; padding: 10px; margin: 10px 0; }}
-                </style>
-            </head>
-            <body>
-                <h1>{sermon.get('title', 'Sermon')}</h1>
-                <p><strong>Speaker:</strong> {sermon.get('speaker', 'Unknown')}</p>
-                <p><strong>Date:</strong> {sermon.get('recorded_date', 'Unknown')}</p>
-                <hr>
-                {highlighted_transcript.replace('<div style="background-color: #e8f4fd; border-left: 4px solid #1f77b4; padding: 10px; margin: 10px 0;">', '<div class="qa-segment">')}
-            </body>
-            </html>
-            """
-            
-            st.download_button(
-                "📥 Download Transcript (HTML)",
-                html_content,
-                file_name=f"{sermon.get('title', 'sermon')}_transcript.html",
-                mime="text/html"
-            )
+            if pdf_available:
+                pdf_data = generate_pdf_transcript(sermon)
+                if pdf_data:
+                    st.download_button(
+                        "📥 Download Transcript (PDF)",
+                        pdf_data,
+                        file_name=f"{sermon.get('title', 'sermon')}_transcript.pdf",
+                        mime="application/pdf"
+                    )
+                else:
+                    st.error("PDF generation failed")
+            else:
+                # Create simple HTML version for download
+                html_content = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>{sermon.get('title', 'Sermon')} - Transcript</title>
+                    <style>
+                        body {{ font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; }}
+                        .qa-segment {{ background-color: #e8f4fd; border-left: 4px solid #1f77b4; padding: 10px; margin: 10px 0; }}
+                    </style>
+                </head>
+                <body>
+                    <h1>{sermon.get('title', 'Sermon')}</h1>
+                    <p><strong>Speaker:</strong> {sermon.get('speaker', 'Unknown')}</p>
+                    <p><strong>Date:</strong> {sermon.get('recorded_date', 'Unknown')}</p>
+                    <hr>
+                    {highlighted_transcript.replace('<div style="background-color: #e8f4fd; border-left: 4px solid #1f77b4; padding: 10px; margin: 10px 0;">', '<div class="qa-segment">')}
+                </body>
+                </html>
+                """
+                
+                st.download_button(
+                    "📥 Download Transcript (HTML)",
+                    html_content,
+                    file_name=f"{sermon.get('title', 'sermon')}_transcript.html",
+                    mime="text/html"
+                )
     else:
         st.info("No transcript available for this sermon")
 
