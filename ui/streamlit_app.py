@@ -41,6 +41,9 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "src"))
 sys.path.insert(0, str(ui_dir))
 
+from datetime import datetime
+from shared_navigation import render_shared_sidebar, initialize_session_state
+
 # Configure Streamlit page
 st.set_page_config(
     page_title="SermonAudio Processor",
@@ -98,6 +101,24 @@ st.markdown("""
     
     .sidebar .sidebar-content {
         background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+    }
+    
+    /* Continuous navigation styling */
+    .sidebar .stButton > button {
+        margin-bottom: 0.25rem;
+        border-radius: 0.5rem;
+        transition: all 0.2s ease;
+    }
+    
+    .sidebar .stButton > button[data-baseweb="button"][kind="primary"] {
+        background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+        border: none;
+        box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+    }
+    
+    .sidebar .stButton > button[data-baseweb="button"][kind="primary"]:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(59, 130, 246, 0.4);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -173,64 +194,20 @@ def check_system_status():
     
     return status
 
-def render_sidebar():
-    """Render sidebar with navigation and status"""
-    st.sidebar.markdown('<div class="main-header">🎵 SermonAudio<br>Processor</div>', unsafe_allow_html=True)
-    
-    # Navigation
-    st.sidebar.markdown("### 📋 Navigation")
-    
-    pages = {
-        "📊 Dashboard": "dashboard",
-        "🎵 New Sermon": "new_sermon", 
-        "🔄 Batch Update": "batch_update",
-        "✅ Validation": "validation",
-        "📈 Analytics": "analytics",
-        "⚙️ Settings": "settings"
-    }
-    
-    # Create navigation buttons
-    for page_name, page_key in pages.items():
-        if st.sidebar.button(page_name, key=f"nav_{page_key}", width='stretch'):
-            st.session_state.current_page = page_key
-    
-    # System Status
-    st.sidebar.markdown("### 🔍 System Status")
-    status = check_system_status()
-    
-    for component, is_healthy in status.items():
-        icon = "✅" if is_healthy else "❌"
-        color = "success-text" if is_healthy else "error-text"
-        st.sidebar.markdown(f'{icon} <span class="{color}">{component.replace("_", " ").title()}</span>', unsafe_allow_html=True)
-    
-    # Quick Actions
-    st.sidebar.markdown("### ⚡ Quick Actions")
-    if st.sidebar.button("🔄 Refresh Status", width='stretch'):
-        # Reload configuration to pick up any changes
-        reload_configuration()
-        st.rerun()
-    
-    if st.sidebar.button("📁 Open Config Folder", width='stretch'):
-        st.info(f"Config location: {project_root}/config.yaml")
-
 def main():
     """Main application entry point"""
     # Initialize session state
     initialize_session_state()
     
-    # Set default page if not set
-    if 'current_page' not in st.session_state:
-        st.session_state.current_page = 'dashboard'
-    
     # Load configuration
     if not st.session_state.config:
         load_configuration()
     
-    # Render sidebar
-    render_sidebar()
+    # Render shared sidebar navigation
+    render_shared_sidebar()
     
-    # Main content area
-    current_page = st.session_state.current_page
+    # Main content area - show the appropriate page based on session state
+    current_page = st.session_state.get('current_page', 'dashboard')
     
     if current_page == 'dashboard':
         show_dashboard()
@@ -240,11 +217,10 @@ def main():
         show_batch_update()
     elif current_page == 'validation':
         show_validation()
-    elif current_page == 'analytics':
-        show_analytics()
     elif current_page == 'settings':
         show_settings()
     else:
+        # Default to dashboard
         show_dashboard()
 
 def show_dashboard():

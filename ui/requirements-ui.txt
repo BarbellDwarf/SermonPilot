@@ -5,5 +5,15 @@ streamlit>=1.49.0
 plotly>=5.0.0
 pandas>=1.4.0
 PyYAML>=6.0
-pathlib
-datetime
+requests>=2.31.0
+psutil>=5.9.0
+python-dotenv>=1.0.0
+# Audio processing
+pydub>=0.25.1
+# PDF generation (optional)
+reportlab>=4.0.0
+# API integration
+sermonaudio>=1.1.0
+# Additional UI components
+streamlit-option-menu>=0.3.6
+streamlit-aggrid>=0.3.4
