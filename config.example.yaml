@@ -100,6 +100,23 @@ qa_normalization:
     min_speakers: 1  # Minimum number of speakers to detect
     max_speakers: 10  # Maximum number of speakers to detect
 
+# Content Management Settings
+content_management:
+  database_path: "sermon_processor.db"  # Database file path
+  full_text_search: true  # Enable full-text search capabilities
+  auto_topic_extraction: true  # Enable automatic topic extraction
+  content_backup: true  # Backup content files
+  search_suggestions: true  # Enable search auto-complete suggestions
+  
+# Web UI Configuration
+web_ui:
+  items_per_page: 20  # Default items per page in lists
+  audio_player_enabled: true  # Enable audio player in viewer
+  pdf_generation: true  # Enable PDF transcript generation
+  search_suggestions: true  # Show search suggestions
+  qa_highlighting: true  # Highlight Q&A segments in transcripts
+  analytics_enabled: true  # Enable analytics dashboard
+
 # Processing Options
 dry_run: false  # Set to true to preview changes without updating
 debug: false    # Set to true to enable verbose debug output

@@ -24,6 +24,14 @@ sys.path.insert(0, str(src_dir))
 from database import SermonRepository, get_db
 from sermon_metadata import get_cached_pastors, get_cached_event_types
 
+# Import enhanced search engine
+try:
+    from search_engine import get_search_engine
+    search_engine_available = True
+except ImportError:
+    search_engine_available = False
+    get_search_engine = None
+
 # Page configuration
 st.set_page_config(page_title="Sermon Library", page_icon="📚", layout="wide")
 
@@ -100,6 +108,17 @@ def show_sermon_library():
             placeholder="Search titles, content, speakers...",
             help="Full-text search across sermon titles, descriptions, and transcripts"
         )
+        
+        # Show search suggestions if enhanced search is available
+        if search_engine_available and search_query and len(search_query) >= 2:
+            try:
+                search_engine = get_search_engine()
+                suggestions = search_engine.get_search_suggestions(search_query, limit=5)
+                if suggestions:
+                    suggestion_text = " • ".join(suggestions[:3])
+                    st.caption(f"💡 Suggestions: {suggestion_text}")
+            except Exception:
+                pass  # Silently ignore suggestion errors
     
     with col2:
         speaker_filter = st.selectbox(
@@ -175,30 +194,74 @@ def show_sermon_library():
     
     # Get sermons
     if search_query.strip():
-        # Use full-text search
-        sermons = repo.search_sermons(search_query.strip(), limit=results_per_page * 10)
-        
-        # Apply additional filters to search results
-        if filters:
-            filtered_sermons = []
-            for sermon in sermons:
-                include = True
+        # Use enhanced search engine if available
+        if search_engine_available:
+            try:
+                search_engine = get_search_engine()
+                search_results = search_engine.search(search_query.strip(), filters=filters)
                 
-                if 'speaker' in filters and filters['speaker'] not in sermon.get('speaker', ''):
-                    include = False
-                if 'event_type' in filters and sermon.get('event_type') != filters['event_type']:
-                    include = False
-                if 'status' in filters and sermon.get('status') != filters['status']:
-                    include = False
-                if 'has_qa_segments' in filters and sermon.get('qa_segments_count', 0) == 0:
-                    include = False
+                # Convert search results to sermon format
+                sermons = []
+                for result in search_results:
+                    sermon = result.sermon_data
+                    sermon['search_snippet'] = result.snippet
+                    sermon['search_rank'] = result.relevance_score
+                    sermon['match_type'] = result.match_type
+                    sermons.append(sermon)
                 
-                if include:
-                    filtered_sermons.append(sermon)
+                st.info(f"🔍 Found {len(sermons)} sermons matching '{search_query}' (relevance-ranked)")
+                
+            except Exception as e:
+                st.warning(f"Enhanced search failed, using fallback: {e}")
+                # Fallback to repository search
+                sermons = repo.search_sermons(search_query.strip(), limit=results_per_page * 10)
+                
+                # Apply additional filters to search results
+                if filters:
+                    filtered_sermons = []
+                    for sermon in sermons:
+                        include = True
+                        
+                        if 'speaker' in filters and filters['speaker'] not in sermon.get('speaker', ''):
+                            include = False
+                        if 'event_type' in filters and sermon.get('event_type') != filters['event_type']:
+                            include = False
+                        if 'status' in filters and sermon.get('status') != filters['status']:
+                            include = False
+                        if 'has_qa_segments' in filters and sermon.get('qa_segments_count', 0) == 0:
+                            include = False
+                        
+                        if include:
+                            filtered_sermons.append(sermon)
+                    
+                    sermons = filtered_sermons
+                
+                st.info(f"🔍 Found {len(sermons)} sermons matching '{search_query}'")
+        else:
+            # Use repository search
+            sermons = repo.search_sermons(search_query.strip(), limit=results_per_page * 10)
             
-            sermons = filtered_sermons
-        
-        st.info(f"🔍 Found {len(sermons)} sermons matching '{search_query}'")
+            # Apply additional filters to search results
+            if filters:
+                filtered_sermons = []
+                for sermon in sermons:
+                    include = True
+                    
+                    if 'speaker' in filters and filters['speaker'] not in sermon.get('speaker', ''):
+                        include = False
+                    if 'event_type' in filters and sermon.get('event_type') != filters['event_type']:
+                        include = False
+                    if 'status' in filters and sermon.get('status') != filters['status']:
+                        include = False
+                    if 'has_qa_segments' in filters and sermon.get('qa_segments_count', 0) == 0:
+                        include = False
+                    
+                    if include:
+                        filtered_sermons.append(sermon)
+                
+                sermons = filtered_sermons
+            
+            st.info(f"🔍 Found {len(sermons)} sermons matching '{search_query}'")
     else:
         # Get all sermons with filters
         offset = st.session_state.page_number * results_per_page
@@ -269,7 +332,13 @@ def show_sermon_library():
                     
                     # Search snippet if available
                     if 'search_snippet' in sermon:
-                        st.markdown(f"**Content match:** {sermon['search_snippet']}", unsafe_allow_html=True)
+                        snippet = sermon['search_snippet']
+                        match_type = sermon.get('match_type', 'content')
+                        st.markdown(f"**{match_type.title()} match:** {snippet}", unsafe_allow_html=True)
+                        
+                        # Show relevance score for enhanced search
+                        if 'search_rank' in sermon:
+                            st.caption(f"Relevance: {sermon['search_rank']:.2f}")
                 
                 with col2:
                     # Action buttons

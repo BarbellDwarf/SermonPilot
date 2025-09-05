@@ -56,6 +56,14 @@ colorlog>=6.7.0
 schedule>=1.1.0
 psutil>=5.9.0
 
+# UI and Analytics
+streamlit>=1.28.0
+plotly>=5.10.0
+reportlab>=3.6.0  # For PDF generation
+
+# Database and Search
+sqlite-fts4>=1.0.3  # For full-text search capabilities
+
 # Development dependencies (uncomment for development)
 # pytest>=7.0.0
 # black>=22.0.0
