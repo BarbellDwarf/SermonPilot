@@ -498,7 +498,7 @@ def show_recent_activity(recent_activity):
             with col3:
                 if st.button(f"📖 View Details", key=f"view_{activity.get('sermon_id')}"):
                     st.session_state.selected_sermon = activity.get('sermon_id')
-                    st.switch_page("ui_pages/08_📖_Viewer.py")
+                    st.switch_page("pages/08_📖_Viewer.py")
 
 def show_fallback_analytics():
     """Show fallback analytics when SermonAudio API unavailable"""
