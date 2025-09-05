@@ -20,7 +20,19 @@ parent_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(parent_dir))
 sys.path.insert(0, str(parent_dir / "src"))
 
-import sermonaudio
+# Import sermonaudio only if available (optional for UI testing)
+try:
+    import sermonaudio
+    sermonaudio_available = True
+except ImportError:
+    sermonaudio_available = False
+    # Create mock sermonaudio module for testing
+    class MockSermonAudio:
+        @staticmethod
+        def set_api_key(key):
+            pass
+    sermonaudio = MockSermonAudio()
+
 import requests
 from database import SermonRepository, get_db
 
