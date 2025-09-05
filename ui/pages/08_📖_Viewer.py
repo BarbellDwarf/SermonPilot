@@ -24,6 +24,7 @@ sys.path.insert(0, str(ui_dir))
 sys.path.insert(0, str(src_dir))
 
 from database import SermonRepository, get_db
+from shared_navigation import render_shared_sidebar, initialize_session_state
 
 # Try to import PDF generation (optional)
 try:
@@ -968,6 +969,14 @@ def show_processing_details(sermon):
 def show_sermon_viewer():
     """Enhanced sermon viewer with dual audio players and analytics"""
     
+    # Check URL parameters for sermon ID
+    try:
+        query_params = st.query_params
+        if 'sermon_id' in query_params:
+            st.session_state.selected_sermon = query_params['sermon_id']
+    except:
+        pass  # Ignore URL parameter errors
+    
     # Check if a sermon is selected
     if 'selected_sermon' not in st.session_state:
         st.title("📖 Sermon Viewer")
@@ -1000,10 +1009,24 @@ def show_sermon_viewer():
     sermon_id = st.session_state.selected_sermon
     edit_mode = st.session_state.get('edit_mode', False)
     
+    # Add a button to clear selection and go back
+    col1, col2, col3 = st.columns([1, 1, 2])
+    with col1:
+        if st.button("⬅️ Back to List"):
+            if 'selected_sermon' in st.session_state:
+                del st.session_state.selected_sermon
+            st.rerun()
+    
+    with col2:
+        if st.button("🔄 Refresh"):
+            # Clear cache and reload
+            st.cache_data.clear()
+            st.rerun()
+    
     # Get managers
     sermon_manager, analytics_manager = get_managers()
     
-    # Load sermon details
+    # Load sermon details with better error handling
     with st.spinner("Loading sermon details..."):
         try:
             sermon_details = asyncio.run(sermon_manager.get_sermon_details(sermon_id))
@@ -1012,8 +1035,19 @@ def show_sermon_viewer():
                 repo = SermonRepository()
                 sermon = repo.get_sermon(sermon_id)
                 if not sermon:
-                    st.error(f"Sermon {sermon_id} not found")
+                    st.error(f"❌ Sermon {sermon_id} not found in database")
+                    st.info("This could be because:")
+                    st.info("• The sermon ID is incorrect or malformed")
+                    st.info("• The sermon was deleted or moved") 
+                    st.info("• There's a database connection issue")
+                    
+                    # Offer to clear the selection
+                    if st.button("🔄 Clear Selection and Try Again"):
+                        if 'selected_sermon' in st.session_state:
+                            del st.session_state.selected_sermon
+                        st.rerun()
                     return
+                
                 # Create mock sermon_details structure
                 from sermon_manager import SermonData, SermonDetails, AudioFiles
                 sermon_data = SermonData(
@@ -1175,7 +1209,12 @@ def show_sermon_viewer():
         show_processing_details(sermon)
 
 if __name__ == "__main__":
+    # Initialize session state and render navigation
+    initialize_session_state()
+    render_shared_sidebar()
     show_sermon_viewer()
 else:
     # When imported as a page
+    initialize_session_state()
+    render_shared_sidebar()
     show_sermon_viewer()
