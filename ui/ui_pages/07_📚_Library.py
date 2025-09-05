@@ -1,15 +1,18 @@
 """
-Sermon Library Page - Browse and search processed sermons
+Sermon Library Page - Browse and search processed sermons with local/remote data
 
 Provides comprehensive sermon browsing with:
+- Hybrid local/remote sermon data integration
+- Local/remote status indicators  
 - Search and filtering capabilities
 - Q&A segment information
 - Processing status display
-- Quick access to sermon details
+- Quick access to sermon details and editing
 """
 
 import streamlit as st
 import pandas as pd
+import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 import sys
@@ -23,6 +26,8 @@ sys.path.insert(0, str(src_dir))
 
 from database import SermonRepository, get_db
 from sermon_metadata import get_cached_pastors, get_cached_event_types
+from sermon_manager import get_sermon_manager
+from analytics_manager import get_analytics_manager
 
 # Import enhanced search engine
 try:
@@ -35,8 +40,23 @@ except ImportError:
 # Page configuration
 st.set_page_config(page_title="Sermon Library", page_icon="📚", layout="wide")
 
+# Load configuration
+try:
+    import yaml
+    with open('config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+except FileNotFoundError:
+    config = {}
+
+# Initialize managers
+@st.cache_resource
+def get_managers():
+    sermon_mgr = get_sermon_manager(config)
+    analytics_mgr = get_analytics_manager(config)
+    return sermon_mgr, analytics_mgr
+
 def get_filter_options():
-    """Get options for filter dropdowns"""
+    """Get options for filter dropdowns with hybrid data"""
     repo = SermonRepository()
     
     # Get all sermons for filter options
@@ -52,6 +72,20 @@ def get_filter_options():
         event_types = get_cached_event_types()
     
     return speakers, event_types
+
+def get_availability_status(sermon):
+    """Get availability status with appropriate emoji and text"""
+    local = sermon.get('local_available', False)
+    remote = sermon.get('remote_available', False)
+    
+    if local and remote:
+        return "🔄", "Local + Remote"
+    elif local:
+        return "💾", "Local Only"
+    elif remote:
+        return "☁️", "Remote Only"
+    else:
+        return "❓", "Unknown"
 
 def format_duration(duration_seconds):
     """Format duration in seconds to readable string"""
@@ -89,15 +123,327 @@ def get_status_emoji(status):
     return status_map.get(status, '❓')
 
 def show_sermon_library():
-    """Main sermon library interface"""
+    """Main sermon library interface with hybrid local/remote data"""
     st.title("📚 Sermon Library")
-    st.markdown("Browse and search all processed sermons with Q&A information")
+    st.markdown("Browse and search all sermons with local/remote data integration")
     
-    # Initialize repository
+    # Initialize managers
+    sermon_manager, analytics_manager = get_managers()
     repo = SermonRepository()
     
-    # Get filter options
-    speakers, event_types = get_filter_options()
+    # Show loading spinner while fetching data
+    with st.spinner("Loading sermon library..."):
+        try:
+            # Get sermon list with hybrid data
+            filters = {}
+            sermons = asyncio.run(sermon_manager.get_sermon_list(filters))
+        except Exception as e:
+            st.error(f"Error loading sermons: {e}")
+            # Fallback to database-only data
+            sermons = []
+            db_sermons = repo.get_all_sermons()
+            for db_sermon in db_sermons:
+                sermon_dict = {
+                    'id': db_sermon.get('id'),
+                    'title': db_sermon.get('title', 'Unknown'),
+                    'speaker': db_sermon.get('speaker', 'Unknown'),
+                    'recorded_date': db_sermon.get('recorded_date'),
+                    'event_type': db_sermon.get('event_type'),
+                    'status': db_sermon.get('status', 'unknown'),
+                    'local_available': True,
+                    'remote_available': False,
+                    'qa_segments_count': len(db_sermon.get('qa_segments', [])),
+                    'duration': db_sermon.get('duration')
+                }
+                sermons.append(sermon_dict)
+    
+    # Statistics summary
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        total_sermons = len(sermons)
+        st.metric("Total Sermons", total_sermons)
+    
+    with col2:
+        local_count = sum(1 for s in sermons if isinstance(s, dict) and s.get('local_available') or hasattr(s, 'local_available') and s.local_available)
+        st.metric("Local Sermons", local_count)
+    
+    with col3:
+        remote_count = sum(1 for s in sermons if isinstance(s, dict) and s.get('remote_available') or hasattr(s, 'remote_available') and s.remote_available)
+        st.metric("Remote Sermons", remote_count)
+    
+    with col4:
+        qa_count = sum(1 for s in sermons if (isinstance(s, dict) and s.get('qa_segments_count', 0) > 0) or (hasattr(s, 'qa_segments') and s.qa_segments and len(s.qa_segments) > 0))
+        st.metric("Q&A Sessions", qa_count)
+    
+    st.divider()
+    
+    # Search and filter controls
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        search_query = st.text_input(
+            "🔍 Search sermons", 
+            placeholder="Search titles, speakers, content...",
+            help="Search across sermon titles, speakers, and descriptions"
+        )
+    
+    with col2:
+        # Get filter options
+        speakers, event_types = get_filter_options()
+        speaker_filter = st.selectbox(
+            "🎤 Speaker", 
+            options=['All'] + speakers,
+            help="Filter by speaker"
+        )
+        if speaker_filter == 'All':
+            speaker_filter = None
+    
+    with col3:
+        event_type_filter = st.selectbox(
+            "📅 Event Type",
+            options=['All'] + event_types,
+            help="Filter by event type"
+        )
+        if event_type_filter == 'All':
+            event_type_filter = None
+    
+    with col4:
+        availability_filter = st.selectbox(
+            "💾 Availability",
+            options=['All', 'Local Only', 'Remote Only', 'Both Local & Remote'],
+            help="Filter by data availability"
+        )
+    
+    # Advanced filters in expander
+    with st.expander("📊 Advanced Filters"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            date_range = st.date_input(
+                "Date Range",
+                value=None,
+                help="Filter by sermon date range"
+            )
+            
+            status_filter = st.multiselect(
+                "Processing Status",
+                options=['processed', 'processing', 'pending', 'failed', 'uploaded'],
+                help="Filter by processing status"
+            )
+        
+        with col2:
+            qa_filter = st.checkbox(
+                "Has Q&A Segments",
+                help="Show only sermons with Q&A segments"
+            )
+            
+            sort_by = st.selectbox(
+                "Sort By",
+                options=['Date (Newest)', 'Date (Oldest)', 'Title', 'Speaker', 'Duration'],
+                help="Sort order for results"
+            )
+    
+    # Apply filters
+    filtered_sermons = sermons[:]
+    
+    # Text search
+    if search_query:
+        filtered_sermons = [
+            s for s in filtered_sermons 
+            if search_query.lower() in (
+                (s.title if hasattr(s, 'title') else s.get('title', '')).lower() +
+                (s.speaker if hasattr(s, 'speaker') else s.get('speaker', '')).lower() +
+                (s.description if hasattr(s, 'description') else s.get('description', '')).lower()
+            )
+        ]
+    
+    # Speaker filter
+    if speaker_filter:
+        filtered_sermons = [
+            s for s in filtered_sermons 
+            if speaker_filter.lower() in (s.speaker if hasattr(s, 'speaker') else s.get('speaker', '')).lower()
+        ]
+    
+    # Event type filter
+    if event_type_filter:
+        filtered_sermons = [
+            s for s in filtered_sermons 
+            if event_type_filter.lower() in (s.event_type if hasattr(s, 'event_type') else s.get('event_type', '')).lower()
+        ]
+    
+    # Availability filter
+    if availability_filter != 'All':
+        if availability_filter == 'Local Only':
+            filtered_sermons = [
+                s for s in filtered_sermons 
+                if (s.local_available if hasattr(s, 'local_available') else s.get('local_available', False)) and 
+                not (s.remote_available if hasattr(s, 'remote_available') else s.get('remote_available', False))
+            ]
+        elif availability_filter == 'Remote Only':
+            filtered_sermons = [
+                s for s in filtered_sermons 
+                if (s.remote_available if hasattr(s, 'remote_available') else s.get('remote_available', False)) and 
+                not (s.local_available if hasattr(s, 'local_available') else s.get('local_available', False))
+            ]
+        elif availability_filter == 'Both Local & Remote':
+            filtered_sermons = [
+                s for s in filtered_sermons 
+                if (s.local_available if hasattr(s, 'local_available') else s.get('local_available', False)) and 
+                (s.remote_available if hasattr(s, 'remote_available') else s.get('remote_available', False))
+            ]
+    
+    # Status filter
+    if status_filter:
+        filtered_sermons = [
+            s for s in filtered_sermons 
+            if (s.status if hasattr(s, 'status') else s.get('status', 'unknown')) in status_filter
+        ]
+    
+    # Q&A filter
+    if qa_filter:
+        filtered_sermons = [
+            s for s in filtered_sermons 
+            if (hasattr(s, 'qa_segments') and s.qa_segments and len(s.qa_segments) > 0) or 
+            (isinstance(s, dict) and s.get('qa_segments_count', 0) > 0)
+        ]
+    
+    # Sort sermons
+    def get_sort_key(sermon):
+        if sort_by.startswith('Date'):
+            date_str = sermon.date.isoformat() if hasattr(sermon, 'date') else sermon.get('recorded_date', '')
+            return date_str
+        elif sort_by == 'Title':
+            return sermon.title if hasattr(sermon, 'title') else sermon.get('title', '')
+        elif sort_by == 'Speaker':
+            return sermon.speaker if hasattr(sermon, 'speaker') else sermon.get('speaker', '')
+        elif sort_by == 'Duration':
+            return sermon.audio_files.duration if hasattr(sermon, 'audio_files') and sermon.audio_files.duration else sermon.get('duration', 0) or 0
+        return ''
+    
+    try:
+        filtered_sermons.sort(key=get_sort_key, reverse=sort_by == 'Date (Newest)')
+    except Exception as e:
+        st.warning(f"Could not sort sermons: {e}")
+    
+    # Display results
+    st.subheader(f"📖 Sermon Results ({len(filtered_sermons)} of {len(sermons)})")
+    
+    if not filtered_sermons:
+        st.info("No sermons found matching your criteria. Try adjusting your filters.")
+        return
+    
+    # Pagination
+    items_per_page = config.get('web_ui', {}).get('items_per_page', 20)
+    total_pages = (len(filtered_sermons) + items_per_page - 1) // items_per_page
+    
+    if total_pages > 1:
+        page = st.selectbox(
+            "Page",
+            options=list(range(1, total_pages + 1)),
+            format_func=lambda x: f"Page {x} of {total_pages}"
+        )
+        start_idx = (page - 1) * items_per_page
+        end_idx = start_idx + items_per_page
+        page_sermons = filtered_sermons[start_idx:end_idx]
+    else:
+        page_sermons = filtered_sermons
+    
+    # Display sermon cards
+    for sermon in page_sermons:
+        # Convert dataclass to dict-like access if needed
+        sermon_data = sermon.__dict__ if hasattr(sermon, '__dict__') else sermon
+        
+        with st.expander(
+            f"🎵 {sermon_data.get('title', 'Unknown')} - "
+            f"{sermon_data.get('speaker', 'Unknown')} "
+            f"({sermon_data.get('recorded_date', sermon_data.get('date', 'Unknown Date'))})"
+        ):
+            col1, col2, col3 = st.columns([3, 1, 1])
+            
+            with col1:
+                st.write(f"**Speaker:** {sermon_data.get('speaker', 'Unknown')}")
+                if sermon_data.get('event_type'):
+                    st.write(f"**Event Type:** {sermon_data.get('event_type')}")
+                if sermon_data.get('bible_text'):
+                    st.write(f"**Bible Text:** {sermon_data.get('bible_text')}")
+                
+                # Duration
+                duration = sermon_data.get('duration')
+                if hasattr(sermon, 'audio_files') and sermon.audio_files.duration:
+                    duration = sermon.audio_files.duration
+                if duration:
+                    st.write(f"**Duration:** {format_duration(duration)}")
+                
+                # Status and availability
+                status_emoji = get_status_emoji(sermon_data.get('status', 'unknown'))
+                st.write(f"**Status:** {status_emoji} {sermon_data.get('status', 'Unknown').title()}")
+                
+                # Get availability status
+                if hasattr(sermon, 'local_available'):
+                    avail_emoji, avail_text = get_availability_status({
+                        'local_available': sermon.local_available,
+                        'remote_available': sermon.remote_available
+                    })
+                else:
+                    avail_emoji, avail_text = get_availability_status(sermon_data)
+                st.write(f"**Availability:** {avail_emoji} {avail_text}")
+                
+                # Q&A segments info
+                qa_count = 0
+                if hasattr(sermon, 'qa_segments') and sermon.qa_segments:
+                    qa_count = len(sermon.qa_segments)
+                elif isinstance(sermon_data, dict):
+                    qa_count = sermon_data.get('qa_segments_count', 0)
+                
+                if qa_count > 0:
+                    st.write(f"**Q&A Segments:** ✅ {qa_count} detected")
+                
+                # Description preview
+                description = sermon_data.get('description', '')
+                if description:
+                    st.write(f"**Description:** {description[:150]}{'...' if len(description) > 150 else ''}")
+            
+            with col2:
+                # Audio player for local files
+                if hasattr(sermon, 'audio_files'):
+                    if sermon.audio_files.processed and Path(sermon.audio_files.processed).exists():
+                        st.audio(sermon.audio_files.processed, format='audio/mp3')
+                        st.caption("🎵 Enhanced Audio")
+                    elif sermon.audio_files.original and Path(sermon.audio_files.original).exists():
+                        st.audio(sermon.audio_files.original, format='audio/mp3')
+                        st.caption("🎵 Original Audio")
+                elif sermon_data.get('local_available'):
+                    # Try to find audio files
+                    output_dir = Path(config.get('output_directory', 'processed_sermons'))
+                    sermon_dir = output_dir / sermon_data.get('id', '')
+                    if sermon_dir.exists():
+                        for audio_file in sermon_dir.glob("*.mp3"):
+                            st.audio(str(audio_file), format='audio/mp3')
+                            st.caption("🎵 Local Audio")
+                            break
+            
+            with col3:
+                sermon_id = sermon_data.get('id', '')
+                
+                if st.button(f"📖 View Details", key=f"view_{sermon_id}"):
+                    st.session_state.selected_sermon = sermon_id
+                    st.switch_page("ui_pages/08_📖_Viewer.py")
+                
+                if st.button(f"✏️ Edit", key=f"edit_{sermon_id}"):
+                    st.session_state.selected_sermon = sermon_id
+                    st.session_state.edit_mode = True
+                    st.switch_page("ui_pages/08_📖_Viewer.py")
+                
+                # Download options
+                if sermon_data.get('local_available'):
+                    with st.popover("📥 Download"):
+                        if st.button("Transcript", key=f"dl_transcript_{sermon_id}"):
+                            # Handle transcript download
+                            pass
+                        if st.button("Audio", key=f"dl_audio_{sermon_id}"):
+                            # Handle audio download
+                            pass
     
     # Search and filter controls
     col1, col2, col3, col4 = st.columns([2, 1, 1, 1])

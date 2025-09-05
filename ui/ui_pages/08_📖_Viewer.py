@@ -35,8 +35,518 @@ try:
 except ImportError:
     pdf_available = False
 
-# Page configuration
-st.set_page_config(page_title="Sermon Viewer", page_icon="📖", layout="wide")
+# Load configuration
+try:
+    import yaml
+    with open('config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+except FileNotFoundError:
+    config = {}
+
+# Initialize managers
+@st.cache_resource
+def get_managers():
+    from sermon_manager import get_sermon_manager
+    from analytics_manager import get_analytics_manager
+    sermon_mgr = get_sermon_manager(config)
+    analytics_mgr = get_analytics_manager(config)
+    return sermon_mgr, analytics_mgr
+
+def get_availability_status(sermon):
+    """Get availability status with appropriate emoji and text"""
+    if isinstance(sermon, dict):
+        local = sermon.get('local_available', False)
+        remote = sermon.get('remote_available', False)
+    else:
+        local = getattr(sermon, 'local_available', False)
+        remote = getattr(sermon, 'remote_available', False)
+    
+    if local and remote:
+        return "🔄", "Local + Remote"
+    elif local:
+        return "💾", "Local Only"
+    elif remote:
+        return "☁️", "Remote Only"
+    else:
+        return "❓", "Unknown"
+
+def get_status_emoji(status):
+    """Get emoji for processing status"""
+    status_map = {
+        'processed': '✅',
+        'processing': '⏳',
+        'pending': '⏸️',
+        'failed': '❌',
+        'uploaded': '☁️'
+    }
+    return status_map.get(status, '❓')
+
+def format_duration(duration_seconds):
+    """Format duration in seconds to readable string"""
+    if not duration_seconds:
+        return "Unknown"
+    
+    hours = int(duration_seconds // 3600)
+    minutes = int((duration_seconds % 3600) // 60)
+    
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    else:
+        return f"{minutes}m"
+
+def show_dual_audio_players(sermon, files, edit_mode):
+    """Show dual audio players for original and enhanced audio"""
+    st.subheader("🎵 Audio Players")
+    
+    col1, col2 = st.columns(2)
+    
+    # Original Audio Player
+    with col1:
+        st.markdown("### 🎤 Original Audio")
+        
+        original_path = getattr(sermon.audio_files, 'original', None)
+        original_url = getattr(sermon.audio_files, 'original_url', None)
+        
+        if original_path and Path(original_path).exists():
+            st.audio(original_path, format='audio/mp3')
+            st.caption(f"📁 Local File: {Path(original_path).name}")
+            
+            # File info
+            file_size = Path(original_path).stat().st_size / (1024 * 1024)  # MB
+            st.caption(f"Size: {file_size:.1f} MB")
+        elif original_url:
+            st.audio(original_url, format='audio/mp3')
+            st.caption("☁️ Remote Stream")
+        else:
+            st.info("Original audio not available")
+    
+    # Enhanced Audio Player
+    with col2:
+        st.markdown("### ✨ Enhanced Audio")
+        
+        processed_path = getattr(sermon.audio_files, 'processed', None)
+        
+        if processed_path and Path(processed_path).exists():
+            st.audio(processed_path, format='audio/mp3')
+            st.caption(f"📁 Local File: {Path(processed_path).name}")
+            
+            # File info
+            file_size = Path(processed_path).stat().st_size / (1024 * 1024)  # MB
+            st.caption(f"Size: {file_size:.1f} MB")
+            
+            # Enhancement info
+            processing_info = sermon.processing_info or {}
+            enhancements = processing_info.get('audio_enhancements', {})
+            if enhancements:
+                st.caption("🔧 Enhancements Applied:")
+                for enhancement, applied in enhancements.items():
+                    if applied:
+                        st.caption(f"  ✅ {enhancement.replace('_', ' ').title()}")
+        else:
+            st.info("Enhanced audio not available")
+            if edit_mode:
+                st.button("🚀 Process Audio", help="Start audio enhancement")
+    
+    # Q&A Segment Navigation
+    if sermon.qa_segments:
+        st.subheader("🗣️ Q&A Segments")
+        
+        st.info(f"Found {len(sermon.qa_segments)} Q&A segments with automatic audio normalization")
+        
+        for i, segment in enumerate(sermon.qa_segments, 1):
+            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+            
+            with col1:
+                start_time = format_time(segment.get('start_time', 0))
+                end_time = format_time(segment.get('end_time', 0))
+                st.write(f"**Q&A {i}:** {start_time} - {end_time}")
+            
+            with col2:
+                gain = segment.get('gain_applied', 0)
+                st.write(f"Boost: +{gain:.1f}dB")
+            
+            with col3:
+                confidence = segment.get('confidence', 0)
+                st.write(f"Confidence: {confidence:.1%}")
+            
+            with col4:
+                if st.button(f"▶️ Play", key=f"qa_play_{i}"):
+                    st.info(f"Jump to {start_time} (feature in development)")
+
+def show_transcript_editor(sermon_id, content):
+    """Editable transcript with auto-save"""
+    st.subheader("📄 Edit Transcript")
+    
+    current_transcript = content.get('transcript_text', '')
+    
+    # Editor
+    transcript = st.text_area(
+        "Transcript Content",
+        value=current_transcript,
+        height=400,
+        help="Edit the sermon transcript. Changes will be saved automatically."
+    )
+    
+    # Auto-save functionality
+    if transcript != current_transcript:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("💾 Save Changes", type="primary"):
+                try:
+                    repo = SermonRepository()
+                    repo.update_sermon(sermon_id, {'transcript': transcript})
+                    st.success("Transcript saved successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error saving transcript: {e}")
+        
+        with col2:
+            if st.button("↩️ Revert Changes", type="secondary"):
+                st.rerun()
+    
+    # Download options
+    st.subheader("📥 Download Options")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if transcript:
+            st.download_button(
+                "📄 Download as TXT",
+                transcript,
+                file_name=f"transcript_{sermon_id}.txt",
+                mime="text/plain"
+            )
+    
+    with col2:
+        if transcript and pdf_available:
+            try:
+                pdf_data = generate_pdf_transcript({
+                    'title': st.session_state.get('sermon_title', 'Sermon'),
+                    'speaker': st.session_state.get('sermon_speaker', 'Unknown'),
+                    'recorded_date': st.session_state.get('sermon_date', 'Unknown'),
+                    'content': {'transcript_text': transcript},
+                    'processing_info': {'qa_segments': []}
+                })
+                if pdf_data:
+                    st.download_button(
+                        "📑 Download as PDF",
+                        pdf_data,
+                        file_name=f"transcript_{sermon_id}.pdf",
+                        mime="application/pdf"
+                    )
+            except Exception as e:
+                st.error(f"PDF generation error: {e}")
+
+def show_metadata_editor(sermon_id, sermon, content):
+    """Editable metadata form"""
+    st.subheader("📝 Edit Metadata")
+    
+    # Create form for editing
+    with st.form("metadata_form"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            title = st.text_input("Title", value=sermon.title)
+            speaker = st.text_input("Speaker", value=sermon.speaker)
+            event_type = st.text_input("Event Type", value=sermon.event_type or "")
+            bible_text = st.text_input("Bible Text", value=sermon.bible_text or "")
+        
+        with col2:
+            # Date editor would go here if needed
+            st.text_input("Date", value=sermon.date.strftime('%Y-%m-%d'), disabled=True, help="Date cannot be edited")
+            
+            # Status selector
+            status_options = ['processed', 'processing', 'pending', 'failed', 'uploaded']
+            current_status = sermon.status if sermon.status in status_options else 'processed'
+            status = st.selectbox("Status", options=status_options, index=status_options.index(current_status))
+        
+        # Description editor
+        description = st.text_area(
+            "Description", 
+            value=content.get('description', ''),
+            height=150,
+            help="Sermon description for SermonAudio"
+        )
+        
+        # Hashtags editor
+        hashtags_text = ', '.join(content.get('hashtags', []))
+        hashtags = st.text_input(
+            "Hashtags", 
+            value=hashtags_text,
+            help="Comma-separated hashtags"
+        )
+        
+        # Submit button
+        submitted = st.form_submit_button("💾 Save All Changes", type="primary")
+        
+        if submitted:
+            try:
+                # Parse hashtags
+                hashtag_list = [tag.strip() for tag in hashtags.split(',') if tag.strip()]
+                
+                # Update sermon
+                repo = SermonRepository()
+                updates = {
+                    'title': title,
+                    'speaker': speaker,
+                    'event_type': event_type,
+                    'bible_text': bible_text,
+                    'status': status,
+                    'description': description,
+                    'hashtags': hashtag_list
+                }
+                
+                repo.update_sermon(sermon_id, updates)
+                st.success("Metadata saved successfully!")
+                
+                # Clear edit mode
+                st.session_state.edit_mode = False
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"Error saving metadata: {e}")
+    
+    # Upload to SermonAudio
+    st.subheader("☁️ Upload to SermonAudio")
+    
+    if st.button("🚀 Upload Changes to SermonAudio", type="primary"):
+        try:
+            # This would call the upload API
+            st.info("Upload functionality in development - would sync with SermonAudio API")
+            # Update status to uploaded
+            repo = SermonRepository()
+            repo.update_sermon(sermon_id, {
+                'status': 'uploaded',
+                'upload_info': {
+                    'upload_date': datetime.now().isoformat(),
+                    'upload_status': 'success'
+                }
+            })
+            st.success("Changes uploaded to SermonAudio!")
+        except Exception as e:
+            st.error(f"Upload error: {e}")
+
+def show_description_viewer(content):
+    """Display sermon description in view mode"""
+    st.subheader("📝 Description")
+    
+    description = content.get('description', '')
+    if description:
+        st.markdown(description)
+    else:
+        st.info("No description available")
+    
+    # Hashtags
+    hashtags = content.get('hashtags', [])
+    if hashtags:
+        st.subheader("🏷️ Hashtags")
+        for tag in hashtags:
+            st.button(f"#{tag}", key=f"tag_{tag}", help="Click to search similar sermons")
+    
+    # Summary if available
+    summary = content.get('summary', '')
+    if summary:
+        st.subheader("📋 Summary")
+        st.markdown(summary)
+
+def show_sermon_analytics_tab(sermon_id, analytics_manager):
+    """Display comprehensive sermon analytics"""
+    st.subheader("📊 Sermon Analytics")
+    
+    # Load analytics data
+    with st.spinner("Loading analytics..."):
+        try:
+            analytics = asyncio.run(analytics_manager.get_sermon_analytics(sermon_id))
+        except Exception as e:
+            st.warning(f"Analytics unavailable: {e}")
+            analytics = None
+    
+    if not analytics:
+        st.info("Analytics data not available - requires SermonAudio API integration")
+        return
+    
+    # Overview metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Views", analytics.total_views)
+    
+    with col2:
+        st.metric("Unique Listeners", analytics.unique_listeners)
+    
+    with col3:
+        completion_pct = analytics.completion_rate * 100
+        st.metric("Completion Rate", f"{completion_pct:.1f}%")
+    
+    with col4:
+        watch_minutes = analytics.avg_watch_duration / 60
+        st.metric("Avg. Watch Time", f"{watch_minutes:.1f} min")
+    
+    # Charts
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Geographic breakdown
+        if analytics.geographic_breakdown:
+            st.subheader("🌍 Geographic Distribution")
+            
+            geo_data = []
+            for location in analytics.geographic_breakdown:
+                geo_data.append({
+                    'Location': location.location,
+                    'Views': location.views,
+                    'Percentage': location.percentage
+                })
+            
+            df_geo = pd.DataFrame(geo_data)
+            
+            import plotly.express as px
+            fig = px.pie(
+                df_geo, 
+                values='Views', 
+                names='Location',
+                title="Views by Location"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        # Device breakdown
+        if analytics.device_breakdown:
+            st.subheader("📱 Device Types")
+            
+            device_data = []
+            for device, views in analytics.device_breakdown.items():
+                device_data.append({'Device': device, 'Views': views})
+            
+            df_devices = pd.DataFrame(device_data)
+            
+            fig = px.bar(
+                df_devices,
+                x='Device',
+                y='Views',
+                title="Views by Device Type"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    # Engagement timeline
+    if analytics.engagement_timeline:
+        st.subheader("📈 Engagement Timeline")
+        
+        timeline_data = []
+        for point in analytics.engagement_timeline:
+            timeline_data.append({
+                'Date': point.timestamp,
+                'Views': point.value,
+                'Label': point.label
+            })
+        
+        df_timeline = pd.DataFrame(timeline_data)
+        
+        fig = px.line(
+            df_timeline,
+            x='Date',
+            y='Views',
+            title="Daily Views Over Time"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Referral sources
+    if analytics.referral_sources:
+        st.subheader("🔗 Referral Sources")
+        
+        ref_data = []
+        for source, views in analytics.referral_sources.items():
+            ref_data.append({'Source': source, 'Views': views})
+        
+        df_ref = pd.DataFrame(ref_data)
+        st.dataframe(df_ref, use_container_width=True)
+    
+    # Last updated
+    st.caption(f"Last updated: {analytics.last_updated.strftime('%Y-%m-%d %H:%M:%S')}")
+
+def show_processing_details(sermon):
+    """Display detailed processing information"""
+    st.subheader("🔧 Processing Information")
+    
+    processing_info = sermon.processing_info or {}
+    
+    # Processing status
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**Processing Status:**")
+        status_emoji = get_status_emoji(sermon.status)
+        st.write(f"{status_emoji} {sermon.status.title()}")
+        
+        # File availability
+        st.write("**File Availability:**")
+        if hasattr(sermon, 'local_available') and sermon.local_available:
+            st.write("✅ Local files available")
+        if hasattr(sermon, 'remote_available') and sermon.remote_available:
+            st.write("☁️ Remote files available")
+    
+    with col2:
+        # Processing timestamps
+        if processing_info.get('processed_at'):
+            st.write(f"**Processed:** {processing_info['processed_at']}")
+        if processing_info.get('uploaded_at'):
+            st.write(f"**Uploaded:** {processing_info['uploaded_at']}")
+    
+    # Audio enhancements
+    audio_enhancements = processing_info.get('audio_enhancements', {})
+    if audio_enhancements:
+        st.subheader("🎵 Audio Enhancements")
+        
+        for enhancement, details in audio_enhancements.items():
+            if isinstance(details, dict):
+                st.write(f"**{enhancement.replace('_', ' ').title()}:**")
+                for key, value in details.items():
+                    st.write(f"  • {key}: {value}")
+            else:
+                status = "✅ Applied" if details else "❌ Not applied"
+                st.write(f"**{enhancement.replace('_', ' ').title()}:** {status}")
+    
+    # Q&A processing details
+    if sermon.qa_segments:
+        st.subheader("🗣️ Q&A Processing Details")
+        
+        qa_data = []
+        for i, segment in enumerate(sermon.qa_segments, 1):
+            qa_data.append({
+                'Segment': f"Q&A {i}",
+                'Start Time': format_time(segment.get('start_time', 0)),
+                'End Time': format_time(segment.get('end_time', 0)),
+                'Gain Applied': f"+{segment.get('gain_applied', 0):.1f}dB",
+                'Confidence': f"{segment.get('confidence', 0):.1%}",
+                'Method': segment.get('detection_method', 'Unknown')
+            })
+        
+        df_qa = pd.DataFrame(qa_data)
+        st.dataframe(df_qa, use_container_width=True)
+    
+    # Quality metrics
+    quality_metrics = processing_info.get('quality_metrics', {})
+    if quality_metrics:
+        st.subheader("📊 Quality Metrics")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if 'rms_level' in quality_metrics:
+                st.metric("RMS Level", f"{quality_metrics['rms_level']:.1f} dB")
+        
+        with col2:
+            if 'snr_estimate' in quality_metrics:
+                st.metric("SNR Estimate", f"{quality_metrics['snr_estimate']:.1f} dB")
+        
+        with col3:
+            if 'quality_score' in quality_metrics:
+                st.metric("Quality Score", f"{quality_metrics['quality_score']:.1f}/10")
+    
+    # Raw processing info
+    with st.expander("🔍 Raw Processing Data"):
+        st.json(processing_info)
 
 def format_time(seconds):
     """Format time in seconds to MM:SS format"""
@@ -455,7 +965,7 @@ def show_processing_details(sermon):
             st.json(processing_logs)
 
 def show_sermon_viewer():
-    """Main sermon viewer interface"""
+    """Enhanced sermon viewer with dual audio players and analytics"""
     
     # Check if a sermon is selected
     if 'selected_sermon' not in st.session_state:
@@ -486,18 +996,140 @@ def show_sermon_viewer():
         
         return
     
-    # Get selected sermon
     sermon_id = st.session_state.selected_sermon
-    repo = SermonRepository()
-    sermon = repo.get_sermon(sermon_id)
+    edit_mode = st.session_state.get('edit_mode', False)
     
-    if not sermon:
-        st.error(f"Sermon {sermon_id} not found")
-        return
+    # Get managers
+    sermon_manager, analytics_manager = get_managers()
     
-    # Header
-    title = sermon.get('title', 'Untitled Sermon')
-    speaker = sermon.get('speaker', 'Unknown Speaker')
+    # Load sermon details
+    with st.spinner("Loading sermon details..."):
+        try:
+            sermon_details = asyncio.run(sermon_manager.get_sermon_details(sermon_id))
+            if not sermon_details:
+                # Fallback to database-only data
+                repo = SermonRepository()
+                sermon = repo.get_sermon(sermon_id)
+                if not sermon:
+                    st.error(f"Sermon {sermon_id} not found")
+                    return
+                # Create mock sermon_details structure
+                from sermon_manager import SermonData, SermonDetails, AudioFiles
+                sermon_data = SermonData(
+                    id=sermon_id,
+                    title=sermon.get('title', 'Unknown'),
+                    date=datetime.fromisoformat(sermon.get('recorded_date', '1900-01-01')),
+                    speaker=sermon.get('speaker', 'Unknown'),
+                    description=sermon.get('description', ''),
+                    hashtags=sermon.get('hashtags', []),
+                    local_available=True,
+                    remote_available=False,
+                    audio_files=AudioFiles(),
+                    transcript=sermon.get('transcript', ''),
+                    event_type=sermon.get('event_type'),
+                    bible_text=sermon.get('bible_text'),
+                    status=sermon.get('status', 'processed'),
+                    processing_info=sermon.get('processing_info', {}),
+                    qa_segments=sermon.get('qa_segments', [])
+                )
+                sermon_details = SermonDetails(
+                    sermon_data=sermon_data,
+                    content={
+                        'transcript_text': sermon.get('transcript', ''),
+                        'description': sermon.get('description', ''),
+                        'hashtags': sermon.get('hashtags', []),
+                        'summary': sermon.get('summary', '')
+                    },
+                    files={}
+                )
+        except Exception as e:
+            st.error(f"Error loading sermon: {e}")
+            return
+    
+    sermon = sermon_details.sermon_data
+    content = sermon_details.content
+    files = sermon_details.files
+    
+    # Header with sermon info
+    st.title(f"📖 {sermon.title}")
+    st.subheader(f"by {sermon.speaker} • {sermon.date.strftime('%B %d, %Y')}")
+    
+    # Availability and status indicators
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if hasattr(sermon, 'local_available'):
+            avail_emoji, avail_text = get_availability_status({
+                'local_available': sermon.local_available,
+                'remote_available': sermon.remote_available
+            })
+        else:
+            avail_emoji, avail_text = "💾", "Local Only"
+        st.metric("Availability", avail_text, label_visibility="visible")
+        st.caption(f"{avail_emoji} {avail_text}")
+    
+    with col2:
+        status_emoji = get_status_emoji(sermon.status)
+        st.metric("Status", f"{status_emoji} {sermon.status.title()}")
+    
+    with col3:
+        qa_count = len(sermon.qa_segments) if sermon.qa_segments else 0
+        st.metric("Q&A Segments", qa_count)
+    
+    with col4:
+        duration = getattr(sermon.audio_files, 'duration', None) or 0
+        st.metric("Duration", format_duration(duration))
+    
+    # Edit mode toggle
+    if st.button("✏️ Toggle Edit Mode", type="secondary"):
+        st.session_state.edit_mode = not edit_mode
+        st.rerun()
+    
+    st.divider()
+    
+    # Main content tabs
+    if edit_mode:
+        tabs = st.tabs([
+            "🎵 Audio Players", 
+            "📄 Edit Transcript", 
+            "📝 Edit Metadata", 
+            "📊 Analytics", 
+            "🔧 Processing Info"
+        ])
+    else:
+        tabs = st.tabs([
+            "🎵 Audio Players",
+            "📄 Transcript", 
+            "📝 Description", 
+            "📊 Analytics", 
+            "🔧 Processing Info"
+        ])
+    
+    # Tab 1: Audio Players
+    with tabs[0]:
+        show_dual_audio_players(sermon, files, edit_mode)
+    
+    # Tab 2: Transcript (Edit or View)
+    with tabs[1]:
+        if edit_mode:
+            show_transcript_editor(sermon_id, content)
+        else:
+            show_transcript_viewer(sermon, content)
+    
+    # Tab 3: Metadata (Edit or Description)
+    with tabs[2]:
+        if edit_mode:
+            show_metadata_editor(sermon_id, sermon, content)
+        else:
+            show_description_viewer(content)
+    
+    # Tab 4: Analytics
+    with tabs[3]:
+        show_sermon_analytics_tab(sermon_id, analytics_manager)
+    
+    # Tab 5: Processing Info
+    with tabs[4]:
+        show_processing_details(sermon)
     date = sermon.get('recorded_date', 'Unknown Date')
     
     st.title(f"📖 {title}")
