@@ -25,7 +25,13 @@ parent_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(parent_dir))
 sys.path.insert(0, str(parent_dir / "src"))
 
-import sermonaudio
+# Import sermonaudio only if available (not critical for status check)
+try:
+    import sermonaudio
+    sermonaudio_available = True
+except ImportError:
+    sermonaudio_available = False
+
 from database import SermonRepository, get_db
 
 logger = logging.getLogger(__name__)
@@ -40,8 +46,8 @@ class SystemStatusManager:
         self.broadcaster_id = config.get('broadcaster_id')
         self.output_directory = Path(config.get('output_directory', 'processed_sermons'))
         
-        # Initialize SermonAudio API if credentials available
-        if self.api_key:
+        # Initialize SermonAudio API if credentials available (but not required for basic checks)
+        if self.api_key and sermonaudio_available:
             sermonaudio.set_api_key(self.api_key)
     
     def get_comprehensive_status(self) -> Dict[str, Dict[str, Any]]:
@@ -68,21 +74,37 @@ class SystemStatusManager:
                     'timestamp': datetime.now()
                 }
             
-            # Test API connection with a simple request
+            # Test API connection with the correct SermonAudio API format
             try:
-                # Try to get broadcaster info
+                # Use the correct API base URL and authentication method
+                base_url = 'https://api.sermonaudio.com/v2/'
+                headers = {
+                    'X-Api-Key': self.api_key,
+                    'Content-Type': 'application/json'
+                }
+                
+                # Test with a simple sermon query limited to 1 result
+                params = {
+                    'broadcasterID': self.broadcaster_id,
+                    'pageSize': 1,
+                    'lite': 'true',
+                    'cache': 'true'
+                }
+                
                 response = requests.get(
-                    f"https://www.sermonaudio.com/api/v1/sermons/{self.broadcaster_id}",
-                    headers={'Authorization': f'Bearer {self.api_key}'},
-                    params={'limit': 1},
+                    f"{base_url}node/sermons",
+                    headers=headers,
+                    params=params,
                     timeout=10
                 )
                 
                 if response.status_code == 200:
+                    data = response.json()
+                    sermon_count = data.get('count', 0)
                     return {
                         'status': 'ok',
                         'message': 'API connected and authenticated',
-                        'details': f'Successfully connected to SermonAudio API',
+                        'details': f'Successfully connected to SermonAudio API ({sermon_count} sermons available)',
                         'timestamp': datetime.now()
                     }
                 elif response.status_code == 401:
@@ -90,6 +112,20 @@ class SystemStatusManager:
                         'status': 'error', 
                         'message': 'Authentication failed',
                         'details': 'Invalid API key or insufficient permissions',
+                        'timestamp': datetime.now()
+                    }
+                elif response.status_code == 403:
+                    return {
+                        'status': 'error',
+                        'message': 'Access forbidden',
+                        'details': 'API key lacks permission for broadcaster',
+                        'timestamp': datetime.now()
+                    }
+                elif response.status_code == 404:
+                    return {
+                        'status': 'error',
+                        'message': 'Broadcaster not found',
+                        'details': f'Broadcaster ID {self.broadcaster_id} not found',
                         'timestamp': datetime.now()
                     }
                 else:
