@@ -17,6 +17,10 @@ processed_sermons/*
 **/processed_sermons/**
 test_output/
 test_*/
+*.db # Database files
+api_cache/
+analytics_cache/
+.playwright-mcp/ 
 
 # Audio Files
 *.mp3
@@ -49,6 +53,9 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+.ruff_cache/
+.mypy_cache/
+.api_cache/
 
 # Virtual Environments
 venv_test/
@@ -86,3 +93,4 @@ logs/
 *.temp
 .cache/
 .pytest_cache/
+sermon_processor.db

@@ -4,9 +4,11 @@
 # Add src directory to path
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from llm_manager import LLMManager
+
 
 def test_valid_model():
     """Test with a valid model name to make sure normal operation works."""
@@ -24,9 +26,9 @@ def test_valid_model():
             }
         }
     }
-    
+
     manager = LLMManager(config)
-    
+
     try:
         response = manager.chat([
             {"role": "user", "content": "What is 2+2? Answer with just the number."}
@@ -58,9 +60,9 @@ def test_fallback():
             }
         }
     }
-    
+
     manager = LLMManager(config)
-    
+
     try:
         response = manager.chat([
             {"role": "user", "content": "What is 3+3? Answer with just the number."}
@@ -77,7 +79,7 @@ if __name__ == "__main__":
         print("✓ Valid model test passed")
     else:
         print("✗ Valid model test failed")
-    
+
     print("\nTesting fallback functionality...")
     if test_fallback():
         print("✓ Fallback test passed")
