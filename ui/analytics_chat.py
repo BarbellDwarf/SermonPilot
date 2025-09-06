@@ -7,7 +7,7 @@ using the RAG system and LLM integration.
 
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict
 
 import streamlit as st
 
@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 class AnalyticsChatInterface:
     """Chat interface for sermon analytics queries"""
 
-    def __init__(self):
+    def __init__(self, config: Dict[str, Any] = None):
+        self.config = config or {}
         self.rag_system: SermonAnalyticsRAG | None = None
         self.analytics = SermonAudioAnalytics()
         self._initialize_session_state()
@@ -44,10 +45,13 @@ class AnalyticsChatInterface:
                 if force_refresh or not st.session_state.analytics_data:
                     st.session_state.analytics_data = self.analytics.get_all_sermon_analytics()
 
-                # Initialize RAG system
+                # Initialize RAG system with embedding configuration
                 if not st.session_state.rag_initialized or force_refresh:
+                    embedding_config = self.config.get('embeddings', {})
                     self.rag_system = initialize_rag_system_with_data(
-                        st.session_state.analytics_data
+                        st.session_state.analytics_data,
+                        embedding_config=embedding_config
+                    )
                     )
                     st.session_state.rag_initialized = True
                     logger.info("RAG system initialized successfully")
@@ -248,6 +252,23 @@ class AnalyticsChatInterface:
             # Download chat history
             if st.button("Download Chat History", key="download_chat"):
                 self._download_chat_history()
+            
+            # Embedding provider information
+            st.subheader("🔧 Embedding Provider")
+            if self.rag_system:
+                try:
+                    provider_info = self.rag_system.get_embedding_provider_info()
+                    current = provider_info.get('current_provider', {})
+                    
+                    st.write(f"**Provider:** {current.get('provider', 'Unknown')}")
+                    st.write(f"**Model:** {current.get('model', 'Unknown')}")
+                    st.write(f"**Dimensions:** {current.get('dimensions', 'Unknown')}")
+                    st.write(f"**Fallbacks:** {provider_info.get('available_fallbacks', 0)}")
+                    
+                except Exception as e:
+                    st.error(f"Failed to get provider info: {e}")
+            else:
+                st.info("Initialize chat system to see embedding provider information")
 
     def _download_chat_history(self):
         """Prepare chat history for download"""
