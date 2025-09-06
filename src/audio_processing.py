@@ -2,6 +2,7 @@
 
 Supports noise reduction, amplification, and normalization with AI models
 (DeepFilterNet, Resemble Enhance) and fallback to basic processing.
+Includes Q&A audio normalization for automatically adjusting audience question levels.
 """
 
 import logging
@@ -12,12 +13,25 @@ import time
 import warnings
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from typing import Any
 
 import numpy as np
 import psutil
 import soundfile as sf
 import torch
 from pydub import AudioSegment
+
+# Import Q&A normalizer
+try:
+    from .qa_normalizer import QANormalizer
+    qa_normalizer_available = True
+except ImportError:
+    try:
+        from qa_normalizer import QANormalizer
+        qa_normalizer_available = True
+    except ImportError:
+        qa_normalizer_available = False
+        QANormalizer = None
 
 
 def peak_normalize(audio_data: np.ndarray, peak_db: float = -1.0) -> np.ndarray:
@@ -75,10 +89,19 @@ logger = logging.getLogger(__name__)
 class AudioProcessor:
     """Advanced audio processor for sermon audio enhancement with multiple AI models."""
 
-    def __init__(self, enhancement_method: str = "resemble_enhance"):
-        """Initialize the audio processor with specified enhancement method."""
+    def __init__(self, enhancement_method: str = "resemble_enhance", config: dict[str, Any] | None = None):
+        """Initialize the audio processor with specified enhancement method.
+        
+        Note: Models are loaded lazily when first needed to avoid unnecessary 
+        initialization during validation-only operations.
+        
+        Args:
+            enhancement_method: AI enhancement method to use
+            config: Configuration dictionary for Q&A normalization and other settings
+        """
         self.sample_rate = 44100  # Default sample rate
         self.enhancement_method = enhancement_method.lower()
+        self.config = config or {}
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         if self.device == "cuda":
@@ -91,6 +114,33 @@ class AudioProcessor:
         self.df_model = None
         self.df_state = None
         self.resemble_model = None
+        self._models_initialized = False
+
+        # Q&A normalization support
+        self.qa_normalizer = None
+        self.qa_processing_enabled = self.config.get('qa_normalization', {}).get('enabled', False)
+        if self.qa_processing_enabled and qa_normalizer_available:
+            logger.info("Q&A normalization enabled")
+        elif self.qa_processing_enabled and not qa_normalizer_available:
+            logger.warning("Q&A normalization requested but not available")
+            self.qa_processing_enabled = False
+
+        # Validate enhancement method but don't initialize models yet
+        if self.enhancement_method not in ["deepfilternet", "resemble_enhance", "none"]:
+            logger.warning(
+                f"Unknown enhancement method: {enhancement_method}, "
+                f"falling back to DeepFilterNet"
+            )
+            self.enhancement_method = "deepfilternet"
+
+        logger.info(f"AudioProcessor initialized with {self.enhancement_method} method (models will load on first use)")
+
+    def _ensure_models_initialized(self):
+        """Ensure models are initialized before use. Called lazily on first processing."""
+        if self._models_initialized:
+            return
+
+        logger.info(f"Initializing {self.enhancement_method} model for audio processing...")
 
         if self.enhancement_method == "deepfilternet":
             self._init_deepfilternet()
@@ -98,12 +148,8 @@ class AudioProcessor:
             self._init_resemble_enhance()
         elif self.enhancement_method == "none":
             logger.info("No AI enhancement method selected")
-        else:
-            logger.warning(
-                f"Unknown enhancement method: {enhancement_method}, "
-                f"falling back to DeepFilterNet"
-            )
-            self._init_deepfilternet()
+
+        self._models_initialized = True
 
     def _init_deepfilternet(self):
         """Initialize DeepFilterNet model."""
@@ -113,14 +159,14 @@ class AudioProcessor:
                 logger.info(f"Initializing DeepFilterNet on {device}")
 
                 logger.info("Using legacy df package for DeepFilterNet")
-                
+
                 # Suppress DF initialization logs if not in debug mode
                 if logger.level > logging.DEBUG:
                     with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
                         self.df_model, self.df_state, _ = init_df()
                 else:
                     self.df_model, self.df_state, _ = init_df()
-                    
+
                 logger.info("DeepFilterNet initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize DeepFilterNet: {e}")
@@ -961,10 +1007,11 @@ class AudioProcessor:
                            normalize: bool = True,
                            gain_db: float = 0.0,
                            target_level_db: float = -22.0,
-                    max_duration_minutes: int | None = None) -> bool:
+                           max_duration_minutes: int | None = None,
+                           apply_qa_normalization: bool = None) -> tuple[bool, dict[str, Any] | None]:
         """
-        Complete sermon audio processing pipeline with safeguards for large files.
-                        max_duration_minutes: Optional[int] = None) -> bool:
+        Complete sermon audio processing pipeline with safeguards for large files and Q&A normalization.
+
         Args:
             input_path: Input audio file path
             output_path: Output audio file path
@@ -973,11 +1020,23 @@ class AudioProcessor:
             normalize: Apply normalization
             gain_db: Amplification gain in dB
             target_level_db: Target normalization level in dB
-            max_duration_minutes: Maximum duration to process in minutes (for safety)
+            max_duration_minutes: Maximum duration to process in minutes (None for no limit)
+            apply_qa_normalization: Whether to apply Q&A normalization (None = use config setting)
 
         Returns:
-                        max_duration_minutes: Maximum duration to process in minutes (None for no limit)
+            Tuple of (success_status, qa_processing_info)
         """
+        # Ensure models are initialized before processing
+        self._ensure_models_initialized()
+
+        # Initialize Q&A processing info
+        qa_processing_info = None
+
+        # Determine if Q&A normalization should be applied
+        should_apply_qa = apply_qa_normalization
+        if should_apply_qa is None:
+            should_apply_qa = self.qa_processing_enabled
+
         try:
             # Load audio
             audio_data, sample_rate = self.load_audio(input_path)
@@ -985,32 +1044,72 @@ class AudioProcessor:
             duration_seconds = len(audio_data) / sample_rate
             duration_minutes = duration_seconds / 60
             logger.info(f"Audio loaded: {len(audio_data)} samples at {sample_rate} Hz ({duration_minutes:.2f} minutes)")
+
             # Safety check for extremely long files (disabled if max_duration_minutes is None)
             if max_duration_minutes is not None and duration_minutes > max_duration_minutes:
                 logger.warning(f"Audio exceeds maximum duration of {max_duration_minutes} minutes. Processing first {max_duration_minutes} minutes only.")
                 max_samples = int(max_duration_minutes * 60 * sample_rate)
                 audio_data = audio_data[:max_samples]
-            # Apply noise reduction if requested
+
+            # Step 1: Q&A normalization (before other processing)
+            if should_apply_qa and qa_normalizer_available:
+                try:
+                    logger.info("Applying Q&A normalization")
+                    if self.qa_normalizer is None:
+                        self.qa_normalizer = QANormalizer(self.config)
+
+                    # Create temporary file for Q&A processing
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+                        temp_path = temp_file.name
+
+                    # Save current audio for Q&A processing
+                    sf.write(temp_path, audio_data, sample_rate)
+
+                    # Apply Q&A normalization
+                    normalized_audio, _ = self.qa_normalizer.process_audio(temp_path)
+                    audio_data = normalized_audio
+
+                    # Get processing statistics
+                    qa_processing_info = self.qa_normalizer.get_processing_stats()
+                    qa_processing_info['qa_segments'] = self.qa_normalizer.get_segments()
+
+                    # Clean up temporary file
+                    os.unlink(temp_path)
+
+                    logger.info(f"Q&A normalization applied: {len(qa_processing_info.get('qa_segments', []))} segments processed")
+                except Exception as e:
+                    logger.warning(f"Q&A normalization failed: {e}")
+                    qa_processing_info = {'error': str(e), 'qa_segments': []}
+            elif should_apply_qa and not qa_normalizer_available:
+                logger.warning("Q&A normalization requested but not available")
+                qa_processing_info = {'error': 'Q&A normalizer not available', 'qa_segments': []}
+
+            # Step 2: Apply noise reduction if requested
             if noise_reduction:
                 audio_data = self.apply_noise_reduction(audio_data, sample_rate)
             # Clip after noise reduction
             audio_data = np.clip(audio_data, -1.0, 1.0)
-            # Apply amplification or normalization, not both
+
+            # Step 3: Apply amplification or normalization, not both
             if normalize:
                 audio_data = self.normalize_audio(audio_data, target_level_db)
             elif amplify:
                 audio_data = self.amplify_audio(audio_data, gain_db)
             # Clip after gain/normalization
             audio_data = np.clip(audio_data, -1.0, 1.0)
-            # Final peak normalization and hard limiter before saving
+
+            # Step 4: Final peak normalization and hard limiter before saving
             audio_data = peak_normalize(audio_data, peak_db=-1.0)
             audio_data = np.clip(audio_data, -0.98, 0.98)
+
+            # Step 5: Save processed audio
             self.save_audio(audio_data, sample_rate, output_path)
             logger.info("Audio processing completed successfully")
-            return True
+            return True, qa_processing_info
         except Exception as e:
             logger.error(f"Audio processing failed: {e}")
-            return False
+            return False, qa_processing_info
 
 
 
@@ -1091,7 +1190,7 @@ class AudacityProcessor:
 # Convenience function
 def process_sermon_audio(input_path: str, output_path: str, use_audacity: bool = False,
                        skip_on_error: bool = True, enhancement_method: str = "resemble_enhance",
-                       verbose: bool = False, **kwargs) -> bool:
+                       verbose: bool = False, config: dict[str, Any] | None = None, **kwargs) -> tuple[bool, dict[str, Any] | None]:
     """
     Process sermon audio with selected enhancement method.
 
@@ -1101,15 +1200,17 @@ def process_sermon_audio(input_path: str, output_path: str, use_audacity: bool =
         use_audacity: Use Audacity if True, else use native Python processing
         enhancement_method: AI enhancement method to use ("resemble_enhance", "deepfilternet", "none")
         verbose: Show detailed processing information
+        config: Configuration dictionary for Q&A normalization and other settings
         **kwargs: Additional arguments for processing
 
     Returns:
-        Success status
+        Tuple of (success_status, qa_processing_info)
     """
     if use_audacity:
         processor = AudacityProcessor()
         if processor.pipe_exists:
-            return processor.process_with_macro(input_path, output_path)
+            success = processor.process_with_macro(input_path, output_path)
+            return success, None  # Audacity doesn't provide Q&A info
         else:
             logger.warning(f"Audacity not available, using {enhancement_method} processing")
 
@@ -1119,11 +1220,11 @@ def process_sermon_audio(input_path: str, output_path: str, use_audacity: bool =
         if not verbose and enhancement_method.lower() == "deepfilternet":
             # Completely suppress DF output
             with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-                processor = AudioProcessor(enhancement_method=enhancement_method)
-                result = processor.process_sermon_audio(input_path, output_path, **kwargs)
-            return result
+                processor = AudioProcessor(enhancement_method=enhancement_method, config=config)
+                result, qa_info = processor.process_sermon_audio(input_path, output_path, **kwargs)
+            return result, qa_info
         else:
-            processor = AudioProcessor(enhancement_method=enhancement_method)
+            processor = AudioProcessor(enhancement_method=enhancement_method, config=config)
             if verbose:
                 logger.info(f"Processing with {enhancement_method}")
             return processor.process_sermon_audio(input_path, output_path, **kwargs)
@@ -1135,10 +1236,10 @@ def process_sermon_audio(input_path: str, output_path: str, use_audacity: bool =
             try:
                 import shutil
                 shutil.copy2(input_path, output_path)
-                return True
+                return True, None
             except Exception as copy_error:
                 logger.error(f"Failed to copy original file: {copy_error}")
-                return False
+                return False, None
         else:
             # Re-raise the exception if skip_on_error is False
             raise

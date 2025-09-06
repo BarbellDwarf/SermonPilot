@@ -235,7 +235,7 @@ def main():
 
     if missing:
         print(f"\n⚠ Missing required packages: {', '.join(missing)}")
-        print("Install with: pip install -r requirements.txt")
+        print("Install with: pip install -r requirements/requirements.txt")
         sys.exit(1)
 
     sa_ok = test_sermonaudio_connection()
