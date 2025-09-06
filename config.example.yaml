@@ -108,6 +108,34 @@ content_management:
   content_backup: true  # Backup content files
   search_suggestions: true  # Enable search auto-complete suggestions
   
+# Embedding Configuration for RAG System
+embeddings:
+  # Primary embedding provider
+  primary:
+    provider: "sentence_transformers"  # Options: "sentence_transformers", "openai", "ollama"
+    model: "all-MiniLM-L6-v2"  # Model name for the provider
+    dimensions: 384  # Embedding dimensions (auto-detected for most models)
+    
+    # Provider-specific configurations
+    sentence_transformers:
+      model: "all-MiniLM-L6-v2"  # Options: all-MiniLM-L6-v2, all-mpnet-base-v2, all-distilroberta-v1
+      # All sentence-transformer models run locally
+    
+    openai:
+      api_key: "your-openai-key"  # OpenAI API key
+      model: "text-embedding-3-small"  # Options: text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002
+      base_url: "https://api.openai.com/v1"  # Custom endpoint for other providers
+    
+    ollama:
+      host: "http://localhost:11434"  # Ollama server host
+      model: "nomic-embed-text"  # Options: nomic-embed-text, mxbai-embed-large, snowflake-arctic-embed:*
+  
+  # Fallback embedding providers (tried in order if primary fails)
+  fallback:
+    - provider: "sentence_transformers"
+      model: "all-MiniLM-L6-v2"
+    # Hash-based fallback is automatically added as final option
+
 # Web UI Configuration
 web_ui:
   items_per_page: 20  # Default items per page in lists
