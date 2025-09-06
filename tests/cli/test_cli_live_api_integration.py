@@ -1,5 +1,6 @@
 import os
 import re
+
 import pytest
 
 import sermon_updater  # imports config & sets API key

@@ -9,31 +9,55 @@ broadcaster_id: "your-broadcaster-id"
 llm:
   # Primary LLM settings
   primary:
-    provider: "ollama"  # Options: "ollama", "openai"
+    provider: "ollama"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
     ollama:
       host: "http://localhost:11434"
       model: "llama3"
     openai:
       api_key: "your-openai-key"
       model: "gpt-3.5-turbo"
-      # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for xAI, Anthropic, etc.
+      # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for other providers
+    anthropic:
+      api_key: "your-anthropic-key"
+      model: "claude-3-5-sonnet-20241022"  # Default model, can be overridden
+    xai:
+      api_key: "your-xai-key"
+      model: "grok-beta"  # Default model, can be overridden
+    google:
+      api_key: "your-google-key"
+      model: "gemini-1.5-flash"  # Default model, can be overridden
+    groq:
+      api_key: "your-groq-key"
+      model: "llama-3.1-70b-versatile"  # Default model, can be overridden
   
   # Fallback LLM settings (used if primary fails)
   fallback:
     enabled: true
-    provider: "openai"  # Options: "ollama", "openai"
+    provider: "openai"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
     ollama:
       host: "http://localhost:11434"
       model: "llama2"
     openai:
       api_key: "your-fallback-openai-key"
       model: "gpt-3.5-turbo"
-      # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for xAI, Anthropic, etc.
+      # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for other providers
+    anthropic:
+      api_key: "your-anthropic-key"
+      model: "claude-3-haiku-20240307"  # Faster/cheaper model for fallback
+    xai:
+      api_key: "your-xai-key"
+      model: "grok-beta"
+    google:
+      api_key: "your-google-key"
+      model: "gemini-1.5-flash"
+    groq:
+      api_key: "your-groq-key"
+      model: "llama-3.1-8b-instant"  # Faster model for fallback
   
   # Validation LLM settings (smaller model for description validation)
   validator:
     enabled: true
-    provider: "ollama"  # Options: "ollama", "openai"
+    provider: "ollama"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
     ollama:
       host: "http://localhost:11434"
       model: "gemma2:2b"  # Smaller, faster model for validation
@@ -41,6 +65,15 @@ llm:
       api_key: "your-openai-key"
       model: "gpt-4o-mini"  # Smaller OpenAI model for validation
       # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint
+    anthropic:
+      api_key: "your-anthropic-key"
+      model: "claude-3-haiku-20240307"  # Fast, affordable model for validation
+    google:
+      api_key: "your-google-key"
+      model: "gemini-1.5-flash"  # Fast model for validation
+    groq:
+      api_key: "your-groq-key"
+      model: "llama-3.1-8b-instant"  # Fast model for validation
 
 # Audio Processing Settings
 use_audacity: false  # Set to true if Audacity with mod-script-pipe is available
@@ -50,6 +83,39 @@ audio_amplify: true
 audio_normalize: true
 audio_gain_db: 0.5
 audio_target_level_db: -22.0
+
+# Q&A Audio Normalization Settings
+qa_normalization:
+  enabled: false  # Enable Q&A audio normalization
+  detection_method: "level_based"  # Options: "level_based", "speaker_diarization", "hybrid"
+  target_lufs: -23.0  # Target LUFS level for normalized audio
+  main_speaker_threshold: -12.0  # dB threshold for main speaker audio
+  question_threshold: -30.0  # dB threshold for audience questions
+  look_ahead_ms: 100  # Look-ahead time for transition detection
+  transition_smoothing: true  # Apply smoothing at Q&A transitions
+  
+  # Speaker diarization settings (for future implementation)
+  speaker_diarization:
+    model: "pyannote/speaker-diarization"  # Model for speaker diarization
+    min_speakers: 1  # Minimum number of speakers to detect
+    max_speakers: 10  # Maximum number of speakers to detect
+
+# Content Management Settings
+content_management:
+  database_path: "sermon_processor.db"  # Database file path
+  full_text_search: true  # Enable full-text search capabilities
+  auto_topic_extraction: true  # Enable automatic topic extraction
+  content_backup: true  # Backup content files
+  search_suggestions: true  # Enable search auto-complete suggestions
+  
+# Web UI Configuration
+web_ui:
+  items_per_page: 20  # Default items per page in lists
+  audio_player_enabled: true  # Enable audio player in viewer
+  pdf_generation: true  # Enable PDF transcript generation
+  search_suggestions: true  # Show search suggestions
+  qa_highlighting: true  # Highlight Q&A segments in transcripts
+  analytics_enabled: true  # Enable analytics dashboard
 
 # Processing Options
 dry_run: false  # Set to true to preview changes without updating
