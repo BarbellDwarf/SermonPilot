@@ -22,12 +22,16 @@ try:
     from description_validator import DescriptionValidator
     # Import from parent directory
     sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-    from sermon_updater import (
-        load_config, setup_logging, LLMManager, 
-        generate_validated_summary, get_sermon_transcript,
-        update_sermon_metadata
-    )
     import sermonaudio
+
+    from sermon_updater import (
+        LLMManager,
+        generate_validated_summary,
+        get_sermon_transcript,
+        load_config,
+        setup_logging,
+        update_sermon_metadata,
+    )
 except ImportError as e:
     print(f"Import error: {e}")
     print("Make sure you're running this from the project root directory")
@@ -57,25 +61,25 @@ def validate_and_regenerate_descriptions(
         Dictionary with processing results including links to changed sermons
     """
     print("🔍 Starting description validation and regeneration process...")
-    
+
     # Validate existing descriptions
     print("📋 Validating existing descriptions...")
     results = validator.validate_local_sermons(sermon_ids)
-    
+
     if not results:
         print("❌ No sermons found to validate")
         return {'validated': 0, 'regenerated': 0, 'failed': 0}
-    
+
     # Generate summary
     summary = validator.generate_summary(results)
-    
+
     # Print validation summary
-    print(f"\n📊 Validation Results:")
+    print("\n📊 Validation Results:")
     print(f"   Total validated: {summary.total_sermons}")
     print(f"   ✅ Valid: {summary.valid_descriptions} ({summary.validation_rate:.1f}%)")
     print(f"   ❌ Invalid: {summary.invalid_descriptions}")
     print(f"   🔄 Need regeneration: {summary.needs_regeneration}")
-    
+
     regenerated_count = 0
     failed_regeneration = 0
     regenerated_sermons = []  # Track successfully regenerated sermons
@@ -83,13 +87,13 @@ def validate_and_regenerate_descriptions(
 
     if regenerate_failed and summary.invalid_descriptions > 0:
         print(f"\n🔄 Regenerating {summary.invalid_descriptions} failed descriptions...")
-        
+
         failed_results = [r for r in results if not r.is_valid]
-        
+
         for i, result in enumerate(failed_results, 1):
             sermon_id = result.sermon_id
             print(f"   [{i}/{len(failed_results)}] Processing sermon {sermon_id}...")
-            
+
             try:
                 if dry_run:
                     print(f"      🔍 DRY RUN: Would regenerate description for {sermon_id}")
@@ -105,32 +109,32 @@ def validate_and_regenerate_descriptions(
                     })
                     regenerated_count += 1
                     continue
-                
+
                 # Get sermon transcript for regeneration
                 transcript = get_sermon_transcript(sermon_id)
                 if not transcript:
                     print(f"      ❌ Could not get transcript for {sermon_id}")
                     failed_regeneration += 1
                     continue
-                
+
                 # Generate new description with validation
-                print(f"      🤖 Generating new description...")
+                print("      🤖 Generating new description...")
                 new_description, validation_info = generate_validated_summary(
                     transcript,
                     event_type=None,  # Could enhance this with API data
                     speaker_name=None
                 )
-                
+
                 # Double-validate the newly generated description
-                print(f"      🔍 Double-validating new description...")
+                print("      🔍 Double-validating new description...")
                 is_valid, reason, score, criteria_met, criteria_failed = validator.validate_description(
-                    new_description, 
+                    new_description,
                     {'sermon_id': sermon_id}
                 )
-                
+
                 # Check if the new description actually passes validation
                 if not is_valid:
-                    print(f"      ⚠️  WARNING: New description still fails validation!")
+                    print("      ⚠️  WARNING: New description still fails validation!")
                     print(f"               Score: {score:.2f}, Reason: {reason}")
                     validation_failures.append({
                         'sermon_id': sermon_id,
@@ -140,42 +144,42 @@ def validate_and_regenerate_descriptions(
                         'criteria_failed': criteria_failed
                     })
                     # Continue anyway but mark as needing manual review
-                
+
                 if validation_info.get('final_status') == 'approved_primary':
                     status_icon = "✅"
                 elif validation_info.get('final_status') == 'approved_fallback':
                     status_icon = "⚠️"
                 else:
                     status_icon = "❌"
-                    
+
                 print(f"      {status_icon} Generated new description "
                       f"({len(new_description)} chars, score: {score:.2f})")
-                
+
                 # Save the new description locally
                 sermon_dir = Path(validator.output_dir) / sermon_id
                 description_file = sermon_dir / f"{sermon_id}_description.txt"
-                
+
                 if description_file.exists():
                     # Backup old description
                     backup_file = sermon_dir / f"{sermon_id}_description_backup.txt"
                     description_file.rename(backup_file)
                     print(f"      💾 Backed up original to {backup_file.name}")
-                
+
                 description_file.write_text(new_description, encoding='utf-8')
-                
+
                 # Update SermonAudio if not in dry run mode and upload is enabled
                 upload_success = False
                 if upload_to_sermonaudio and not dry_run:
-                    print(f"      📤 Uploading to SermonAudio...")
+                    print("      📤 Uploading to SermonAudio...")
                     try:
                         upload_success = update_sermon_metadata(sermon_id, new_description, None)
                         if upload_success:
-                            print(f"      ✅ Updated SermonAudio successfully")
+                            print("      ✅ Updated SermonAudio successfully")
                         else:
-                            print(f"      ⚠️  SermonAudio update failed")
+                            print("      ⚠️  SermonAudio update failed")
                     except Exception as e:
                         print(f"      ❌ SermonAudio upload error: {e}")
-                
+
                 # Track this regeneration
                 regenerated_sermons.append({
                     'sermon_id': sermon_id,
@@ -189,25 +193,25 @@ def validate_and_regenerate_descriptions(
                     'criteria_met': criteria_met,
                     'criteria_failed': criteria_failed
                 })
-                
+
                 regenerated_count += 1
                 print(f"      ✅ Updated description for sermon {sermon_id}")
-                
+
             except Exception as e:
                 print(f"      ❌ Failed to regenerate description for {sermon_id}: {e}")
                 failed_regeneration += 1
-    
+
     # Print detailed results for regenerated sermons
     if regenerated_sermons:
         print(f"\n📋 REGENERATED SERMONS SUMMARY ({len(regenerated_sermons)} sermons)")
         print("=" * 70)
-        
+
         for sermon in regenerated_sermons:
             sermon_id = sermon['sermon_id']
             old_score = sermon['old_score']
             new_score = sermon['new_score']
             validation_status = sermon['validation_status']
-            
+
             # Status icon based on validation result
             if validation_status == 'passed':
                 status_icon = "✅"
@@ -217,29 +221,29 @@ def validate_and_regenerate_descriptions(
                 status_icon = "🔍"
             else:
                 status_icon = "❓"
-            
+
             print(f"\n{status_icon} Sermon ID: {sermon_id}")
             print(f"   📊 Score: {old_score:.2f} → {new_score:.2f} "
                   f"({'+' if new_score > old_score else ''}{new_score - old_score:.2f})")
-            
+
             if not dry_run:
                 print(f"   🔗 SermonAudio: {sermon['sermonaudio_link']}")
                 if upload_to_sermonaudio:
                     upload_status = "✅ Updated" if sermon.get('sermonaudio_updated') else "❌ Failed"
                     print(f"   📤 Upload Status: {upload_status}")
-            
+
             if validation_status == 'failed_double_validation':
-                print(f"   ⚠️  Double-validation failed - may need manual review")
+                print("   ⚠️  Double-validation failed - may need manual review")
                 if sermon.get('criteria_failed'):
                     print(f"   📋 Failed criteria: {', '.join(sermon['criteria_failed'][:2])}...")
-        
+
         # Print validation failures summary
         if validation_failures:
             print(f"\n⚠️  DOUBLE-VALIDATION FAILURES ({len(validation_failures)} sermons)")
             print("These descriptions were regenerated but still failed validation:")
             for failure in validation_failures:
                 print(f"   • {failure['sermon_id']}: {failure['reason']} (Score: {failure['score']:.2f})")
-    
+
     return {
         'validated': summary.total_sermons,
         'regenerated': regenerated_count,
@@ -271,7 +275,7 @@ Examples:
   python validate_descriptions.py --validate-all --regenerate-failed --dry-run
         """
     )
-    
+
     # Validation scope
     scope_group = parser.add_mutually_exclusive_group(required=True)
     scope_group.add_argument(
@@ -289,7 +293,7 @@ Examples:
         type=str,
         help='Comma-separated list of specific sermon IDs to validate'
     )
-    
+
     # Filtering options
     parser.add_argument(
         '--since-days',
@@ -297,14 +301,14 @@ Examples:
         default=30,
         help='Only process sermons from the last N days (default: 30)'
     )
-    
+
     # Actions
     parser.add_argument(
         '--regenerate-failed',
         action='store_true',
         help='Regenerate descriptions that fail validation'
     )
-    
+
     parser.add_argument(
         '--no-upload',
         action='store_true',
@@ -321,14 +325,14 @@ Examples:
         action='store_true',
         help='Show detailed validation report'
     )
-    
+
     parser.add_argument(
         '--export-results',
         type=str,
         metavar='FILENAME',
         help='Export validation results to JSON file'
     )
-    
+
     # Configuration
     parser.add_argument(
         '--config',
@@ -336,13 +340,13 @@ Examples:
         default='config.yaml',
         help='Path to configuration file (default: config.yaml)'
     )
-    
+
     parser.add_argument(
         '--verbose',
         action='store_true',
         help='Enable verbose logging'
     )
-    
+
     return parser
 
 
@@ -350,36 +354,36 @@ def main():
     """Main entry point."""
     parser = build_arg_parser()
     args = parser.parse_args()
-    
+
     # Set up logging
     setup_logging(args.verbose)
-    
+
     # Load configuration
     if not os.path.exists(args.config):
         logger.error(f"Config file not found: {args.config}")
         return 1
-    
+
     try:
         # Initialize validator
         validator = DescriptionValidator(args.config)
-        
+
         if not validator.llm_manager.validator_provider:
             logger.error("Validator LLM not configured. Please check your config file.")
             return 1
-        
+
         # Parse sermon IDs if provided
         sermon_ids = None
         if args.sermon_ids:
             sermon_ids = [id.strip() for id in args.sermon_ids.split(',') if id.strip()]
             print(f"🎯 Targeting {len(sermon_ids)} specific sermons")
-        
+
         # Determine which sermons to process based on arguments
         if args.validate_recent and not sermon_ids:
             # This would require implementing date filtering
             print(f"🕒 Processing sermons from the last {args.since_days} days")
             # For now, just process all local sermons
             sermon_ids = None
-        
+
         # Run validation and optional regeneration
         results = validate_and_regenerate_descriptions(
             validator=validator,
@@ -388,7 +392,7 @@ def main():
             upload_to_sermonaudio=not args.no_upload,
             dry_run=args.dry_run
         )
-        
+
         # Print summary
         print("\n" + "="*60)
         print("📋 PROCESSING SUMMARY")
@@ -398,20 +402,20 @@ def main():
         if args.regenerate_failed:
             print(f"Descriptions regenerated: {results['regenerated']}")
             print(f"Regeneration failures: {results['failed']}")
-        
+
         # Show detailed report if requested
         if args.detailed_report:
             validation_results = validator.validate_local_sermons(sermon_ids)
             summary = validator.generate_summary(validation_results)
             validator.print_detailed_report(validation_results, summary)
-        
+
         # Export results if requested
         if args.export_results:
             validation_results = validator.validate_local_sermons(sermon_ids)
             summary = validator.generate_summary(validation_results)
             validator.export_to_json(validation_results, summary, args.export_results)
             print(f"📁 Results exported to {args.export_results}")
-        
+
         # Return appropriate exit code
         if results['failed'] > 0:
             return 1
@@ -421,7 +425,7 @@ def main():
         else:
             print("\n✅ Processing completed successfully!")
             return 0
-        
+
     except KeyboardInterrupt:
         print("\n🛑 Processing cancelled by user")
         return 1

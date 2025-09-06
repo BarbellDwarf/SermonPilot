@@ -1,8 +1,9 @@
 import time
+
 from sermon_updater import (
     SERMON_FILTER_ARG_MAP,
-    cli_main,
     SermonLite,
+    cli_main,
 )
 
 # We'll monkeypatch fetch_sermons to capture params passed from cli_main.

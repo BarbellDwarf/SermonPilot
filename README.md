@@ -56,7 +56,7 @@ source .venv/bin/activate  # Linux/Mac
 # or .venv\Scripts\activate  # Windows
 
 # Install all dependencies
-uv pip install -r requirements.txt
+uv pip install -r requirements/requirements.txt
 ```
 
 ### Platform-Specific Installation
@@ -66,20 +66,20 @@ uv pip install -r requirements.txt
 # Install system dependencies (Ubuntu/Debian)
 sudo apt update && sudo apt install -y ffmpeg libsndfile1 portaudio19-dev python3-dev
 
-# Install with CUDA support
-uv pip install -r requirements-linux.txt
+# Install with CUDA support (note: requires --index-strategy flag for dependency resolution)
+uv pip install -r requirements/requirements-linux.txt --index-strategy unsafe-best-match
 ```
 
 #### CPU-Only (Any Platform)
 ```bash
 # For systems without GPU or for testing
-uv pip install -r requirements-cpu.txt
+uv pip install -r requirements/requirements-cpu.txt
 ```
 
 #### Development Setup
 ```bash
 # Install all dependencies including optional AI models
-uv pip install -r requirements-dev.txt
+uv pip install -r requirements/requirements-dev.txt
 ```
 
 ### Standard pip Installation
@@ -93,10 +93,10 @@ source .venv/bin/activate  # Linux/Mac
 # or .venv\Scripts\activate  # Windows
 
 # Choose your installation:
-pip install -r requirements.txt         # Standard installation
-pip install -r requirements-linux.txt   # Linux with GPU support  
-pip install -r requirements-cpu.txt     # CPU-only
-pip install -r requirements-dev.txt     # Development
+pip install -r requirements/requirements.txt         # Standard installation
+pip install -r requirements/requirements-linux.txt --index-strategy unsafe-best-match   # Linux with GPU support  
+pip install -r requirements/requirements-cpu.txt     # CPU-only
+pip install -r requirements/requirements-dev.txt     # Development
 ```
 
 ### Verify Installation
@@ -104,7 +104,7 @@ pip install -r requirements-dev.txt     # Development
 ```bash
 # Test core functionality
 python -c "import torch; print(f'PyTorch: {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
-python -c "import deepfilternet; print('DeepFilterNet: OK')"
+python -c "import df; print('DeepFilterNet (df): OK')"
 
 # Test resemble-enhance (if installed separately)
 python -c "import resemble_enhance; print('Resemble Enhance: OK')" 2>/dev/null || echo "Resemble Enhance: Not installed (install manually)"
@@ -160,6 +160,59 @@ Edit `config.yaml` or `.env` with your settings:
    - Broadcaster ID
    - LLM provider settings
    - Audio processing preferences
+
+## Running the Server
+
+### Linux Server Scripts
+
+For Linux users, we provide convenient server management scripts:
+
+#### Simple Startup (Interactive)
+```bash
+# Start the Streamlit web interface
+./start_server.sh
+```
+This script will:
+- ✅ Check and activate your virtual environment
+- ✅ Verify all dependencies are installed
+- ✅ Start the Streamlit server on http://localhost:8501
+- 🎯 Run interactively (Ctrl+C to stop)
+
+#### Advanced Server Manager
+```bash
+# Start the server in background
+./server.sh start
+
+# Check server status
+./server.sh status
+
+# Stop the server
+./server.sh stop
+
+# Restart the server
+./server.sh restart
+
+# View server logs
+./server.sh logs
+```
+
+#### Windows
+```bash
+# For Windows users
+start_server.bat
+# OR
+python start_server.py
+```
+
+### Manual Server Start
+```bash
+# Activate your environment first
+source .venv/bin/activate  # Linux/Mac
+# OR .venv\Scripts\activate  # Windows
+
+# Start Streamlit manually
+streamlit run streamlit_app.py --server.port 8501
+```
 
 ## Usage
 
