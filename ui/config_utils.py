@@ -6,6 +6,7 @@ session state management.
 """
 
 from pathlib import Path
+
 import yaml
 
 # Get project root for config path
@@ -17,7 +18,7 @@ def load_config_from_file():
         import sys
         sys.path.insert(0, str(project_root))
         from sermon_updater import load_config
-        
+
         config_path = project_root / "config.yaml"
         if not config_path.exists():
             # Try example config
@@ -36,13 +37,13 @@ def load_config_from_file():
                 except ImportError:
                     pass  # Not in Streamlit context
                 return {}
-        
+
         config = load_config(str(config_path))
         # Ensure config is never None
         if config is None:
             config = {}
         return config
-        
+
     except Exception as e:
         try:
             import streamlit as st
@@ -55,19 +56,19 @@ def reload_configuration():
     """Force reload configuration from file and update session state"""
     try:
         import streamlit as st
-        
+
         # Load fresh config from file
         config = load_config_from_file()
-        
+
         # Update session state
         st.session_state.config = config
-        
+
         # Clear cached objects that depend on config
         if 'llm_manager' in st.session_state:
             st.session_state.llm_manager = None
-            
+
         return config
-        
+
     except Exception as e:
         try:
             import streamlit as st
@@ -80,21 +81,21 @@ def save_config_to_file(config):
     """Save configuration to config.yaml file and reload in session"""
     try:
         config_path = project_root / "config.yaml"
-        
+
         with open(config_path, 'w') as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=True)
-        
+
         # Reload the configuration from file to ensure consistency
         reload_configuration()
-        
+
         try:
             import streamlit as st
             st.info(f"Configuration saved to {config_path}")
         except ImportError:
             pass  # Not in Streamlit context
-        
+
         return True
-        
+
     except Exception as e:
         try:
             import streamlit as st

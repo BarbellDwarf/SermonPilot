@@ -74,7 +74,7 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     logging.getLogger("torchaudio").disabled = True
     from audio_processing import process_sermon_audio
     from llm_manager import LLMManager, migrate_legacy_config
-    
+
     # Import database for Q&A processing tracking
     try:
         sys.path.insert(0, str(Path(__file__).parent / "ui"))
@@ -83,7 +83,7 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     except ImportError:
         database_available = False
         SermonRepository = None
-    
+
     # Import enhanced audio processor
     try:
         from enhanced_audio_processor import EnhancedAudioProcessor
@@ -283,6 +283,30 @@ def get_sermon_transcript(sermon_id: str) -> str:
     except Exception as e:
         logger.error("Transcript retrieval error: %s", e)
         return ""
+
+
+def get_sermon_details(sermon_id: str) -> dict:
+    """Retrieve full sermon details from the SermonAudio API.
+    
+    Args:
+        sermon_id: The sermon ID to get details for
+        
+    Returns:
+        Dictionary containing sermon metadata, empty dict if not found
+    """
+    try:
+        api_url = f"{BASE_URL}node/sermons/{sermon_id}"
+        resp = requests.get(api_url, headers={'X-Api-Key': SERMON_AUDIO_API_KEY}, timeout=60)
+        if resp.status_code == 200:
+            data = resp.json()
+            logger.debug(f"Sermon details retrieved successfully for {sermon_id}")
+            return data
+        else:
+            logger.warning(f"Failed to get sermon details for {sermon_id}: HTTP {resp.status_code}")
+            return {}
+    except Exception as e:
+        logger.error(f"Error retrieving sermon details for {sermon_id}: {e}")
+        return {}
 
 
 def needs_metadata_processing(
@@ -594,15 +618,15 @@ Guidelines:
             # First try to validate from local files
             processed_dir = Path(self.output_dir)
             sermon_dir = processed_dir / sermon_id
-            
+
             if sermon_dir.exists():
                 return self._validate_local_sermon(sermon_dir)
-            
+
             # If not found locally, we could implement API validation here
             # For now, return None
             logger.warning(f"Sermon {sermon_id} not found in local processed directory")
             return None
-            
+
         except Exception as e:
             logger.error(f"Error validating sermon {sermon_id}: {e}")
             return None
@@ -1941,18 +1965,18 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                     verbose=verbose,
                     **AUDIO_PARAMS
                 )
-                
+
                 # Handle new return format (success, qa_info) vs old format (success only)
                 if isinstance(result, tuple):
                     processing_success, qa_processing_info = result
                 else:
                     processing_success = result
-                
+
                 if not processing_success:
                     logger.warning("Audio processing issues; continuing with original audio")
                 elif qa_processing_info:
                     logger.info(f"Q&A processing: {qa_processing_info.get('total_segments', 0)} segments detected")
-                    
+
             except Exception as e:
                 logger.error("Audio processing failed: %s", e)
                 needs_audio = False
@@ -2051,7 +2075,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
     if database_available and (qa_processing_info or summary or hashtags or transcript):
         try:
             repo = SermonRepository()
-            
+
             # Build comprehensive sermon record
             sermon_data = {
                 'id': sermon_id,
@@ -2094,10 +2118,10 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                     'upload_message': 'Processing completed successfully'
                 }
             }
-            
+
             # Remove None values from file_paths
             sermon_data['file_paths'] = {k: v for k, v in sermon_data['file_paths'].items() if v}
-            
+
             success = repo.save_sermon(sermon_data)
             if success:
                 logger.debug("Sermon data saved to database successfully")
@@ -2105,7 +2129,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                     logger.info(f"💾 Saved Q&A processing info: {qa_processing_info['total_segments']} segments")
             else:
                 logger.warning("Failed to save sermon data to database")
-                
+
         except Exception as e:
             logger.warning(f"Database save failed: {e}")
 
@@ -2195,45 +2219,45 @@ def get_broadcaster_pastors(limit: int = 500) -> list[str]:
         url = f"{BASE_URL}node/sermons"
         speakers = set()
         fetched_count = 0
-        
+
         logger.debug(f"Fetching pastors from broadcaster's sermons (limit: {limit})")
-        
+
         while fetched_count < limit:
             try:
                 resp = requests.get(url, params=params, headers=headers, timeout=60)
                 if resp.status_code != 200:
                     logger.warning(f"Failed to fetch sermons: {resp.status_code}")
                     break
-                    
+
                 data = resp.json()
                 results = data.get('results', [])
-                
+
                 if not results:
                     break
-                    
+
                 for sermon in results:
                     speaker_info = sermon.get('speaker') or {}
                     speaker_name = speaker_info.get('displayName')
                     if speaker_name and speaker_name.strip():
                         speakers.add(speaker_name.strip())
                     fetched_count += 1
-                    
+
                     if fetched_count >= limit:
                         break
-                
+
                 if not data.get('next') or fetched_count >= limit:
                     break
-                    
+
                 params['page'] += 1
-                
+
             except Exception as e:
                 logger.error(f"Error fetching sermon data: {e}")
                 break
-        
+
         speaker_list = sorted(list(speakers))
         logger.debug(f"Found {len(speaker_list)} unique pastors")
         return speaker_list
-        
+
     except Exception as e:
         logger.error(f"Error retrieving pastors: {e}")
         return []
@@ -2259,44 +2283,44 @@ def get_broadcaster_event_types(limit: int = 500) -> list[str]:
         url = f"{BASE_URL}node/sermons"
         event_types = set()
         fetched_count = 0
-        
+
         logger.debug(f"Fetching event types from broadcaster's sermons (limit: {limit})")
-        
+
         while fetched_count < limit:
             try:
                 resp = requests.get(url, params=params, headers=headers, timeout=60)
                 if resp.status_code != 200:
                     logger.warning(f"Failed to fetch sermons: {resp.status_code}")
                     break
-                    
+
                 data = resp.json()
                 results = data.get('results', [])
-                
+
                 if not results:
                     break
-                    
+
                 for sermon in results:
                     event_type = sermon.get('eventType')
                     if event_type and event_type.strip():
                         event_types.add(event_type.strip())
                     fetched_count += 1
-                    
+
                     if fetched_count >= limit:
                         break
-                
+
                 if not data.get('next') or fetched_count >= limit:
                     break
-                    
+
                 params['page'] += 1
-                
+
             except Exception as e:
                 logger.error(f"Error fetching sermon data: {e}")
                 break
-        
+
         event_list = sorted(list(event_types))
         logger.debug(f"Found {len(event_list)} unique event types")
         return event_list
-        
+
     except Exception as e:
         logger.error(f"Error retrieving event types: {e}")
         return []
@@ -2322,22 +2346,22 @@ def get_broadcaster_series(limit: int = 500) -> list[str]:
         url = f"{BASE_URL}node/sermons"
         series_names = set()
         fetched_count = 0
-        
+
         logger.debug(f"Fetching series from broadcaster's sermons (limit: {limit})")
-        
+
         while fetched_count < limit:
             try:
                 resp = requests.get(url, params=params, headers=headers, timeout=60)
                 if resp.status_code != 200:
                     logger.warning(f"Failed to fetch sermons: {resp.status_code}")
                     break
-                    
+
                 data = resp.json()
                 results = data.get('results', [])
-                
+
                 if not results:
                     break
-                    
+
                 for sermon in results:
                     # Check for series information in various possible fields
                     series_info = sermon.get('series')
@@ -2346,34 +2370,34 @@ def get_broadcaster_series(limit: int = 500) -> list[str]:
                             series_name = series_info.get('displayName') or series_info.get('name')
                         else:
                             series_name = str(series_info)
-                        
+
                         if series_name and series_name.strip():
                             series_names.add(series_name.strip())
-                    
+
                     # Also check subtitle field which sometimes contains series info
                     subtitle = sermon.get('subtitle')
                     if subtitle and subtitle.strip() and len(subtitle.strip()) > 3:
                         # Only include if it looks like a series name (not too short)
                         series_names.add(subtitle.strip())
-                    
+
                     fetched_count += 1
-                    
+
                     if fetched_count >= limit:
                         break
-                
+
                 if not data.get('next') or fetched_count >= limit:
                     break
-                    
+
                 params['page'] += 1
-                
+
             except Exception as e:
                 logger.error(f"Error fetching sermon data: {e}")
                 break
-        
+
         series_list = sorted(list(series_names))
         logger.debug(f"Found {len(series_list)} unique series")
         return series_list
-        
+
     except Exception as e:
         logger.error(f"Error retrieving series: {e}")
         return []

@@ -113,13 +113,14 @@ class DescriptionValidator:
 
         return validation_config.get('criteria', default_criteria)
 
-    def validate_description(self, description: str, context: dict[str, Any] = None) -> tuple[bool, str, float, list[str], list[str]]:
+    def validate_description(self, description: str, context: dict[str, Any] = None, sermon_id: str = None) -> tuple[bool, str, float, list[str], list[str]]:
         """
         Validate a single description against criteria.
         
         Args:
             description: The description text to validate
             context: Additional context (title, speaker, etc.)
+            sermon_id: Sermon ID for cost tracking
             
         Returns:
             Tuple of (is_valid, reason, score, criteria_met, criteria_failed)
@@ -165,9 +166,10 @@ Guidelines:
 """
 
         try:
-            response = self.llm_manager.validator_provider.chat([
+            # Use the LLM manager's chat method with cost tracking
+            response = self.llm_manager.chat([
                 {'role': 'user', 'content': validation_prompt}
-            ])
+            ], operation="description_validation", sermon_id=sermon_id)
 
             # Parse the structured response
             score, is_valid, reason, criteria_met, criteria_failed = self._parse_validation_response(response)
@@ -177,6 +179,60 @@ Guidelines:
         except Exception as e:
             logger.warning(f"Validation failed: {e}")
             return True, f"Validation error: {e}", 0.5, [], []
+
+    def validate_hashtags(self, hashtags: str, context: dict[str, Any] = None, sermon_id: str = None) -> tuple[bool, str]:
+        """
+        Validate hashtags for a sermon.
+        
+        Args:
+            hashtags: The hashtags to validate
+            context: Additional context (title, speaker, etc.)
+            sermon_id: Sermon ID for cost tracking
+            
+        Returns:
+            Tuple of (is_valid, reason)
+        """
+        if not hashtags or not hashtags.strip():
+            return False, "No hashtags provided"
+
+        # Simple hashtag validation prompt
+        context_info = ""
+        if context:
+            if context.get('title'):
+                context_info += f"Sermon Title: {context['title']}\n"
+            if context.get('speaker'):
+                context_info += f"Speaker: {context['speaker']}\n"
+
+        validation_prompt = f"""You are a hashtag validator for sermon content. Evaluate if these hashtags are appropriate and relevant.
+
+{context_info}
+Hashtags to validate: {hashtags}
+
+Please respond with either:
+VALID: [brief reason why hashtags are appropriate]
+INVALID: [brief reason why hashtags need improvement]
+
+Consider:
+- Relevance to sermon content
+- Appropriate Christian/theological terms
+- Good social media practices
+- Not too generic or too specific
+"""
+
+        try:
+            # Use the LLM manager's chat method with cost tracking
+            response = self.llm_manager.chat([
+                {'role': 'user', 'content': validation_prompt}
+            ], operation="hashtag_validation", sermon_id=sermon_id)
+
+            if response.startswith('VALID'):
+                return True, response.replace('VALID:', '').strip()
+            else:
+                return False, response.replace('INVALID:', '').strip()
+
+        except Exception as e:
+            logger.warning(f"Hashtag validation failed: {e}")
+            return True, f"Validation error: {e}"
 
     def _parse_validation_response(self, response: str) -> tuple[float, bool, str, list[str], list[str]]:
         """Parse the LLM validation response into structured data."""
@@ -243,15 +299,15 @@ Guidelines:
             # First try to validate from local files
             processed_dir = Path(self.output_dir)
             sermon_dir = processed_dir / sermon_id
-            
+
             if sermon_dir.exists():
                 return self._validate_local_sermon(sermon_dir)
-            
+
             # If not found locally, we could implement API validation here
             # For now, return None
             logger.warning(f"Sermon {sermon_id} not found in local processed directory")
             return None
-            
+
         except Exception as e:
             logger.error(f"Error validating sermon {sermon_id}: {e}")
             return None
