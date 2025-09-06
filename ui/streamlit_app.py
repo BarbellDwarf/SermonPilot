@@ -19,6 +19,8 @@ import sys
 import warnings
 from pathlib import Path
 
+import streamlit as st
+
 # Suppress PyTorch/Torchaudio warnings before any imports
 warnings.filterwarnings('ignore', category=UserWarning, message='.*Torchaudio.*backend.*')
 warnings.filterwarnings('ignore', category=UserWarning, message='.*torchaudio.*')
@@ -31,8 +33,12 @@ os.environ["TORCHAUDIO_BACKEND"] = "soundfile"
 # Suppress Windows path warnings
 warnings.filterwarnings('ignore', message='.*commonpath.*')
 warnings.filterwarnings('ignore', message='.*path.*dispatcher.*')
+warnings.filterwarnings('ignore', message=".*Paths don't have the same drive.*")
 
-import streamlit as st
+# Set environment variable to disable problematic file watchers
+os.environ["STREAMLIT_SERVER_FILE_WATCHER_TYPE"] = "none"
+
+
 
 # Add project root and src to Python path for imports
 project_root = Path(__file__).parent.parent
@@ -41,8 +47,7 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "src"))
 sys.path.insert(0, str(ui_dir))
 
-from datetime import datetime
-from shared_navigation import render_shared_sidebar, initialize_session_state
+from shared_navigation import render_shared_sidebar
 
 # Configure Streamlit page
 st.set_page_config(
@@ -60,6 +65,36 @@ st.set_page_config(
 # Custom CSS for styling
 st.markdown("""
 <style>
+    /* Dark mode support for system health components */
+    [data-theme="dark"] {
+        --background-color: rgba(16, 185, 129, 0.15);
+        --text-color: #f1f5f9;
+        --border-color: rgba(16, 185, 129, 0.3);
+    }
+    
+    [data-theme="light"] {
+        --background-color: rgba(16, 185, 129, 0.1);
+        --text-color: #334155;
+        --border-color: rgba(16, 185, 129, 0.2);
+    }
+    
+    /* Auto-detect dark mode */
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --background-color: rgba(16, 185, 129, 0.15);
+            --text-color: #f1f5f9;
+            --border-color: rgba(16, 185, 129, 0.3);
+        }
+    }
+    
+    @media (prefers-color-scheme: light) {
+        :root {
+            --background-color: rgba(16, 185, 129, 0.1);
+            --text-color: #334155;
+            --border-color: rgba(16, 185, 129, 0.2);
+        }
+    }
+    
     .main-header {
         font-size: 2.5rem;
         font-weight: bold;
@@ -127,23 +162,33 @@ def initialize_session_state():
     """Initialize Streamlit session state variables"""
     if 'config' not in st.session_state:
         st.session_state.config = {}  # Initialize with empty dict instead of None
-    
+
     if 'llm_manager' not in st.session_state:
         st.session_state.llm_manager = None
-    
+
     if 'processing_history' not in st.session_state:
         st.session_state.processing_history = []
-    
+
     if 'current_user' not in st.session_state:
         st.session_state.current_user = "User"
-    
+
     if 'theme' not in st.session_state:
         st.session_state.theme = "light"
+
+    # Initialize job queue system
+    if 'job_queue_initialized' not in st.session_state:
+        try:
+            from job_queue import initialize_job_queue
+            initialize_job_queue()
+            st.session_state.job_queue_initialized = True
+        except Exception:
+            st.session_state.job_queue_initialized = False
+            # Don't show error here as it would be shown on every page load
 
 def load_configuration(force_reload=False):
     """Load configuration from config.yaml"""
     from config_utils import load_config_from_file, reload_configuration
-    
+
     if force_reload:
         return reload_configuration()
     else:
@@ -165,25 +210,25 @@ def check_system_status():
         "audio_processing": False,
         "api_connection": False
     }
-    
+
     # Check configuration
     if st.session_state.config:
         status["config"] = True
-        
+
         # Check LLM providers
         try:
             from src.llm_manager import LLMManager
             llm_manager = LLMManager(st.session_state.config)
             st.session_state.llm_manager = llm_manager
-            
+
             if llm_manager.primary_provider:
                 status["llm_primary"] = True
             if llm_manager.fallback_provider:
                 status["llm_fallback"] = True
-                
+
         except Exception as e:
             st.sidebar.warning(f"LLM Manager Error: {e}")
-        
+
         # Check audio processing
         try:
             from src.audio_processing import AudioProcessor
@@ -191,24 +236,24 @@ def check_system_status():
             status["audio_processing"] = True
         except Exception as e:
             st.sidebar.warning(f"Audio Processing Error: {e}")
-    
+
     return status
 
 def main():
     """Main application entry point"""
     # Initialize session state
     initialize_session_state()
-    
+
     # Load configuration
     if not st.session_state.config:
         load_configuration()
-    
+
     # Render shared sidebar navigation
     render_shared_sidebar()
-    
+
     # Main content area - show the appropriate page based on session state
     current_page = st.session_state.get('current_page', 'dashboard')
-    
+
     if current_page == 'dashboard':
         show_dashboard()
     elif current_page == 'new_sermon':
@@ -217,6 +262,12 @@ def main():
         show_batch_update()
     elif current_page == 'validation':
         show_validation()
+    elif current_page == 'jobs':
+        show_jobs()
+    elif current_page == 'library':
+        show_library()
+    elif current_page == 'analytics':
+        show_analytics()
     elif current_page == 'settings':
         show_settings()
     else:
@@ -262,6 +313,26 @@ def show_validation():
         # Fallback if pages module not available
         st.markdown('<div class="main-header">✅ Validation</div>', unsafe_allow_html=True)
         st.error("❌ Validation module not found. Please check the installation.")
+
+def show_jobs():
+    """Jobs page"""
+    try:
+        from ui_pages.jobs import show_jobs as jobs_main
+        jobs_main()
+    except ImportError:
+        # Fallback if pages module not available
+        st.markdown('<div class="main-header">⚙️ Jobs</div>', unsafe_allow_html=True)
+        st.error("❌ Jobs module not found. Please check the installation.")
+
+def show_library():
+    """Library page"""
+    try:
+        from ui_pages.library import show_library as library_main
+        library_main()
+    except ImportError:
+        # Fallback if pages module not available
+        st.markdown('<div class="main-header">📚 Library</div>', unsafe_allow_html=True)
+        st.error("❌ Library module not found. Please check the installation.")
 
 def show_analytics():
     """Analytics page"""

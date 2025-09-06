@@ -1,0 +1,12 @@
+[server]
+fileWatcherType = "none"
+runOnSave = false
+
+[global]
+developmentMode = false
+
+[logger]
+level = "error"
+
+[runner]
+magicEnabled = false

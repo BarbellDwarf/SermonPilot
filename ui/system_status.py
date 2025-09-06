@@ -13,12 +13,11 @@ Provides accurate system status checking for:
 import logging
 import sqlite3
 import sys
-from pathlib import Path
-from typing import Dict, Any, Optional
 from datetime import datetime
-import os
+from pathlib import Path
+from typing import Any
+
 import requests
-import subprocess
 
 # Add parent directory to path for imports
 parent_dir = Path(__file__).parent.parent
@@ -32,25 +31,25 @@ try:
 except ImportError:
     sermonaudio_available = False
 
-from database import SermonRepository, get_db
+from database import SermonRepository
 
 logger = logging.getLogger(__name__)
 
 class SystemStatusManager:
     """Manages real-time system status checks"""
-    
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: dict[str, Any]):
         """Initialize with configuration"""
         self.config = config
         self.api_key = config.get('api_key')
         self.broadcaster_id = config.get('broadcaster_id')
         self.output_directory = Path(config.get('output_directory', 'processed_sermons'))
-        
+
         # Initialize SermonAudio API if credentials available (but not required for basic checks)
         if self.api_key and sermonaudio_available:
             sermonaudio.set_api_key(self.api_key)
-    
-    def get_comprehensive_status(self) -> Dict[str, Dict[str, Any]]:
+
+    def get_comprehensive_status(self) -> dict[str, dict[str, Any]]:
         """Get comprehensive system status"""
         return {
             'sermonaudio_api': self.check_sermonaudio_api(),
@@ -62,8 +61,8 @@ class SystemStatusManager:
             'processing_queue': self.check_processing_queue(),
             'system_resources': self.check_system_resources()
         }
-    
-    def check_sermonaudio_api(self) -> Dict[str, Any]:
+
+    def check_sermonaudio_api(self) -> dict[str, Any]:
         """Check SermonAudio API connection and authentication"""
         try:
             if not self.api_key or not self.broadcaster_id:
@@ -73,7 +72,7 @@ class SystemStatusManager:
                     'details': 'Missing api_key or broadcaster_id in config',
                     'timestamp': datetime.now()
                 }
-            
+
             # Test API connection with the correct SermonAudio API format
             try:
                 # Use the correct API base URL and authentication method
@@ -82,7 +81,7 @@ class SystemStatusManager:
                     'X-Api-Key': self.api_key,
                     'Content-Type': 'application/json'
                 }
-                
+
                 # Test with a simple sermon query limited to 1 result
                 params = {
                     'broadcasterID': self.broadcaster_id,
@@ -90,14 +89,14 @@ class SystemStatusManager:
                     'lite': 'true',
                     'cache': 'true'
                 }
-                
+
                 response = requests.get(
                     f"{base_url}node/sermons",
                     headers=headers,
                     params=params,
                     timeout=10
                 )
-                
+
                 if response.status_code == 200:
                     data = response.json()
                     sermon_count = data.get('count', 0)
@@ -109,7 +108,7 @@ class SystemStatusManager:
                     }
                 elif response.status_code == 401:
                     return {
-                        'status': 'error', 
+                        'status': 'error',
                         'message': 'Authentication failed',
                         'details': 'Invalid API key or insufficient permissions',
                         'timestamp': datetime.now()
@@ -135,7 +134,7 @@ class SystemStatusManager:
                         'details': f'Unexpected response: {response.text[:100]}',
                         'timestamp': datetime.now()
                     }
-                    
+
             except requests.exceptions.Timeout:
                 return {
                     'status': 'warning',
@@ -150,7 +149,7 @@ class SystemStatusManager:
                     'details': 'Network connection issue or API is down',
                     'timestamp': datetime.now()
                 }
-                
+
         except Exception as e:
             return {
                 'status': 'error',
@@ -158,35 +157,35 @@ class SystemStatusManager:
                 'details': str(e),
                 'timestamp': datetime.now()
             }
-    
-    def check_database(self) -> Dict[str, Any]:
+
+    def check_database(self) -> dict[str, Any]:
         """Check database connection and health"""
         try:
             repo = SermonRepository()
-            
+
             # Test basic database operations
             stats = repo.get_processing_stats()
-            
+
             # Check database size and performance
             db_path = repo.db.db_path
             if db_path.exists():
                 db_size_mb = db_path.stat().st_size / (1024 * 1024)
-                
+
                 # Test query performance
                 start_time = datetime.now()
                 with repo.db.get_connection() as conn:
                     conn.execute("SELECT COUNT(*) FROM sermons").fetchone()
                 query_time = (datetime.now() - start_time).total_seconds()
-                
+
                 status_details = f"Database size: {db_size_mb:.1f}MB, Query time: {query_time:.3f}s"
-                
+
                 if query_time > 1.0:  # Slow query warning
                     status = 'warning'
                     message = f"Database slow ({query_time:.3f}s query time)"
                 else:
                     status = 'ok'
                     message = f"Database healthy ({stats['total_sermons']} sermons)"
-                
+
                 return {
                     'status': status,
                     'message': message,
@@ -200,7 +199,7 @@ class SystemStatusManager:
                     'details': f'Database will be created at: {db_path}',
                     'timestamp': datetime.now()
                 }
-                
+
         except sqlite3.Error as e:
             return {
                 'status': 'error',
@@ -215,12 +214,12 @@ class SystemStatusManager:
                 'details': str(e),
                 'timestamp': datetime.now()
             }
-    
-    def check_llm_provider(self, provider_type: str = 'primary') -> Dict[str, Any]:
+
+    def check_llm_provider(self, provider_type: str = 'primary') -> dict[str, Any]:
         """Check LLM provider status (primary or fallback)"""
         try:
             llm_config = self.config.get('llm', {}).get(provider_type, {})
-            
+
             if not llm_config.get('provider'):
                 return {
                     'status': 'error',
@@ -228,9 +227,9 @@ class SystemStatusManager:
                     'details': f'No {provider_type} LLM provider configured',
                     'timestamp': datetime.now()
                 }
-            
+
             provider = llm_config['provider']
-            
+
             if provider == 'ollama':
                 return self._check_ollama_status(llm_config, provider_type)
             elif provider in ['openai', 'anthropic', 'xai', 'google', 'groq']:
@@ -242,7 +241,7 @@ class SystemStatusManager:
                     'details': f'Provider {provider} not recognized',
                     'timestamp': datetime.now()
                 }
-                
+
         except Exception as e:
             return {
                 'status': 'error',
@@ -250,20 +249,20 @@ class SystemStatusManager:
                 'details': str(e),
                 'timestamp': datetime.now()
             }
-    
-    def _check_ollama_status(self, llm_config: Dict, provider_type: str) -> Dict[str, Any]:
+
+    def _check_ollama_status(self, llm_config: dict, provider_type: str) -> dict[str, Any]:
         """Check Ollama server status"""
         try:
             host = llm_config.get('ollama', {}).get('host', 'http://localhost:11434')
             model = llm_config.get('ollama', {}).get('model', 'unknown')
-            
+
             # Check if Ollama server is running
             response = requests.get(f"{host}/api/tags", timeout=5)
-            
+
             if response.status_code == 200:
                 models = response.json().get('models', [])
                 model_names = [m['name'] for m in models]
-                
+
                 if model in model_names:
                     return {
                         'status': 'ok',
@@ -285,7 +284,7 @@ class SystemStatusManager:
                     'details': f'Server responded with status {response.status_code}',
                     'timestamp': datetime.now()
                 }
-                
+
         except requests.exceptions.ConnectionError:
             return {
                 'status': 'error',
@@ -300,15 +299,15 @@ class SystemStatusManager:
                 'details': 'Ollama server is responding slowly',
                 'timestamp': datetime.now()
             }
-    
-    def _check_api_llm_status(self, llm_config: Dict, provider_type: str) -> Dict[str, Any]:
+
+    def _check_api_llm_status(self, llm_config: dict, provider_type: str) -> dict[str, Any]:
         """Check API-based LLM provider status"""
         provider = llm_config['provider']
         provider_config = llm_config.get(provider, {})
-        
+
         api_key = provider_config.get('api_key')
         model = provider_config.get('model', 'unknown')
-        
+
         if not api_key:
             return {
                 'status': 'error',
@@ -316,7 +315,7 @@ class SystemStatusManager:
                 'details': f'No API key configured for {provider}',
                 'timestamp': datetime.now()
             }
-        
+
         # Just check that configuration is present - actual API calls would be expensive
         return {
             'status': 'ok',
@@ -324,12 +323,12 @@ class SystemStatusManager:
             'details': f'API key configured for {provider}',
             'timestamp': datetime.now()
         }
-    
-    def check_audio_enhancement(self) -> Dict[str, Any]:
+
+    def check_audio_enhancement(self) -> dict[str, Any]:
         """Check audio enhancement availability"""
         try:
             method = self.config.get('audio_enhancement_method', 'none')
-            
+
             if method == 'none':
                 return {
                     'status': 'warning',
@@ -337,11 +336,11 @@ class SystemStatusManager:
                     'details': 'Set audio_enhancement_method in config to enable',
                     'timestamp': datetime.now()
                 }
-            
+
             # Check if required packages are available
             if method == 'deepfilternet':
                 try:
-                    import deepfilternet
+                    import df  # DeepFilterNet uses 'df' package name
                     return {
                         'status': 'ok',
                         'message': 'DeepFilterNet ready',
@@ -355,7 +354,7 @@ class SystemStatusManager:
                         'details': 'Install with: pip install deepfilternet',
                         'timestamp': datetime.now()
                     }
-            
+
             elif method == 'resemble_enhance':
                 try:
                     import resemble_enhance
@@ -372,7 +371,7 @@ class SystemStatusManager:
                         'details': 'Install Resemble Enhance package',
                         'timestamp': datetime.now()
                     }
-            
+
             else:
                 return {
                     'status': 'warning',
@@ -380,7 +379,7 @@ class SystemStatusManager:
                     'details': 'Check audio_enhancement_method in config',
                     'timestamp': datetime.now()
                 }
-                
+
         except Exception as e:
             return {
                 'status': 'error',
@@ -388,12 +387,12 @@ class SystemStatusManager:
                 'details': str(e),
                 'timestamp': datetime.now()
             }
-    
-    def check_local_storage(self) -> Dict[str, Any]:
+
+    def check_local_storage(self) -> dict[str, Any]:
         """Check local storage status and capacity"""
         try:
             output_dir = self.output_directory
-            
+
             if not output_dir.exists():
                 return {
                     'status': 'warning',
@@ -401,11 +400,11 @@ class SystemStatusManager:
                     'details': f'Directory will be created: {output_dir}',
                     'timestamp': datetime.now()
                 }
-            
+
             # Count local sermons
             sermon_dirs = [d for d in output_dir.iterdir() if d.is_dir()]
             local_count = len(sermon_dirs)
-            
+
             # Calculate total size
             total_size = 0
             audio_files = 0
@@ -415,30 +414,30 @@ class SystemStatusManager:
                         total_size += file_path.stat().st_size
                         if file_path.suffix.lower() == '.mp3':
                             audio_files += 1
-            
+
             total_size_gb = total_size / (1024 * 1024 * 1024)
-            
+
             # Check available disk space
             import shutil
             total, used, free = shutil.disk_usage(output_dir)
             free_gb = free / (1024 * 1024 * 1024)
-            
+
             details = f"{local_count} sermons, {audio_files} audio files, {total_size_gb:.1f}GB used, {free_gb:.1f}GB free"
-            
+
             if free_gb < 1.0:  # Less than 1GB free
                 status = 'warning'
                 message = 'Low disk space'
             else:
                 status = 'ok'
                 message = f'{local_count} local sermons'
-            
+
             return {
                 'status': status,
                 'message': message,
                 'details': details,
                 'timestamp': datetime.now()
             }
-            
+
         except Exception as e:
             return {
                 'status': 'error',
@@ -446,12 +445,12 @@ class SystemStatusManager:
                 'details': str(e),
                 'timestamp': datetime.now()
             }
-    
-    def check_processing_queue(self) -> Dict[str, Any]:
+
+    def check_processing_queue(self) -> dict[str, Any]:
         """Check processing queue status"""
         try:
             repo = SermonRepository()
-            
+
             with repo.db.get_connection() as conn:
                 # Count sermons by status
                 status_counts = conn.execute("""
@@ -459,20 +458,20 @@ class SystemStatusManager:
                     FROM sermons
                     GROUP BY status
                 """).fetchall()
-                
+
                 # Count pending processing tasks
                 pending_count = conn.execute("""
                     SELECT COUNT(*) as count
                     FROM processing_status
                     WHERE status IN ('pending', 'processing')
                 """).fetchone()
-            
+
             status_dict = {row['status']: row['count'] for row in status_counts}
             pending = pending_count['count'] if pending_count else 0
-            
+
             processing = status_dict.get('processing', 0)
             failed = status_dict.get('failed', 0)
-            
+
             if processing > 0:
                 status = 'processing'
                 message = f'{processing} sermons processing'
@@ -485,16 +484,16 @@ class SystemStatusManager:
             else:
                 status = 'ok'
                 message = 'No active processing'
-            
+
             details = f"Processing: {processing}, Pending: {pending}, Failed: {failed}"
-            
+
             return {
                 'status': status,
                 'message': message,
                 'details': details,
                 'timestamp': datetime.now()
             }
-            
+
         except Exception as e:
             return {
                 'status': 'error',
@@ -502,21 +501,21 @@ class SystemStatusManager:
                 'details': str(e),
                 'timestamp': datetime.now()
             }
-    
-    def check_system_resources(self) -> Dict[str, Any]:
+
+    def check_system_resources(self) -> dict[str, Any]:
         """Check system resource availability"""
         try:
             import psutil
-            
+
             # CPU and memory usage
             cpu_percent = psutil.cpu_percent(interval=1)
             memory = psutil.virtual_memory()
             memory_percent = memory.percent
-            
+
             # GPU availability (if CUDA available)
             gpu_available = False
             gpu_info = "Not available"
-            
+
             try:
                 import torch
                 if torch.cuda.is_available():
@@ -526,23 +525,23 @@ class SystemStatusManager:
                     gpu_info = f"{gpu_count} GPU(s) - {gpu_name}"
             except ImportError:
                 pass
-            
+
             details = f"CPU: {cpu_percent:.1f}%, Memory: {memory_percent:.1f}%, GPU: {gpu_info}"
-            
+
             if cpu_percent > 90 or memory_percent > 90:
                 status = 'warning'
                 message = 'High resource usage'
             else:
                 status = 'ok'
                 message = 'Resources available'
-            
+
             return {
                 'status': status,
                 'message': message,
                 'details': details,
                 'timestamp': datetime.now()
             }
-            
+
         except ImportError:
             return {
                 'status': 'warning',
@@ -561,22 +560,22 @@ class SystemStatusManager:
 # Global instance
 _status_manager = None
 
-def get_status_manager(config: Optional[Dict[str, Any]] = None) -> SystemStatusManager:
+def get_status_manager(config: dict[str, Any] | None = None) -> SystemStatusManager:
     """Get global status manager instance"""
     global _status_manager
-    
+
     if _status_manager is None:
         if config is None:
             # Load default config
             try:
                 import yaml
-                with open('config.yaml', 'r') as f:
+                with open('config.yaml') as f:
                     config = yaml.safe_load(f)
             except FileNotFoundError:
                 config = {}
-        
+
         _status_manager = SystemStatusManager(config)
-    
+
     return _status_manager
 
 def get_status_emoji(status: str) -> str:

@@ -57,7 +57,7 @@ uv venv --python 3.11
 source .venv/bin/activate
 
 # Install dependencies
-uv pip install -r requirements-linux.txt
+uv pip install -r requirements/requirements-linux.txt
 ```
 
 ### Using Standard Python
@@ -70,10 +70,10 @@ source .venv/bin/activate
 pip install --upgrade pip
 
 # Install dependencies (GPU support)
-pip install -r requirements-linux.txt
+pip install -r requirements/requirements-linux.txt
 
 # OR for CPU-only
-pip install -r requirements-cpu.txt
+pip install -r requirements/requirements-cpu.txt
 ```
 
 ## Platform-Specific Installation
@@ -84,7 +84,7 @@ pip install -r requirements-cpu.txt
 pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cu121
 
 # Install remaining dependencies
-pip install -r requirements.txt
+pip install -r requirements/requirements.txt
 ```
 
 ### CPU-Only Installation
@@ -93,7 +93,7 @@ pip install -r requirements.txt
 pip install torch torchaudio torchvision --index-url https://download.pytorch.org/whl/cpu
 
 # Install remaining dependencies  
-pip install -r requirements.txt
+pip install -r requirements/requirements.txt
 ```
 
 ## Verification
@@ -138,7 +138,7 @@ python -c "from resemble_enhance.enhancer.inference import denoise; print('Resem
    # Don't use sudo with pip, use virtual environment
    python3 -m venv .venv
    source .venv/bin/activate
-   pip install -r requirements.txt
+   pip install -r requirements/requirements.txt
    ```
 
 4. **Build failures**:
@@ -147,7 +147,7 @@ python -c "from resemble_enhance.enhancer.inference import denoise; print('Resem
    sudo apt install -y build-essential python3-dev
    
    # Or use pre-compiled wheels
-   pip install --only-binary=all -r requirements.txt
+   pip install --only-binary=all -r requirements/requirements.txt
    ```
 
 ## Performance Optimization
@@ -169,7 +169,7 @@ export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 
 ```bash
 # Install development dependencies
-pip install -r requirements-dev.txt
+pip install -r requirements/requirements-dev.txt
 
 # Run tests
 python -m pytest tests/ -v
