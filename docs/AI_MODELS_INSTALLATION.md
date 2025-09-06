@@ -6,10 +6,10 @@ First, install the base dependencies:
 
 ```bash
 # Install core dependencies
-uv pip install -r requirements.txt
+uv pip install -r requirements/requirements.txt
 
 # OR using pip
-pip install -r requirements.txt
+pip install -r requirements/requirements.txt
 ```
 
 ## AI Model Installation

@@ -275,7 +275,7 @@ if sermon['processing_info']['qa_segments']:
 
 ## 📋 Dependencies
 
-Updated `requirements.txt` includes:
+Updated `requirements/requirements.txt` includes:
 - **Core**: numpy, scipy, soundfile, pandas, plotly
 - **UI**: streamlit, reportlab (PDF generation)
 - **Database**: sqlite-fts4 (full-text search)
@@ -285,7 +285,7 @@ Updated `requirements.txt` includes:
 
 1. **Install dependencies:**
    ```bash
-   pip install -r requirements.txt
+   pip install -r requirements/requirements.txt
    ```
 
 2. **Configure Q&A normalization:**

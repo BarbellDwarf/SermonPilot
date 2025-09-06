@@ -1,5 +1,5 @@
 # CPU-only requirements (for servers without GPU or testing)
-# Install with: pip install -r requirements-cpu.txt
+# Install with: pip install -r requirements/requirements-cpu.txt
 
 # Use PyTorch CPU-only index
 --extra-index-url https://download.pytorch.org/whl/cpu

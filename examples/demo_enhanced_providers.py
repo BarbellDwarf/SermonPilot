@@ -6,6 +6,7 @@ This script shows how easy it is to switch between different LLM providers.
 
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 from llm_manager import LLMManager
@@ -13,10 +14,10 @@ from llm_manager import LLMManager
 
 def demo_provider_switching():
     """Demonstrate switching between different provider configurations."""
-    
+
     print("🎯 Enhanced LLM Provider Configuration Demo")
     print("=" * 60)
-    
+
     # Example configurations for each provider type
     provider_configs = {
         "OpenAI": {
@@ -86,27 +87,27 @@ def demo_provider_switching():
             }
         }
     }
-    
+
     print("🚀 Initializing providers...")
     print()
-    
+
     for provider_name, config in provider_configs.items():
         try:
             llm_manager = LLMManager(config)
             provider_info = llm_manager.get_provider_info()
             primary = provider_info.get('primary', {})
-            
+
             print(f"✅ {provider_name}")
             print(f"   Provider Type: {primary.get('type', 'unknown')}")
             print(f"   Model: {primary.get('model', 'unknown')}")
-            
+
             # Show base URL for OpenAI-compatible providers
             if hasattr(llm_manager.primary_provider, 'base_url'):
                 base_url = llm_manager.primary_provider.base_url
                 if base_url:
                     print(f"   Base URL: {base_url}")
             print()
-            
+
         except Exception as e:
             print(f"❌ {provider_name}: {e}")
             print()
@@ -114,10 +115,10 @@ def demo_provider_switching():
 
 def demo_fallback_scenarios():
     """Demonstrate different fallback scenarios."""
-    
+
     print("🔄 Fallback Scenarios Demo")
     print("=" * 40)
-    
+
     fallback_scenarios = [
         {
             "name": "High-end → Budget",
@@ -180,21 +181,21 @@ def demo_fallback_scenarios():
             }
         }
     ]
-    
+
     for scenario in fallback_scenarios:
         try:
             llm_manager = LLMManager(scenario['config'])
             provider_info = llm_manager.get_provider_info()
-            
+
             primary = provider_info.get('primary', {})
             fallback = provider_info.get('fallback', {})
-            
+
             print(f"✅ {scenario['name']}")
             print(f"   {scenario['description']}")
             print(f"   Primary: {primary.get('type')} ({primary.get('model')})")
             print(f"   Fallback: {fallback.get('type')} ({fallback.get('model')})")
             print()
-            
+
         except Exception as e:
             print(f"❌ {scenario['name']}: {e}")
             print()
@@ -202,10 +203,10 @@ def demo_fallback_scenarios():
 
 def demo_configuration_comparison():
     """Show the difference between old and new configuration styles."""
-    
+
     print("📋 Configuration Style Comparison")
     print("=" * 50)
-    
+
     print("🔴 OLD WAY (still supported for backward compatibility):")
     print("""
 llm:
@@ -216,7 +217,7 @@ llm:
       model: "grok-beta"
       base_url: "https://api.x.ai/v1"  # Had to remember this!
 """)
-    
+
     print("🟢 NEW WAY (cleaner and more intuitive):")
     print("""
 llm:
@@ -227,7 +228,7 @@ llm:
       # model defaults to grok-beta
       # base_url automatically set to https://api.x.ai/v1
 """)
-    
+
     print("✨ Benefits of the new approach:")
     print("   • Intuitive provider names (anthropic, xai, google, groq)")
     print("   • Smart defaults for models and endpoints")
@@ -240,7 +241,7 @@ if __name__ == "__main__":
     demo_provider_switching()
     demo_fallback_scenarios()
     demo_configuration_comparison()
-    
+
     print("🎉 Demo completed!")
     print()
     print("💡 To use these providers in your own configuration:")

@@ -9,27 +9,23 @@ Provides RESTful endpoints for:
 """
 
 import asyncio
-import json
 import logging
-import mimetypes
-import os
+import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any
-import sys
+from typing import Any
 
 # Add parent directory to path for imports
 parent_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(parent_dir))
 sys.path.insert(0, str(parent_dir / "src"))
 
-from flask import Flask, request, jsonify, send_file, Response
-from flask_cors import CORS
 import yaml
-
-from sermon_manager import get_sermon_manager, SermonData, SermonDetails
 from analytics_manager import get_analytics_manager
-from database import SermonRepository, get_db
+from database import SermonRepository
+from flask import Flask, jsonify, request, send_file
+from flask_cors import CORS
+from sermon_manager import get_sermon_manager
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +35,7 @@ CORS(app)  # Enable CORS for all routes
 
 # Load configuration
 try:
-    with open('config.yaml', 'r') as f:
+    with open('config.yaml') as f:
         config = yaml.safe_load(f)
 except FileNotFoundError:
     config = {}
@@ -66,7 +62,7 @@ async def list_sermons():
     try:
         # Parse query parameters
         filters = {}
-        
+
         if request.args.get('speaker'):
             filters['speaker'] = request.args.get('speaker')
         if request.args.get('event_type'):
@@ -83,10 +79,10 @@ async def list_sermons():
             filters['remote_only'] = True
         if request.args.get('limit'):
             filters['limit'] = int(request.args.get('limit'))
-        
+
         # Get sermons
         sermons = await sermon_manager.get_sermon_list(filters)
-        
+
         # Convert to JSON-serializable format
         sermon_list = []
         for sermon in sermons:
@@ -107,13 +103,13 @@ async def list_sermons():
                 'has_transcript': bool(sermon.transcript)
             }
             sermon_list.append(sermon_dict)
-        
+
         return jsonify({
             'sermons': sermon_list,
             'total': len(sermon_list),
             'filters_applied': filters
         })
-        
+
     except Exception as e:
         logger.error(f"Error listing sermons: {e}")
         return jsonify({'error': str(e)}), 500
@@ -123,10 +119,10 @@ async def get_sermon(sermon_id: str):
     """Get detailed information for a specific sermon"""
     try:
         sermon_details = await sermon_manager.get_sermon_details(sermon_id)
-        
+
         if not sermon_details:
             return jsonify({'error': 'Sermon not found'}), 404
-        
+
         # Convert to JSON-serializable format
         result = {
             'sermon': {
@@ -154,9 +150,9 @@ async def get_sermon(sermon_id: str):
             'content': sermon_details.content,
             'files': sermon_details.files
         }
-        
+
         return jsonify(result)
-        
+
     except Exception as e:
         logger.error(f"Error getting sermon {sermon_id}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -166,10 +162,10 @@ async def update_sermon(sermon_id: str):
     """Update sermon metadata and content"""
     try:
         data = request.get_json()
-        
+
         if not data:
             return jsonify({'error': 'No data provided'}), 400
-        
+
         # Update sermon in database
         updates = {}
         if 'title' in data:
@@ -186,16 +182,16 @@ async def update_sermon(sermon_id: str):
             updates['event_type'] = data['event_type']
         if 'bible_text' in data:
             updates['bible_text'] = data['bible_text']
-        
+
         # Update in database
         repo.update_sermon(sermon_id, updates)
-        
+
         # Invalidate caches
         sermon_manager._sermon_list_cache = None
         analytics_manager.invalidate_cache()
-        
+
         return jsonify({'success': True, 'message': 'Sermon updated successfully'})
-        
+
     except Exception as e:
         logger.error(f"Error updating sermon {sermon_id}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -206,7 +202,7 @@ async def upload_sermon_changes(sermon_id: str):
     try:
         # This would integrate with SermonAudio's update API
         # For now, just mark as uploaded in local database
-        
+
         repo.update_sermon(sermon_id, {
             'status': 'uploaded',
             'upload_info': {
@@ -214,15 +210,15 @@ async def upload_sermon_changes(sermon_id: str):
                 'upload_status': 'success'
             }
         })
-        
+
         # Invalidate caches
         sermon_manager._sermon_list_cache = None
-        
+
         return jsonify({
-            'success': True, 
+            'success': True,
             'message': 'Sermon uploaded to SermonAudio successfully'
         })
-        
+
     except Exception as e:
         logger.error(f"Error uploading sermon {sermon_id}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -234,7 +230,7 @@ async def get_dashboard_analytics():
     """Get comprehensive dashboard analytics"""
     try:
         analytics = await analytics_manager.get_dashboard_analytics()
-        
+
         # Convert to JSON-serializable format
         result = {
             'total_sermons': analytics.total_sermons,
@@ -261,9 +257,9 @@ async def get_dashboard_analytics():
             'growth_metrics': analytics.growth_metrics,
             'last_updated': analytics.last_updated.isoformat()
         }
-        
+
         return jsonify(result)
-        
+
     except Exception as e:
         logger.error(f"Error getting dashboard analytics: {e}")
         return jsonify({'error': str(e)}), 500
@@ -273,10 +269,10 @@ async def get_sermon_analytics(sermon_id: str):
     """Get analytics for a specific sermon"""
     try:
         analytics = await analytics_manager.get_sermon_analytics(sermon_id)
-        
+
         if not analytics:
             return jsonify({'error': 'Analytics not found for sermon'}), 404
-        
+
         # Convert to JSON-serializable format
         result = {
             'sermon_id': analytics.sermon_id,
@@ -304,9 +300,9 @@ async def get_sermon_analytics(sermon_id: str):
             'device_breakdown': analytics.device_breakdown,
             'last_updated': analytics.last_updated.isoformat()
         }
-        
+
         return jsonify(result)
-        
+
     except Exception as e:
         logger.error(f"Error getting sermon analytics for {sermon_id}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -318,21 +314,21 @@ def stream_original_audio(sermon_id: str):
     """Stream original audio file"""
     try:
         sermon_details = asyncio.run(sermon_manager.get_sermon_details(sermon_id))
-        
+
         if not sermon_details:
             return jsonify({'error': 'Sermon not found'}), 404
-        
+
         audio_path = sermon_details.sermon_data.audio_files.original
         if not audio_path or not Path(audio_path).exists():
             return jsonify({'error': 'Original audio file not found'}), 404
-        
+
         return send_file(
             audio_path,
             mimetype='audio/mpeg',
             as_attachment=False,
             download_name=f"{sermon_details.sermon_data.title}_original.mp3"
         )
-        
+
     except Exception as e:
         logger.error(f"Error streaming original audio for {sermon_id}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -342,21 +338,21 @@ def stream_enhanced_audio(sermon_id: str):
     """Stream enhanced/processed audio file"""
     try:
         sermon_details = asyncio.run(sermon_manager.get_sermon_details(sermon_id))
-        
+
         if not sermon_details:
             return jsonify({'error': 'Sermon not found'}), 404
-        
+
         audio_path = sermon_details.sermon_data.audio_files.processed
         if not audio_path or not Path(audio_path).exists():
             return jsonify({'error': 'Enhanced audio file not found'}), 404
-        
+
         return send_file(
             audio_path,
             mimetype='audio/mpeg',
             as_attachment=False,
             download_name=f"{sermon_details.sermon_data.title}_enhanced.mp3"
         )
-        
+
     except Exception as e:
         logger.error(f"Error streaming enhanced audio for {sermon_id}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -366,18 +362,18 @@ def get_transcript(sermon_id: str):
     """Get sermon transcript"""
     try:
         sermon_details = asyncio.run(sermon_manager.get_sermon_details(sermon_id))
-        
+
         if not sermon_details:
             return jsonify({'error': 'Sermon not found'}), 404
-        
+
         transcript = sermon_details.content.get('transcript_text', '')
-        
+
         return jsonify({
             'transcript': transcript,
             'sermon_id': sermon_id,
             'title': sermon_details.sermon_data.title
         })
-        
+
     except Exception as e:
         logger.error(f"Error getting transcript for {sermon_id}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -387,13 +383,13 @@ def update_transcript(sermon_id: str):
     """Update sermon transcript"""
     try:
         data = request.get_json()
-        
+
         if not data or 'transcript' not in data:
             return jsonify({'error': 'Transcript content required'}), 400
-        
+
         # Update transcript in database
         repo.update_sermon(sermon_id, {'transcript': data['transcript']})
-        
+
         # Also save to transcript file if it exists
         sermon_dir = Path(config.get('output_directory', 'processed_sermons')) / sermon_id
         if sermon_dir.exists():
@@ -402,12 +398,12 @@ def update_transcript(sermon_id: str):
                 transcript_file.write_text(data['transcript'], encoding='utf-8')
             except Exception as e:
                 logger.warning(f"Could not save transcript file for {sermon_id}: {e}")
-        
+
         # Invalidate caches
         sermon_manager._sermon_list_cache = None
-        
+
         return jsonify({'success': True, 'message': 'Transcript updated successfully'})
-        
+
     except Exception as e:
         logger.error(f"Error updating transcript for {sermon_id}: {e}")
         return jsonify({'error': str(e)}), 500
@@ -425,27 +421,27 @@ def get_system_status():
             'audio_enhancement': _check_audio_enhancement(),
             'local_storage': _check_local_storage()
         }
-        
+
         return jsonify(status)
-        
+
     except Exception as e:
         logger.error(f"Error getting system status: {e}")
         return jsonify({'error': str(e)}), 500
 
-def _check_sermonaudio_api() -> Dict[str, Any]:
+def _check_sermonaudio_api() -> dict[str, Any]:
     """Check SermonAudio API connection"""
     try:
         if not config.get('api_key') or not config.get('broadcaster_id'):
             return {'status': 'error', 'message': 'API credentials not configured'}
-        
+
         # Test API connection (simplified)
         # In a real implementation, this would make a test API call
         return {'status': 'ok', 'message': 'API connected'}
-        
+
     except Exception as e:
         return {'status': 'error', 'message': str(e)}
 
-def _check_database() -> Dict[str, Any]:
+def _check_database() -> dict[str, Any]:
     """Check database connection"""
     try:
         stats = repo.get_processing_stats()
@@ -453,7 +449,7 @@ def _check_database() -> Dict[str, Any]:
     except Exception as e:
         return {'status': 'error', 'message': str(e)}
 
-def _check_llm_provider() -> Dict[str, Any]:
+def _check_llm_provider() -> dict[str, Any]:
     """Check LLM provider status"""
     try:
         # This would check the actual LLM connection
@@ -463,7 +459,7 @@ def _check_llm_provider() -> Dict[str, Any]:
     except Exception as e:
         return {'status': 'error', 'message': str(e)}
 
-def _check_audio_enhancement() -> Dict[str, Any]:
+def _check_audio_enhancement() -> dict[str, Any]:
     """Check audio enhancement availability"""
     try:
         method = config.get('audio_enhancement_method', 'none')
@@ -473,13 +469,13 @@ def _check_audio_enhancement() -> Dict[str, Any]:
     except Exception as e:
         return {'status': 'error', 'message': str(e)}
 
-def _check_local_storage() -> Dict[str, Any]:
+def _check_local_storage() -> dict[str, Any]:
     """Check local storage status"""
     try:
         output_dir = Path(config.get('output_directory', 'processed_sermons'))
         if not output_dir.exists():
             return {'status': 'warning', 'message': 'Output directory does not exist'}
-        
+
         # Count local sermons
         local_count = len([d for d in output_dir.iterdir() if d.is_dir()])
         return {'status': 'ok', 'message': f"{local_count} local sermons"}
@@ -495,7 +491,7 @@ def health_check():
 if __name__ == '__main__':
     # Configure logging
     logging.basicConfig(level=logging.INFO)
-    
+
     # Run the Flask app
     app.run(
         host='0.0.0.0',

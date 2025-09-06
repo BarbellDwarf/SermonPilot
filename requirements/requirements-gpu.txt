@@ -1,0 +1,68 @@
+# GPU-enabled requirements for SermonAudio AI Audio Processor
+# This file installs GPU-accelerated versions of PyTorch and related packages
+# Install with: pip install -r requirements/requirements-gpu.txt
+
+# GPU-enabled PyTorch (CUDA 12.1 support)
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+# Core dependencies from base requirements
+-r requirements.txt
+
+# GPU-specific overrides for PyTorch ecosystem
+# These will override the CPU versions from requirements.txt
+torch==2.1.1+cu121
+torchaudio==2.1.1+cu121
+torchvision==0.16.1+cu121
+
+# Additional GPU-accelerated packages
+nvidia-ml-py3>=7.352.0  # For GPU monitoring and management
+pynvml>=11.4.1  # NVIDIA Management Library for Python
+
+# Enhanced AI models that benefit from GPU acceleration
+# DeepFilterNet with CUDA support
+deepfilternet>=0.5.6
+
+# Additional GPU-accelerated audio/ML packages (optional)
+# Uncomment if needed for enhanced performance:
+
+# # CuPy for GPU-accelerated NumPy operations
+# cupy-cuda12x>=12.0.0
+
+# # GPU-accelerated SciPy operations
+# cupy-cuda12x[complete]>=12.0.0
+
+# # TensorFlow GPU (if using TF-based models)
+# tensorflow[and-cuda]>=2.14.0
+
+# # JAX with CUDA support (for advanced ML models)
+# jax[cuda12_pip]>=0.4.0
+
+# # Faster GPU-accelerated resampling
+# julius>=0.2.7
+
+# # GPU-accelerated spectrogram computation
+# nnAudio>=0.3.0
+
+# Performance monitoring and profiling
+gpustat>=1.1.1  # GPU utilization monitoring
+py3nvml>=0.2.7  # GPU memory monitoring
+
+# Memory management utilities for GPU workloads
+accelerate>=0.21.0  # Hugging Face accelerate for memory management
+bitsandbytes>=0.41.0  # 8-bit and 4-bit quantization support
+
+# Note: This configuration prioritizes GPU acceleration while maintaining
+# compatibility with CPU fallback if GPU is not available.
+# 
+# Requirements installation order:
+# 1. Install GPU-enabled PyTorch from CUDA index
+# 2. Install base requirements (will skip PyTorch as already installed)
+# 3. Install GPU-specific monitoring and optimization tools
+#
+# For systems without compatible GPU, use requirements-cpu.txt instead.
+
+# Compatibility notes:
+# - Requires NVIDIA GPU with CUDA Compute Capability 3.5+
+# - Requires CUDA 12.1 or compatible driver
+# - Minimum 4GB GPU memory recommended
+# - For optimal performance: 8GB+ GPU memory recommended

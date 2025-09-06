@@ -2,13 +2,20 @@
 Analytics Page for SermonAudio Processor
 
 Displays processing metrics, success rates, content analysis, cost tracking,
-and performance charts with interactive visualizations.
+performance charts with interactive visualizations, and SermonAudio analytics.
 """
 
 import streamlit as st
 import pandas as pd
 import datetime
 import json
+
+# Import the new analytics chat interface
+try:
+    from ui.analytics_chat import render_analytics_chat_tab
+    ANALYTICS_CHAT_AVAILABLE = True
+except ImportError:
+    ANALYTICS_CHAT_AVAILABLE = False
 
 def show_analytics():
     """Main analytics interface"""
@@ -19,24 +26,38 @@ def show_analytics():
         return
     
     # Analytics tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 Processing Metrics", 
-        "📝 Content Analysis", 
-        "💰 Cost Tracking", 
-        "⚡ Performance"
-    ])
-    
+    if ANALYTICS_CHAT_AVAILABLE:
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "📊 Processing Metrics",
+            "📝 Content Analysis",
+            "💰 Cost Tracking",
+            "⚡ Performance",
+            "🎙️ SermonAudio Analytics"
+        ])
+    else:
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "📊 Processing Metrics",
+            "📝 Content Analysis",
+            "💰 Cost Tracking",
+            "⚡ Performance"
+        ])
+
     with tab1:
         show_processing_metrics()
-    
+
     with tab2:
         show_content_analysis()
-    
+
     with tab3:
         show_cost_tracking()
-    
+
     with tab4:
         show_performance_metrics()
+
+    # SermonAudio Analytics tab (if available)
+    if ANALYTICS_CHAT_AVAILABLE:
+        with tab5:
+            render_analytics_chat_tab()
 
 def show_processing_metrics():
     """Processing statistics and success rates"""
@@ -76,21 +97,21 @@ def show_processing_metrics():
         show_processing_time_trend(metrics_data)
 
 def show_content_analysis():
-    """Content and speaker analysis"""
+    """Show content analysis and speaker metrics"""
     st.markdown("### 📝 Content Analysis")
     
-    # Content metrics
+    # Get content data
     content_data = get_real_content_data()
     
     # Speaker activity
     st.markdown("#### 👤 Speaker Activity")
     
-    speaker_stats = content_data['speaker_stats']
+    speaker_stats = content_data.get('speaker_stats', [])
     
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        st.markdown("**Speaker Processing Volume (Last 30 Days)**")
+        st.markdown("**Speaker Processing Volume (Validated/Processed Sermons)**")
         if speaker_stats:
             df_speakers = pd.DataFrame(speaker_stats)
             if 'speaker' in df_speakers.columns and 'sermons_processed' in df_speakers.columns:
@@ -104,8 +125,9 @@ def show_content_analysis():
         st.markdown("**Top Speakers**")
         if speaker_stats:
             for speaker in speaker_stats[:5]:
+                speaker_name = str(speaker.get('speaker', 'Unknown'))
                 st.metric(
-                    speaker['speaker'], 
+                    speaker_name,
                     f"{speaker['sermons_processed']} sermons",
                     f"{speaker['avg_quality_score']:.1f} quality"
                 )
@@ -115,34 +137,46 @@ def show_content_analysis():
     # Event type distribution
     st.markdown("#### 📅 Event Type Distribution")
     
-    event_data = content_data['event_types']
+    event_data = content_data.get('event_types', [])
     
     col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("**Event Type Breakdown**")
-        if event_data:
+        if event_data and isinstance(event_data, list):
             for event in event_data:
-                st.write(f"• {event['event_type']}: {event['count']} ({event['percentage']:.1f}%)")
+                if isinstance(event, dict):
+                    percentage = event.get('percentage', 0.0)  # Default to 0 if missing
+                    event_type = event.get('event_type', 'Unknown')
+                    count = event.get('count', 0)
+                    st.write(f"• {event_type}: {count} ({percentage:.1f}%)")
+                else:
+                    st.write(f"• Invalid event data: {event}")
         else:
             st.info("No event type data available yet")
     
     with col2:
         st.markdown("**Quality by Event Type**")
-        if event_data:
+        if event_data and isinstance(event_data, list):
             for event in event_data:
-                st.metric(
-                    event['event_type'],
-                    f"{event['avg_quality']:.1f}/10",
-                    f"{event['success_rate']:.1f}% success"
-                )
+                if isinstance(event, dict):
+                    event_type = event.get('event_type', 'Unknown') or 'Unknown'
+                    avg_quality = event.get('avg_quality', 0.0)
+                    success_rate = event.get('success_rate', 0.0)
+                    st.metric(
+                        str(event_type),
+                        f"{avg_quality:.1f}/10",
+                        f"{success_rate:.1f}% success"
+                    )
+                else:
+                    st.write(f"• Invalid event data: {event}")
         else:
             st.info("No quality metrics available yet")
-    
+                
     # Content quality trends
     st.markdown("#### ✅ Content Quality Trends")
     
-    quality_data = content_data['quality_trends']
+    quality_data = content_data.get('quality_trends', [])
     
     if quality_data:
         df_quality = pd.DataFrame(quality_data)
@@ -203,21 +237,39 @@ def show_cost_tracking():
     with col1:
         st.markdown("**Usage by Provider**")
         for provider in provider_data:
-            st.write(f"**{provider['name']}**")
-            st.write(f"• Calls: {provider['calls']:,}")
-            st.write(f"• Cost: ${provider['cost']:.2f}")
-            st.write(f"• Usage: {provider['percentage']:.1f}%")
+            st.write(f"**{provider.get('name', 'Unknown')}**")
+            st.write(f"• Calls: {provider.get('calls', 0):,}")
+            st.write(f"• Cost: ${provider.get('cost', 0.0):.2f}")
+            st.write(f"• Usage: {provider.get('percentage', 0.0):.1f}%")
             st.write("")
     
     with col2:
         st.markdown("**Cost Trends (Last 30 Days)**")
-        # Mock cost trend chart
-        dates = pd.date_range(start=datetime.date.today() - datetime.timedelta(days=29), 
-                             end=datetime.date.today(), freq='D')
-        costs = [cost_data['total_cost'] * (0.8 + 0.4 * i / len(dates)) for i in range(len(dates))]
         
-        df_costs = pd.DataFrame({'date': dates, 'daily_cost': costs})
-        st.line_chart(df_costs.set_index('date'))
+        # Get real cost trend data from database
+        try:
+            import sys
+            from pathlib import Path
+            sys.path.insert(0, str(Path(__file__).parent.parent))
+            from database import get_db
+            
+            db = get_db()
+            usage_summary = db.get_llm_usage_summary(days=30)
+            daily_costs = usage_summary.get('daily_costs', [])
+            
+            if daily_costs:
+                df_costs = pd.DataFrame(daily_costs)
+                if 'date' in df_costs.columns and 'daily_cost' in df_costs.columns:
+                    df_costs['date'] = pd.to_datetime(df_costs['date'])
+                    st.line_chart(df_costs.set_index('date')['daily_cost'])
+                else:
+                    st.info("No cost trend data available yet")
+            else:
+                st.info("No cost data recorded yet")
+                
+        except Exception:
+            # Fallback to no data message
+            st.info("Cost tracking not yet available")
     
     # Model usage details
     st.markdown("#### 🔧 Model Usage Details")
@@ -555,85 +607,122 @@ def get_real_content_data():
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from database import get_db
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-        from sermon_updater import SermonUpdater
+        from database import get_db, SermonRepository
         
         db = get_db()
+        repo = SermonRepository(db)
         
         # Get processing status data
         processing_data = db.get_processing_status()
         
-        # Try to get speaker data from SermonAudio API
+        # Get all validated/interacted sermons from database
+        validated_sermon_ids = get_validated_sermon_ids(db)
+        
+        # Create analytics from validated/processed sermons
         speaker_list = []
-        try:
-            config = st.session_state.get('config', {})
-            if config.get('api_key') and config.get('broadcaster_id'):
-                sermon_updater = SermonUpdater(config)
-                from datetime import datetime, timedelta
-                end_date = datetime.now()
-                start_date = end_date - timedelta(days=30)
-                recent_sermons = sermon_updater.get_sermons_in_date_range(start_date, end_date)
-                
-                # Group by speaker from API data
-                speaker_stats = {}
-                for sermon in recent_sermons:
-                    speaker = sermon.get('speaker', sermon.get('preacher', 'Unknown Speaker'))
-                    if speaker not in speaker_stats:
-                        speaker_stats[speaker] = {'count': 0, 'scores': []}
-                    speaker_stats[speaker]['count'] += 1
-                    speaker_stats[speaker]['scores'].append(8.0)  # Default quality score
-                
-                # Convert to list format
-                for speaker, stats in speaker_stats.items():
-                    avg_score = sum(stats['scores']) / len(stats['scores']) if stats['scores'] else 8.0
-                    speaker_list.append({
-                        'speaker': speaker,
-                        'sermons_processed': stats['count'],
-                        'avg_quality_score': avg_score
-                    })
-                
-                # Sort by count and take top speakers
-                speaker_list.sort(key=lambda x: x['sermons_processed'], reverse=True)
-        except Exception as e:
-            # If API fails, create a simple list from processing data if available
+        event_list = []
+        
+        if not validated_sermon_ids:
+            st.info("💡 No validated or processed sermons found. Process some sermons first!")
+            # Use fallback data from processing status or create basic data
             if processing_data:
                 speaker_list = [{
                     'speaker': 'System Processed',
                     'sermons_processed': len(processing_data),
-                    'avg_quality_score': 8.0
+                    'avg_quality_score': 8.0,
+                    'total_downloads': 0,
+                    'total_listens': 0
                 }]
-        
-        # Get event type distribution from config or recent sermons
-        try:
-            config = st.session_state.get('config', {})
-            if config.get('api_key') and config.get('broadcaster_id'):
-                sermon_updater = SermonUpdater(config)
-                from datetime import datetime, timedelta
-                end_date = datetime.now()
-                start_date = end_date - timedelta(days=30)
-                recent_sermons = sermon_updater.get_sermons_in_date_range(start_date, end_date)
-                
-                event_counts = {}
-                for sermon in recent_sermons:
-                    event_type = sermon.get('eventType', 'Unknown')
-                    event_counts[event_type] = event_counts.get(event_type, 0) + 1
-                
-                total_events = sum(event_counts.values())
-                event_list = []
-                for event_type, count in event_counts.items():
-                    percentage = (count / total_events * 100) if total_events > 0 else 0
-                    event_list.append({
-                        'event_type': event_type,
-                        'count': count,
-                        'percentage': percentage,
-                        'avg_quality': 8.5,  # Would need actual validation data
-                        'success_rate': 90.0  # Would need actual success tracking
-                    })
             else:
-                event_list = []
-        except:
+                # Return basic template data
+                speaker_list = [{
+                    'speaker': 'No Processing Data',
+                    'sermons_processed': 0,
+                    'avg_quality_score': 0.0,
+                    'total_downloads': 0,
+                    'total_listens': 0
+                }]
+        else:
+            # Create analytics from validated sermon IDs using real database data
+            
+            # Get real sermon details from database for these validated IDs
+            validated_sermons = []
+            all_sermons = repo.get_all_sermons()  # Get all sermons from database
+            
+            # Filter to only include validated sermons and extract real data
+            sermon_lookup = {sermon['id']: sermon for sermon in all_sermons}
+            for sermon_id in validated_sermon_ids:
+                if sermon_id in sermon_lookup:
+                    sermon_data = sermon_lookup[sermon_id]
+                    validated_sermons.append({
+                        'id': sermon_id,
+                        'speaker': sermon_data.get('speaker', 'Unknown Speaker'),
+                        'event_type': sermon_data.get('event_type', 'Unknown Event'),
+                        'title': sermon_data.get('title', 'Untitled'),
+                        'recorded_date': sermon_data.get('recorded_date'),
+                        'duration': sermon_data.get('duration', 0),
+                        'status': sermon_data.get('status', 'unknown')
+                    })
+                else:
+                    # Fallback for sermons not found in database
+                    validated_sermons.append({
+                        'id': sermon_id, 
+                        'speaker': 'Unknown Speaker', 
+                        'event_type': 'Unknown Event',
+                        'title': 'Untitled',
+                        'recorded_date': None,
+                        'duration': 0,
+                        'status': 'unknown'
+                    })
+            
+            # Create basic speaker stats from validated sermons
+            speaker_stats = {}
+            event_stats = {}
+            
+            for sermon in validated_sermons:
+                speaker = sermon.get('speaker', 'Unknown Speaker') or 'Unknown Speaker'
+                event_type = sermon.get('event_type', 'Unknown Event') or 'Unknown Event'
+                
+                if speaker not in speaker_stats:
+                    speaker_stats[speaker] = {
+                        'speaker': speaker,
+                        'sermons_processed': 0,
+                        'avg_quality_score': 8.0,  # Default for processed sermons
+                        'total_downloads': 0,
+                        'total_listens': 0
+                    }
+                speaker_stats[speaker]['sermons_processed'] += 1
+                
+                if event_type not in event_stats:
+                    event_stats[event_type] = 0
+                event_stats[event_type] += 1
+            
+            speaker_list = list(speaker_stats.values())
+            
+            # Calculate percentages for event stats
+            total_events = sum(event_stats.values())
             event_list = []
+            for event_type, count in event_stats.items():
+                percentage = (count / total_events * 100) if total_events > 0 else 0
+                event_list.append({
+                    'event_type': event_type,
+                    'count': count,
+                    'percentage': percentage,
+                    'avg_quality': 8.0,  # Default quality for processed sermons
+                    'success_rate': 95.0  # Default success rate for processed sermons
+                })
+
+        # If we don't have event_list, create a fallback
+        if not event_list:
+            event_list = [{
+                'event_type': 'System Processing',
+                'count': len(processing_data) if processing_data else 1,
+                'percentage': 100.0,
+                'avg_quality': 8.0,
+                'success_rate': 95.0,
+                'total_downloads': 0,
+                'total_listens': 0
+            }]
         
         # Quality trends from database
         quality_trends = []
@@ -655,6 +744,12 @@ def get_real_content_data():
         }
         
     except Exception as e:
+        # Show the actual error for debugging
+        st.error(f"🚫 ERROR in get_real_content_data: {str(e)}")
+        st.write(f"🔍 Exception type: {type(e).__name__}")
+        import traceback
+        st.code(traceback.format_exc())
+        
         # Return empty data if anything fails
         return {
             'speaker_stats': [],
@@ -663,7 +758,7 @@ def get_real_content_data():
         }
 
 def get_real_cost_data():
-    """Get real cost tracking data"""
+    """Get real cost tracking data from database"""
     try:
         # Import database module
         import sys
@@ -673,22 +768,82 @@ def get_real_cost_data():
         
         db = get_db()
         
-        # This would need to be enhanced with actual cost tracking
-        # For now, return minimal data indicating no cost tracking yet
+        # Get current month data (30 days)
+        usage_summary = db.get_llm_usage_summary(days=30)
+        
+        # Get last month data for comparison (30-60 days ago)
+        previous_summary = db.get_llm_usage_summary(days=60)
+        
+        # Extract current data
+        current = usage_summary.get('summary', {})
+        providers = usage_summary.get('providers', [])
+        models = usage_summary.get('models', [])
+        
+        # Calculate changes vs previous month
+        # For simplicity, we'll approximate by comparing 30-day vs 60-day totals
+        total_calls = current.get('total_calls', 0)
+        total_tokens = current.get('total_tokens', 0)
+        total_cost = current.get('total_cost', 0.0)
+        
+        # Previous period data (rough approximation)
+        prev_total = previous_summary.get('summary', {})
+        prev_calls = prev_total.get('total_calls', 0) - total_calls
+        prev_tokens = prev_total.get('total_tokens', 0) - total_tokens
+        prev_cost = prev_total.get('total_cost', 0.0) - total_cost
+        
+        calls_change = total_calls - prev_calls
+        tokens_change = total_tokens - prev_tokens
+        cost_change = total_cost - prev_cost
+        
+        # Calculate average cost per sermon
+        processed_sermons = db.get_processing_status()
+        sermon_count = len([s for s in processed_sermons if s.get('status') == 'completed'])
+        avg_cost_per_sermon = total_cost / sermon_count if sermon_count > 0 else 0.0
+        
+        # Format provider breakdown for UI
+        provider_breakdown = []
+        for provider in providers:
+            provider_breakdown.append({
+                'name': provider.get('provider', 'Unknown'),
+                'calls': provider.get('calls', 0),
+                'cost': provider.get('cost', 0.0),
+                'percentage': (provider.get('cost', 0.0) / total_cost * 100) if total_cost > 0 else 0.0
+            })
+        
+        # Format model usage for UI
+        model_usage = []
+        for model in models:
+            model_usage.append({
+                'provider': model.get('provider', 'Unknown'),
+                'model': model.get('model', 'Unknown'),
+                'calls': model.get('calls', 0),
+                'tokens': model.get('tokens', 0),
+                'cost': model.get('cost', 0.0),
+                'avg_duration_ms': model.get('avg_duration_ms', 0.0)
+            })
+        
+        # Calculate efficiency change (rough approximation)
+        efficiency_change = 0.0
+        if prev_cost > 0 and prev_calls > 0:
+            current_efficiency = total_cost / total_calls if total_calls > 0 else 0
+            prev_efficiency = prev_cost / prev_calls
+            efficiency_change = ((prev_efficiency - current_efficiency) / prev_efficiency * 100) if prev_efficiency > 0 else 0
+        
         return {
-            'total_calls': 0,
-            'calls_change': 0,
-            'total_tokens': 0,
-            'tokens_change': 0,
-            'total_cost': 0.00,
-            'cost_change': 0.00,
-            'avg_cost_per_sermon': 0.000,
-            'efficiency_change': 0.0,
-            'provider_breakdown': [],
-            'model_usage': []
+            'total_calls': total_calls,
+            'calls_change': calls_change,
+            'total_tokens': total_tokens,
+            'tokens_change': tokens_change,
+            'total_cost': total_cost,
+            'cost_change': cost_change,
+            'avg_cost_per_sermon': avg_cost_per_sermon,
+            'efficiency_change': efficiency_change,
+            'provider_breakdown': provider_breakdown,
+            'model_usage': model_usage
         }
         
     except Exception as e:
+        # Fallback to empty data if database isn't available or has no data yet
         return {
             'total_calls': 0,
             'calls_change': 0,
@@ -703,103 +858,260 @@ def get_real_cost_data():
         }
 
 def get_real_performance_data():
-    """Get real performance metrics"""
+    """Get real performance metrics using the new performance monitor"""
     try:
-        # Import database module
+        # Use the new performance monitor
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from database import get_db
+        from performance_monitor import get_comprehensive_performance_data
         
-        db = get_db()
-        processing_data = db.get_processing_status()
-        
-        # Calculate real metrics
-        total_items = len(processing_data)
-        success_count = sum(1 for item in processing_data if item.get('status') == 'completed')
-        success_rate = (success_count / total_items * 100) if total_items > 0 else 0
-        error_count = sum(1 for item in processing_data if item.get('status') == 'failed')
-        error_rate = (error_count / total_items * 100) if total_items > 0 else 0
-        
-        # Calculate processing times
-        times = []
-        for item in processing_data:
-            if item.get('duration'):
-                try:
-                    duration_str = item.get('duration', '0')
-                    if 'min' in duration_str:
-                        times.append(float(duration_str.replace('min', '').strip()))
-                    elif 'sec' in duration_str:
-                        times.append(float(duration_str.replace('sec', '').strip()) / 60)
-                except:
-                    continue
-        
-        avg_processing_time = sum(times) / len(times) if times else 0
-        
-        return {
-            'avg_processing_time': avg_processing_time,
-            'processing_time_change': -0.3 if avg_processing_time > 0 else 0,
-            'success_rate': success_rate,
-            'success_rate_change': 2.1 if success_rate > 80 else -1.5,
-            'queue_length': 0,  # Would need actual queue tracking
-            'queue_change': 0,
-            'error_rate': error_rate,
-            'error_rate_change': -2.1 if error_rate < 20 else 1.5,
-            'step_performance': [
-                {'step': 'Audio Enhancement', 'avg_time': 120.0, 'success_rate': 95.0, 'bottleneck_score': 0.80},
-                {'step': 'Transcription', 'avg_time': 45.0, 'success_rate': 98.0, 'bottleneck_score': 0.30},
-                {'step': 'Description Generation', 'avg_time': 15.0, 'success_rate': 92.0, 'bottleneck_score': 0.20},
-                {'step': 'Hashtag Generation', 'avg_time': 8.0, 'success_rate': 94.0, 'bottleneck_score': 0.15},
-                {'step': 'Validation', 'avg_time': 5.0, 'success_rate': 97.0, 'bottleneck_score': 0.10}
-            ],
-            'resource_usage': {
-                'cpu_usage': 35.0,
-                'memory_usage': 45.0,
-                'disk_usage': 25.0,
-                'network_io': 8.5,
-                'gpu_usage': 60.0,
-                'gpu_memory': 70.0
-            },
-            'recommendations': [
-                {
-                    'title': 'Enable GPU Acceleration',
-                    'priority': 'High',
-                    'description': 'Configure CUDA for faster audio processing if GPU is available.',
-                    'impact': 'Could reduce processing time by 50%',
-                    'effort': 'Medium - requires CUDA setup'
-                },
-                {
-                    'title': 'Optimize Model Loading',
-                    'priority': 'Medium', 
-                    'description': 'Cache AI models in memory to avoid repeated loading.',
-                    'impact': 'Could reduce startup time by 30%',
-                    'effort': 'Low - configuration change'
-                }
-            ]
-        }
+        return get_comprehensive_performance_data()
         
     except Exception as e:
-        # Fallback data
-        return {
-            'avg_processing_time': 0,
-            'processing_time_change': 0,
-            'success_rate': 0,
-            'success_rate_change': 0,
-            'queue_length': 0,
-            'queue_change': 0,
-            'error_rate': 0,
-            'error_rate_change': 0,
-            'step_performance': [],
-            'resource_usage': {
-                'cpu_usage': 0,
-                'memory_usage': 0,
-                'disk_usage': 0,
-                'network_io': 0,
-                'gpu_usage': 0,
-                'gpu_memory': 0
-            },
-            'recommendations': []
-        }
+        # Fallback to existing database-based metrics if performance monitor fails
+        try:
+            from database import get_db
+            
+            db = get_db()
+            processing_data = db.get_processing_status()
+            
+            # Calculate real metrics
+            total_items = len(processing_data)
+            success_count = sum(1 for item in processing_data if item.get('status') == 'completed')
+            success_rate = (success_count / total_items * 100) if total_items > 0 else 0
+            error_count = sum(1 for item in processing_data if item.get('status') == 'failed')
+            error_rate = (error_count / total_items * 100) if total_items > 0 else 0
+            
+            # Calculate processing times
+            times = []
+            for item in processing_data:
+                if item.get('duration'):
+                    try:
+                        duration_str = item.get('duration', '0')
+                        if 'min' in duration_str:
+                            times.append(float(duration_str.replace('min', '').strip()))
+                        elif 'sec' in duration_str:
+                            times.append(float(duration_str.replace('sec', '').strip()) / 60)
+                    except Exception:
+                        continue
+            
+            avg_processing_time = sum(times) / len(times) if times else 0
+            
+            return {
+                'avg_processing_time': avg_processing_time,
+                'processing_time_change': -0.3 if avg_processing_time > 0 else 0,
+                'success_rate': success_rate,
+                'success_rate_change': 2.1 if success_rate > 80 else -1.5,
+                'queue_length': 0,  # Would need actual queue tracking
+                'queue_change': 0,
+                'error_rate': error_rate,
+                'error_rate_change': -2.1 if error_rate < 20 else 1.5,
+                'step_performance': [
+                    {'step': 'Audio Enhancement', 'avg_time': 120.0, 'success_rate': 95.0, 'bottleneck_score': 0.80},
+                    {'step': 'Transcription', 'avg_time': 45.0, 'success_rate': 98.0, 'bottleneck_score': 0.30},
+                    {'step': 'Description Generation', 'avg_time': 15.0, 'success_rate': 92.0, 'bottleneck_score': 0.20},
+                    {'step': 'Hashtag Generation', 'avg_time': 8.0, 'success_rate': 94.0, 'bottleneck_score': 0.15},
+                    {'step': 'Validation', 'avg_time': 5.0, 'success_rate': 97.0, 'bottleneck_score': 0.10}
+                ],
+                'resource_usage': {
+                    'cpu_usage': 35.0,
+                    'memory_usage': 45.0,
+                    'disk_usage': 25.0,
+                    'network_io': 8.5,
+                    'gpu_usage': 60.0,
+                    'gpu_memory': 70.0
+                },
+                'recommendations': [
+                    {
+                        'title': 'Performance Monitor Unavailable',
+                        'priority': 'Medium',
+                        'description': 'Real-time performance monitoring failed. Using fallback metrics.',
+                        'impact': 'Limited optimization insights',
+                        'effort': 'Check system requirements for psutil'
+                    }
+                ]
+            }
+            
+        except Exception as fallback_error:
+            # Ultimate fallback
+            return {
+                'avg_processing_time': 0,
+                'processing_time_change': 0,
+                'success_rate': 0,
+                'success_rate_change': 0,
+                'queue_length': 0,
+                'queue_change': 0,
+                'error_rate': 0,
+                'error_rate_change': 0,
+                'step_performance': [],
+                'resource_usage': {
+                    'cpu_usage': 0,
+                    'memory_usage': 0,
+                    'disk_usage': 0,
+                    'network_io': 0,
+                    'gpu_usage': 0,
+                    'gpu_memory': 0
+                },
+                'recommendations': [
+                    {
+                        'title': 'Performance Monitoring Unavailable',
+                        'priority': 'High',
+                        'description': f'Both primary and fallback performance monitoring failed: {e}, {fallback_error}',
+                        'impact': 'No performance insights available',
+                        'effort': 'Check system configuration and dependencies'
+                    }
+                ]
+            }
+def get_validated_sermon_ids(db):
+    """Get all sermon IDs that have been validated or processed"""
+    validated_ids = set()
+    
+    try:
+        # Use SermonRepository to get all sermons
+        from ui.database import SermonRepository
+        repo = SermonRepository()
+        
+        # Get completed/processed sermons
+        completed_sermons = repo.get_all_sermons()
+        for sermon in completed_sermons:
+            if sermon.get('status') in ['completed', 'processed']:
+                validated_ids.add(sermon.get('id'))
+        
+        # Get validated sermons from database directly to avoid JSON parsing issues
+        import sqlite3
+        conn = sqlite3.connect('sermon_processor.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT sermon_id FROM validation_results WHERE is_valid = 1')
+        valid_sermon_ids = cursor.fetchall()
+        for (sermon_id,) in valid_sermon_ids:
+            validated_ids.add(sermon_id)
+        
+        # Get sermons with completed processing status
+        cursor.execute('SELECT sermon_id FROM processing_status WHERE status = "completed"')
+        completed_status_ids = cursor.fetchall()
+        for (sermon_id,) in completed_status_ids:
+            validated_ids.add(sermon_id)
+            
+        conn.close()
+                
+    except Exception as e:
+        st.warning(f"⚠️ Error accessing database: {str(e)}")
+    
+    return list(filter(None, validated_ids))  # Remove None values
+
+
+def get_sermon_analytics_batch(sermon_updater, sermon_ids):
+    """Get analytics data for a batch of sermon IDs"""
+    speaker_stats = {}
+    event_counts = {}
+    retrieved_sermons = []
+    
+    # Process in smaller batches
+    batch_size = 10
+    total_batches = (len(sermon_ids) + batch_size - 1) // batch_size
+    
+    progress_bar = st.progress(0, text="Fetching sermon analytics...")
+    
+    for batch_num in range(total_batches):
+        start_idx = batch_num * batch_size
+        end_idx = min(start_idx + batch_size, len(sermon_ids))
+        batch = sermon_ids[start_idx:end_idx]
+        
+        # Update progress
+        progress = (batch_num + 1) / total_batches
+        progress_bar.progress(progress, text=f"Processing batch {batch_num + 1}/{total_batches}")
+        
+        for sermon_id in batch:
+            try:
+                # Get individual sermon data
+                sermon_data = sermon_updater.get_sermon_by_id(sermon_id)
+                if sermon_data:
+                    retrieved_sermons.append(sermon_data)
+                    
+                    # Process speaker stats
+                    speaker = sermon_data.get('speaker', sermon_data.get('preacher', 'Unknown Speaker'))
+                    if speaker not in speaker_stats:
+                        speaker_stats[speaker] = {
+                            'count': 0,
+                            'downloads': 0,
+                            'listens': 0,
+                            'scores': []
+                        }
+                    speaker_stats[speaker]['count'] += 1
+                    
+                    # Get real analytics data
+                    downloads = sermon_data.get('downloadCount', 0)
+                    if isinstance(downloads, (int, float)):
+                        speaker_stats[speaker]['downloads'] += downloads
+                    
+                    # Audio access timestamp indicates listens
+                    if sermon_data.get('lastAudioAccessTimestamp'):
+                        speaker_stats[speaker]['listens'] += 1
+                    
+                    speaker_stats[speaker]['scores'].append(8.0)
+
+                    # Event type analytics
+                    event_type = sermon_data.get('eventType', 'Unknown')
+                    if event_type not in event_counts:
+                        event_counts[event_type] = {
+                            'count': 0,
+                            'downloads': 0,
+                            'listens': 0
+                        }
+                    event_counts[event_type]['count'] += 1
+                    downloads_val = downloads if isinstance(downloads, (int, float)) else 0
+                    event_counts[event_type]['downloads'] += downloads_val
+                    if sermon_data.get('lastAudioAccessTimestamp'):
+                        event_counts[event_type]['listens'] += 1
+                        
+            except Exception as e:
+                # Skip individual sermon if there's an error
+                st.warning(f"⚠️ Could not fetch data for sermon {sermon_id}: {str(e)}")
+                continue
+    
+    progress_bar.empty()
+    
+    # Convert to final format
+    speaker_list = []
+    for speaker, stats in speaker_stats.items():
+        avg_score = sum(stats['scores']) / len(stats['scores']) if stats['scores'] else 8.0
+        speaker_list.append({
+            'speaker': speaker,
+            'sermons_processed': stats['count'],
+            'avg_quality_score': avg_score,
+            'total_downloads': stats['downloads'],
+            'total_listens': stats['listens']
+        })
+    
+    # Sort by download count, then by sermon count
+    speaker_list.sort(key=lambda x: (x['total_downloads'], x['sermons_processed']), reverse=True)
+
+    # Convert event counts to list format
+    event_list = []
+    total_sermons = len(retrieved_sermons)
+    for event_type, counts in event_counts.items():
+        percentage = (counts['count'] / total_sermons * 100) if total_sermons else 0
+        success_rate = min(95.0, 85.0 + (counts['downloads'] / max(counts['count'], 1)) * 10)
+        avg_quality = min(10.0, 7.0 + (counts['listens'] / max(counts['count'], 1)) * 3)
+        
+        event_list.append({
+            'event_type': event_type,
+            'count': counts['count'],
+            'percentage': percentage,
+            'avg_quality': avg_quality,
+            'success_rate': success_rate,
+            'total_downloads': counts['downloads'],
+            'total_listens': counts['listens']
+        })
+    
+    return {
+        'sermons': retrieved_sermons,
+        'speaker_stats': speaker_list,
+        'event_stats': event_list
+    }
+
 
 if __name__ == "__main__":
     show_analytics()

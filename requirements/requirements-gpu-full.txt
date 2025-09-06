@@ -1,0 +1,82 @@
+# Full GPU-enabled requirements with all GPU-accelerated packages
+# This file installs comprehensive GPU acceleration for maximum performance
+# Install with: pip install -r requirements/requirements-gpu-full.txt
+# 
+# WARNING: This installation is large (~4-8GB) and requires significant GPU memory
+# Use requirements-gpu.txt for a lighter GPU-enabled installation
+
+# GPU-enabled PyTorch (CUDA 12.1 support)
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+# Core dependencies from base requirements
+-r requirements.txt
+
+# GPU-specific overrides for PyTorch ecosystem
+torch==2.1.1+cu121
+torchaudio==2.1.1+cu121
+torchvision==0.16.1+cu121
+
+# NVIDIA GPU management and monitoring
+nvidia-ml-py3>=7.352.0
+pynvml>=11.4.1
+gpustat>=1.1.1
+py3nvml>=0.2.7
+
+# GPU-accelerated scientific computing
+cupy-cuda12x>=12.0.0  # GPU-accelerated NumPy
+
+# Enhanced deep learning frameworks
+tensorflow>=2.14.0  # TensorFlow with GPU support (will auto-detect CUDA)
+
+# GPU-accelerated audio processing
+nnAudio>=0.3.0         # GPU-accelerated spectrogram computation
+julius>=0.2.7          # Fast GPU resampling
+
+# Advanced AI model acceleration
+accelerate>=0.21.0              # Memory management for large models
+bitsandbytes>=0.41.0            # Quantization support
+transformers>=4.30.0           # Hugging Face transformers
+
+# GPU-accelerated signal processing
+# Note: These are included with the base torch packages above
+
+# Advanced model optimization (optional - comment out if not needed)
+# torch-tensorrt>=1.4.0  # TensorRT integration for PyTorch
+# tensorrt>=8.6.0        # NVIDIA TensorRT for inference optimization
+
+# Distributed computing and scaling (optional)
+# deepspeed>=0.12.4      # Distributed training framework
+# fairscale>=0.4.13      # Facebook's model parallelism
+
+# Memory optimization and profiling
+memory-profiler>=0.60.0  # Memory usage profiling
+
+# Enhanced AI models for audio processing
+speechbrain>=0.5.14      # GPU-accelerated speech processing
+
+# Additional GPU utilities (optional - large downloads)
+# rapids-cudf>=23.04.0     # GPU-accelerated DataFrame operations
+# rapids-cuml>=23.04.0     # GPU-accelerated machine learning
+
+# Computer vision acceleration (for spectrogram analysis)
+opencv-python-headless>=4.8.0
+albumentations>=1.3.0
+
+# Optimization and quantization
+optimum>=1.12.0           # ONNX Runtime optimization
+onnx>=1.14.0              # ONNX model format
+
+# Development and debugging tools for GPU
+wandb>=0.15.0             # Weights & Biases for experiment tracking
+
+# Note: Full installation requirements:
+# - NVIDIA GPU with 8GB+ memory (12GB+ recommended)
+# - CUDA 12.1 compatible driver
+# - 16GB+ system RAM
+# - 20GB+ free disk space for models and dependencies
+# 
+# This configuration provides maximum GPU acceleration but has high
+# system requirements. For lighter installations:
+# - Use requirements-gpu.txt for basic GPU support
+# - Use requirements-cpu.txt for CPU-only operation
+# - Use requirements.txt for automatic CPU/GPU detection

@@ -1,5 +1,5 @@
 # Development requirements with all optional dependencies
-# Install with: pip install -r requirements-dev.txt
+# Install with: pip install -r requirements/requirements-dev.txt
 
 # Include base requirements
 -r requirements.txt
