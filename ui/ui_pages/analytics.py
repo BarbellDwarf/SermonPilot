@@ -57,7 +57,11 @@ def show_analytics():
     # SermonAudio Analytics tab (if available)
     if ANALYTICS_CHAT_AVAILABLE:
         with tab5:
-            render_analytics_chat_tab()
+            # Pass configuration to the chat interface
+            from ui.analytics_chat import AnalyticsChatInterface
+            chat_interface = AnalyticsChatInterface(config=st.session_state.config)
+            chat_interface.render_chat_interface()
+            chat_interface.render_chat_settings()
 
 def show_processing_metrics():
     """Processing statistics and success rates"""

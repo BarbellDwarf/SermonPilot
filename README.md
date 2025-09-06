@@ -1,6 +1,6 @@
-# SermonAudio Updater
+# SermonAudio Processor
 
-Automated sermon processing tool that enhances audio quality, generates AI summaries, and updates SermonAudio listings.
+Automated sermon processing tool that enhances audio quality, generates AI summaries, updates SermonAudio listings, and provides comprehensive analytics with AI-powered insights.
 
 ## Features
 
@@ -23,6 +23,21 @@ Automated sermon processing tool that enhances audio quality, generates AI summa
   - Two-pass hashtag processing: generation + verification for clean output
   - Automatic removal of LLM comments and explanations from hashtags
   - Support for multiple LLM providers (Ollama, OpenAI, VaultAI)
+
+- **📈 Advanced Analytics & Insights**:
+  - **Real-time Performance Monitoring**: CPU, memory, GPU usage tracking
+  - **Processing Metrics**: Success rates, processing times, error analysis
+  - **SermonAudio Analytics**: Views, listens, downloads, engagement tracking
+  - **🤖 AI-Powered Chat Interface**: Natural language queries about your sermon data
+  - **RAG System**: Vector search and retrieval for sermon insights
+  - **Cost Tracking**: LLM API usage and optimization recommendations
+
+- **🖥️ Modern Web Interface**:
+  - **Streamlit Web UI** for intuitive interaction
+  - **Dashboard** with recent activity and system status
+  - **Batch Processing** with advanced filtering and progress tracking
+  - **Analytics Visualizations** with interactive charts
+  - **Configuration Management** with web-based editing
 
 - **SermonAudio Integration**:
   - Pull sermons by date, event type, or custom criteria
@@ -160,8 +175,45 @@ Edit `config.yaml` or `.env` with your settings:
    - Broadcaster ID
    - LLM provider settings
    - Audio processing preferences
+   - Analytics settings (optional)
 
-## Running the Server
+### Web Interface Dependencies
+
+For the modern web interface and analytics features, install additional UI dependencies:
+
+```bash
+# Install Streamlit and analytics dependencies
+pip install streamlit plotly chromadb sentence-transformers pandas psutil
+
+# Or use the included UI requirements file
+pip install -r ui/requirements-ui.txt
+```
+
+## Usage
+
+### Web Interface (Recommended)
+
+Launch the modern web interface for intuitive interaction:
+
+```bash
+# Start the Streamlit web interface
+streamlit run streamlit_app.py
+
+# Open your browser to http://localhost:8501
+```
+
+The web interface provides:
+- **📊 Dashboard**: Recent activity and system status
+- **🎵 New Sermon**: Upload and process individual sermons
+- **🔄 Batch Processing**: Process multiple sermons with filtering
+- **✅ Validation**: Quality control and description regeneration
+- **📈 Analytics**: Performance metrics and SermonAudio insights
+- **🤖 AI Chat**: Natural language queries about your sermon data
+- **⚙️ Settings**: Configuration management
+
+### Command Line Interface
+
+For automation and scripting, use the CLI:
 
 ### Linux Server Scripts
 
