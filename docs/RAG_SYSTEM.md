@@ -9,10 +9,15 @@ The SermonAudio Processor implements a sophisticated RAG system that enables nat
 ### Components
 
 1. **Vector Database**: ChromaDB for storing sermon analytics embeddings
-2. **Embedding Model**: sentence-transformers/all-MiniLM-L6-v2 for text embeddings
+2. **Configurable Embedding Providers**: Support for multiple embedding models:
+   - **Sentence Transformers**: Local models (all-MiniLM-L6-v2, all-mpnet-base-v2, etc.)
+   - **OpenAI Embeddings**: Remote API (text-embedding-3-small, text-embedding-3-large, etc.)
+   - **Ollama Embeddings**: Local API server (nomic-embed-text, mxbai-embed-large, etc.)
+   - **Hash-based Fallback**: Deterministic offline embeddings
 3. **LLM Integration**: Uses existing LLMManager for response generation
 4. **Query Processor**: Converts natural language to vector queries
 5. **Response Generator**: Combines retrieved data with LLM responses
+6. **Automatic Fallback**: Graceful degradation when providers fail
 
 ### Data Flow
 
@@ -43,14 +48,41 @@ collection = client.get_or_create_collection(
 
 ### Embedding Pipeline
 
-Documents are converted to embeddings using sentence-transformers:
+The system now supports multiple configurable embedding providers with automatic fallback:
 
 ```python
-from sentence_transformers import SentenceTransformer
+from ui.embedding_manager import EmbeddingManager
 
-model = SentenceTransformer('all-MiniLM-L6-v2')
-embeddings = model.encode(documents)
+# Configure embedding providers
+embedding_config = {
+    'primary': {
+        'provider': 'openai',
+        'api_key': 'your-key',
+        'model': 'text-embedding-3-small'
+    },
+    'fallback': [
+        {
+            'provider': 'sentence_transformers',
+            'model': 'all-MiniLM-L6-v2'
+        },
+        {
+            'provider': 'hash',
+            'dimensions': 1536
+        }
+    ]
+}
+
+manager = EmbeddingManager(embedding_config)
+embeddings = manager.get_embeddings(texts)
 ```
+
+**Supported Providers:**
+- **Sentence Transformers**: Local models for offline operation
+- **OpenAI**: High-quality remote embeddings
+- **Ollama**: Local API server embeddings  
+- **Hash Fallback**: Deterministic offline embeddings
+
+See [EMBEDDING_PROVIDERS.md](EMBEDDING_PROVIDERS.md) for detailed configuration options.
 
 ### Document Processing
 
@@ -91,9 +123,16 @@ def query_sermons(query_text, n_results=5):
 ### Basic Configuration
 
 ```yaml
+embeddings:
+  primary:
+    provider: "sentence_transformers"  # Local embeddings
+    model: "all-MiniLM-L6-v2"
+  fallback:
+    - provider: "hash"
+      dimensions: 384
+
 rag_system:
   enabled: true
-  embedding_model: "all-MiniLM-L6-v2"
   vector_db_path: "analytics_vector_db"
   similarity_threshold: 0.7
   max_results: 10
@@ -102,25 +141,29 @@ rag_system:
 ### Advanced Configuration
 
 ```yaml
+embeddings:
+  primary:
+    provider: "openai"
+    openai:
+      api_key: "your-openai-key"
+      model: "text-embedding-3-small"
+  fallback:
+    - provider: "sentence_transformers"
+      model: "all-MiniLM-L6-v2"
+    - provider: "ollama"
+      host: "http://localhost:11434"
+      model: "nomic-embed-text"
+    - provider: "hash"
+      dimensions: 1536
+
 rag_system:
   enabled: true
-  
-  # Embedding settings
-  embedding_model: "all-MiniLM-L6-v2"
-  embedding_batch_size: 32
-  normalize_embeddings: true
-  
-  # Vector database settings
   vector_db_path: "analytics_vector_db"
   collection_name: "sermon_analytics"
   persistence_directory: "./chroma_db"
-  
-  # Query settings
   similarity_threshold: 0.7
   max_results: 10
   min_similarity_score: 0.5
-  
-  # Response generation
   context_window_size: 4000
   response_max_tokens: 500
   temperature: 0.7
@@ -133,8 +176,21 @@ rag_system:
 ```python
 from ui.rag_system import SermonAnalyticsRAG
 
-# Initialize RAG system
-rag = SermonAnalyticsRAG()
+# Initialize RAG system with embedding configuration
+embedding_config = {
+    'primary': {
+        'provider': 'sentence_transformers',
+        'model': 'all-MiniLM-L6-v2'
+    },
+    'fallback': [
+        {
+            'provider': 'hash',
+            'dimensions': 384
+        }
+    ]
+}
+
+rag = SermonAnalyticsRAG(embedding_config=embedding_config)
 
 # Add sermon data
 sermon_data = {
@@ -145,10 +201,14 @@ sermon_data = {
     "engagement_score": 8.5
 }
 
-rag.add_sermon_data([sermon_data])
+rag.add_analytics_data([sermon_data])
 
 # Query the system
-results = rag.query("sermons about prayer with high engagement")
+results = rag.query_analytics("sermons about prayer with high engagement")
+
+# Check embedding provider
+provider_info = rag.get_embedding_provider_info()
+print(f"Using: {provider_info['current_provider']['provider']}")
 ```
 
 ### Advanced Queries

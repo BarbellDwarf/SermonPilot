@@ -2,43 +2,63 @@
 RAG System for SermonAudio Analytics
 
 Implements Retrieval-Augmented Generation for querying sermon analytics data
-using ChromaDB for vector storage and sentence transformers for embeddings.
+using ChromaDB for vector storage and configurable embedding providers.
+Supports sentence-transformers, OpenAI, and Ollama embedding models.
 """
 
 import logging
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict, Optional
+from pathlib import Path
+import sys
 
 import chromadb
 from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer
+
+# Import the new embedding manager
+try:
+    from .embedding_manager import EmbeddingManager, create_embedding_manager
+except ImportError:
+    # Handle direct execution
+    from embedding_manager import EmbeddingManager, create_embedding_manager
 
 logger = logging.getLogger(__name__)
 
 
 class SermonAnalyticsRAG:
-    """RAG system for sermon analytics queries"""
+    """RAG system for sermon analytics queries with configurable embedding providers"""
     
-    def __init__(self, db_path: str = "analytics_vector_db"):
+    def __init__(self, db_path: str = "analytics_vector_db", embedding_config: Optional[Dict[str, Any]] = None):
         self.db_path = db_path
-        self.embedding_model = None
+        self.embedding_config = embedding_config or self._get_default_embedding_config()
+        self.embedding_manager = None
         self.client = None
         self.collection = None
         self._initialize_components()
     
+    def _get_default_embedding_config(self) -> Dict[str, Any]:
+        """Get default embedding configuration if none provided"""
+        return {
+            'primary': {
+                'provider': 'hash',
+                'dimensions': 384
+            },
+            'fallback': []
+        }
+    
     def _initialize_components(self):
-        """Initialize ChromaDB and embedding model"""
+        """Initialize ChromaDB and embedding manager"""
         try:
-            # Initialize sentence transformer model with offline handling
+            # Initialize embedding manager
             try:
-                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-                logger.info("Loaded embedding model: all-MiniLM-L6-v2")
-            except Exception as model_error:
-                logger.warning(f"Failed to load embedding model: {model_error}")
-                # Use a simple fallback for offline mode
-                self.embedding_model = None
-                logger.info("Using offline mode - embeddings will be simulated")
+                self.embedding_manager = create_embedding_manager(self.embedding_config)
+                provider_info = self.embedding_manager.get_current_provider_info()
+                logger.info(f"Initialized embedding provider: {provider_info['provider']} "
+                           f"(model: {provider_info['model']}, dimensions: {provider_info['dimensions']})")
+            except Exception as e:
+                logger.error(f"Failed to initialize embedding manager: {e}")
+                raise
             
             # Initialize ChromaDB client
             self.client = chromadb.PersistentClient(
@@ -49,7 +69,12 @@ class SermonAnalyticsRAG:
             # Get or create collection
             self.collection = self.client.get_or_create_collection(
                 name="sermon_analytics",
-                metadata={"description": "SermonAudio analytics data for RAG queries"}
+                metadata={
+                    "description": "SermonAudio analytics data for RAG queries",
+                    "embedding_provider": self.embedding_manager.get_current_provider_info()['provider'],
+                    "embedding_model": self.embedding_manager.get_current_provider_info()['model'],
+                    "embedding_dimensions": str(self.embedding_manager.get_embedding_dimension())
+                }
             )
             
             logger.info("RAG system initialized successfully")
@@ -59,27 +84,15 @@ class SermonAnalyticsRAG:
             raise
     
     def _get_embeddings(self, texts: list[str]) -> list[list[float]]:
-        """Get embeddings for texts with fallback for offline mode"""
-        if self.embedding_model is not None:
-            try:
-                return self.embedding_model.encode(texts).tolist()
-            except Exception as e:
-                logger.warning(f"Embedding model failed: {e}, using fallback")
+        """Get embeddings for texts using the configured embedding manager"""
+        if not self.embedding_manager:
+            raise RuntimeError("Embedding manager not initialized")
         
-        # Fallback: create simple hash-based embeddings for offline mode
-        import hashlib
-        import random
-        
-        embeddings = []
-        for text in texts:
-            # Create a deterministic but pseudo-random embedding based on text hash
-            hash_value = hashlib.md5(text.encode()).hexdigest()
-            random.seed(hash_value)
-            # Create a 384-dimensional vector (same as all-MiniLM-L6-v2)
-            embedding = [random.random() - 0.5 for _ in range(384)]
-            embeddings.append(embedding)
-        
-        return embeddings
+        try:
+            return self.embedding_manager.get_embeddings(texts)
+        except Exception as e:
+            logger.error(f"Failed to get embeddings: {e}")
+            raise
     
     def add_analytics_data(self, analytics_data: list[dict[str, Any]]) -> None:
         """Add analytics data to the vector database"""
@@ -389,14 +402,59 @@ class SermonAnalyticsRAG:
         """Get statistics about the vector database collection"""
         try:
             count = self.collection.count()
+            provider_info = self.embedding_manager.get_current_provider_info()
             return {
                 'total_documents': count,
                 'collection_name': self.collection.name,
+                'embedding_provider': provider_info['provider'],
+                'embedding_model': provider_info['model'],
+                'embedding_dimensions': provider_info['dimensions'],
                 'last_updated': datetime.now().isoformat()
             }
         except Exception as e:
             logger.error(f"Failed to get collection stats: {e}")
             return {'error': str(e)}
+    
+    def get_embedding_provider_info(self) -> Dict[str, Any]:
+        """Get detailed information about the current embedding provider"""
+        if self.embedding_manager:
+            provider_info = self.embedding_manager.get_current_provider_info()
+            return {
+                'current_provider': provider_info,
+                'available_fallbacks': len(self.embedding_manager.fallback_providers),
+                'embedding_dimensions': self.embedding_manager.get_embedding_dimension()
+            }
+        else:
+            return {'error': 'Embedding manager not initialized'}
+    
+    def switch_embedding_provider(self, new_config: Dict[str, Any]) -> bool:
+        """Switch to a new embedding provider configuration"""
+        try:
+            # Create new embedding manager
+            new_manager = create_embedding_manager(new_config)
+            old_provider = self.embedding_manager.get_current_provider_info()
+            
+            # Check if dimensions match (important for existing data)
+            old_dim = self.embedding_manager.get_embedding_dimension()
+            new_dim = new_manager.get_embedding_dimension()
+            
+            if old_dim != new_dim:
+                logger.warning(f"Dimension mismatch: old={old_dim}, new={new_dim}. "
+                              "Existing embeddings may not be compatible.")
+            
+            # Update the manager
+            self.embedding_manager = new_manager
+            self.embedding_config = new_config
+            
+            new_provider = self.embedding_manager.get_current_provider_info()
+            logger.info(f"Switched embedding provider from {old_provider['provider']} "
+                       f"to {new_provider['provider']}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to switch embedding provider: {e}")
+            return False
     
     def clear_collection(self) -> None:
         """Clear all data from the collection"""
@@ -413,11 +471,20 @@ class SermonAnalyticsRAG:
             raise
 
 
-def initialize_rag_system_with_data(analytics_data: list[dict[str, Any]]) -> SermonAnalyticsRAG:
+def initialize_rag_system_with_data(analytics_data: list[dict[str, Any]], 
+                                   embedding_config: Optional[Dict[str, Any]] = None) -> SermonAnalyticsRAG:
     """Initialize RAG system and populate with analytics data"""
-    rag = SermonAnalyticsRAG()
+    rag = SermonAnalyticsRAG(embedding_config=embedding_config)
     
     if analytics_data:
         rag.add_analytics_data(analytics_data)
     
     return rag
+
+
+def create_rag_with_config(config: Dict[str, Any]) -> SermonAnalyticsRAG:
+    """Create RAG system from full configuration (including embedding config)"""
+    embedding_config = config.get('embeddings', {})
+    db_path = config.get('rag_system', {}).get('vector_db_path', 'analytics_vector_db')
+    
+    return SermonAnalyticsRAG(db_path=db_path, embedding_config=embedding_config)
