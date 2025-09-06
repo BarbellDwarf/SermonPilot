@@ -39,8 +39,8 @@ UV is a fast Python package and project manager that makes it easy to manage Pyt
 
 4. **Install dependencies**:
    ```bash
-   # Install from requirements.txt
-   uv pip install -r requirements.txt
+   # Install from requirements/requirements.txt
+   uv pip install -r requirements/requirements.txt
    
    # Or install from pyproject.toml
    uv pip install -e .
@@ -72,7 +72,7 @@ uv venv --python 3.11.7
 uv pip install package-name
 
 # Install from requirements file
-uv pip install -r requirements.txt
+uv pip install -r requirements/requirements.txt
 
 # Show installed packages
 uv pip list
@@ -81,7 +81,7 @@ uv pip list
 uv pip install --upgrade package-name
 
 # Sync dependencies (remove unused)
-uv pip sync requirements.txt
+uv pip sync requirements/requirements.txt
 ```
 
 ### Common Workflows
@@ -93,7 +93,7 @@ git clone <repo-url>
 cd sa-updater
 uv venv --python 3.11
 .venv\Scripts\activate  # Windows
-uv pip install -r requirements.txt
+uv pip install -r requirements/requirements.txt
 ```
 
 #### Switch Python Version
@@ -104,13 +104,13 @@ rm -rf .venv  # or rmdir /s .venv on Windows
 # Create new venv
 uv venv --python 3.12
 .venv\Scripts\activate
-uv pip install -r requirements.txt
+uv pip install -r requirements/requirements.txt
 ```
 
 #### Update Dependencies
 ```bash
 # Update all packages
-uv pip install --upgrade -r requirements.txt
+uv pip install --upgrade -r requirements/requirements.txt
 
 # Update specific package
 uv pip install --upgrade sermonaudio

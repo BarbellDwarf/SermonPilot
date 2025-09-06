@@ -4,26 +4,29 @@ Test script for LLM Manager functionality.
 This script tests the LLM configuration and switching functionality.
 """
 
-import yaml
 # Add src directory to path
 import sys
 from pathlib import Path
+
+import yaml
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from llm_manager import LLMManager, migrate_legacy_config
 
+
 def test_llm_configuration():
     """Test the LLM configuration and provider switching."""
-    
+
     # Load current configuration
     print("Loading configuration...")
     with open('config.yaml') as f:
         config = yaml.safe_load(f)
-    
+
     # Migrate legacy config if needed
     print("Migrating legacy configuration if needed...")
     config = migrate_legacy_config(config)
-    
+
     # Create LLM manager
     print("Creating LLM manager...")
     try:
@@ -32,17 +35,17 @@ def test_llm_configuration():
     except Exception as e:
         print(f"❌ Failed to create LLM manager: {e}")
         return False
-    
+
     # Get provider information
     provider_info = llm_manager.get_provider_info()
     print("\n📊 Provider Information:")
     print(f"Primary provider: {provider_info.get('primary')}")
     print(f"Fallback provider: {provider_info.get('fallback')}")
-    
+
     # Test a simple chat request
     print("\n🧪 Testing LLM functionality...")
     test_message = [{'role': 'user', 'content': 'Say "Hello, this is a test response!" and nothing else.'}]
-    
+
     try:
         response = llm_manager.chat(test_message)
         print(f"✅ LLM response: {response}")
@@ -53,9 +56,9 @@ def test_llm_configuration():
 
 def test_config_switching():
     """Test switching between different provider configurations."""
-    
+
     print("\n🔄 Testing configuration switching...")
-    
+
     # Test configuration with different primary providers
     test_configs = [
         {
@@ -97,7 +100,7 @@ def test_config_switching():
             }
         }
     ]
-    
+
     for i, test_config in enumerate(test_configs, 1):
         print(f"\n--- Test Configuration {i} ---")
         try:
@@ -112,13 +115,13 @@ def test_config_switching():
 if __name__ == "__main__":
     print("🚀 LLM Manager Test Suite")
     print("=" * 50)
-    
+
     # Test main functionality
     success = test_llm_configuration()
-    
+
     # Test configuration switching
     test_config_switching()
-    
+
     print("\n" + "=" * 50)
     if success:
         print("✅ LLM Manager tests completed successfully!")
