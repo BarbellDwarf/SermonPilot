@@ -30,8 +30,15 @@ class SermonAnalyticsRAG:
     def _initialize_components(self):
         """Initialize ChromaDB and embedding model"""
         try:
-            # Initialize sentence transformer model
-            self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+            # Initialize sentence transformer model with offline handling
+            try:
+                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+                logger.info("Loaded embedding model: all-MiniLM-L6-v2")
+            except Exception as model_error:
+                logger.warning(f"Failed to load embedding model: {model_error}")
+                # Use a simple fallback for offline mode
+                self.embedding_model = None
+                logger.info("Using offline mode - embeddings will be simulated")
             
             # Initialize ChromaDB client
             self.client = chromadb.PersistentClient(
@@ -50,6 +57,29 @@ class SermonAnalyticsRAG:
         except Exception as e:
             logger.error(f"Failed to initialize RAG system: {e}")
             raise
+    
+    def _get_embeddings(self, texts: list[str]) -> list[list[float]]:
+        """Get embeddings for texts with fallback for offline mode"""
+        if self.embedding_model is not None:
+            try:
+                return self.embedding_model.encode(texts).tolist()
+            except Exception as e:
+                logger.warning(f"Embedding model failed: {e}, using fallback")
+        
+        # Fallback: create simple hash-based embeddings for offline mode
+        import hashlib
+        import random
+        
+        embeddings = []
+        for text in texts:
+            # Create a deterministic but pseudo-random embedding based on text hash
+            hash_value = hashlib.md5(text.encode()).hexdigest()
+            random.seed(hash_value)
+            # Create a 384-dimensional vector (same as all-MiniLM-L6-v2)
+            embedding = [random.random() - 0.5 for _ in range(384)]
+            embeddings.append(embedding)
+        
+        return embeddings
     
     def add_analytics_data(self, analytics_data: list[dict[str, Any]]) -> None:
         """Add analytics data to the vector database"""
@@ -74,9 +104,13 @@ class SermonAnalyticsRAG:
             ids.append(f"sermon_{sermon_id}")
         
         try:
-            # Add to collection
+            # Get embeddings for documents
+            embeddings = self._get_embeddings(documents)
+            
+            # Add to collection with embeddings
             self.collection.add(
                 documents=documents,
+                embeddings=embeddings,
                 metadatas=metadatas,
                 ids=ids
             )
@@ -160,9 +194,12 @@ class SermonAnalyticsRAG:
     def query_analytics(self, question: str, n_results: int = 5) -> dict[str, Any]:
         """Query the analytics data using natural language"""
         try:
+            # Get query embedding
+            query_embeddings = self._get_embeddings([question])
+            
             # Query the vector database
             results = self.collection.query(
-                query_texts=[question],
+                query_embeddings=query_embeddings,
                 n_results=n_results
             )
             
