@@ -2,13 +2,15 @@
 
 ## Architecture Overview
 
-This is a **three-component pipeline** for automated sermon processing:
+This is a **comprehensive sermon processing pipeline** with multiple interfaces:
 
 1. **`sermon_updater.py`** - CLI orchestrator that fetches sermons from SermonAudio API, coordinates processing, and uploads results
 2. **`audio_processing.py`** - Audio enhancement engine with multiple AI models (DeepFilterNet, Resemble Enhance, SpeechBrain) and fallback mechanisms  
 3. **`llm_manager.py`** - Multi-provider LLM abstraction (OpenAI-compatible APIs, Ollama) with primary/fallback pattern
+4. **`streamlit_app.py`** - Modern web interface for intuitive interaction and analytics
+5. **Analytics & RAG System** - AI-powered insights and natural language queries over sermon data
 
-**Key Data Flow**: SermonAudio API → Audio Download → AI Enhancement → LLM Summary/Hashtags → Upload Back
+**Key Data Flow**: SermonAudio API → Audio Download → AI Enhancement → LLM Summary/Hashtags → Upload Back → Analytics & Insights
 
 ## Essential Patterns
 
@@ -64,6 +66,10 @@ uv pip install package     # Install directly
 ### Testing Workflow
 
 ```bash
+# Web Interface
+streamlit run streamlit_app.py           # Launch web interface
+# Access at http://localhost:8501
+
 # Test setup first
 python tests/test_setup.py
 
@@ -71,6 +77,7 @@ python tests/test_setup.py
 python tests/test_llm_manager.py        # LLM provider switching
 python tests/test_audio_upscaling.py    # Audio pipeline
 python tests/test_real_sermon_deepfilternet.py  # End-to-end with real data
+python test_implementation.py          # Test all new UI components
 
 # Run specific test categories
 pytest -v -m "not live"    # Skip live API tests
@@ -90,6 +97,15 @@ python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')"
 ```
 
 ## Project-Specific Conventions
+
+### Web Interface & Analytics
+
+- **Streamlit UI**: Modern web interface accessible via `streamlit run streamlit_app.py`
+- **Analytics Dashboard**: Real-time performance monitoring, processing metrics, and SermonAudio insights
+- **RAG System**: ChromaDB + sentence-transformers for natural language queries over sermon data
+- **Chat Interface**: AI-powered conversational analytics ("What sermons have highest engagement?")
+- **Performance Monitoring**: Real-time system resource tracking (CPU, memory, GPU, network)
+- **Cost Tracking**: LLM API usage monitoring and optimization recommendations
 
 ### Audio Processing Integration Points
 
@@ -144,9 +160,12 @@ llm:
 - **`processed_sermons/[ID]/`** - Per-sermon output directory with audio + metadata
 - **`tests/`** - All test files (NEVER put tests elsewhere)
 - **`docs/`** - All documentation files (NEVER put docs in root)
+- **`ui/`** - Streamlit web interface and analytics components
+- **`ui/ui_pages/`** - Individual page components for web interface
 - **`tests/sample_audio.mp3`** - Required for audio-dependent tests (gitignored)
 - **`.venv/`** - Virtual environment (ALWAYS use UV: `uv venv --python 3.11`)
 - **`pyproject.toml`** - Primary dependency management (UV-compatible)
+- **`analytics_vector_db/`** - ChromaDB vector database for RAG system
 
 ### Performance Considerations
 
@@ -158,10 +177,19 @@ llm:
 ## Key Files for Understanding Context
 
 - `config.yaml` - All runtime configuration
+- `streamlit_app.py` - Main web interface entry point
+- `ui/analytics_chat.py` - AI-powered analytics chat interface
+- `ui/rag_system.py` - Vector database and retrieval system
+- `ui/performance_monitor.py` - Real-time system monitoring
+- `ui/sermonaudio_analytics.py` - SermonAudio data provider
 - `tests/ENHANCEMENT_MODEL_TESTING_RESULTS.md` - Model performance benchmarks
-- `tests/LLM_Configuration_Guide.md` - Provider setup examples
+- `docs/LLM_Configuration_Guide.md` - Provider setup examples
+- `docs/ANALYTICS.md` - Analytics features documentation
+- `docs/RAG_SYSTEM.md` - RAG technical documentation
+- `docs/PERFORMANCE_MONITORING.md` - Performance monitoring guide
 - `pyproject.toml` - Dependencies and tooling config (UV primary)
 - `requirements.txt` - Runtime dependencies (sync with pyproject.toml)
+- `ui/requirements-ui.txt` - Additional web interface dependencies
 - `uv.lock` - UV lockfile for reproducible builds
 
 ## Common Gotchas
