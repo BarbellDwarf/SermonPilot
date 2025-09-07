@@ -1,0 +1,1044 @@
+{
+  "timestamp": "1757205753.382353",
+  "project_root": "/home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor",
+  "files_scanned": 146,
+  "critical_files": 0,
+  "high_risk_files": 9,
+  "medium_risk_files": 11,
+  "total_placeholders": 143,
+  "total_credentials": 0,
+  "files_by_risk": {
+    "critical": [],
+    "high": [
+      {
+        "file": "ui/database.py",
+        "placeholders": 12,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 12
+      },
+      {
+        "file": "ui/ui_pages/jobs.py",
+        "placeholders": 11,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 11
+      },
+      {
+        "file": "tests/test_ui_improvements.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 21,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_complete_integration.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 18,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_sermonaudio_api.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 11,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_force_reimport.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 11,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_comprehensive_qa_system.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 16,
+        "issues": 0
+      },
+      {
+        "file": "config.example.yaml",
+        "placeholders": 17,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 17
+      },
+      {
+        "file": "copilot-plan.md",
+        "placeholders": 11,
+        "credentials": 0,
+        "demo_content": 1,
+        "issues": 11
+      }
+    ],
+    "medium": [
+      {
+        "file": "ui/ui_pages/library.py",
+        "placeholders": 7,
+        "credentials": 0,
+        "demo_content": 1,
+        "issues": 7
+      },
+      {
+        "file": "tests/test_enhanced_import.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 9,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_analytics_validation.py",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 7,
+        "issues": 1
+      },
+      {
+        "file": "tests/test_implementation.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 6,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_ui_structure.py",
+        "placeholders": 5,
+        "credentials": 0,
+        "demo_content": 3,
+        "issues": 5
+      },
+      {
+        "file": "tests/test_new_sermon.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 10,
+        "issues": 0
+      },
+      {
+        "file": "tests/audio/test_resemble_comprehensive.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 9,
+        "issues": 0
+      },
+      {
+        "file": "tests/unit/test_setup.py",
+        "placeholders": 2,
+        "credentials": 0,
+        "demo_content": 5,
+        "issues": 2
+      },
+      {
+        "file": "tests/llm/test_description_validator.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 7,
+        "issues": 0
+      },
+      {
+        "file": "sermon_updater.py",
+        "placeholders": 9,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 9
+      },
+      {
+        "file": "examples_config.yaml",
+        "placeholders": 7,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 7
+      }
+    ],
+    "low": [
+      {
+        "file": "ui/embedding_manager.py",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 1
+      },
+      {
+        "file": "ui/job_queue.py",
+        "placeholders": 3,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 3
+      },
+      {
+        "file": "ui/sermon_manager.py",
+        "placeholders": 2,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 2
+      },
+      {
+        "file": "ui/config_utils.py",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 1
+      },
+      {
+        "file": "ui/system_status.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "ui/analytics_chat.py",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 1
+      },
+      {
+        "file": "ui/sermon_metadata.py",
+        "placeholders": 3,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 3
+      },
+      {
+        "file": "ui/debug_auto_validation.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "ui/job_executors.py",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 1
+      },
+      {
+        "file": "ui/ui_pages/settings.py",
+        "placeholders": 2,
+        "credentials": 0,
+        "demo_content": 1,
+        "issues": 2
+      },
+      {
+        "file": "ui/ui_pages/library_old.py",
+        "placeholders": 5,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 5
+      },
+      {
+        "file": "ui/ui_pages/analytics.py",
+        "placeholders": 4,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 4
+      },
+      {
+        "file": "ui/ui_pages/dashboard.py",
+        "placeholders": 4,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 4
+      },
+      {
+        "file": "ui/ui_pages/batch_update.py",
+        "placeholders": 2,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 2
+      },
+      {
+        "file": "ui/ui_pages/validation.py",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 1,
+        "issues": 1
+      },
+      {
+        "file": "ui/ui_pages/library_new.py",
+        "placeholders": 3,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 3
+      },
+      {
+        "file": "ui/ui_pages/new_sermon.py",
+        "placeholders": 5,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 5
+      },
+      {
+        "file": "ui/IMPLEMENTATION_SUMMARY.md",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 1
+      },
+      {
+        "file": "ui/README.md",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 1
+      },
+      {
+        "file": "src/search_engine.py",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 1
+      },
+      {
+        "file": "src/qa_normalizer.py",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 1
+      },
+      {
+        "file": "src/description_validator.py",
+        "placeholders": 2,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 2
+      },
+      {
+        "file": "src/llm_manager.py",
+        "placeholders": 4,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 4
+      },
+      {
+        "file": "tests/test_analytics_features.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_ui_functionality.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 3,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_job_queue_ui.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_api_caching.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 4,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_final_integration.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_embedding_system.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 1,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_simple_reimport.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 5,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_job_queue_integration.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 1,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_fix_fts_table.py",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 4,
+        "issues": 1
+      },
+      {
+        "file": "tests/test_job_queue_simple.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 1,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_ui_validation.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 4,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_playwright_analytics.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_debug_analytics_data.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "tests/debug_auto_validation.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_ui_metadata_integration.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_database_update_debug.py",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 3,
+        "issues": 1
+      },
+      {
+        "file": "tests/api/test_sermon_api_update.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 3,
+        "issues": 0
+      },
+      {
+        "file": "tests/api/explore_api.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 4,
+        "issues": 0
+      },
+      {
+        "file": "tests/integration/test_full_pipeline_gpu.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "tests/integration/test_real_sermon_deepfilternet.py",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 1
+      },
+      {
+        "file": "tests/cli/test_all_filters_cli.py",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 1,
+        "issues": 1
+      },
+      {
+        "file": "tests/cli/test_cli_live_api_integration.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 1,
+        "issues": 0
+      },
+      {
+        "file": "tests/cli/test_cli_args.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 1,
+        "issues": 0
+      },
+      {
+        "file": "tests/audio/test_resemble_real_audio.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 1,
+        "issues": 0
+      },
+      {
+        "file": "tests/audio/fix_resemble_windows.py",
+        "placeholders": 3,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 3
+      },
+      {
+        "file": "tests/llm/test_hashtag_verification.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "tests/llm/test_hashtag_integration.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 1,
+        "issues": 0
+      },
+      {
+        "file": "tests/README.md",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "tests/api/README.md",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "tests/integration/README.md",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "debug_fetch_all.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 2,
+        "issues": 0
+      },
+      {
+        "file": "test_sermonaudio_api.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 5,
+        "issues": 0
+      },
+      {
+        "file": "debug_analytics.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 1,
+        "issues": 0
+      },
+      {
+        "file": "README.md",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 1
+      },
+      {
+        "file": "test-log.md",
+        "placeholders": 1,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 1
+      },
+      {
+        "file": "testing-environment-requirements.md",
+        "placeholders": 4,
+        "credentials": 0,
+        "demo_content": 1,
+        "issues": 4
+      }
+    ],
+    "clean": [
+      {
+        "file": "ui/performance_monitor.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "ui/sermonaudio_api.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "ui/streamlit_app.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "ui/sermonaudio_analytics.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "ui/rag_system.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "ui/sermon_importer.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "ui/shared_navigation.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "ui/analytics_manager.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "ui/api_routes.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "ui/stop_validation_jobs.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "ui/ui_processor.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "ui/ui_pages/viewer.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "src/audio_processing.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "src/enhanced_audio_processor.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "src/validate_descriptions.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "src/__init__.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/run_real_validation.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_cost_tracking.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_ui_job_verification.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_cost_tracking_simple.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_qa_normalization.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_description_validator.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/stop_validation_jobs.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/test_audio_packages.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/utils/list_node_methods.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/utils/import_test.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/utils/memory_test.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/utils/pipe_test.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/api/test_transcript_web_endpoint.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/api/test_transcript_pull.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/api/test_transcript_html_parse.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/api/test_transcript_api.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/api/test_sermon_raw_api.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/audio/test_no_compression.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/audio/test_deepfilter.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/audio/test_quick_resemble.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/audio/test_resemble_enhance.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/audio/test_quick_models.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/audio/test_optimized_enhancement.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/audio/test_best_enhancement_models.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/audio/windows_resemble_wrapper.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/unit/test_routing_fix.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/unit/test_debug.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/llm/test_error_handling.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/llm/test_validation.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/llm/test_llm_manager.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/llm/test_ollama_fallback.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/llm/test_ollama_debug.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/llm/test_ollama_connection.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/llm/test_ollama_http_direct.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/llm/test_openai_connection.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/llm/test_enhanced_providers.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/llm/test_ollama_http.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/llm/test_fallback.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/unit/test_config.yaml",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/tests-README.md",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/utils/README.md",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/cli/README.md",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/audio/README.md",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/unit/README.md",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "tests/llm/README.md",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "streamlit_app.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "check_schema.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "start_server.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "setup_database.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "check_jobs.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      },
+      {
+        "file": "check_database.py",
+        "placeholders": 0,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 0
+      }
+    ],
+    "error": []
+  }
+}
