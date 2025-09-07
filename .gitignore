@@ -99,4 +99,15 @@ sermon_processor.db
 *.sqlite3
 *.sqlite
 analytics_vector_db/chroma.sqlite3
-analytics_vector_db/chroma.sqlite3
+
+# Docker
+.docker/
+docker-compose.override.yml
+*.env.local
+*.env.docker
+
+# Container volumes and data
+/data/
+/models/
+/logs/
+/config_backups/

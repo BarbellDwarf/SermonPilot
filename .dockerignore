@@ -1,0 +1,64 @@
+# .dockerignore
+.git
+.gitignore
+README.md
+.env
+.venv/
+.venv-*/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.mypy_cache/
+.pytest_cache/
+.coverage
+.tox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Logs
+*.log
+logs/
+
+# Audio files
+*.mp3
+*.wav
+*.flac
+*.m4a
+*.aac
+*.ogg
+
+# Processing output
+processed_sermons/
+test_output/
+test_*/
+*.db
+api_cache/
+analytics_cache/
+
+# Documentation and plans
+docs/
+copilot-plans/
+test-log.md
+testing-environment-requirements.md
+LOCAL_TESTING_REQUIREMENTS.md
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
