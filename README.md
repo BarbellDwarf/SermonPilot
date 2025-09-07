@@ -167,7 +167,7 @@ ollama pull llama3
 Copy the example configuration files:
 
 ```bash
-cp config.example.yaml config.yaml
+cp config/config.example.yaml config.yaml
 cp .env.example .env
 ```
 Edit `config.yaml` or `.env` with your settings:
