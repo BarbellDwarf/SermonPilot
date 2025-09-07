@@ -273,8 +273,8 @@ if __name__ == "__main__":
             print(f"   - LLM providers configured: {len(config.get('llm', {}).get('primary', {}))}")
             print(f"   - Debug mode: {'🟡 Enabled' if config.get('debug') else '✅ Disabled'}")
         else:
-            print("⚠️  No config.yaml found - using config.example.yaml for validation")
-            config = load_secure_config('config.example.yaml', validate_security=False)
+            print("⚠️  No config.yaml found - using config/config.example.yaml for validation")
+            config = load_secure_config('config/config.example.yaml', validate_security=False)
             print("✅ Example configuration structure is valid")
         
         print("\n🔒 Security validation passed!")

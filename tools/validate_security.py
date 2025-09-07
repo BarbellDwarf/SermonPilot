@@ -13,9 +13,9 @@ from pathlib import Path
 
 def test_config_example_uses_environment_variables():
     """Test that config.example.yaml uses environment variables."""
-    config_file = Path(__file__).parent.parent / "config.example.yaml"
+    config_file = Path(__file__).parent.parent / "config" / "config.example.yaml"
     if not config_file.exists():
-        return False, "config.example.yaml not found"
+        return False, "config/config.example.yaml not found"
     
     with open(config_file, 'r') as f:
         content = f.read()
@@ -30,23 +30,23 @@ def test_config_example_uses_environment_variables():
                 violations.append(f"Line {line_num}: {line.strip()}")
     
     if violations:
-        return False, f"config.example.yaml contains hardcoded values:\n" + "\n".join(violations)
+        return False, f"config/config.example.yaml contains hardcoded values:\n" + "\n".join(violations)
     
     return True, "All sensitive fields use environment variables"
 
 
 def test_examples_config_security():
     """Test that examples_config.yaml has proper security warnings."""
-    config_file = Path(__file__).parent.parent / "examples_config.yaml"
+    config_file = Path(__file__).parent.parent / "config" / "llm_examples.yaml"
     if not config_file.exists():
-        return False, "examples_config.yaml not found"
+        return False, "config/llm_examples.yaml not found"
     
     with open(config_file, 'r') as f:
         content = f.read()
     
     # Check for security warning
     if "⚠️" not in content or "WARNING" not in content.upper():
-        return False, "examples_config.yaml missing security warning"
+        return False, "config/llm_examples.yaml missing security warning"
     
     # Check that it uses environment variables
     if "${" not in content:
