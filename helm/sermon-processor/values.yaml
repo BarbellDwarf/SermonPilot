@@ -1,0 +1,108 @@
+# helm/sermon-processor/values.yaml
+# Default values for sermon-processor
+replicaCount: 2
+
+image:
+  repository: sermon-processor
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8501
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+  hosts:
+    - host: sermon.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: sermon-processor-tls
+      hosts:
+        - sermon.example.com
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 4Gi
+    nvidia.com/gpu: 1
+  requests:
+    cpu: 1000m
+    memory: 2Gi
+    nvidia.com/gpu: 1
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector:
+  gpu: "true"
+
+tolerations:
+  - key: "nvidia.com/gpu"
+    operator: "Exists"
+    effect: "NoSchedule"
+
+affinity: {}
+
+persistence:
+  enabled: true
+  storageClass: "nfs"
+  accessMode: ReadWriteMany
+  size: 100Gi
+
+# External services
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: "sermon-postgres-password"
+    username: "sermon_user"
+    password: "sermon-user-password"
+    database: "sermon_processor"
+
+redis:
+  enabled: true
+  auth:
+    enabled: false
+
+# Application configuration
+config:
+  environment: "production"
+  logLevel: "INFO"
+  debug: false
+
+# Secrets (override in values-prod.yaml)
+secrets:
+  sermonAudioApiKey: ""
+  openaiApiKey: ""
+  anthropicApiKey: ""
+  xaiApiKey: ""

@@ -70,3 +70,8 @@ services:
 volumes:
   postgres_data:
   nginx_logs:
+
+networks:
+  sermon_network:
+    external: true
+    name: sermon-ai-audio-processor_sermon_network
