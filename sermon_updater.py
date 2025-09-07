@@ -74,6 +74,8 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     logging.getLogger("torchaudio").disabled = True
     from audio_processing import process_sermon_audio
     from llm_manager import LLMManager, migrate_legacy_config
+    from cli.parser import CLIParser, confirm, parse_years
+    from core.config import ConfigManager
 
     # Import database for Q&A processing tracking
     try:
@@ -124,21 +126,27 @@ def setup_logging(verbose: bool = False):
         df_logger.setLevel(logging.CRITICAL)
         df_logger.disabled = True
 def load_config(path: str) -> dict:
-    with open(path, encoding="utf-8") as fh:
-        cfg = yaml.safe_load(fh) or {}
-    return migrate_legacy_config(cfg)
+    # Legacy function - now uses ConfigManager
+    config_manager = ConfigManager(path)
+    return config_manager.get_raw_config()
 
 
 CONFIG_PATH = os.environ.get("SA_UPDATER_CONFIG", "config.yaml")
-if not os.path.exists(CONFIG_PATH):
-    print(f"[FATAL] Config file not found: {CONFIG_PATH}")
+config_manager = ConfigManager(CONFIG_PATH)
+
+# Validate required settings
+missing_settings = config_manager.validate_required_settings()
+if missing_settings:
+    print(f"[FATAL] Missing required configuration settings: {', '.join(missing_settings)}")
+    print(f"Please check your config file: {CONFIG_PATH}")
     sys.exit(1)
 
-config = load_config(CONFIG_PATH)
+# For backward compatibility, provide config dict
+config = config_manager.get_raw_config()
 llm_manager = LLMManager(config)
 
-SERMON_AUDIO_API_KEY = config['api_key']
-SERMON_AUDIO_BROADCASTER_ID = config['broadcaster_id']
+SERMON_AUDIO_API_KEY = config_manager.get('api_key')
+SERMON_AUDIO_BROADCASTER_ID = config_manager.get('broadcaster_id')
 sermonaudio.set_api_key(SERMON_AUDIO_API_KEY)
 
 DRY_RUN = config.get('dry_run', False)
@@ -2752,12 +2760,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def confirm(prompt: str, auto_yes: bool) -> bool:
-    if auto_yes:
-        return True
-    return input(f"{prompt} [y/N]: ").strip().lower() == 'y'
-
-
 def cli_main(argv: Iterable[str] | None = None):  # orchestration
     """CLI entry point with subcommand support.
 
@@ -2768,8 +2770,9 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
     - validation: Validate sermon descriptions
     - list: List sermons without processing
     """
-    global config, llm_manager, DRY_RUN, DEBUG
-    parser = build_arg_parser()
+    global config, llm_manager, DRY_RUN, DEBUG, config_manager
+    cli_parser = CLIParser(CONFIG_PATH)
+    parser = cli_parser.build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     # Set up logging based on verbose flag
@@ -2778,7 +2781,8 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
     if args.config and args.config != CONFIG_PATH:
         if not os.path.exists(args.config):
             parser.error(f"Config not found: {args.config}")
-        config = load_config(args.config)
+        config_manager = ConfigManager(args.config)
+        config = config_manager.get_raw_config()
         llm_manager = LLMManager(config)
         # update dependent flags
         DRY_RUN = config.get('dry_run', DRY_RUN)
