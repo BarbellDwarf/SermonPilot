@@ -1,0 +1,16 @@
+# helm/sermon-processor/Chart.yaml
+apiVersion: v2
+name: sermon-processor
+description: A Helm chart for SermonAudio Processor
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+dependencies:
+  - name: postgresql
+    version: "12.1.2"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: postgresql.enabled
+  - name: redis
+    version: "17.3.7"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: redis.enabled

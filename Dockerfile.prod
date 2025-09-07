@@ -1,0 +1,12 @@
+# Dockerfile.prod - Production version
+FROM app AS prod
+
+# Remove development files
+RUN rm -rf /app/tests /app/Test* /app/copilot-plans /app/.git* /app/examples
+
+# Production optimizations
+ENV PYTHONOPTIMIZE=2
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Production startup script
+CMD ["/app/docker/start_production.sh"]
