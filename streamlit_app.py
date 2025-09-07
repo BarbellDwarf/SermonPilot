@@ -266,6 +266,8 @@ def main():
         show_library()
     elif current_page == 'analytics':
         show_analytics()
+    elif current_page == 'config_management':
+        show_config_management()
     elif current_page == 'settings':
         show_settings()
     else:
@@ -341,6 +343,16 @@ def show_analytics():
         # Fallback if pages module not available
         st.markdown('<div class="main-header">📈 Analytics</div>', unsafe_allow_html=True)
         st.error("❌ Analytics module not found. Please check the installation.")
+
+def show_config_management():
+    """Configuration management page"""
+    try:
+        from ui.ui_pages.config_management import show_config_management_page
+        show_config_management_page()
+    except ImportError:
+        # Fallback if pages module not available
+        st.markdown('<div class="main-header">🔧 Configuration Management</div>', unsafe_allow_html=True)
+        st.error("❌ Configuration management module not found. Please check the installation.")
 
 def show_settings():
     """Settings page"""
