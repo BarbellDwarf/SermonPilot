@@ -65,9 +65,9 @@ class TestSecurityCompliance:
 
     def test_config_example_uses_environment_variables(self):
         """Test that config.example.yaml uses environment variables."""
-        config_file = Path(__file__).parent.parent / "config.example.yaml"
+        config_file = Path(__file__).parent.parent.parent / "config" / "config.example.yaml"
         if not config_file.exists():
-            pytest.skip("config.example.yaml not found")
+            pytest.skip("config/config.example.yaml not found")
         
         with open(config_file, 'r') as f:
             content = f.read()
@@ -81,7 +81,7 @@ class TestSecurityCompliance:
                 if f'{field}:' in line and '${' not in line and not line.strip().startswith('#'):
                     violations.append(f"Line {line_num}: {line.strip()}")
         
-        assert not violations, f"config.example.yaml contains hardcoded values:\n" + "\n".join(violations)
+        assert not violations, f"config/config.example.yaml contains hardcoded values:\n" + "\n".join(violations)
 
     @pytest.mark.skipif(SecureConfigLoader is None, reason="secure_config module not available")
     def test_secure_config_loader_validation(self):
@@ -197,7 +197,7 @@ debug: false
     def test_production_safety_checks(self):
         """Test production safety configurations."""
         # Check that debug mode defaults to False in example configs
-        config_file = Path(__file__).parent.parent / "config.example.yaml"
+        config_file = Path(__file__).parent.parent.parent / "config" / "config.example.yaml"
         if config_file.exists():
             with open(config_file, 'r') as f:
                 content = f.read()

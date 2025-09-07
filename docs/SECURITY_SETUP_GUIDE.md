@@ -40,7 +40,7 @@ Copy and customize the configuration:
 
 ```bash
 # Copy the configuration template
-cp config.example.yaml config.yaml
+cp config/config.example.yaml config.yaml
 
 # The config.yaml file will automatically use your environment variables
 # No need to edit it manually - it references ${ENV_VAR_NAME} automatically
@@ -190,7 +190,7 @@ python tools/security_scanner.py --verbose
 **"Configuration file not found"**
 ```bash
 # Copy the example configuration
-cp config.example.yaml config.yaml
+cp config/config.example.yaml config.yaml
 ```
 
 #### Environment Variable Not Loading
