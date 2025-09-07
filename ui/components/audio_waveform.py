@@ -115,6 +115,16 @@ class AudioWaveformViewer:
 
     def get_audio_info(self) -> dict:
         """Get basic audio information."""
+        if len(self.audio_data) == 0:
+            return {
+                'duration': 0.0,
+                'sample_rate': self.sample_rate,
+                'samples': 0,
+                'channels': 1,
+                'max_amplitude': 0.0,
+                'rms_level': 0.0
+            }
+        
         return {
             'duration': self.duration,
             'sample_rate': self.sample_rate,
