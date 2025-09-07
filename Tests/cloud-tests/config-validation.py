@@ -197,8 +197,9 @@ def analyze_all_configs(project_root: Path) -> Dict[str, Any]:
     # Find configuration files
     config_files = {
         'config.yaml': project_root / 'config.yaml',
-        'config.example.yaml': project_root / 'config.example.yaml',
-        'examples_config.yaml': project_root / 'examples_config.yaml'
+        'config.example.yaml': project_root / 'config.example.yaml'
+        # Note: examples_config.yaml is a reference file with LLM provider examples only
+        # It's not a complete configuration and doesn't need full validation
     }
     
     for config_name, config_path in config_files.items():

@@ -1,11 +1,11 @@
 {
-  "timestamp": "1757205753.382353",
+  "timestamp": "1757206193.5745387",
   "project_root": "/home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor",
   "files_scanned": 146,
   "critical_files": 0,
   "high_risk_files": 9,
-  "medium_risk_files": 11,
-  "total_placeholders": 143,
+  "medium_risk_files": 12,
+  "total_placeholders": 148,
   "total_credentials": 0,
   "files_by_risk": {
     "critical": [],
@@ -151,6 +151,13 @@
         "credentials": 0,
         "demo_content": 0,
         "issues": 7
+      },
+      {
+        "file": "test-log.md",
+        "placeholders": 6,
+        "credentials": 0,
+        "demo_content": 0,
+        "issues": 6
       }
     ],
     "low": [
@@ -548,13 +555,6 @@
       },
       {
         "file": "README.md",
-        "placeholders": 1,
-        "credentials": 0,
-        "demo_content": 0,
-        "issues": 1
-      },
-      {
-        "file": "test-log.md",
         "placeholders": 1,
         "credentials": 0,
         "demo_content": 0,
