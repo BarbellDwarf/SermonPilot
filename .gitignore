@@ -94,3 +94,8 @@ logs/
 .cache/
 .pytest_cache/
 sermon_processor.db
+*.bin
+/analytics_*/*
+*.sqlite3
+*.sqlite
+analytics_vector_db/chroma.sqlite3
