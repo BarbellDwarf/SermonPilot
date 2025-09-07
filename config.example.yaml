@@ -1,9 +1,9 @@
 # SermonAudio Updater Configuration
 # Copy this to config.yaml and update with your settings
 
-# SermonAudio API credentials
-api_key: "your-api-key-here"
-broadcaster_id: "your-broadcaster-id"
+# SermonAudio API credentials - Use environment variables for security
+api_key: "${SERMONAUDIO_API_KEY}"
+broadcaster_id: "${SERMONAUDIO_BROADCASTER_ID}"
 
 # LLM Configuration
 llm:
@@ -14,20 +14,20 @@ llm:
       host: "http://localhost:11434"
       model: "llama3"
     openai:
-      api_key: "your-openai-key"
+      api_key: "${OPENAI_API_KEY}"
       model: "gpt-3.5-turbo"
       # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for other providers
     anthropic:
-      api_key: "your-anthropic-key"
+      api_key: "${ANTHROPIC_API_KEY}"
       model: "claude-3-5-sonnet-20241022"  # Default model, can be overridden
     xai:
-      api_key: "your-xai-key"
+      api_key: "${XAI_API_KEY}"
       model: "grok-beta"  # Default model, can be overridden
     google:
-      api_key: "your-google-key"
+      api_key: "${GOOGLE_API_KEY}"
       model: "gemini-1.5-flash"  # Default model, can be overridden
     groq:
-      api_key: "your-groq-key"
+      api_key: "${GROQ_API_KEY}"
       model: "llama-3.1-70b-versatile"  # Default model, can be overridden
   
   # Fallback LLM settings (used if primary fails)
@@ -38,20 +38,20 @@ llm:
       host: "http://localhost:11434"
       model: "llama2"
     openai:
-      api_key: "your-fallback-openai-key"
+      api_key: "${OPENAI_API_KEY}"
       model: "gpt-3.5-turbo"
       # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for other providers
     anthropic:
-      api_key: "your-anthropic-key"
+      api_key: "${ANTHROPIC_API_KEY}"
       model: "claude-3-haiku-20240307"  # Faster/cheaper model for fallback
     xai:
-      api_key: "your-xai-key"
+      api_key: "${XAI_API_KEY}"
       model: "grok-beta"
     google:
-      api_key: "your-google-key"
+      api_key: "${GOOGLE_API_KEY}"
       model: "gemini-1.5-flash"
     groq:
-      api_key: "your-groq-key"
+      api_key: "${GROQ_API_KEY}"
       model: "llama-3.1-8b-instant"  # Faster model for fallback
   
   # Validation LLM settings (smaller model for description validation)
@@ -62,17 +62,17 @@ llm:
       host: "http://localhost:11434"
       model: "gemma2:2b"  # Smaller, faster model for validation
     openai:
-      api_key: "your-openai-key"
+      api_key: "${OPENAI_API_KEY}"
       model: "gpt-4o-mini"  # Smaller OpenAI model for validation
       # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint
     anthropic:
-      api_key: "your-anthropic-key"
+      api_key: "${ANTHROPIC_API_KEY}"
       model: "claude-3-haiku-20240307"  # Fast, affordable model for validation
     google:
-      api_key: "your-google-key"
+      api_key: "${GOOGLE_API_KEY}"
       model: "gemini-1.5-flash"  # Fast model for validation
     groq:
-      api_key: "your-groq-key"
+      api_key: "${GROQ_API_KEY}"
       model: "llama-3.1-8b-instant"  # Fast model for validation
 
 # Audio Processing Settings
@@ -122,7 +122,7 @@ embeddings:
       # All sentence-transformer models run locally
     
     openai:
-      api_key: "your-openai-key"  # OpenAI API key
+      api_key: "${OPENAI_API_KEY}"  # OpenAI API key
       model: "text-embedding-3-small"  # Options: text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002
       base_url: "https://api.openai.com/v1"  # Custom endpoint for other providers
     
