@@ -1,13 +1,13 @@
 # Quick Mock Data Analysis Report
-**Generated**: 1757205753.382353
+**Generated**: 1757206193.5745387
 
 ## 📊 Quick Summary
 - **Files Scanned**: 146
-- **Files with Issues**: 20
+- **Files with Issues**: 21
 - **Critical Files**: 0
 - **High Risk Files**: 9
-- **Medium Risk Files**: 11
-- **Total Placeholders**: 143
+- **Medium Risk Files**: 12
+- **Total Placeholders**: 148
 - **Potential Credentials**: 0
 
 ## ⚠️ High Risk Files

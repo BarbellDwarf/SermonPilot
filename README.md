@@ -520,6 +520,40 @@ Pull requests welcome! Please:
 - Add tests for new features
 - Update documentation
 
+
+## 🧪 Comprehensive Testing Framework
+
+This project includes a comprehensive testing framework implemented according to the MasterPlan:
+
+### Test Structure
+- `Tests/unit-tests/` - Component-level tests
+- `Tests/integration-tests/` - System integration tests  
+- `Tests/ui-tests/` - Streamlit UI specific tests
+- `Tests/cloud-tests/` - Cloud-safe static analysis tests
+- `Tests/local-tests/` - Local environment dependent tests
+- `Tests/archives/` - Historical test data and results
+
+### Running Tests
+```bash
+# Run comprehensive test suite
+python Tests/master_plan_runner.py
+
+# Run only cloud-safe tests
+python Tests/master_plan_runner.py --cloud-only
+
+# Run only unit tests
+python Tests/master_plan_runner.py --unit-only
+
+# Run with local environment tests
+python Tests/master_plan_runner.py --local
+```
+
+### Test Requirements
+- **Cloud Environment**: Static analysis, configuration validation, import checks
+- **Local Environment**: UI testing, API integration, audio processing, RAG system
+
+See `LOCAL_TESTING_REQUIREMENTS.md` for complete local setup instructions.
+
 ## License
 
 MIT License - see LICENSE file
