@@ -1,0 +1,58 @@
+# ⚠️ TEST CONFIGURATION ONLY - DO NOT USE IN PRODUCTION ⚠️
+# This file contains mock data for testing purposes only
+
+# SermonAudio API credentials - MOCK VALUES FOR TESTING
+api_key: "test_api_key_12345"
+broadcaster_id: "test_broadcaster_54321"
+
+# LLM Configuration - MOCK VALUES FOR TESTING
+llm:
+  primary:
+    provider: "ollama"
+    ollama:
+      host: "http://localhost:11434"
+      model: "llama3"
+    openai:
+      api_key: "test_openai_key_mock"
+      model: "gpt-3.5-turbo"
+  
+  fallback:
+    enabled: true
+    provider: "openai"
+    openai:
+      api_key: "test_fallback_key_mock"
+      model: "gpt-3.5-turbo"
+
+# Audio Processing Settings - TEST VALUES
+use_audacity: false
+audio_enhancement_method: "none"  # Disable for testing
+audio_noise_reduction: false
+audio_amplify: false
+audio_normalize: false
+
+# Processing Options - TEST CONFIGURATION
+dry_run: true  # Always dry run for tests
+debug: true    # Enable debug for test visibility
+hashtag_verification: false  # Disable to speed up tests
+
+# Output Settings - TEST DIRECTORIES
+output_directory: "/tmp/test_processed_sermons"
+save_original_audio: false  # Don't save to speed up tests
+save_transcript: false
+
+# Metadata Processing Settings - MINIMAL FOR TESTING
+metadata_processing:
+  enabled: false  # Disable metadata processing for unit tests
+  process_audio: false
+
+# Web UI Configuration - TEST SETTINGS
+web_ui:
+  items_per_page: 5  # Small for testing
+  audio_player_enabled: false
+  pdf_generation: false
+  analytics_enabled: false
+
+# Default search criteria - TEST VALUES
+default_criteria:
+  event_type: "sunday_service"
+  date_range: 1  # Only 1 day for testing
