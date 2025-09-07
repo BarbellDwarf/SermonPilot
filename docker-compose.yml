@@ -1,0 +1,100 @@
+# docker-compose.yml - Complete stack
+
+services:
+  # Main application
+  sermon-processor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: app
+    container_name: sermon-processor
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - OLLAMA_HOST=http://ollama:11434
+      - DATABASE_URL=sqlite:///data/sermon_processor.db
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONPATH=/app:/app/src
+    volumes:
+      - sermon_data:/data
+      - sermon_models:/models
+      - sermon_logs:/app/logs
+      - sermon_config:/app/config_backups
+      - /tmp:/tmp
+    depends_on:
+      - ollama
+      - redis
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - sermon_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # Ollama service for local LLM inference
+  ollama:
+    image: ollama/ollama:latest
+    container_name: sermon-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - sermon_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for job queue and caching
+  redis:
+    image: redis:7-alpine
+    container_name: sermon-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - sermon_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  sermon_data:
+  sermon_models:
+  sermon_logs:
+  sermon_config:
+  ollama_data:
+  redis_data:
+
+networks:
+  sermon_network:
+    driver: bridge
