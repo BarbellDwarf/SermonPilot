@@ -76,6 +76,13 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     from llm_manager import LLMManager, migrate_legacy_config
     from cli.parser import CLIParser, confirm, parse_years
     from core.config import ConfigManager
+    from processing.orchestrator import (
+        ProcessingOptions,
+        ValidationOptions,
+        ArgumentsNormalizer,
+        ProcessingOrchestrator,
+        SermonFilter,
+    )
 
     # Import database for Q&A processing tracking
     try:
@@ -2928,31 +2935,23 @@ def handle_list_sermons(args):
 
 def handle_original_processing(args):
     """Handle the original sermon processing logic for backward compatibility."""
-    # Set defaults for missing attributes that might not exist in subcommand args
-    if not hasattr(args, 'validate_descriptions'):
-        args.validate_descriptions = False
-    if not hasattr(args, 'validate_and_regenerate'):
-        args.validate_and_regenerate = False
-    if not hasattr(args, 'validation_report'):
-        args.validation_report = False
-    if not hasattr(args, 'export_validation_csv'):
-        args.export_validation_csv = None
-    if not hasattr(args, 'export_validation_json'):
-        args.export_validation_json = None
-    if not hasattr(args, 'validation_sermon_ids'):
-        args.validation_sermon_ids = None
-    if not hasattr(args, 'no_upload'):
-        args.no_upload = False
-    if not hasattr(args, 'output_dir'):
-        args.output_dir = None
-    if not hasattr(args, 'save_original_audio'):
-        args.save_original_audio = False
-    if not hasattr(args, 'no_save_original_audio'):
-        args.no_save_original_audio = False
-    if not hasattr(args, 'save_transcript'):
-        args.save_transcript = False
-    if not hasattr(args, 'no_save_transcript'):
-        args.no_save_transcript = False
+    # Normalize arguments using the new orchestrator
+    processing_options, validation_options = ArgumentsNormalizer.normalize_args(args)
+    
+    # Create orchestrator and filter instances
+    orchestrator = ProcessingOrchestrator(config, console_print)
+    sermon_filter = SermonFilter(config)
+    
+    # Validate processing requirements
+    issues = orchestrator.validate_processing_requirements(processing_options, validation_options)
+    if issues:
+        for issue in issues:
+            console_print(f"❌ {issue}", "error")
+        return
+    
+    # Resolve audio and transcript save options
+    save_original_audio = ArgumentsNormalizer.resolve_audio_save_option(args, config)
+    save_transcript = ArgumentsNormalizer.resolve_transcript_save_option(args, config)
 
     if args.sermon_id:
         if not confirm(f"Process sermon {args.sermon_id}?", args.auto_yes):
@@ -2962,22 +2961,6 @@ def handle_original_processing(args):
 
         # Handle metadata-only and skip-audio flags
         skip_audio = args.metadata_only or args.skip_audio
-
-        # Determine save_original_audio setting
-        if args.no_save_original_audio:
-            save_original_audio = False
-        elif args.save_original_audio:
-            save_original_audio = True
-        else:
-            save_original_audio = None  # Use config default
-
-        # Determine save_transcript setting
-        if args.no_save_transcript:
-            save_transcript = False
-        elif args.save_transcript:
-            save_transcript = True
-        else:
-            save_transcript = None  # Use config default
 
         result = process_single_sermon(
             args.sermon_id,
