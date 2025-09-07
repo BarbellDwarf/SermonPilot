@@ -99,3 +99,4 @@ sermon_processor.db
 *.sqlite3
 *.sqlite
 analytics_vector_db/chroma.sqlite3
+analytics_vector_db/chroma.sqlite3
