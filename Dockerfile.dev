@@ -1,0 +1,21 @@
+# Dockerfile.dev - Development version
+FROM app AS dev
+
+USER root
+
+# Install development tools
+RUN apt-get update && apt-get install -y \
+    vim \
+    htop \
+    curl \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install development Python packages
+RUN . /app/venv/bin/activate && \
+    uv pip install pytest pytest-cov black ruff mypy
+
+USER sermonapp
+
+# Development command with hot reload
+CMD ["streamlit", "run", "streamlit_app.py", "--server.fileWatcherType", "poll"]
