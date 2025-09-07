@@ -23,8 +23,8 @@ Successfully implemented Phase 1 of the comprehensive security hardening plan ou
 ### 1. Secure Configuration System ✅
 - **`src/secure_config.py`**: Advanced configuration loader with environment variable substitution
 - **`.env.example`**: Comprehensive template with 40+ environment variables
-- **`config.example.yaml`**: Updated to use `${VAR_NAME}` syntax throughout
-- **`examples_config.yaml`**: Security warnings and environment variable usage
+- **`config/config.example.yaml`**: Updated to use `${VAR_NAME}` syntax throughout
+- **`config/llm_examples.yaml`**: Security warnings and environment variable usage
 
 ### 2. Security Scanning and Validation ✅
 - **`tools/security_scanner.py`**: Comprehensive scanner detecting 8 types of security violations
@@ -117,7 +117,7 @@ cp .env.example .env
 # Edit .env with your credentials
 
 # 2. Configure application
-cp config.example.yaml config.yaml
+cp config/config.example.yaml config.yaml
 # No editing needed - uses environment variables
 
 # 3. Validate security
