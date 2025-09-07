@@ -7,6 +7,7 @@ Falls back to mock data when API is unavailable.
 
 import logging
 import random
+import requests
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
@@ -26,23 +27,157 @@ class SermonAudioAnalytics:
         else:
             logger.info(f"SermonAudio analytics configured for broadcaster: {broadcaster_id}")
     
-    def get_all_sermon_analytics(self) -> List[Dict[str, Any]]:
-        """Get comprehensive sermon analytics data"""
+    def get_all_sermon_analytics(self, date_range=None, fetch_all=False) -> List[Dict[str, Any]]:
+        """Get comprehensive sermon analytics data
+        
+        Args:
+            date_range: Tuple of (start_date, end_date) as strings in YYYY-MM-DD format
+            fetch_all: If True, fetch all available sermons (ignores pageSize limit)
+        """
         if self.mock_mode:
             return self._generate_mock_data()
         else:
             try:
-                return self._fetch_real_data()
+                return self._fetch_real_data(date_range=date_range, fetch_all=fetch_all)
             except Exception as e:
                 logger.warning(f"Failed to fetch real data, falling back to mock: {e}")
                 return self._generate_mock_data()
     
-    def _fetch_real_data(self) -> List[Dict[str, Any]]:
-        """Fetch real data from SermonAudio API"""
-        # TODO: Implement real SermonAudio API integration
-        # This would require the sermonaudio package and proper API calls
-        logger.info("Real SermonAudio API integration not yet implemented")
-        return self._generate_mock_data()
+    def _parse_sermon_data(self, sermon):
+        """Parse individual sermon data from API response"""
+        try:
+            # Handle speaker data
+            speaker_data = sermon.get('speaker', {})
+            if isinstance(speaker_data, dict):
+                speaker_name = speaker_data.get('displayName', 'Unknown Speaker')
+            else:
+                speaker_name = str(speaker_data) if speaker_data else 'Unknown Speaker'
+            
+            # Handle broadcaster data
+            broadcaster_data = sermon.get('broadcaster', {})
+            if isinstance(broadcaster_data, dict):
+                church_name = broadcaster_data.get('displayName', 'Unknown Church')
+            else:
+                church_name = str(broadcaster_data) if broadcaster_data else 'Unknown Church'
+            
+            # Try to get view data from available fields
+            # SermonAudio API v2 doesn't provide play counts in detailedStats for regular access
+            # We use lastAudioAccessTimestamp as an indicator of recent activity
+            views = 0  # No direct view count available
+            last_audio_access = sermon.get('lastAudioAccessTimestamp')
+            last_video_access = sermon.get('lastVideoAccessTimestamp')
+            
+            # If we have recent access timestamps, we can note the sermon has been accessed
+            # but we can't get actual play counts from the API
+            has_recent_activity = bool(last_audio_access or last_video_access)
+            
+            return {
+                'sermon_id': sermon.get('sermonID', ''),
+                'title': sermon.get('fullTitle') or sermon.get('displayTitle', 'Untitled'),
+                'speaker': speaker_name,
+                'date': sermon.get('preachDate', ''),
+                'series': sermon.get('subtitle', ''),  # subtitle often contains series info
+                'topic': sermon.get('bibleText', ''),
+                'bible_text': sermon.get('bibleText', ''),
+                'views': views,  # API limitation: view counts not available
+                'downloads': sermon.get('downloadCount', 0),
+                'video_downloads': sermon.get('videoDownloadCount', 0),
+                'duration_minutes': (sermon.get('audioDurationSeconds', 0) // 60) if sermon.get('audioDurationSeconds') else 0,
+                'file_size_mb': 0,  # Not available in API response
+                'language': sermon.get('languageCode', 'en'),
+                'sermon_url': f"https://www.sermonaudio.com/sermon/{sermon.get('sermonID', '')}",
+                'created_date': sermon.get('preachDate', ''),
+                'last_modified': sermon.get('preachDate', ''),
+                'subtitle': sermon.get('subtitle', ''),
+                'denomination': '',  # Not directly available
+                'church_name': church_name,
+                'church_city': '',  # Not available in lite broadcaster data
+                'church_state': '',  # Not available in lite broadcaster data
+                'is_video': sermon.get('hasVideo', False),
+                'is_audio': sermon.get('hasAudio', False),
+                'quality_rating': 0,  # Not available
+                'keywords': '',  # Not available in this response
+                'event_type': sermon.get('eventType', ''),
+                'comment_count': sermon.get('commentCount', 0),
+                'likes': 0,  # Not available
+                'last_audio_access': last_audio_access,
+                'last_video_access': last_video_access,
+                'has_recent_activity': has_recent_activity
+            }
+        except Exception as e:
+            print(f"Error parsing sermon data: {e}")
+            return None
+    
+    def _fetch_real_data(self, date_range=None, fetch_all=False):
+        """Fetch real sermon data from the SermonAudio API.
+        
+        Args:
+            date_range: Tuple of (start_date, end_date) as strings in YYYY-MM-DD format
+            fetch_all: If True, fetch all available sermons (ignores pageSize limit)
+        """
+        if not self.api_key or not self.broadcaster_id:
+            raise ValueError("API key and broadcaster ID are required for real data")
+        
+        # Make API call to SermonAudio API v2
+        url = "https://api.sermonaudio.com/v2/node/sermons"
+        headers = {'X-Api-Key': self.api_key, 'Content-Type': 'application/json'}
+        
+        # Base parameters
+        params = {
+            'broadcasterID': self.broadcaster_id,
+            'page': 1
+        }
+        
+        # Add date range if specified
+        if date_range and len(date_range) == 2:
+            start_date, end_date = date_range
+            if start_date:
+                params['preachDateStart'] = start_date
+            if end_date:
+                params['preachDateEnd'] = end_date
+        
+        # Set page size based on fetch_all flag
+        if fetch_all:
+            params['pageSize'] = 100  # Use smaller page size for pagination
+        else:
+            params['pageSize'] = 100  # Default for analytics view
+        
+        all_sermons = []
+        max_pages = 1 if not fetch_all else 50  # Limit to prevent runaway requests
+        
+        try:
+            for page in range(1, max_pages + 1):
+                params['page'] = page
+                
+                logger.info(f"Fetching page {page} with params: {params}")
+                response = requests.get(url, params=params, headers=headers, timeout=60)
+                response.raise_for_status()
+                data = response.json()
+                sermons = data.get('results', [])
+                
+                if not sermons:  # No more sermons to fetch
+                    break
+                
+                # Parse sermon data
+                for sermon in sermons:
+                    parsed_sermon = self._parse_sermon_data(sermon)
+                    if parsed_sermon:
+                        all_sermons.append(parsed_sermon)
+                
+                # If we got fewer sermons than page size, we're done
+                if len(sermons) < params['pageSize']:
+                    break
+                
+                # For single page requests, stop after first page
+                if not fetch_all:
+                    break
+            
+            logger.info(f"Successfully fetched {len(all_sermons)} sermons")
+            return all_sermons
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch real sermon data: {e}")
+            raise
     
     def _generate_mock_data(self) -> List[Dict[str, Any]]:
         """Generate realistic mock data for development and testing"""

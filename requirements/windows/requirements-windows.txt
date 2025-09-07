@@ -1,0 +1,19 @@
+# Windows-specific requirements for SermonAudio AI Audio Processor
+# Install with: uv pip install -r requirements/windows/requirements-windows.txt --index-strategy unsafe-best-match
+
+# Use PyTorch CUDA index for GPU support on Windows
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+# Core dependencies
+-r ../requirements.txt
+
+# Windows-specific system packages may be needed:
+# Install ffmpeg from: https://ffmpeg.org/download.html
+# Add to PATH or place in project directory
+
+# For GPU support on Windows, also install:
+# -r ../requirements-gpu.txt
+
+# For AI models on Windows, also install:
+# -r requirements-models-deepfilternet.txt
+# -r requirements-models-resemble.txt  # (manual installation recommended)

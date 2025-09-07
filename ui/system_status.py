@@ -261,7 +261,13 @@ class SystemStatusManager:
 
             if response.status_code == 200:
                 models = response.json().get('models', [])
-                model_names = [m['name'] for m in models]
+                model_names = []
+                for m in models:
+                    try:
+                        model_names.append(m.get('model') or m.get('name'))
+                    except Exception:
+                        continue
+                model_names = [n for n in model_names if n]
 
                 if model in model_names:
                     return {
