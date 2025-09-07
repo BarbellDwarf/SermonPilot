@@ -1,5 +1,5 @@
 {
-  "timestamp": "1757204767.8262198",
+  "timestamp": "1757206350.4804516",
   "project_root": "/home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor",
   "configs": {
     "config.example.yaml": {
@@ -189,156 +189,13 @@
       ],
       "required_fields": {},
       "field_coverage": 0.8333333333333334
-    },
-    "examples_config.yaml": {
-      "config_name": "examples_config.yaml",
-      "valid": false,
-      "errors": [
-        "Missing required field: api_key",
-        "Missing required field: broadcaster_id",
-        "Missing required field: llm"
-      ],
-      "warnings": [],
-      "sections": {
-        "api_key": {
-          "present": false,
-          "required": true,
-          "type_valid": false,
-          "description": "SermonAudio API key",
-          "issues": []
-        },
-        "broadcaster_id": {
-          "present": false,
-          "required": true,
-          "type_valid": false,
-          "description": "SermonAudio broadcaster ID",
-          "issues": []
-        },
-        "llm": {
-          "present": false,
-          "required": true,
-          "type_valid": false,
-          "description": "LLM provider configuration",
-          "issues": []
-        },
-        "metadata_processing": {
-          "present": false,
-          "required": false,
-          "type_valid": false,
-          "description": "Metadata processing options",
-          "issues": []
-        },
-        "audio_processing": {
-          "present": false,
-          "required": false,
-          "type_valid": false,
-          "description": "Audio processing configuration",
-          "issues": []
-        },
-        "debug": {
-          "present": false,
-          "required": false,
-          "type_valid": false,
-          "description": "Debug mode flag",
-          "issues": []
-        }
-      },
-      "placeholders": [
-        {
-          "path": "llm_xai_example.primary.openai.api_key",
-          "value": "xai-your-api-key-here",
-          "pattern": "your-.*-key"
-        },
-        {
-          "path": "llm_xai_example.primary.openai.api_key",
-          "value": "xai-your-api-key-here",
-          "pattern": ".*-here"
-        },
-        {
-          "path": "llm_xai_example.fallback.openai.api_key",
-          "value": "sk-your-openai-key-here",
-          "pattern": "your-.*-key"
-        },
-        {
-          "path": "llm_xai_example.fallback.openai.api_key",
-          "value": "sk-your-openai-key-here",
-          "pattern": ".*-here"
-        },
-        {
-          "path": "llm_anthropic_example.primary.openai.api_key",
-          "value": "sk-ant-your-anthropic-key-here",
-          "pattern": "your-.*-key"
-        },
-        {
-          "path": "llm_anthropic_example.primary.openai.api_key",
-          "value": "sk-ant-your-anthropic-key-here",
-          "pattern": ".*-here"
-        },
-        {
-          "path": "llm_anthropic_example.fallback.ollama.host",
-          "value": "http://localhost:11434",
-          "pattern": "localhost.*"
-        },
-        {
-          "path": "llm_groq_example.primary.openai.api_key",
-          "value": "gsk-your-groq-key-here",
-          "pattern": "your-.*-key"
-        },
-        {
-          "path": "llm_groq_example.primary.openai.api_key",
-          "value": "gsk-your-groq-key-here",
-          "pattern": ".*-here"
-        },
-        {
-          "path": "llm_groq_example.fallback.openai.api_key",
-          "value": "xai-your-xai-key-here",
-          "pattern": "your-.*-key"
-        },
-        {
-          "path": "llm_groq_example.fallback.openai.api_key",
-          "value": "xai-your-xai-key-here",
-          "pattern": ".*-here"
-        },
-        {
-          "path": "llm_local_example.primary.openai.base_url",
-          "value": "http://localhost:8000/v1",
-          "pattern": "localhost.*"
-        },
-        {
-          "path": "llm_local_example.fallback.ollama.host",
-          "value": "http://localhost:11434",
-          "pattern": "localhost.*"
-        },
-        {
-          "path": "llm_premium_budget.primary.openai.api_key",
-          "value": "sk-your-openai-key-here",
-          "pattern": "your-.*-key"
-        },
-        {
-          "path": "llm_premium_budget.primary.openai.api_key",
-          "value": "sk-your-openai-key-here",
-          "pattern": ".*-here"
-        },
-        {
-          "path": "llm_premium_budget.fallback.openai.api_key",
-          "value": "sk-your-openai-key-here",
-          "pattern": "your-.*-key"
-        },
-        {
-          "path": "llm_premium_budget.fallback.openai.api_key",
-          "value": "sk-your-openai-key-here",
-          "pattern": ".*-here"
-        }
-      ],
-      "required_fields": {},
-      "field_coverage": 0.0
     }
   },
   "summary": {
-    "total_configs": 2,
+    "total_configs": 1,
     "valid_configs": 1,
-    "total_errors": 3,
+    "total_errors": 0,
     "total_warnings": 0,
-    "total_placeholders": 39
+    "total_placeholders": 22
   }
 }

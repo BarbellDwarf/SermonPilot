@@ -1,12 +1,12 @@
 # SermonAudio Processor Configuration Validation Report
-**Generated**: 1757204767.8262198
+**Generated**: 1757206350.4804516
 
 ## 📊 Summary
-- **Total Configurations**: 2
+- **Total Configurations**: 1
 - **Valid Configurations**: 1
-- **Total Errors**: 3
+- **Total Errors**: 0
 - **Total Warnings**: 0
-- **Placeholder Values**: 39
+- **Placeholder Values**: 22
 
 ## 📄 config.example.yaml
 **Status**: ✅ Valid
@@ -49,43 +49,6 @@
 - ❌ **audio_processing**
 - ✅ **debug**
 
-## 📄 examples_config.yaml
-**Status**: ❌ Invalid
-**Field Coverage**: 0.0%
-
-### ❌ Errors
-- Missing required field: api_key
-- Missing required field: broadcaster_id
-- Missing required field: llm
-
-### 🏷️ Placeholder Values
-- `llm_xai_example.primary.openai.api_key`: `xai-your-api-key-here`
-- `llm_xai_example.primary.openai.api_key`: `xai-your-api-key-here`
-- `llm_xai_example.fallback.openai.api_key`: `sk-your-openai-key-here`
-- `llm_xai_example.fallback.openai.api_key`: `sk-your-openai-key-here`
-- `llm_anthropic_example.primary.openai.api_key`: `sk-ant-your-anthropic-key-here`
-- `llm_anthropic_example.primary.openai.api_key`: `sk-ant-your-anthropic-key-here`
-- `llm_anthropic_example.fallback.ollama.host`: `http://localhost:11434`
-- `llm_groq_example.primary.openai.api_key`: `gsk-your-groq-key-here`
-- `llm_groq_example.primary.openai.api_key`: `gsk-your-groq-key-here`
-- `llm_groq_example.fallback.openai.api_key`: `xai-your-xai-key-here`
-- `llm_groq_example.fallback.openai.api_key`: `xai-your-xai-key-here`
-- `llm_local_example.primary.openai.base_url`: `http://localhost:8000/v1`
-- `llm_local_example.fallback.ollama.host`: `http://localhost:11434`
-- `llm_premium_budget.primary.openai.api_key`: `sk-your-openai-key-here`
-- `llm_premium_budget.primary.openai.api_key`: `sk-your-openai-key-here`
-- `llm_premium_budget.fallback.openai.api_key`: `sk-your-openai-key-here`
-- `llm_premium_budget.fallback.openai.api_key`: `sk-your-openai-key-here`
-
-### 📋 Configuration Sections
-- ❌ **api_key** (Required)
-- ❌ **broadcaster_id** (Required)
-- ❌ **llm** (Required)
-- ❌ **metadata_processing**
-- ❌ **audio_processing**
-- ❌ **debug**
-
 ## 💡 Recommendations
 - Replace placeholder values with actual configuration
-- Fix validation errors in: examples_config.yaml
 - Create config.yaml from config.example.yaml template

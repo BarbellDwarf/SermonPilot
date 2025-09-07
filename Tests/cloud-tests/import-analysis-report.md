@@ -1,5 +1,5 @@
 # SermonAudio Processor Import Analysis Report
-**Generated**: 1757204887.9279902
+**Generated**: 1757206193.5585387
 
 ## 📊 Summary
 - **Total Python Files**: 122
@@ -51,8 +51,8 @@
 - `resemble_enhance.enhancer.inference` in `unknown:64` - Module not found in stdlib, external packages, or project
 
 ## 🔄 Potential Circular Dependencies
-- `analytics.py` → `ui.sermonaudio_analytics`
 - `analytics.py` → `ui.analytics_chat`
+- `analytics.py` → `ui.sermonaudio_analytics`
 
 ## 📄 File Analysis Summary
 ### 📈 Files with Many Imports (>20)
