@@ -74,6 +74,15 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     logging.getLogger("torchaudio").disabled = True
     from audio_processing import process_sermon_audio
     from llm_manager import LLMManager, migrate_legacy_config
+    from cli.parser import CLIParser, confirm, parse_years
+    from core.config import ConfigManager
+    from processing.orchestrator import (
+        ProcessingOptions,
+        ValidationOptions,
+        ArgumentsNormalizer,
+        ProcessingOrchestrator,
+        SermonFilter,
+    )
 
     # Import database for Q&A processing tracking
     try:
@@ -124,21 +133,27 @@ def setup_logging(verbose: bool = False):
         df_logger.setLevel(logging.CRITICAL)
         df_logger.disabled = True
 def load_config(path: str) -> dict:
-    with open(path, encoding="utf-8") as fh:
-        cfg = yaml.safe_load(fh) or {}
-    return migrate_legacy_config(cfg)
+    # Legacy function - now uses ConfigManager
+    config_manager = ConfigManager(path)
+    return config_manager.get_raw_config()
 
 
 CONFIG_PATH = os.environ.get("SA_UPDATER_CONFIG", "config.yaml")
-if not os.path.exists(CONFIG_PATH):
-    print(f"[FATAL] Config file not found: {CONFIG_PATH}")
+config_manager = ConfigManager(CONFIG_PATH)
+
+# Validate required settings
+missing_settings = config_manager.validate_required_settings()
+if missing_settings:
+    print(f"[FATAL] Missing required configuration settings: {', '.join(missing_settings)}")
+    print(f"Please check your config file: {CONFIG_PATH}")
     sys.exit(1)
 
-config = load_config(CONFIG_PATH)
+# For backward compatibility, provide config dict
+config = config_manager.get_raw_config()
 llm_manager = LLMManager(config)
 
-SERMON_AUDIO_API_KEY = config['api_key']
-SERMON_AUDIO_BROADCASTER_ID = config['broadcaster_id']
+SERMON_AUDIO_API_KEY = config_manager.get('api_key')
+SERMON_AUDIO_BROADCASTER_ID = config_manager.get('broadcaster_id')
 sermonaudio.set_api_key(SERMON_AUDIO_API_KEY)
 
 DRY_RUN = config.get('dry_run', False)
@@ -2752,12 +2767,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def confirm(prompt: str, auto_yes: bool) -> bool:
-    if auto_yes:
-        return True
-    return input(f"{prompt} [y/N]: ").strip().lower() == 'y'
-
-
 def cli_main(argv: Iterable[str] | None = None):  # orchestration
     """CLI entry point with subcommand support.
 
@@ -2768,8 +2777,9 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
     - validation: Validate sermon descriptions
     - list: List sermons without processing
     """
-    global config, llm_manager, DRY_RUN, DEBUG
-    parser = build_arg_parser()
+    global config, llm_manager, DRY_RUN, DEBUG, config_manager
+    cli_parser = CLIParser(CONFIG_PATH)
+    parser = cli_parser.build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     # Set up logging based on verbose flag
@@ -2778,7 +2788,8 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
     if args.config and args.config != CONFIG_PATH:
         if not os.path.exists(args.config):
             parser.error(f"Config not found: {args.config}")
-        config = load_config(args.config)
+        config_manager = ConfigManager(args.config)
+        config = config_manager.get_raw_config()
         llm_manager = LLMManager(config)
         # update dependent flags
         DRY_RUN = config.get('dry_run', DRY_RUN)
@@ -2924,31 +2935,23 @@ def handle_list_sermons(args):
 
 def handle_original_processing(args):
     """Handle the original sermon processing logic for backward compatibility."""
-    # Set defaults for missing attributes that might not exist in subcommand args
-    if not hasattr(args, 'validate_descriptions'):
-        args.validate_descriptions = False
-    if not hasattr(args, 'validate_and_regenerate'):
-        args.validate_and_regenerate = False
-    if not hasattr(args, 'validation_report'):
-        args.validation_report = False
-    if not hasattr(args, 'export_validation_csv'):
-        args.export_validation_csv = None
-    if not hasattr(args, 'export_validation_json'):
-        args.export_validation_json = None
-    if not hasattr(args, 'validation_sermon_ids'):
-        args.validation_sermon_ids = None
-    if not hasattr(args, 'no_upload'):
-        args.no_upload = False
-    if not hasattr(args, 'output_dir'):
-        args.output_dir = None
-    if not hasattr(args, 'save_original_audio'):
-        args.save_original_audio = False
-    if not hasattr(args, 'no_save_original_audio'):
-        args.no_save_original_audio = False
-    if not hasattr(args, 'save_transcript'):
-        args.save_transcript = False
-    if not hasattr(args, 'no_save_transcript'):
-        args.no_save_transcript = False
+    # Normalize arguments using the new orchestrator
+    processing_options, validation_options = ArgumentsNormalizer.normalize_args(args)
+    
+    # Create orchestrator and filter instances
+    orchestrator = ProcessingOrchestrator(config, console_print)
+    sermon_filter = SermonFilter(config)
+    
+    # Validate processing requirements
+    issues = orchestrator.validate_processing_requirements(processing_options, validation_options)
+    if issues:
+        for issue in issues:
+            console_print(f"❌ {issue}", "error")
+        return
+    
+    # Resolve audio and transcript save options
+    save_original_audio = ArgumentsNormalizer.resolve_audio_save_option(args, config)
+    save_transcript = ArgumentsNormalizer.resolve_transcript_save_option(args, config)
 
     if args.sermon_id:
         if not confirm(f"Process sermon {args.sermon_id}?", args.auto_yes):
@@ -2958,22 +2961,6 @@ def handle_original_processing(args):
 
         # Handle metadata-only and skip-audio flags
         skip_audio = args.metadata_only or args.skip_audio
-
-        # Determine save_original_audio setting
-        if args.no_save_original_audio:
-            save_original_audio = False
-        elif args.save_original_audio:
-            save_original_audio = True
-        else:
-            save_original_audio = None  # Use config default
-
-        # Determine save_transcript setting
-        if args.no_save_transcript:
-            save_transcript = False
-        elif args.save_transcript:
-            save_transcript = True
-        else:
-            save_transcript = None  # Use config default
 
         result = process_single_sermon(
             args.sermon_id,
