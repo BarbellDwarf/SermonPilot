@@ -1,7 +1,195 @@
 {
-  "timestamp": "1757204767.8262198",
+  "timestamp": "1757208234.001128",
   "project_root": "/home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor",
   "configs": {
+    "config.yaml": {
+      "config_name": "config.yaml",
+      "valid": true,
+      "errors": [],
+      "warnings": [],
+      "sections": {
+        "api_key": {
+          "present": true,
+          "required": true,
+          "type_valid": true,
+          "description": "SermonAudio API key",
+          "issues": []
+        },
+        "broadcaster_id": {
+          "present": true,
+          "required": true,
+          "type_valid": true,
+          "description": "SermonAudio broadcaster ID",
+          "issues": []
+        },
+        "llm": {
+          "present": true,
+          "required": true,
+          "type_valid": true,
+          "description": "LLM provider configuration",
+          "issues": [],
+          "subfields": {
+            "primary": {
+              "present": true,
+              "required": true
+            },
+            "fallback": {
+              "present": true,
+              "required": false
+            },
+            "validator": {
+              "present": true,
+              "required": false
+            }
+          }
+        },
+        "metadata_processing": {
+          "present": true,
+          "required": false,
+          "type_valid": true,
+          "description": "Metadata processing options",
+          "issues": [],
+          "subfields": {
+            "description": {
+              "present": true,
+              "required": false
+            },
+            "hashtags": {
+              "present": true,
+              "required": false
+            }
+          }
+        },
+        "audio_processing": {
+          "present": false,
+          "required": false,
+          "type_valid": false,
+          "description": "Audio processing configuration",
+          "issues": []
+        },
+        "debug": {
+          "present": true,
+          "required": false,
+          "type_valid": true,
+          "description": "Debug mode flag",
+          "issues": []
+        }
+      },
+      "placeholders": [
+        {
+          "path": "api_key",
+          "value": "your-api-key-here",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "api_key",
+          "value": "your-api-key-here",
+          "pattern": ".*-here"
+        },
+        {
+          "path": "broadcaster_id",
+          "value": "your-broadcaster-id",
+          "pattern": "your-.*-id"
+        },
+        {
+          "path": "llm.primary.ollama.host",
+          "value": "http://localhost:11434",
+          "pattern": "localhost.*"
+        },
+        {
+          "path": "llm.primary.openai.api_key",
+          "value": "your-openai-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "llm.primary.anthropic.api_key",
+          "value": "your-anthropic-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "llm.primary.xai.api_key",
+          "value": "your-xai-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "llm.primary.google.api_key",
+          "value": "your-google-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "llm.primary.groq.api_key",
+          "value": "your-groq-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "llm.fallback.ollama.host",
+          "value": "http://localhost:11434",
+          "pattern": "localhost.*"
+        },
+        {
+          "path": "llm.fallback.openai.api_key",
+          "value": "your-fallback-openai-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "llm.fallback.anthropic.api_key",
+          "value": "your-anthropic-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "llm.fallback.xai.api_key",
+          "value": "your-xai-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "llm.fallback.google.api_key",
+          "value": "your-google-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "llm.fallback.groq.api_key",
+          "value": "your-groq-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "llm.validator.ollama.host",
+          "value": "http://localhost:11434",
+          "pattern": "localhost.*"
+        },
+        {
+          "path": "llm.validator.openai.api_key",
+          "value": "your-openai-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "llm.validator.anthropic.api_key",
+          "value": "your-anthropic-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "llm.validator.google.api_key",
+          "value": "your-google-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "llm.validator.groq.api_key",
+          "value": "your-groq-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "embeddings.primary.openai.api_key",
+          "value": "your-openai-key",
+          "pattern": "your-.*-key"
+        },
+        {
+          "path": "embeddings.primary.ollama.host",
+          "value": "http://localhost:11434",
+          "pattern": "localhost.*"
+        }
+      ],
+      "required_fields": {},
+      "field_coverage": 0.8333333333333334
+    },
     "config.example.yaml": {
       "config_name": "config.example.yaml",
       "valid": true,
@@ -189,156 +377,13 @@
       ],
       "required_fields": {},
       "field_coverage": 0.8333333333333334
-    },
-    "examples_config.yaml": {
-      "config_name": "examples_config.yaml",
-      "valid": false,
-      "errors": [
-        "Missing required field: api_key",
-        "Missing required field: broadcaster_id",
-        "Missing required field: llm"
-      ],
-      "warnings": [],
-      "sections": {
-        "api_key": {
-          "present": false,
-          "required": true,
-          "type_valid": false,
-          "description": "SermonAudio API key",
-          "issues": []
-        },
-        "broadcaster_id": {
-          "present": false,
-          "required": true,
-          "type_valid": false,
-          "description": "SermonAudio broadcaster ID",
-          "issues": []
-        },
-        "llm": {
-          "present": false,
-          "required": true,
-          "type_valid": false,
-          "description": "LLM provider configuration",
-          "issues": []
-        },
-        "metadata_processing": {
-          "present": false,
-          "required": false,
-          "type_valid": false,
-          "description": "Metadata processing options",
-          "issues": []
-        },
-        "audio_processing": {
-          "present": false,
-          "required": false,
-          "type_valid": false,
-          "description": "Audio processing configuration",
-          "issues": []
-        },
-        "debug": {
-          "present": false,
-          "required": false,
-          "type_valid": false,
-          "description": "Debug mode flag",
-          "issues": []
-        }
-      },
-      "placeholders": [
-        {
-          "path": "llm_xai_example.primary.openai.api_key",
-          "value": "xai-your-api-key-here",
-          "pattern": "your-.*-key"
-        },
-        {
-          "path": "llm_xai_example.primary.openai.api_key",
-          "value": "xai-your-api-key-here",
-          "pattern": ".*-here"
-        },
-        {
-          "path": "llm_xai_example.fallback.openai.api_key",
-          "value": "sk-your-openai-key-here",
-          "pattern": "your-.*-key"
-        },
-        {
-          "path": "llm_xai_example.fallback.openai.api_key",
-          "value": "sk-your-openai-key-here",
-          "pattern": ".*-here"
-        },
-        {
-          "path": "llm_anthropic_example.primary.openai.api_key",
-          "value": "sk-ant-your-anthropic-key-here",
-          "pattern": "your-.*-key"
-        },
-        {
-          "path": "llm_anthropic_example.primary.openai.api_key",
-          "value": "sk-ant-your-anthropic-key-here",
-          "pattern": ".*-here"
-        },
-        {
-          "path": "llm_anthropic_example.fallback.ollama.host",
-          "value": "http://localhost:11434",
-          "pattern": "localhost.*"
-        },
-        {
-          "path": "llm_groq_example.primary.openai.api_key",
-          "value": "gsk-your-groq-key-here",
-          "pattern": "your-.*-key"
-        },
-        {
-          "path": "llm_groq_example.primary.openai.api_key",
-          "value": "gsk-your-groq-key-here",
-          "pattern": ".*-here"
-        },
-        {
-          "path": "llm_groq_example.fallback.openai.api_key",
-          "value": "xai-your-xai-key-here",
-          "pattern": "your-.*-key"
-        },
-        {
-          "path": "llm_groq_example.fallback.openai.api_key",
-          "value": "xai-your-xai-key-here",
-          "pattern": ".*-here"
-        },
-        {
-          "path": "llm_local_example.primary.openai.base_url",
-          "value": "http://localhost:8000/v1",
-          "pattern": "localhost.*"
-        },
-        {
-          "path": "llm_local_example.fallback.ollama.host",
-          "value": "http://localhost:11434",
-          "pattern": "localhost.*"
-        },
-        {
-          "path": "llm_premium_budget.primary.openai.api_key",
-          "value": "sk-your-openai-key-here",
-          "pattern": "your-.*-key"
-        },
-        {
-          "path": "llm_premium_budget.primary.openai.api_key",
-          "value": "sk-your-openai-key-here",
-          "pattern": ".*-here"
-        },
-        {
-          "path": "llm_premium_budget.fallback.openai.api_key",
-          "value": "sk-your-openai-key-here",
-          "pattern": "your-.*-key"
-        },
-        {
-          "path": "llm_premium_budget.fallback.openai.api_key",
-          "value": "sk-your-openai-key-here",
-          "pattern": ".*-here"
-        }
-      ],
-      "required_fields": {},
-      "field_coverage": 0.0
     }
   },
   "summary": {
     "total_configs": 2,
-    "valid_configs": 1,
-    "total_errors": 3,
+    "valid_configs": 2,
+    "total_errors": 0,
     "total_warnings": 0,
-    "total_placeholders": 39
+    "total_placeholders": 44
   }
 }
