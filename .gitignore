@@ -20,6 +20,7 @@ test_*/
 *.db # Database files
 api_cache/
 analytics_cache/
+analytics_vector_db/
 .playwright-mcp/ 
 
 # Audio Files
@@ -93,10 +94,11 @@ logs/
 *.temp
 .cache/
 .pytest_cache/
+.coverage
+htmlcov/
 sermon_processor.db
 *.bin
 /analytics_*/*
 *.sqlite3
 *.sqlite
-analytics_vector_db/chroma.sqlite3
 analytics_vector_db/chroma.sqlite3
