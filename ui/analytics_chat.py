@@ -7,7 +7,7 @@ using the RAG system and LLM integration.
 
 import logging
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 import streamlit as st
 
@@ -20,10 +20,21 @@ logger = logging.getLogger(__name__)
 class AnalyticsChatInterface:
     """Chat interface for sermon analytics queries"""
 
-    def __init__(self, config: Dict[str, Any] = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.rag_system: SermonAnalyticsRAG | None = None
-        self.analytics = SermonAudioAnalytics()
+        
+        # Extract SermonAudio credentials from config
+        api_key = self.config.get('api_key', '')
+        broadcaster_id = self.config.get('broadcaster_id', '')
+        
+        # Initialize analytics with real credentials
+        # If credentials are missing, analytics will operate in mock mode
+        self.analytics = SermonAudioAnalytics(
+            api_key=api_key,
+            broadcaster_id=broadcaster_id
+        )
+        
         self._initialize_session_state()
 
     def _initialize_session_state(self):
@@ -51,7 +62,6 @@ class AnalyticsChatInterface:
                     self.rag_system = initialize_rag_system_with_data(
                         st.session_state.analytics_data,
                         embedding_config=embedding_config
-                    )
                     )
                     st.session_state.rag_initialized = True
                     logger.info("RAG system initialized successfully")
@@ -252,19 +262,214 @@ class AnalyticsChatInterface:
             # Download chat history
             if st.button("Download Chat History", key="download_chat"):
                 self._download_chat_history()
-            
+
             # Embedding provider information
             st.subheader("🔧 Embedding Provider")
             if self.rag_system:
                 try:
                     provider_info = self.rag_system.get_embedding_provider_info()
                     current = provider_info.get('current_provider', {})
-                    
+
                     st.write(f"**Provider:** {current.get('provider', 'Unknown')}")
                     st.write(f"**Model:** {current.get('model', 'Unknown')}")
                     st.write(f"**Dimensions:** {current.get('dimensions', 'Unknown')}")
                     st.write(f"**Fallbacks:** {provider_info.get('available_fallbacks', 0)}")
+
+                    # Model switching dropdown with explanations
+                    model_options = {
+                        # Ollama models with auto-download capability
+                        "bge-large": "High-quality (1024D) - Best accuracy, auto-download",
+                        "bge-base": "Balanced (768D) - Good default, auto-download",
+                        "bge-small": "Fast (384D) - Quick responses, auto-download",
+                        "bge-m3": "Latest BGE (1024D) - Advanced, auto-download",
+                        "nomic-embed-text": "General purpose (768D) - Versatile, auto-download",
+                        "mxbai-embed-large": "Multilingual (1024D) - High quality, auto-download",
+                        "snowflake-arctic-embed:s": "Small Arctic (384D) - Fast, auto-download",
+                        "snowflake-arctic-embed:m": "Arctic Medium (768D) - Balanced, auto-download",
+                        "snowflake-arctic-embed:l": "Arctic Large (1024D) - Best quality, auto-download",
+                        # Sentence Transformers models (local, no download needed)
+                        "all-MiniLM-L6-v2": "Fast, good quality (384D) - Default local",
+                        "all-mpnet-base-v2": "Higher quality (768D) - Slower but better",
+                        "all-distilroberta-v1": "Good balance (768D) - Robust performance",
+                        "paraphrase-multilingual-MiniLM-L12-v2": "Multilingual (384D) - Cross-language support"
+                    }
                     
+                    # Try to get available Ollama models dynamically and add explanations
+                    available_ollama_models = []
+                    try:
+                        import ollama
+                        import os
+                        os.environ["OLLAMA_HOST"] = "http://REDACTED-INTERNAL-IP:11434"
+                        models_list = ollama.list()
+                        available_ollama_models = []
+                        for model in models_list.get('models', []):
+                            try:
+                                available_ollama_models.append(model.get('model') or model.get('name'))
+                            except Exception:
+                                continue
+                        available_ollama_models = [m for m in available_ollama_models if m]
+
+                        # Add available Ollama models with explanations
+                        for model in available_ollama_models:
+                            if model not in model_options:
+                                if any(embed in model.lower()
+                                      for embed in ['embed', 'bge', 'nomic', 'arctic', 'mxbai']):
+                                    # Try to get dimensions from model name or use default
+                                    dimensions = 768  # default
+                                    if 'large' in model.lower():
+                                        dimensions = 1024
+                                    elif 'small' in model.lower():
+                                        dimensions = 384
+
+                                    model_options[model] = (
+                                        f"Ollama ({dimensions}D) - Available locally"
+                                    )
+                    except Exception as e:
+                        logger.warning(f"Could not fetch Ollama models: {e}")
+                        # Add note about auto-download if Ollama not available
+                        for key in list(model_options.keys()):
+                            if any(embed in key.lower()
+                                  for embed in ['embed', 'bge', 'nomic', 'arctic', 'mxbai']):
+                                if 'auto-download enabled' not in model_options[key]:
+                                    model_options[key] += " - Will auto-download if not present"
+
+                    # Check for refreshed models in session state (from manual refresh)
+                    if 'available_ollama_embedding_models' in st.session_state:
+                        refreshed_models = st.session_state.available_ollama_embedding_models
+                        for model in refreshed_models:
+                            if model not in model_options:
+                                dimensions = 768  # default
+                                if 'large' in model.lower():
+                                    dimensions = 1024
+                                elif 'small' in model.lower():
+                                    dimensions = 384
+                                model_options[model] = f"Ollama ({dimensions}D) - Refreshed"
+                    
+                    # Create display options with descriptions
+                    display_options = [f"{model} - {desc}" for model, desc in model_options.items()]
+                    model_keys = list(model_options.keys())
+                    
+                    # Find current model index
+                    current_model = current.get('model', 'bge-large')
+                    # Handle models with :latest suffix
+                    if ':' in current_model:
+                        current_model = current_model.split(':')[0]
+                    current_index = 0
+                    if current_model in model_keys:
+                        current_index = model_keys.index(current_model)
+                    
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        selected_display = st.selectbox(
+                            "Switch Embedding Model:",
+                            options=display_options,
+                            index=current_index,
+                            key="embedding_model_select",
+                            help="Choose embedding model for semantic search."
+                        )
+                    
+                    with col2:
+                        # Add refresh button for Ollama models
+                        if st.button("🔄 Refresh Models", key="refresh_ollama_models",
+                                   help="Refresh available Ollama models"):
+                            try:
+                                import ollama
+                                import os
+                                os.environ["OLLAMA_HOST"] = "http://REDACTED-INTERNAL-IP:11434"
+                                
+                                with st.spinner("Fetching available Ollama models..."):
+                                    models_list = ollama.list()
+                                    available_models = []
+                                    for model in models_list.get('models', []):
+                                        try:
+                                            available_models.append(model.get('model') or model.get('name'))
+                                        except Exception:
+                                            continue
+                                    available_models = [m for m in available_models if m]
+                                    
+                                    embedding_models = [
+                                        m for m in available_models
+                                        if any(embed in m.lower()
+                                               for embed in ['embed', 'bge', 'nomic',
+                                                             'arctic', 'mxbai'])
+                                    ]
+                                    
+                                    if embedding_models:
+                                        count = len(embedding_models)
+                                        st.success(f"Found {count} embedding models")
+                                        # Store in session state to persist across reruns
+                                        st.session_state.available_ollama_embedding_models = (
+                                            embedding_models
+                                        )
+                                        st.rerun()
+                                    else:
+                                        st.warning("No embedding models found in Ollama")
+                                        
+                            except ImportError:
+                                st.error("Ollama library not installed")
+                            except Exception as e:
+                                st.error(f"Failed to fetch Ollama models: {e}")
+                                logger.error(f"Ollama model refresh error: {e}")
+                    
+                    # Display available Ollama models
+                    if 'available_ollama_embedding_models' in st.session_state:
+                        available_models = st.session_state.available_ollama_embedding_models
+                        if available_models:
+                            with st.expander("📋 Available Ollama Models", expanded=False):
+                                st.write("**Embedding Models:**")
+                                for model in sorted(available_models):
+                                    dimensions = 768  # default
+                                    if 'large' in model.lower():
+                                        dimensions = 1024
+                                    elif 'small' in model.lower():
+                                        dimensions = 384
+                                    
+                                    st.write(f"• **{model}** ({dimensions}D) - Available locally")
+                        else:
+                            st.info("No embedding models found. Click '🔄 Refresh Models' to check again.")
+                        
+                        if st.button("🔄 Switch Model", key="switch_model"):
+                            # Extract model name from selected display option
+                            selected_model = model_keys[display_options.index(selected_display)]
+                            
+                            with st.spinner(f"Switching to {selected_model}..."):
+                                # Determine provider based on model name
+                                is_ollama_model = any(
+                                    embed in selected_model.lower()
+                                    for embed in ['embed', 'bge', 'nomic', 'arctic', 'mxbai']
+                                )
+                                
+                                # Use the model name with :latest suffix for Ollama models
+                                model_to_use = selected_model
+                                if is_ollama_model and ':' not in selected_model:
+                                    model_to_use = f"{selected_model}:latest"
+                                
+                                new_config = {
+                                    'primary': {
+                                        'provider': ('ollama' if is_ollama_model
+                                                    else 'sentence_transformers'),
+                                        'model': model_to_use
+                                    },
+                                    'fallback': [
+                                        {
+                                            'provider': 'sentence_transformers',
+                                            'model': 'all-MiniLM-L6-v2'
+                                        }
+                                    ]
+                                }
+                                
+                                if is_ollama_model:
+                                    new_config['primary']['host'] = 'http://REDACTED-INTERNAL-IP:11434'
+                                    new_config['primary']['auto_download'] = True
+                                
+                                # Switch the embedding provider
+                                success = self.rag_system.switch_embedding_provider(new_config)
+                                if success:
+                                    st.success(f"Successfully switched to {selected_model}!")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Failed to switch to {selected_model}")
+
                 except Exception as e:
                     st.error(f"Failed to get provider info: {e}")
             else:

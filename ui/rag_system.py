@@ -66,16 +66,79 @@ class SermonAnalyticsRAG:
                 settings=Settings(anonymized_telemetry=False)
             )
             
-            # Get or create collection
-            self.collection = self.client.get_or_create_collection(
-                name="sermon_analytics",
-                metadata={
-                    "description": "SermonAudio analytics data for RAG queries",
-                    "embedding_provider": self.embedding_manager.get_current_provider_info()['provider'],
-                    "embedding_model": self.embedding_manager.get_current_provider_info()['model'],
-                    "embedding_dimensions": str(self.embedding_manager.get_embedding_dimension())
-                }
-            )
+            # Check if collection exists and validate embedding dimensions
+            current_dimensions = self.embedding_manager.get_embedding_dimension()
+            current_provider = self.embedding_manager.get_current_provider_info()
+            collection_name = "sermon_analytics"
+            
+            try:
+                # Try to get existing collection
+                existing_collection = self.client.get_collection(name=collection_name)
+                existing_metadata = existing_collection.metadata or {}
+                stored_dimensions = existing_metadata.get("embedding_dimensions")
+                stored_provider = existing_metadata.get("embedding_provider", "unknown")
+                stored_model = existing_metadata.get("embedding_model", "unknown")
+                
+                # Check for dimension mismatch
+                if stored_dimensions and str(current_dimensions) != str(stored_dimensions):
+                    logger.warning(f"🔄 EMBEDDING MODEL CHANGED DETECTED!")
+                    logger.warning(f"   Previous: {stored_provider}/{stored_model} ({stored_dimensions}D)")
+                    logger.warning(f"   Current:  {current_provider['provider']}/{current_provider['model']} ({current_dimensions}D)")
+                    logger.warning(f"   ⚠️  Dimension mismatch detected: {stored_dimensions}D → {current_dimensions}D")
+                    logger.warning(f"   🗑️  Automatically resetting vector database to prevent conflicts...")
+                    
+                    # Delete the incompatible collection
+                    self.client.delete_collection(name=collection_name)
+                    logger.info(f"   ✅ Old vector database cleared successfully")
+                    
+                    # Create new collection with correct dimensions
+                    self.collection = self.client.create_collection(
+                        name=collection_name,
+                        metadata={
+                            "description": "SermonAudio analytics data for RAG queries",
+                            "embedding_provider": current_provider['provider'],
+                            "embedding_model": current_provider['model'],
+                            "embedding_dimensions": str(current_dimensions),
+                            "created_at": datetime.now().isoformat(),
+                            "reset_reason": f"Dimension mismatch: {stored_dimensions}D → {current_dimensions}D"
+                        }
+                    )
+                    logger.info(f"   🆕 New vector database created with {current_dimensions}D embeddings")
+                    logger.info(f"   ℹ️  The analytics chat system will need to re-index any existing data")
+                    
+                elif stored_provider != current_provider['provider'] or stored_model != current_provider['model']:
+                    # Same dimensions but different provider/model - update metadata but keep data
+                    logger.info(f"🔄 Embedding provider/model changed (same dimensions)")
+                    logger.info(f"   Previous: {stored_provider}/{stored_model}")
+                    logger.info(f"   Current:  {current_provider['provider']}/{current_provider['model']}")
+                    logger.info(f"   ✅ Keeping existing data (dimensions unchanged: {current_dimensions}D)")
+                    
+                    self.collection = existing_collection
+                    # Update metadata to reflect the new provider
+                    self.collection.modify(metadata={
+                        **existing_metadata,
+                        "embedding_provider": current_provider['provider'],
+                        "embedding_model": current_provider['model'],
+                        "last_updated": datetime.now().isoformat()
+                    })
+                else:
+                    # Same provider and dimensions - use existing collection
+                    logger.info(f"✅ Using existing vector database ({current_dimensions}D embeddings)")
+                    self.collection = existing_collection
+                    
+            except Exception:
+                # Collection doesn't exist - create new one
+                logger.info(f"🆕 Creating new vector database with {current_dimensions}D embeddings")
+                self.collection = self.client.create_collection(
+                    name=collection_name,
+                    metadata={
+                        "description": "SermonAudio analytics data for RAG queries",
+                        "embedding_provider": current_provider['provider'],
+                        "embedding_model": current_provider['model'],
+                        "embedding_dimensions": str(current_dimensions),
+                        "created_at": datetime.now().isoformat()
+                    }
+                )
             
             logger.info("RAG system initialized successfully")
             
@@ -92,6 +155,35 @@ class SermonAnalyticsRAG:
             return self.embedding_manager.get_embeddings(texts)
         except Exception as e:
             logger.error(f"Failed to get embeddings: {e}")
+            raise
+
+    def _reset_database_for_dimension_mismatch(self) -> None:
+        """Reset the vector database to resolve dimension mismatches"""
+        try:
+            collection_name = "sermon_analytics"
+            current_provider = self.embedding_manager.get_current_provider_info()
+            current_dimensions = self.embedding_manager.get_embedding_dimension()
+            
+            # Delete the incompatible collection
+            self.client.delete_collection(name=collection_name)
+            logger.info("   ✅ Deleted incompatible vector database")
+            
+            # Create new collection with correct dimensions
+            self.collection = self.client.create_collection(
+                name=collection_name,
+                metadata={
+                    "description": "SermonAudio analytics data for RAG queries",
+                    "embedding_provider": current_provider['provider'],
+                    "embedding_model": current_provider['model'],
+                    "embedding_dimensions": str(current_dimensions),
+                    "created_at": datetime.now().isoformat(),
+                    "reset_reason": "Automatic reset due to dimension mismatch during data insertion"
+                }
+            )
+            logger.info(f"   🆕 Created new vector database with {current_dimensions}D embeddings")
+            
+        except Exception as e:
+            logger.error(f"Failed to reset database: {e}")
             raise
     
     def add_analytics_data(self, analytics_data: list[dict[str, Any]]) -> None:
@@ -131,6 +223,43 @@ class SermonAnalyticsRAG:
             logger.info(f"Added {len(documents)} analytics records to vector database")
             
         except Exception as e:
+            error_msg = str(e)
+            
+            # Check if this is a dimension mismatch error
+            if "expecting embedding with dimension" in error_msg:
+                logger.warning(f"🔄 DIMENSION MISMATCH DETECTED during data insertion!")
+                logger.warning(f"   Error: {error_msg}")
+                
+                # Extract expected and actual dimensions from error message
+                import re
+                match = re.search(r"expecting embedding with dimension of (\d+), got (\d+)", error_msg)
+                if match:
+                    expected_dim = match.group(1)
+                    actual_dim = match.group(2)
+                    logger.warning(f"   Expected: {expected_dim}D, Got: {actual_dim}D")
+                
+                logger.warning(f"   🗑️  Automatically resetting vector database to fix dimension mismatch...")
+                
+                try:
+                    # Reset the database
+                    self._reset_database_for_dimension_mismatch()
+                    
+                    # Retry the operation
+                    logger.info(f"   🔄 Retrying data insertion with reset database...")
+                    self.collection.add(
+                        documents=documents,
+                        embeddings=embeddings,
+                        metadatas=metadatas,
+                        ids=ids
+                    )
+                    
+                    logger.info(f"   ✅ Successfully added {len(documents)} analytics records after database reset")
+                    return
+                    
+                except Exception as retry_error:
+                    logger.error(f"   ✗ Failed to add data even after database reset: {retry_error}")
+                    raise RuntimeError(f"Database reset failed to resolve dimension mismatch: {retry_error}") from e
+            
             logger.error(f"Failed to add analytics data: {e}")
             raise
     
@@ -236,6 +365,23 @@ class SermonAnalyticsRAG:
             }
             
         except Exception as e:
+            error_msg = str(e)
+            
+            # Check if this is a dimension mismatch error
+            if "expecting embedding with dimension" in error_msg:
+                logger.warning("🔄 DIMENSION MISMATCH DETECTED during query!")
+                logger.warning(f"   Error: {error_msg}")
+                logger.warning("   🗑️  Database reset is needed. Please reinitialize the RAG system.")
+                
+                return {
+                    'question': question,
+                    'answer': "⚠️ The vector database has a dimension mismatch and needs to be reset. "
+                             "This usually happens when the embedding model is changed. "
+                             "Please refresh the page or restart the application to automatically fix this.",
+                    'relevant_sermons': [],
+                    'data_source': 'dimension_mismatch_error'
+                }
+            
             logger.error(f"Failed to query analytics: {e}")
             return {
                 'question': question,
