@@ -69,7 +69,19 @@ class OllamaProvider(LLMProvider):
             # Try using ollama library first
             if self.ollama:
                 response = self.ollama.list()
-                return [model['name'] for model in response.get('models', [])]
+                models = response.get('models', [])
+                names: list[str] = []
+                for m in models:
+                    try:
+                        if isinstance(m, dict):
+                            name = m.get('model') or m.get('name')
+                        else:
+                            name = getattr(m, 'model', None) or getattr(m, 'name', None)
+                        if name:
+                            names.append(name)
+                    except Exception:
+                        continue
+                return names
         except Exception:
             logger.debug("Ollama library failed for model listing, trying HTTP...")
 
@@ -78,7 +90,13 @@ class OllamaProvider(LLMProvider):
             response = requests.get(f"{self.host}/api/tags", timeout=10)
             if response.status_code == 200:
                 data = response.json()
-                return [model['name'] for model in data.get('models', [])]
+                names: list[str] = []
+                for m in data.get('models', []):
+                    try:
+                        names.append(m.get('model') or m.get('name'))
+                    except Exception:
+                        continue
+                return [n for n in names if n]
             else:
                 logger.error(f"Failed to list Ollama models: {response.status_code}")
                 return []
@@ -370,7 +388,12 @@ class LLMManager:
         else:
             raise ValueError(f"Unsupported provider type: {provider_type}")
 
-    def chat(self, messages: list[dict[str, str]], operation: str = "", sermon_id: str = None) -> str:
+    def chat(
+        self,
+        messages: list[dict[str, str]],
+        operation: str = "",
+        sermon_id: str | None = None,
+    ) -> str:
         """
         Send a chat request using primary provider with fallback support.
 
@@ -520,8 +543,8 @@ class LLMManager:
         return (input_tokens + output_tokens) * cost_per_token
 
     def _log_api_usage(self, provider: str, model: str, messages: list, response: str,
-                      duration_ms: int, operation: str, sermon_id: str = None,
-                      status: str = "success", error_message: str = None):
+                      duration_ms: int, operation: str, sermon_id: str | None = None,
+                      status: str = "success", error_message: str | None = None):
         """Log API usage to database for cost tracking"""
         if not DATABASE_AVAILABLE:
             return

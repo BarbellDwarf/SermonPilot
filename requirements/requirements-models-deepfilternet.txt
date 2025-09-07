@@ -1,0 +1,20 @@
+# DeepFilterNet model requirements
+# Install with: uv pip install -r requirements/requirements-models-deepfilternet.txt
+# Import in code as: import df  (not deepfilternet)
+
+# Core audio processing
+numpy>=1.26.2
+scipy>=1.11.4
+soundfile>=0.12.1
+librosa>=0.10.1
+
+# PyTorch ecosystem
+torch>=2.1.1
+torchaudio>=2.1.1
+
+# DeepFilterNet model (imports as 'df')
+deepfilternet>=0.5.6
+
+# Optional: GPU acceleration
+# torch==2.1.1+cu121; sys_platform == "linux"
+# torchaudio==2.1.1+cu121; sys_platform == "linux"

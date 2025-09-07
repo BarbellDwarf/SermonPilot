@@ -57,11 +57,20 @@ def show_analytics():
     # SermonAudio Analytics tab (if available)
     if ANALYTICS_CHAT_AVAILABLE:
         with tab5:
-            # Pass configuration to the chat interface
-            from ui.analytics_chat import AnalyticsChatInterface
-            chat_interface = AnalyticsChatInterface(config=st.session_state.config)
-            chat_interface.render_chat_interface()
-            chat_interface.render_chat_settings()
+            st.markdown("### 🎙️ SermonAudio Analytics")
+            
+            # Create sub-tabs for different views
+            data_tab, chat_tab = st.tabs(["📊 Data View", "💬 Chat Interface"])
+            
+            with data_tab:
+                show_sermonaudio_data_view()
+            
+            with chat_tab:
+                # Pass configuration to the chat interface
+                from ui.analytics_chat import AnalyticsChatInterface
+                chat_interface = AnalyticsChatInterface(config=st.session_state.config)
+                chat_interface.render_chat_interface()
+                chat_interface.render_chat_settings()
 
 def show_processing_metrics():
     """Processing statistics and success rates"""
@@ -1115,6 +1124,236 @@ def get_sermon_analytics_batch(sermon_updater, sermon_ids):
         'speaker_stats': speaker_list,
         'event_stats': event_list
     }
+
+
+def show_sermonaudio_data_view():
+    """Display SermonAudio analytics data in tables and charts"""
+    st.markdown("#### 📊 SermonAudio Data Overview")
+    
+    # Show API limitation notice for views
+    st.info("""
+    📝 **Note about View Data**: The SermonAudio API v2 does not provide play/view counts through the public API. 
+    View data shows as 0 due to this API limitation. Download counts and other metrics are accurate.
+    """)
+    
+    # Initialize analytics if needed
+    try:
+        from ui.sermonaudio_analytics import SermonAudioAnalytics
+        
+        # Extract credentials from config
+        api_key = st.session_state.config.get('api_key', '')
+        broadcaster_id = st.session_state.config.get('broadcaster_id', '')
+        
+        # Initialize with real credentials
+        analytics = SermonAudioAnalytics(
+            api_key=api_key,
+            broadcaster_id=broadcaster_id
+        )
+        
+        # Show credential status
+        if not api_key or not broadcaster_id:
+            st.warning("⚠️ SermonAudio credentials not configured. Data will be mock/demo only.")
+        else:
+            st.info(f"📡 Connected to SermonAudio for broadcaster: {broadcaster_id[:8]}...")
+        
+        # Data filtering options
+        st.markdown("#### 🔧 Data Options")
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        # Initialize default values
+        start_date = datetime.datetime.now().date() - datetime.timedelta(days=365)
+        end_date = datetime.datetime.now().date()
+        
+        with col1:
+            use_date_range = st.checkbox("📅 Use Date Range", help="Filter sermons by date range")
+            if use_date_range:
+                col_start, col_end = st.columns(2)
+                with col_start:
+                    start_date = st.date_input(
+                        "Start Date",
+                        value=start_date,
+                        help="Start date for sermon filtering"
+                    )
+                with col_end:
+                    end_date = st.date_input(
+                        "End Date",
+                        value=end_date,
+                        help="End date for sermon filtering"
+                    )
+        
+        with col2:
+            fetch_all = st.checkbox(
+                "📊 Fetch All Data", 
+                help="Fetch all available sermons (may take longer)",
+                value=False
+            )
+        
+        with col3:
+            if fetch_all:
+                st.info("⚠️ May take longer")
+            else:
+                st.info("📊 Limited to 100 sermons")
+        
+        # Load data button
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            if st.button("🔄 Load Data", help="Load SermonAudio analytics data"):
+                with st.spinner("Loading SermonAudio data..."):
+                    # Prepare parameters
+                    date_range = None
+                    if use_date_range:
+                        date_range = (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'))
+                    
+                    # Load data with parameters
+                    st.session_state.analytics_data = analytics.get_all_sermon_analytics(
+                        date_range=date_range,
+                        fetch_all=fetch_all
+                    )
+                    
+                    # Show success message with details
+                    count = len(st.session_state.analytics_data)
+                    date_info = f" from {start_date} to {end_date}" if use_date_range else ""
+                    all_info = " (all available)" if fetch_all else ""
+                    st.success(f"✅ Data loaded successfully! {count} sermons{date_info}{all_info}")
+
+        with col2:
+            if st.button("📥 Export Data", help="Export data to CSV"):
+                if st.session_state.get('analytics_data'):
+                    import pandas as pd
+                    df = pd.DataFrame(st.session_state.analytics_data)
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="Download CSV",
+                        data=csv,
+                        file_name=f"sermonaudio_analytics_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+        
+        with col3:
+            if st.session_state.get('analytics_data'):
+                st.info(f"📊 Currently showing {len(st.session_state.analytics_data)} sermons")
+        
+        # Display data if available
+        if st.session_state.get('analytics_data'):
+            analytics_data = st.session_state.analytics_data
+            
+            # Summary metrics
+            st.markdown("#### 📈 Key Metrics")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            total_sermons = len(analytics_data)
+            total_views = sum(item.get('views', 0) for item in analytics_data)
+            total_downloads = sum(item.get('downloads', 0) for item in analytics_data)
+            total_likes = sum(item.get('likes', 0) for item in analytics_data)
+            
+            with col1:
+                st.metric("Total Sermons", total_sermons)
+            with col2:
+                st.metric("Total Views", f"{total_views:,}")
+            with col3:
+                st.metric("Total Downloads", f"{total_downloads:,}")
+            with col4:
+                st.metric("Total Likes", f"{total_likes:,}")
+            
+            # Top performers
+            st.markdown("#### 🏆 Top Performing Sermons")
+            
+            # Sort by views
+            sorted_by_views = sorted(analytics_data, key=lambda x: x.get('views', 0), reverse=True)[:10]
+            
+            import pandas as pd
+            df = pd.DataFrame(sorted_by_views)
+            
+            # Select relevant columns for display
+            display_columns = ['title', 'speaker', 'views', 'downloads', 'likes', 'published_date']
+            available_columns = [col for col in display_columns if col in df.columns]
+            
+            if available_columns:
+                st.dataframe(
+                    df[available_columns],
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.dataframe(df, use_container_width=True, hide_index=True)
+            
+            # Charts
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("##### 📊 Views Distribution")
+                if 'views' in df.columns:
+                    st.bar_chart(df.set_index('title')['views'].head(10))
+                else:
+                    st.info("Views data not available")
+            
+            with col2:
+                st.markdown("##### 📥 Downloads Distribution")
+                if 'downloads' in df.columns:
+                    st.bar_chart(df.set_index('title')['downloads'].head(10))
+                else:
+                    st.info("Downloads data not available")
+            
+            # Speaker analysis
+            st.markdown("#### 👨‍🏫 Speaker Analytics")
+            
+            # Group by speaker
+            try:
+                speaker_stats = {}
+                for item in analytics_data:
+                    # Extract speaker name safely - handle both string and dict cases
+                    speaker_data = item.get('speaker', 'Unknown')
+                    if isinstance(speaker_data, dict):
+                        speaker = speaker_data.get('displayName', 'Unknown Speaker')
+                    elif isinstance(speaker_data, str):
+                        speaker = speaker_data
+                    else:
+                        speaker = str(speaker_data) if speaker_data else 'Unknown Speaker'
+                    
+                    if speaker not in speaker_stats:
+                        speaker_stats[speaker] = {
+                            'sermons': 0,
+                            'total_views': 0,
+                            'total_downloads': 0,
+                            'total_likes': 0
+                        }
+                    
+                    speaker_stats[speaker]['sermons'] += 1
+                    speaker_stats[speaker]['total_views'] += item.get('views', 0)
+                    speaker_stats[speaker]['total_downloads'] += item.get('downloads', 0)
+                    speaker_stats[speaker]['total_likes'] += item.get('likes', 0)
+                
+                # Convert to DataFrame
+                speaker_df = pd.DataFrame.from_dict(speaker_stats, orient='index')
+                speaker_df = speaker_df.sort_values('total_views', ascending=False)
+                
+                st.dataframe(speaker_df, use_container_width=True)
+                
+            except Exception as e:
+                st.error(f"❌ Error processing speaker data: {e}")
+                st.write("Raw speaker data for debugging:")
+                sample_speakers = [item.get('speaker', 'N/A') for item in analytics_data[:3]]
+                st.write(sample_speakers)
+            
+            # Raw data view
+            with st.expander("🔍 View Raw Data"):
+                st.dataframe(df, use_container_width=True, hide_index=True)
+                
+        else:
+            st.info("📄 No SermonAudio data loaded. Click 'Load Data' to fetch analytics.")
+            st.markdown("""
+            **Available Data:**
+            - Sermon titles and descriptions
+            - Speaker information
+            - View counts and engagement metrics
+            - Download statistics
+            - Publication dates
+            - Content analysis
+            """)
+    
+    except Exception as e:
+        st.error(f"❌ Error loading SermonAudio data: {e}")
+        st.info("💡 This feature requires proper SermonAudio API configuration or will show mock data for demonstration.")
 
 
 if __name__ == "__main__":

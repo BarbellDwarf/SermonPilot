@@ -1,282 +1,320 @@
-# GitHub Copilot Agent Mode Implementation Plan
+# GitHub Copilot Agent Prompt: Comprehensive UI Testing & Validation
 
-## Project Analysis
-**Tech Stack**: Python 3.11, Streamlit, SQLite, PyTorch, DeepFilterNet
-**UI Framework**: Streamlit-based web application with custom CSS styling
-**Current Structure**: 
-- Main app: `streamlit_app.py` and `ui/streamlit_app.py`
-- UI Pages: `ui/ui_pages/` directory with modular components
-- Analytics: Current implementation in `ui/ui_pages/analytics.py`
+## Mission Statement
+Conduct a complete UI validation of the SermonAudio Processor Streamlit web application, ensuring production-ready state with full functionality, proper documentation, organized codebase, and elimination of all mock data.
 
-## Task 1: Fix Performance Page Issues
+## Testing Environment Classification
 
-### 1.1 Analysis Phase
-**Current State**: Performance metrics shown in Analytics tab under "⚡ Performance"
-**Location**: `ui/ui_pages/analytics.py` - `show_performance_metrics()` function
+### 🌐 Cloud-Runnable Tests (GitHub Copilot Runners)
+- Static code analysis
+- Configuration validation
+- File structure verification
+- Documentation updates
+- Mock data identification
+- UI component mapping
+- Import/dependency analysis
 
-**Identified Issues from Code Analysis**:
-1. **Layout Issues**: Performance charts may have spacing/alignment problems
-2. **Data Accuracy**: Some metrics use mock data instead of real system metrics
-3. **Resource Usage**: GPU metrics may not be properly detected
-4. **Optimization Recommendations**: Static recommendations that may not reflect actual system state
-5. **Processing Time Distribution**: Chart may not accurately reflect real processing times
+### 🏠 Local-Only Tests (Requires Local Environment)
+- Live SermonAudio API connections
+- Ollama LLM integration
+- Audio processing with AI models
+- ChromaDB/RAG system functionality
+- Streamlit server execution
+- GPU/CUDA operations
+- File upload/download workflows
 
-### 1.2 Implementation Plan
-**Files to Modify**:
-- `ui/ui_pages/analytics.py` (primary performance metrics)
-- `ui/ui_pages/dashboard.py` (related quick stats)
-- Add new utility: `ui/performance_monitor.py`
+## Phase 1: Cloud Environment Setup & Discovery
+1. **Create workspace structure**:
+   - Create `/copilot-plans/` folder for all plan files
+   - Create `/Tests/` folder with subfolders: `unit-tests/`, `integration-tests/`, `ui-tests/`, `local-tests/`, `cloud-tests/`, `archives/`
+   - Initialize `test-log.md` in project root to track all activities
+   - Create `testing-environment-requirements.md` documenting cloud vs local test requirements
 
-**Steps**:
-1. Create real-time system monitoring utilities
-2. Fix chart rendering and layout issues
-3. Implement dynamic optimization recommendations
-4. Add proper error handling for resource detection
-5. Enhance processing time tracking accuracy
+2. **Application discovery (CLOUD)**:
+   - Analyze the main Streamlit app structure in `/ui/streamlit_app.py`
+   - Map all UI pages in `/ui/ui_pages/` directory
+   - Identify navigation components in `/ui/shared_navigation.py`
+   - Document current page structure and routing logic
+   - Verify configuration structure in `config.yaml`
+   - Analyze all Python imports and dependencies
 
-## Task 2: Implement SermonAudio Analytics Tab with RAG and Chat Interface
+## Phase 2: Cloud-Safe UI Analysis
+3. **Static UI component analysis (CLOUD)**:
+   - **Dashboard** (`/ui/ui_pages/dashboard.py`): Analyze component structure, identify data requirements
+   - **New Sermon** (`/ui/ui_pages/new_sermon.py`): Review form validation logic, file handling patterns
+   - **Batch Update** (`/ui/ui_pages/batch_update.py`): Examine batch operation workflows
+   - **Validation** (`/ui/ui_pages/validation.py`): Check validation logic patterns
+   - **Analytics** (`/ui/ui_pages/analytics.py`): Review chart configuration and data visualization setup
+   - **Jobs** (`/ui/ui_pages/jobs.py`): Analyze job queue management code
+   - **Library** (`/ui/ui_pages/library.py`): Examine search and filter implementations
+   - **Settings** (`/ui/ui_pages/settings.py`): Review configuration management code
 
-### 2.1 Architecture Design
-**New Components**:
-- `ui/sermonaudio_analytics.py` - SermonAudio data fetching and processing
-- `ui/rag_system.py` - RAG implementation with vector database
-- `ui/chat_interface.py` - Natural language query interface
-- `ui/ui_pages/sermonaudio_analytics.py` - UI component for new tab
+4. **Configuration & dependency validation (CLOUD)**:
+   - Verify `config.yaml` structure matches expected schema
+   - Check all Python imports resolve correctly
+   - Validate environment variable usage
+   - Analyze LLM provider configuration patterns
+   - Review audio processing method configurations
+   - Check SermonAudio API credential placeholders
 
-**Dependencies to Install**:
-```bash
-# Vector database and embeddings
-uv add chromadb
-uv add sentence-transformers
-uv add openai
+## Phase 3: Local Environment Testing Strategy
+5. **Create local testing framework**:
+   - Generate `/Tests/local-tests/test-runner.py` for orchestrating local tests
+   - Create `/Tests/local-tests/environment-check.py` to verify local dependencies
+   - Document required local setup in `/Tests/local-tests/LOCAL_SETUP.md`:
+     ```markdown
+     # Local Testing Requirements
+     
+     ## Prerequisites
+     - Python 3.11+ with UV package manager
+     - CUDA-capable GPU (optional, for AI audio processing)
+     - Ollama server running locally
+     - Valid SermonAudio API credentials
+     - ChromaDB dependencies
+     
+     ## Setup Commands
+     ```bash
+     uv venv --python 3.11
+     source .venv/bin/activate
+     uv pip install -r requirements.txt
+     uv pip install -r ui/requirements-ui.txt
+     
+     # Start Ollama
+     ollama serve
+     ollama pull llama3.1:8b
+     
+     # Configure credentials
+     cp config.yaml.example config.yaml
+     # Edit config.yaml with real credentials
+     ```
+     
+     ## Test Execution
+     ```bash
+     # Run local environment checks
+     python Tests/local-tests/environment-check.py
+     
+     # Start Streamlit for manual testing
+     streamlit run ui/streamlit_app.py
+     
+     # Run integration tests
+     python Tests/local-tests/test-runner.py
+     ```
+     ```
 
-# Additional analytics
-uv add plotly
-uv add numpy
-uv add scikit-learn
-```
+6. **Local functionality tests**:
+   - **SermonAudio API Integration**:
+     ```python
+     # Test real API connection
+     - Fetch sermon metadata
+     - Download audio files
+     - Upload processed results
+     - Verify rate limiting compliance
+     ```
+   
+   - **LLM System Tests**:
+     ```python
+     # Test multi-provider LLM setup
+     - OpenAI-compatible API calls
+     - Ollama local inference
+     - Fallback mechanism validation
+     - Token usage tracking
+     ```
+   
+   - **Audio Processing Pipeline**:
+     ```python
+     # Test AI enhancement workflow
+     - DeepFilterNet processing
+     - Resemble Enhance integration
+     - GPU/CPU fallback behavior
+     - Audio chunking strategies
+     ```
+   
+   - **RAG System Validation**:
+     ```python
+     # Test ChromaDB integration
+     - Vector embedding generation
+     - Semantic search functionality
+     - Natural language queries
+     - Database persistence
+     ```
 
-### 2.2 Data Structure Design
-**SermonAudio Analytics Data Model**:
-```python
-{
-    "sermon_id": str,
-    "title": str,
-    "speaker": str,
-    "views": int,
-    "listens": int,
-    "watch_time_total": int,  # seconds
-    "watch_time_avg": float,  # percentage of sermon completed
-    "downloads": int,
-    "engagement_score": float,
-    "date_preached": str,
-    "date_uploaded": str,
-    "keywords": List[str],
-    "series": str,
-    "metrics_timestamp": str
-}
-```
+## Phase 4: Issue Documentation & Environment-Specific Planning
+7. **Create environment-aware issue plans (CLOUD)**:
+   - For each identified issue, create `/copilot-plans/issue-[number].md` with:
+     ```markdown
+     # Issue #[number]: [Brief Description]
+     
+     ## Priority: [High/Medium/Low]
+     ## Testing Environment: [Cloud/Local/Both]
+     ## Affected Component: [Specific UI element/page]
+     ## Description: [Detailed issue description]
+     
+     ## Cloud-Testable Elements:
+     - [ ] Code structure analysis
+     - [ ] Configuration validation
+     - [ ] Import/dependency checks
+     
+     ## Local-Only Elements:
+     - [ ] Live API integration
+     - [ ] Real-time processing
+     - [ ] Hardware-dependent features
+     
+     ## Steps to Reproduce:
+     ### Cloud Environment:
+     1. [Cloud-safe reproduction steps]
+     
+     ### Local Environment:
+     1. [Local environment setup]
+     2. [Local reproduction steps]
+     
+     ## Root Cause Analysis: [Technical analysis]
+     ## Proposed Fix: [Environment-specific solutions]
+     ## Testing Requirements: 
+     - **Cloud**: [How to verify without external dependencies]
+     - **Local**: [Full integration testing approach]
+     ## Dependencies: [Related issues or prerequisites]
+     ```
 
-### 2.3 RAG Implementation Plan
-**Vector Database**: ChromaDB (local, no external dependencies)
-**Embedding Model**: sentence-transformers/all-MiniLM-L6-v2 (lightweight, good performance)
-**LLM Integration**: Use existing LLM manager from codebase
+8. **Create environment-specific master plan (CLOUD)**:
+   - Generate `/copilot-plans/master-plan.md` with:
+     - Cloud-executable fixes (immediate)
+     - Local-dependent validations (requires setup)
+     - Priority matrix based on testing environment
+     - Resource requirements for each environment
 
-**RAG Pipeline**:
-1. **Data Ingestion**: Convert SermonAudio analytics to text embeddings
-2. **Query Processing**: Convert user questions to embeddings
-3. **Retrieval**: Find relevant analytics data using similarity search
-4. **Generation**: Use retrieved data to answer user questions
+## Phase 5: Mock Data Elimination Strategy
+9. **Identify mock data patterns (CLOUD)**:
+   - Scan all files for hardcoded test data, placeholder values
+   - Check `/ui/analytics_chat.py` for mock analytics responses
+   - Review `/ui/sermonaudio_analytics.py` for placeholder data
+   - Identify configuration placeholders vs real credentials
+   - Map data flow dependencies
 
-### 2.4 Chat Interface Design
-**Features**:
-- Natural language queries about sermon performance
-- Predefined query templates
-- Visual response formatting (charts, tables)
-- Export functionality for analytics reports
+10. **Create mock data replacement plan (CLOUD)**:
+    - Document each mock data instance with replacement strategy
+    - Distinguish between:
+      - **Development placeholders** (safe to replace)
+      - **Demo data** (needs graceful degradation)
+      - **Test fixtures** (move to test directories)
+    - Create migration scripts for safe data replacement
 
-**Example Queries**:
-- "What sermons had the highest engagement last month?"
-- "Show me average watch time by speaker"
-- "Which series performed best in terms of views?"
+## Phase 6: Environment-Aware Testing Execution
+11. **Execute cloud-safe tests immediately**:
+    ```bash
+    # These run in GitHub Copilot cloud environment
+    python Tests/cloud-tests/static-analysis.py
+    python Tests/cloud-tests/config-validation.py
+    python Tests/cloud-tests/import-checks.py
+    python Tests/cloud-tests/mock-data-scan.py
+    ```
 
-### 2.5 Implementation Steps
+12. **Generate local test suite (CLOUD)**:
+    ```python
+    # Create comprehensive local testing scripts
+    # Tests/local-tests/streamlit-ui-tests.py
+    # Tests/local-tests/api-integration-tests.py
+    # Tests/local-tests/llm-provider-tests.py
+    # Tests/local-tests/audio-processing-tests.py
+    # Tests/local-tests/rag-system-tests.py
+    ```
 
-#### Step 1: SermonAudio Data Integration
-1. Create `ui/sermonaudio_analytics.py`:
-   - API client for SermonAudio analytics (or mock data generator)
-   - Data parsing and normalization
-   - Caching mechanism for performance
+## Phase 7: Documentation & Cleanup
+13. **Update documentation (CLOUD)**:
+    - Refresh `/ui/README.md` with current testing procedures
+    - Update `/README.md` with environment-specific setup
+    - Create `/docs/TESTING_GUIDE.md` with cloud vs local procedures
+    - Document all configuration examples with placeholder vs real value guidance
 
-#### Step 2: RAG System Implementation
-1. Create `ui/rag_system.py`:
-   - ChromaDB setup and management
-   - Embedding generation for analytics data
-   - Query processing and retrieval
-   - Integration with existing LLM manager
+14. **Create Copilot-specific guides (CLOUD)**:
+    - `copilot-instructions.md`: Best practices for cloud-safe development
+    - `local-testing-guide.md`: Complete local environment setup
+    - `api-integration-guide.md`: Safe credential management
+    - `ui-improvements.md`: Prioritized enhancements by testing environment
 
-#### Step 3: Chat Interface
-1. Create `ui/chat_interface.py`:
-   - Streamlit chat interface components
-   - Query processing and response formatting
-   - Chart generation from analytics data
+## Phase 8: Environment-Specific Validation
+15. **Cloud environment validation (IMMEDIATE)**:
+    - All code compiles without external dependencies
+    - Configuration schemas are valid
+    - Import statements resolve correctly
+    - Mock data is properly identified and documented
+    - Test structure is properly organized
 
-#### Step 4: UI Integration
-1. Modify `ui/ui_pages/analytics.py`:
-   - Add new "🎧 SermonAudio Analytics" tab
-   - Integrate chat interface
-   - Add analytics visualizations
-
-## Task 3: Update Documentation
-
-### 3.1 Documentation Files to Update
-- `README.md` - Main project documentation
-- `docs/SETUP.md` - Installation and setup guide
-- `docs/ANALYTICS.md` - New analytics features documentation
-- `docs/RAG_SYSTEM.md` - RAG implementation details
-- `docs/API.md` - API documentation updates
-
-### 3.2 Documentation Content Plan
-
-#### README.md Updates
-- Add SermonAudio Analytics features
-- Update installation instructions for new dependencies
-- Add screenshots of new interface
-
-#### New Documentation Files
-1. **docs/ANALYTICS.md**:
-   - Performance monitoring features
-   - SermonAudio analytics overview
-   - Chat interface usage guide
-   - Query examples and best practices
-
-2. **docs/RAG_SYSTEM.md**:
-   - Technical implementation details
-   - Vector database setup
-   - Embedding model information
-   - Troubleshooting guide
-
-3. **docs/PERFORMANCE_MONITORING.md**:
-   - System monitoring features
-   - Performance optimization tips
-   - Resource usage interpretation
-
-## Implementation Timeline
-
-### Phase 1: Foundation (Steps 1-3)
-1. **Fix Performance Page Issues** (2-3 hours)
-   - Create performance monitoring utilities
-   - Fix existing layout and data issues
-   - Add real-time metrics
-
-2. **Setup Dependencies** (30 minutes)
-   - Install required packages
-   - Configure development environment
-
-### Phase 2: Core Features (Steps 4-8)
-3. **SermonAudio Data Integration** (1-2 hours)
-   - Create data fetching and processing
-   - Implement caching system
-
-4. **RAG System Implementation** (2-3 hours)
-   - Setup ChromaDB
-   - Implement embedding pipeline
-   - Create query processing
-
-5. **Chat Interface Development** (1-2 hours)
-   - Build Streamlit chat components
-   - Integrate with RAG system
-
-### Phase 3: Integration (Steps 9-11)
-6. **UI Integration** (1 hour)
-   - Add new analytics tab
-   - Integrate chat interface
-   - Style and layout improvements
-
-7. **Testing and Validation** (1 hour)
-   - Test all features
-   - Validate data accuracy
-   - Performance testing
-
-### Phase 4: Documentation (Steps 12-13)
-8. **Documentation Updates** (1-2 hours)
-   - Update existing documentation
-   - Create new documentation files
-   - Add examples and screenshots
-
-## File Structure Changes
-
-### New Files
-```
-ui/
-├── sermonaudio_analytics.py    # SermonAudio data handling
-├── rag_system.py              # RAG implementation
-├── chat_interface.py          # Chat UI components
-├── performance_monitor.py     # Real-time system monitoring
-└── ui_pages/
-    └── sermonaudio_analytics.py  # New analytics tab UI
-
-docs/
-├── ANALYTICS.md               # Analytics features documentation
-├── RAG_SYSTEM.md             # RAG technical documentation
-└── PERFORMANCE_MONITORING.md # Performance monitoring guide
-```
-
-### Modified Files
-```
-ui/ui_pages/analytics.py       # Add new tab, fix performance issues
-README.md                      # Update features and installation
-requirements.txt               # Add new dependencies
-pyproject.toml                 # Update dependencies
-```
+16. **Local environment validation (USER SETUP REQUIRED)**:
+    - Streamlit application launches successfully
+    - All pages render without errors
+    - SermonAudio API integration works with real credentials
+    - LLM providers respond correctly (OpenAI + Ollama)
+    - Audio processing pipeline functions with sample files
+    - RAG system performs semantic search
+    - Performance monitoring displays real metrics
 
 ## Success Criteria
 
-### Task 1 - Performance Page Fixes
-- [ ] All performance metrics show real data
-- [ ] Charts render properly without layout issues
-- [ ] Resource monitoring works on various systems
-- [ ] Optimization recommendations are dynamic and relevant
-- [ ] No console errors or warnings
+### Cloud Environment (Immediate)
+- [ ] All static analysis passes
+- [ ] Configuration structure validated
+- [ ] Mock data catalog complete
+- [ ] Test framework scaffolded
+- [ ] Documentation updated
+- [ ] File organization complete
 
-### Task 2 - SermonAudio Analytics with RAG
-- [ ] SermonAudio analytics data is properly fetched and displayed
-- [ ] RAG system accurately answers queries about sermon data
-- [ ] Chat interface is responsive and user-friendly
-- [ ] Analytics visualizations are informative and interactive
-- [ ] System handles errors gracefully
+### Local Environment (Requires Setup)
+- [ ] Streamlit UI fully functional
+- [ ] All integrations working with real APIs
+- [ ] Audio processing pipeline operational
+- [ ] RAG system performing queries
+- [ ] Performance monitoring active
+- [ ] No mock data in production paths
 
-### Task 3 - Documentation Updates
-- [ ] All documentation is accurate and up-to-date
-- [ ] New features are properly documented with examples
-- [ ] Installation instructions include new dependencies
-- [ ] Technical documentation covers RAG implementation details
+## Testing Commands Reference
 
-## Risk Mitigation
+### Cloud-Safe Commands (Run Anywhere)
+```bash
+# Static analysis and planning
+python Tests/cloud-tests/analyze-structure.py
+python Tests/cloud-tests/validate-config.py
+python Tests/cloud-tests/scan-imports.py
+python Tests/cloud-tests/identify-mocks.py
+```
 
-### Technical Risks
-1. **Vector Database Performance**: Use ChromaDB with proper indexing
-2. **LLM Integration**: Leverage existing LLM manager for consistency
-3. **SermonAudio API**: Implement fallback to mock data if API unavailable
-4. **Memory Usage**: Implement proper cleanup for embeddings and models
+### Local Environment Commands (Requires Full Setup)
+```bash
+# Environment verification
+python Tests/local-tests/environment-check.py
 
-### Implementation Risks
-1. **Breaking Changes**: Test all existing functionality after modifications
-2. **Dependency Conflicts**: Use UV for clean dependency management
-3. **Performance Impact**: Monitor resource usage during implementation
+# UI testing
+streamlit run ui/streamlit_app.py
+python Tests/local-tests/ui-integration-tests.py
 
-## Next Steps
+# API testing
+python Tests/local-tests/sermonaudio-api-tests.py
+python Tests/local-tests/llm-provider-tests.py
 
-1. **Create Performance Monitoring Utilities** - Start with real system metrics
-2. **Install Dependencies** - Add required packages for RAG and analytics
-3. **Implement SermonAudio Data Layer** - Create data fetching and processing
-4. **Build RAG System** - Setup vector database and embedding pipeline
-5. **Create Chat Interface** - Build user-friendly query interface
-6. **Integration and Testing** - Combine all components and validate
-7. **Documentation** - Update all documentation to reflect changes
+# Audio processing
+python Tests/local-tests/audio-enhancement-tests.py
 
----
+# RAG system
+python Tests/local-tests/chromadb-rag-tests.py
+```
 
-**Estimated Total Time**: 8-12 hours
-**Priority**: High (addresses specific user requirements)
-**Dependencies**: Existing LLM manager, Streamlit UI framework
+## Safety Guidelines
+- **Cloud Environment**: Never attempt to execute code requiring external APIs or local services
+- **Local Environment**: Always verify credentials are configured before running integration tests
+- **Data Safety**: Create backups before modifying any configuration files
+- **Resource Management**: Monitor GPU/CPU usage during audio processing tests
+- **API Limits**: Respect SermonAudio API rate limits during testing
+
+## Deliverables Timeline
+
+### Immediate (Cloud Environment)
+- **Day 1**: Complete static analysis and issue identification
+- **Day 2**: Generate comprehensive local testing framework
+- **Day 3**: Document all mock data and create replacement strategies
+- **Day 4**: Finalize documentation and testing guides
+
+### Post Local Setup (User Environment)
+- **Week 1**: Execute full integration testing suite
+- **Week 2**: Validate all real-world integrations
+- **Week 3**: Performance optimization and final validation
+
+Execute this plan systematically, documenting progress in `test-log.md` and creating detailed environment-specific issue reports. Focus on maximizing what can be accomplished in the cloud environment while preparing comprehensive testing for local validation.

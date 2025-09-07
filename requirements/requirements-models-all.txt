@@ -1,0 +1,19 @@
+# All AI enhancement models requirements
+# Install with: uv pip install -r requirements/requirements-models-all.txt
+# Note: Some models may have conflicting dependencies - install individually if needed
+
+# Include DeepFilterNet
+-r requirements-models-deepfilternet.txt
+
+# Include Resemble Enhance (commented out due to potential conflicts)
+# -r requirements-models-resemble.txt
+
+# Additional AI models (optional - may require manual installation)
+# voicefixer>=0.1.2
+# speechbrain>=0.5.0
+# demucs>=4.0.0
+
+# GPU acceleration for all models
+# torch==2.1.1+cu121; sys_platform == "linux"
+# torchaudio==2.1.1+cu121; sys_platform == "linux"
+# torchvision==0.16.1+cu121; sys_platform == "linux"

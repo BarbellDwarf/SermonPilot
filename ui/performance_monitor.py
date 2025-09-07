@@ -145,26 +145,26 @@ class PerformanceMonitor:
             
             # Get processing status data
             cursor.execute("""
-                SELECT status, duration, created_at, updated_at 
-                FROM processing_status 
-                ORDER BY created_at DESC 
+                SELECT processing_duration, processed_at, quality_score, enhancement_method
+                FROM processing_info 
+                ORDER BY processed_at DESC 
                 LIMIT 1000
             """)
             processing_data = cursor.fetchall()
             
             # Get validation results
             cursor.execute("""
-                SELECT is_valid, validation_score, validation_time
+                SELECT is_valid, score, validated_at
                 FROM validation_results 
-                ORDER BY created_at DESC 
+                ORDER BY validated_at DESC 
                 LIMIT 1000
             """)
             validation_data = cursor.fetchall()
             
-            # Get job queue data
+            # Get background job data (use background_jobs instead of job_queue)
             cursor.execute("""
-                SELECT status, created_at, started_at, completed_at, job_type
-                FROM job_queue 
+                SELECT status, created_at, started_at, completed_at, type
+                FROM background_jobs 
                 WHERE created_at > datetime('now', '-7 days')
                 ORDER BY created_at DESC
             """)
@@ -172,34 +172,35 @@ class PerformanceMonitor:
             
             conn.close()
             
-            # Calculate metrics
+            # Calculate metrics based on available data
             total_processed = len(processing_data)
-            completed_count = sum(1 for row in processing_data if row[0] == 'completed')
-            failed_count = sum(1 for row in processing_data if row[0] == 'failed')
             
-            success_rate = (completed_count / total_processed * 100) if total_processed > 0 else 0
-            error_rate = (failed_count / total_processed * 100) if total_processed > 0 else 0
+            # Since processing_info doesn't have status, we assume all entries are completed
+            # (they wouldn't be in the table if processing failed completely)
+            completed_count = total_processed
+            failed_count = 0  # We'd need to check validation_results or other indicators for failures
             
-            # Calculate processing times
+            # Check validation results for actual success/failure rates
+            if validation_data:
+                valid_count = sum(1 for row in validation_data if row[0])  # is_valid column
+                invalid_count = len(validation_data) - valid_count
+                success_rate = (valid_count / len(validation_data) * 100) if validation_data else 100
+                error_rate = (invalid_count / len(validation_data) * 100) if validation_data else 0
+            else:
+                success_rate = 100 if total_processed > 0 else 0
+                error_rate = 0
+            
+            # Calculate processing times from processing_duration column
             processing_times = []
             for row in processing_data:
-                if row[1]:  # duration
-                    try:
-                        duration_str = row[1]
-                        if 'min' in duration_str:
-                            time_val = float(duration_str.replace('min', '').strip())
-                            processing_times.append(time_val)
-                        elif 'sec' in duration_str:
-                            time_val = float(duration_str.replace('sec', '').strip()) / 60
-                            processing_times.append(time_val)
-                    except (ValueError, AttributeError):
-                        continue
+                if row[0] and row[0] > 0:  # processing_duration (first column)
+                    processing_times.append(row[0])  # Duration is already in seconds/minutes
             
             avg_processing_time = sum(processing_times) / len(processing_times) if processing_times else 0
             
-            # Queue metrics
-            pending_jobs = sum(1 for row in job_data if row[0] == 'pending')
-            running_jobs = sum(1 for row in job_data if row[0] == 'running')
+            # Queue metrics from background_jobs
+            pending_jobs = sum(1 for row in job_data if row[0] == 'pending') if job_data else 0
+            running_jobs = sum(1 for row in job_data if row[0] == 'running') if job_data else 0
             
             return {
                 'total_processed': total_processed,

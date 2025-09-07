@@ -46,7 +46,7 @@ def test_ollama_chat(model_name):
         with open("config.yaml") as f:
             config = yaml.safe_load(f)
         ollama_host = config.get("ollama_host", "http://localhost:11434")
-    except:
+    except Exception:
         ollama_host = "http://localhost:11434"
 
     print(f"\n=== Test 3: Chat with model {model_name} ===")
@@ -80,7 +80,8 @@ if __name__ == "__main__":
 
     if models:
         # Try to chat with the first available model
-        first_model = models[0]['name']
+        first = models[0]
+        first_model = first.get('model') or first.get('name')
         print(f"\nTrying to chat with first available model: {first_model}")
         test_ollama_chat(first_model)
 
@@ -89,14 +90,14 @@ if __name__ == "__main__":
             with open("config.yaml") as f:
                 config = yaml.safe_load(f)
             configured_model = config.get("ollama_model", "llama3.1:8b")
-            if any(m['name'] == configured_model for m in models):
+            if any((m.get('model') or m.get('name')) == configured_model for m in models):
                 print(f"\nTrying to chat with configured model: {configured_model}")
                 test_ollama_chat(configured_model)
             else:
                 print(f"\nConfigured model '{configured_model}' not found in available models")
                 print("Available models:")
                 for model in models:
-                    print(f"  - {model['name']}")
+                    print(f"  - {(model.get('model') or model.get('name'))}")
         except Exception as e:
             print(f"Error checking configured model: {e}")
     else:
