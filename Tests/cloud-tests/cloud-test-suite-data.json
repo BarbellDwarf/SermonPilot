@@ -1,11 +1,11 @@
 {
   "results": {
-    "timestamp": "1757205776.2195537",
+    "timestamp": "1757206193.5755386",
     "project_root": "/home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor",
     "total_tests": 4,
-    "passed_tests": 3,
-    "failed_tests": 1,
-    "total_execution_time": 1.2453877925872803,
+    "passed_tests": 4,
+    "failed_tests": 0,
+    "total_execution_time": 1.2494754791259766,
     "test_results": [
       {
         "script": "static-analysis.py",
@@ -13,17 +13,17 @@
         "output": "\ud83d\udd0d Starting static analysis of UI components...\n\u2705 Analysis complete!\n\ud83d\udcc4 Report saved to: /home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/Tests/cloud-tests/ui-static-analysis-report.md\n\ud83d\udcca Raw data saved to: /home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/Tests/cloud-tests/ui-static-analysis-data.json\n\n\ud83d\udcca Summary:\n- Total UI files analyzed: 32\n- Total lines of code: 16790\n- UI pages found: 11\n- Issues identified: 2\n\n\u26a0\ufe0f Issues found:\n  - High complexity files (>20): settings\n  - Large files (>500 lines): settings, analytics, library, batch_update, validation, jobs, new_sermon\n",
         "error": "",
         "return_code": 0,
-        "execution_time": 0.23077011108398438,
+        "execution_time": 0.23171544075012207,
         "name": "UI Static Analysis",
         "description": "Analyze UI component structure and complexity"
       },
       {
         "script": "config-validation.py",
-        "success": false,
-        "output": "\ud83d\udd0d Starting configuration validation...\n\u2705 Configuration validation complete!\n\ud83d\udcc4 Report saved to: /home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/Tests/cloud-tests/config-validation-report.md\n\ud83d\udcca Raw data saved to: /home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/Tests/cloud-tests/config-validation-data.json\n\n\ud83d\udcca Summary:\n- Configurations analyzed: 2\n- Valid configurations: 1\n- Total errors: 3\n- Total warnings: 0\n- Placeholder values: 39\n",
+        "success": true,
+        "output": "\ud83d\udd0d Starting configuration validation...\n\u2705 Configuration validation complete!\n\ud83d\udcc4 Report saved to: /home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/Tests/cloud-tests/config-validation-report.md\n\ud83d\udcca Raw data saved to: /home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/Tests/cloud-tests/config-validation-data.json\n\n\ud83d\udcca Summary:\n- Configurations analyzed: 1\n- Valid configurations: 1\n- Total errors: 0\n- Total warnings: 0\n- Placeholder values: 22\n",
         "error": "",
-        "return_code": 1,
-        "execution_time": 0.059737205505371094,
+        "return_code": 0,
+        "execution_time": 0.0568845272064209,
         "name": "Configuration Validation",
         "description": "Validate YAML configuration structure and completeness"
       },
@@ -33,27 +33,25 @@
         "output": "\ud83d\udd0d Starting import and dependency analysis...\n\u2705 Import analysis complete!\n\ud83d\udcc4 Report saved to: /home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/Tests/cloud-tests/import-analysis-report.md\n\ud83d\udcca Raw data saved to: /home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/Tests/cloud-tests/import-analysis-data.json\n\n\ud83d\udcca Summary:\n- Python files analyzed: 122\n- Total imports: 1000\n- External packages: 16\n- Unresolvable imports: 117\n",
         "error": "",
         "return_code": 0,
-        "execution_time": 0.4021291732788086,
+        "execution_time": 0.40700554847717285,
         "name": "Import Analysis",
         "description": "Check import statements and dependency resolution"
       },
       {
         "script": "quick-mock-scan.py",
         "success": true,
-        "output": "\ud83d\udd0d Starting quick mock data analysis...\n\ud83d\udd0d Scanning 146 files for mock data patterns...\n   Processed 50 files...\n   Processed 100 files...\n\u2705 Quick analysis complete!\n\ud83d\udcc4 Report saved to: /home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/Tests/cloud-tests/quick-mock-data-report.md\n\ud83d\udcca Data saved to: /home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/Tests/cloud-tests/quick-mock-data-data.json\n\n\ud83d\udcca Summary:\n- Files scanned: 146\n- Files with issues: 20\n- Critical files: 0\n- Total placeholders: 143\n",
+        "output": "\ud83d\udd0d Starting quick mock data analysis...\n\ud83d\udd0d Scanning 146 files for mock data patterns...\n   Processed 50 files...\n   Processed 100 files...\n\u2705 Quick analysis complete!\n\ud83d\udcc4 Report saved to: /home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/Tests/cloud-tests/quick-mock-data-report.md\n\ud83d\udcca Data saved to: /home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/Tests/cloud-tests/quick-mock-data-data.json\n\n\ud83d\udcca Summary:\n- Files scanned: 146\n- Files with issues: 21\n- Critical files: 0\n- Total placeholders: 148\n",
         "error": "",
         "return_code": 0,
-        "execution_time": 0.5527513027191162,
+        "execution_time": 0.5538699626922607,
         "name": "Quick Mock Data Detection",
         "description": "Quick scan for placeholder values and test data"
       }
     ]
   },
   "analysis": {
-    "overall_status": "mostly_passed",
-    "critical_issues": [
-      "Configuration Validation failed: ..."
-    ],
+    "overall_status": "passed",
+    "critical_issues": [],
     "warnings": [
       "High complexity UI files detected",
       "Large UI files detected",
@@ -62,8 +60,8 @@
       "Mock data patterns found"
     ],
     "recommendations": [
-      "Address critical issues before production deployment",
-      "Review warnings for code quality improvements"
+      "Review warnings for code quality improvements",
+      "Cloud-safe analysis complete - ready for local testing"
     ],
     "summary_stats": {}
   }

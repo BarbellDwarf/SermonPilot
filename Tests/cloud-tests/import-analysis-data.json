@@ -1,5 +1,5 @@
 {
-  "timestamp": "1757204887.9279902",
+  "timestamp": "1757206193.5585387",
   "project_root": "/home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor",
   "files": {
     "/home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/src/audio_processing.py": {
@@ -28478,12 +28478,12 @@
     "circular_dependencies": [
       {
         "file": "/home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/ui/ui_pages/analytics.py",
-        "dependency": "ui.sermonaudio_analytics",
+        "dependency": "ui.analytics_chat",
         "type": "potential_circular"
       },
       {
         "file": "/home/runner/work/sermon-ai-audio-processor/sermon-ai-audio-processor/ui/ui_pages/analytics.py",
-        "dependency": "ui.analytics_chat",
+        "dependency": "ui.sermonaudio_analytics",
         "type": "potential_circular"
       }
     ],
