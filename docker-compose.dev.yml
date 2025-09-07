@@ -1,0 +1,40 @@
+# docker-compose.dev.yml - Development overrides
+
+services:
+  sermon-processor:
+    build:
+      target: dev
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - WATCHDOG_ENABLED=true
+    volumes:
+      - .:/app  # Mount source code for development
+      - sermon_data_dev:/data
+    ports:
+      - "8501:8501"
+      - "8000:8000"
+      - "5678:5678"  # Debug port
+    command: ["streamlit", "run", "streamlit_app.py", "--server.fileWatcherType", "poll"]
+
+  # Development tools
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: sermon-jupyter
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+    volumes:
+      - .:/app
+      - sermon_data_dev:/data
+    command: ["jupyter", "lab", "--ip=0.0.0.0", "--allow-root", "--no-browser"]
+    networks:
+      - sermon_network
+    profiles:
+      - dev
+
+volumes:
+  sermon_data_dev:
