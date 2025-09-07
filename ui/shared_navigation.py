@@ -65,7 +65,8 @@ def render_shared_sidebar():
         ("✅ Validation", "validation"),
         ("⚙️ Jobs", "jobs"),
         ("📚 Library", "library"),
-        (" Analytics", "analytics"),
+        ("📈 Analytics", "analytics"),
+        ("🔧 Config Management", "config_management"),
         ("⚙️ Settings", "settings")
     ]
 
