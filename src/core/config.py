@@ -49,11 +49,14 @@ class ConfigManager:
         # Try loading .env file if available
         self._load_dotenv()
 
-        # Load from YAML file
+        # Load from YAML file with env var substitution
         if Path(self.config_path).exists():
             try:
                 with open(self.config_path, encoding='utf-8') as f:
-                    self._config = yaml.safe_load(f) or {}
+                    raw_text = f.read()
+                # Substitute ${VAR} and ${VAR:-default} patterns
+                raw_text = self._substitute_env_vars(raw_text)
+                self._config = yaml.safe_load(raw_text) or {}
                 logger.info(f"Configuration loaded from {self.config_path}")
             except (OSError, yaml.YAMLError) as e:
                 logger.error(f"Failed to load config from {self.config_path}: {e}")
@@ -67,6 +70,19 @@ class ConfigManager:
 
         # Apply legacy config migration if needed
         self._migrate_legacy_config()
+
+    def _substitute_env_vars(self, text: str) -> str:
+        """Substitute ${VAR} and ${VAR:-default} environment variable patterns."""
+        import re
+        def replace_var(match):
+            var_expr = match.group(1)
+            if ':-' in var_expr:
+                var_name, default_value = var_expr.split(':-', 1)
+                return os.getenv(var_name.strip(), default_value.strip())
+            else:
+                var_name = var_expr.strip()
+                return os.getenv(var_name, '')
+        return re.sub(r'\$\{([^}]+)\}', replace_var, text)
 
     def _load_dotenv(self):
         """Load .env file if python-dotenv is available."""
@@ -85,12 +101,37 @@ class ConfigManager:
             'SERMONAUDIO_API_KEY': ['api_key'],
             'SERMONAUDIO_BROADCASTER_ID': ['broadcaster_id'],
             'OPENAI_API_KEY': ['llm', 'primary', 'openai', 'api_key'],
+            'ANTHROPIC_API_KEY': ['llm', 'primary', 'anthropic', 'api_key'],
+            'XAI_API_KEY': ['llm', 'primary', 'xai', 'api_key'],
+            'GOOGLE_API_KEY': ['llm', 'primary', 'google', 'api_key'],
+            'GROQ_API_KEY': ['llm', 'primary', 'groq', 'api_key'],
             'OLLAMA_HOST': ['llm', 'primary', 'ollama', 'host'],
             'OLLAMA_MODEL': ['llm', 'primary', 'ollama', 'model'],
+            'LLM_PROVIDER': ['llm', 'primary', 'provider'],
+            'OPENAI_MODEL': ['llm', 'primary', 'openai', 'model'],
+            'ANTHROPIC_MODEL': ['llm', 'primary', 'anthropic', 'model'],
+            'XAI_MODEL': ['llm', 'primary', 'xai', 'model'],
+            'GOOGLE_MODEL': ['llm', 'primary', 'google', 'model'],
+            'GROQ_MODEL': ['llm', 'primary', 'groq', 'model'],
+            'OPENROUTER_API_KEY': ['llm', 'primary', 'openrouter', 'api_key'],
+            'OPENROUTER_MODEL': ['llm', 'primary', 'openrouter', 'model'],
+            'WHISPER_MODEL': ['transcription', 'whisper_local', 'model'],
+            'TRANSCRIPTION_BACKEND': ['transcription', 'backend'],
+            'AUDIO_ENHANCEMENT_METHOD': ['audio_enhancement_method'],
+            'AUDIO_NOISE_REDUCTION': ['audio_noise_reduction'],
+            'AUDIO_NORMALIZE': ['audio_normalize'],
+            'AUDIO_TARGET_LEVEL': ['audio_target_level_db'],
+            'AUDIO_GAIN_DB': ['audio_gain_db'],
+            'OUTPUT_DIRECTORY': ['output_directory'],
+            'SAVE_TRANSCRIPT': ['save_transcript'],
+            'SAVE_ORIGINAL_AUDIO': ['save_original_audio'],
             'DEBUG': ['debug'],
             'VERBOSE': ['verbose'],
-            'OUTPUT_DIRECTORY': ['output_directory'],
-            'AUDIO_ENHANCEMENT_METHOD': ['audio_enhancement_method'],
+            'DRY_RUN': ['dry_run'],
+            'HASHTAG_VERIFICATION': ['hashtag_verification'],
+            'QA_NORMALIZATION_ENABLED': ['qa_normalization', 'enabled'],
+            'EMBEDDING_PROVIDER': ['embeddings', 'primary', 'provider'],
+            'EMBEDDING_MODEL': ['embeddings', 'primary', 'model'],
         }
 
         for env_var, config_path in env_mappings.items():

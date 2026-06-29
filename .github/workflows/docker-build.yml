@@ -4,9 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-    branches:
-      - master
-      - main
   workflow_dispatch:
     inputs:
       gpu_backend:
@@ -27,7 +24,10 @@ jobs:
   build:
     strategy:
       matrix:
-        gpu: ${{ fromJSON(github.event_name == 'workflow_dispatch' && github.event.inputs.gpu_backend == 'all' && '["cuda","rocm","cpu"]' || github.event.inputs.gpu_backend == 'all' && '["cuda","rocm","cpu"]' || '["cuda","rocm","cpu"]') }}
+        gpu:
+          - cuda
+          - rocm
+          - cpu
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -47,23 +47,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=${{ matrix.gpu }}
-            type=raw,value=${{ matrix.gpu }}-{{date 'YYYYMMDD'}}
+      - name: Extract version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}-${{ matrix.gpu }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.gpu }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.tag }}
+            org.opencontainers.image.description=SermonAudio Processor (${{ matrix.gpu }})
           build-args: |
             GPU_BACKEND=${{ matrix.gpu }}
           cache-from: type=gha
@@ -86,6 +89,7 @@ jobs:
 
       - name: Tag cuda as latest
         run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
           docker buildx imagetools create \
             --tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cuda
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}-cuda
