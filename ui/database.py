@@ -102,6 +102,21 @@ class SermonDatabase:
             except Exception:
                 pass  # Column already exists
 
+            try:
+                conn.execute("ALTER TABLE sermons ADD COLUMN subtitle TEXT")
+            except Exception:
+                pass  # Column already exists
+
+            try:
+                conn.execute("ALTER TABLE sermons ADD COLUMN is_favorite INTEGER DEFAULT 0")
+            except Exception:
+                pass
+
+            try:
+                conn.execute("ALTER TABLE sermons ADD COLUMN notes TEXT DEFAULT ''")
+            except Exception:
+                pass
+
             # File paths table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS sermon_files (
@@ -185,6 +200,19 @@ class SermonDatabase:
                     upload_status TEXT,
                     upload_message TEXT,
                     FOREIGN KEY (sermon_id) REFERENCES sermons(id)
+                )
+            """)
+
+            # Manual review queue table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS manual_review (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sermon_id TEXT NOT NULL,
+                    reason TEXT,
+                    status TEXT DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_at TIMESTAMP,
+                    notes TEXT
                 )
             """)
 
@@ -337,11 +365,44 @@ class SermonDatabase:
             results = []
             for row in rows:
                 result = dict(row)
-                result['criteria_met'] = json.loads(result['criteria_met'])
-                result['criteria_failed'] = json.loads(result['criteria_failed'])
+                result['criteria_met'] = json.loads(result['criteria_met']) if result.get('criteria_met') else []
+                result['criteria_failed'] = json.loads(result['criteria_failed']) if result.get('criteria_failed') else []
                 results.append(result)
 
             return results
+
+    def add_manual_review(self, sermon_id: str, reason: str = ""):
+        """Add a sermon to the manual review queue"""
+        with self.get_connection() as conn:
+            conn.execute("""
+                INSERT INTO manual_review (sermon_id, reason, status, created_at)
+                VALUES (?, ?, 'pending', ?)
+            """, (sermon_id, reason, datetime.datetime.now()))
+            conn.commit()
+
+    def get_manual_reviews(self, status: str = None) -> list[dict]:
+        """Get manual review queue entries"""
+        with self.get_connection() as conn:
+            if status:
+                rows = conn.execute(
+                    "SELECT * FROM manual_review WHERE status = ? ORDER BY created_at DESC",
+                    (status,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM manual_review ORDER BY created_at DESC"
+                ).fetchall()
+            return [dict(row) for row in rows]
+
+    def update_manual_review_status(self, review_id: int, status: str, notes: str = ""):
+        """Update a manual review entry status"""
+        with self.get_connection() as conn:
+            conn.execute("""
+                UPDATE manual_review
+                SET status = ?, reviewed_at = ?, notes = ?
+                WHERE id = ?
+            """, (status, datetime.datetime.now(), notes, review_id))
+            conn.commit()
 
     def cleanup_old_records(self, days: int = 30):
         """Clean up old processing status and expired cache entries"""
@@ -509,18 +570,21 @@ class SermonRepository:
         """
         try:
             with self.db.get_connection() as conn:
-                # Save main sermon record
                 conn.execute("""
                     INSERT OR REPLACE INTO sermons 
-                    (id, title, speaker, recorded_date, event_type, bible_text, duration, status, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (id, title, subtitle, speaker, recorded_date, event_type, bible_text, series_title, scripture_reference, description, duration, status, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     sermon_data.get('id'),
                     sermon_data.get('title'),
+                    sermon_data.get('subtitle'),
                     sermon_data.get('speaker'),
                     sermon_data.get('recorded_date'),
                     sermon_data.get('event_type'),
                     sermon_data.get('bible_text'),
+                    sermon_data.get('series_title'),
+                    sermon_data.get('scripture_reference'),
+                    sermon_data.get('description'),
                     sermon_data.get('duration'),
                     sermon_data.get('status', 'processed'),
                     datetime.datetime.now()
@@ -528,17 +592,25 @@ class SermonRepository:
 
                 # Save file paths
                 file_paths = sermon_data.get('file_paths', {})
-                for file_type, file_path in file_paths.items():
-                    if file_path:
+                if isinstance(file_paths, dict):
+                    for file_type, file_path in file_paths.items():
+                        if not file_path:
+                            continue
+                        if not isinstance(file_path, (str, Path)):
+                            continue
                         file_size = 0
-                        if Path(file_path).exists():
-                            file_size = Path(file_path).stat().st_size
+                        try:
+                            p = Path(str(file_path))
+                            if p.exists():
+                                file_size = p.stat().st_size
+                        except (TypeError, OSError, ValueError):
+                            file_size = 0
 
                         conn.execute("""
                             INSERT OR REPLACE INTO sermon_files 
                             (sermon_id, file_type, file_path, file_size)
                             VALUES (?, ?, ?, ?)
-                        """, (sermon_data.get('id'), file_type, file_path, file_size))
+                        """, (sermon_data.get('id'), file_type, str(file_path), file_size))
 
                 # Save processing information
                 processing_info = sermon_data.get('processing_info', {})
@@ -660,6 +732,7 @@ class SermonRepository:
             proc_row = conn.execute("""
                 SELECT * FROM processing_info WHERE sermon_id = ?
             """, (sermon_id,)).fetchone()
+            processing_info = None
             if proc_row:
                 processing_info = dict(proc_row)
                 processing_info['processing_logs'] = json.loads(processing_info.get('processing_logs') or '{}')
@@ -716,47 +789,52 @@ class SermonRepository:
             return False
 
     def update_sermon_metadata(self, sermon_id: str, metadata: dict[str, Any]) -> bool:
-        """Update sermon metadata in the database"""
+        """Update sermon metadata in the database (partial update -- only specified fields)"""
         try:
             with self.db.get_connection() as conn:
-                # Update main sermon fields
-                conn.execute("""
-                    UPDATE sermons 
-                    SET title = ?, speaker = ?, event_type = ?, recorded_date = ?, 
-                        bible_text = ?, series_title = ?, description = ?, scripture_reference = ?
-                    WHERE id = ?
-                """, (
-                    metadata.get('title'),
-                    metadata.get('speaker'),
-                    metadata.get('event_type'),
-                    metadata.get('recorded_date'),
-                    metadata.get('bible_text'),
-                    metadata.get('series_title'),
-                    metadata.get('description'),
-                    metadata.get('scripture_reference'),
-                    sermon_id
-                ))
+                sermon_cols = ('title', 'subtitle', 'speaker', 'event_type', 'recorded_date',
+                               'bible_text', 'series_title', 'description', 'scripture_reference',
+                               'church_name', 'is_favorite', 'notes')
+                set_parts = []
+                params = []
+                for col in sermon_cols:
+                    if col in metadata:
+                        set_parts.append(f"{col} = ?")
+                        params.append(metadata[col])
+                if set_parts:
+                    set_parts.append("updated_at = ?")
+                    params.append(datetime.datetime.now())
+                    params.append(sermon_id)
+                    conn.execute(f"""
+                        UPDATE sermons SET {', '.join(set_parts)} WHERE id = ?
+                    """, params)
 
-                # Update sermon_content description if provided
                 if 'description' in metadata:
                     conn.execute("""
-                        UPDATE sermon_content 
-                        SET description = ?
-                        WHERE sermon_id = ?
-                    """, (metadata.get('description'), sermon_id))
+                        UPDATE sermon_content SET description = ? WHERE sermon_id = ?
+                    """, (metadata['description'], sermon_id))
 
-                # Update full-text search index (FTS requires delete + insert)
-                conn.execute("DELETE FROM sermon_search WHERE sermon_id = ?", (sermon_id,))
-                conn.execute("""
-                    INSERT INTO sermon_search 
-                    (sermon_id, title, speaker, transcript_text, description, hashtags)
-                    VALUES (?, ?, ?, '', ?, '')
-                """, (
-                    sermon_id,
-                    metadata.get('title'),
-                    metadata.get('speaker'),
-                    metadata.get('description')
-                ))
+                fts_cols = {'title', 'speaker', 'description', 'hashtags', 'transcript_text'}
+                cols_in_update = fts_cols & metadata.keys()
+                if cols_in_update:
+                    existing = conn.execute(
+                        "SELECT s.title, s.speaker, sc.transcript_text, COALESCE(sc.description, s.description) AS description, sc.hashtags "
+                        "FROM sermons s "
+                        "LEFT JOIN sermon_content sc ON s.id = sc.sermon_id "
+                        "WHERE s.id = ?",
+                        (sermon_id,)
+                    ).fetchone()
+                    fts_title = metadata.get('title') or (existing[0] if existing else '')
+                    fts_speaker = metadata.get('speaker') or (existing[1] if existing else '')
+                    fts_transcript = metadata.get('transcript_text') or (existing[2] if existing else '')
+                    fts_description = metadata.get('description') or (existing[3] if existing else '')
+                    fts_hashtags = metadata.get('hashtags') or (existing[4] if existing else '')
+                    conn.execute("DELETE FROM sermon_search WHERE sermon_id = ?", (sermon_id,))
+                    conn.execute("""
+                        INSERT INTO sermon_search
+                        (sermon_id, title, speaker, transcript_text, description, hashtags)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (sermon_id, fts_title, fts_speaker, fts_transcript, fts_description, fts_hashtags))
 
                 conn.commit()
                 logger.info(f"Successfully updated metadata for sermon {sermon_id}")
@@ -771,14 +849,23 @@ class SermonRepository:
         """Get all sermons with optional filtering"""
         with self.db.get_connection() as conn:
             query = """
-                SELECT s.*, 
+                SELECT s.id, s.title, s.subtitle, s.speaker, s.recorded_date, s.event_type,
+                       s.bible_text, s.duration, s.status, s.created_at, s.updated_at,
+                       s.series_title, s.scripture_reference, s.church_name,
+                       s.is_favorite, s.notes,
                        pi.qa_segments_count,
                        pi.qa_normalization_applied,
                        pi.enhancement_method,
-                       ui.upload_status
+                       ui.upload_status,
+                       sc.transcript_text AS transcript,
+                       sc.description,
+                       sc.hashtags,
+                       sc.key_topics,
+                       sc.summary
                 FROM sermons s
                 LEFT JOIN processing_info pi ON s.id = pi.sermon_id
                 LEFT JOIN upload_info ui ON s.id = ui.sermon_id
+                LEFT JOIN sermon_content sc ON s.id = sc.sermon_id
                 WHERE 1=1
             """
             params = []
@@ -803,6 +890,9 @@ class SermonRepository:
 
                 if filters.get('has_qa_segments'):
                     query += " AND pi.qa_segments_count > 0"
+
+                if filters.get('is_favorite'):
+                    query += " AND s.is_favorite = 1"
 
                 if filters.get('status'):
                     query += " AND s.status = ?"

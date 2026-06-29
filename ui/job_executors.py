@@ -258,48 +258,138 @@ def execute_sermon_import_job(job: Job) -> JobResult:
 
 
 def execute_sermon_processing_job(job: Job) -> JobResult:
-    """Execute a sermon processing job"""
+    """Execute a sermon processing job from an uploaded file (UI flow).
+
+    This handles the 'new sermon' workflow where a user uploads an audio file
+    via the Streamlit UI and it gets processed, transcribed, and uploaded
+    to SermonAudio.
+
+    Required job parameters:
+        - uploaded_file_path: path to a saved copy of the uploaded audio
+        - form_data: dict with keys: speaker_name, recorded_date, event_type,
+                     bible_text, title, subtitle, description, hashtags,
+                     skip_audio, skip_transcription, whisper_model, dry_run
+        - config: full config dict (used to set globals in sermon_updater)
+    """
     try:
-        job.update_progress(10, "Initializing sermon processing...")
+        job.update_progress(5, "Initializing sermon processing...")
 
-        # Get parameters
-        sermon_id = job.parameters.get('sermon_id')
-        if not sermon_id:
-            return JobResult(
-                success=False,
-                message="No sermon ID provided for processing",
-                error="Missing sermon_id parameter"
-            )
-
-        job.update_progress(20, f"Starting processing for sermon {sermon_id}...")
-
-        # This would integrate with the main sermon processing pipeline
-        # For now, return a placeholder result
-        job.update_progress(50, "Processing audio...")
-        job.add_log("Audio enhancement in progress...")
-
-        job.update_progress(70, "Generating transcript...")
-        job.add_log("Transcript generation in progress...")
-
-        job.update_progress(90, "Creating description and hashtags...")
-        job.add_log("LLM processing in progress...")
-
-        job.update_progress(100, "Processing completed successfully")
-
-        return JobResult(
-            success=True,
-            message=f"Sermon {sermon_id} processed successfully",
-            data={'sermon_id': sermon_id, 'status': 'processed'}
+        form_data = job.parameters.get('form_data') or {}
+        config = job.parameters.get('config') or {}
+        uploaded_file_path = (
+            job.parameters.get('uploaded_file_path')
+            or form_data.get('uploaded_file_path')
         )
 
+        if not uploaded_file_path:
+            return JobResult(
+                success=False,
+                message="No uploaded file path provided",
+                error="Missing uploaded_file_path in job parameters"
+            )
+
+        if not Path(uploaded_file_path).exists():
+            return JobResult(
+                success=False,
+                message=f"Uploaded file not found: {uploaded_file_path}",
+                error="Uploaded audio file is missing on disk"
+            )
+
+        # Validate required form fields
+        for required_key in ('speaker_name', 'recorded_date', 'event_type'):
+            if not form_data.get(required_key):
+                return JobResult(
+                    success=False,
+                    message=f"Missing required field: {required_key}",
+                    error=f"Form data missing {required_key}"
+                )
+
+        # Inject the config into the sermon_updater module so that its
+        # module-level constants (api_key, broadcaster_id, LLM manager, etc.)
+        # are correct for this job.
+        try:
+            import sermon_updater
+            from sermon_updater import ConfigManager, LLMManager
+            sermon_updater.config = config
+            sermon_updater.config_manager = ConfigManager()
+            sermon_updater.llm_manager = LLMManager(config)
+            sermon_updater.SERMON_AUDIO_API_KEY = config.get('api_key')
+            sermon_updater.SERMON_AUDIO_BROADCASTER_ID = config.get('broadcaster_id')
+            # Reload the sermonaudio library key
+            try:
+                import sermonaudio
+                sermonaudio.set_api_key(sermon_updater.SERMON_AUDIO_API_KEY)
+            except Exception:
+                pass
+            job.add_log("Config injected for this job")
+        except Exception as e:
+            job.add_log(f"⚠️ Failed to inject config (may still work): {e}")
+            logger.warning(f"Config injection warning: {e}")
+
+        # Progress callback that updates the job
+        def progress_cb(pct, msg):
+            try:
+                job.update_progress(pct, msg)
+            except Exception:
+                pass
+
+        job.update_progress(10, f"Processing: {Path(uploaded_file_path).name}")
+        job.add_log(f"Audio file: {uploaded_file_path}")
+
+        # Call the real process_new_sermon
+        from sermon_updater import process_new_sermon
+
+        result = process_new_sermon(
+            audio_file=uploaded_file_path,
+            speaker_name=form_data.get('speaker_name'),
+            recorded_date=form_data.get('recorded_date'),
+            event_type=form_data.get('event_type', 'Sunday Service'),
+            bible_text=form_data.get('bible_text') or None,
+            title=form_data.get('title') or None,
+            subtitle=form_data.get('subtitle') or None,
+            series_title=form_data.get('series_title') or None,
+            description=form_data.get('description') or None,
+            hashtags=form_data.get('hashtags') or None,
+            dry_run=bool(form_data.get('dry_run', False)),
+            skip_transcription=bool(form_data.get('skip_transcription', False)),
+            skip_audio=bool(form_data.get('skip_audio', False)),
+            skip_ai_generation=bool(form_data.get('skip_ai_generation', False)),
+            whisper_model=form_data.get('whisper_model', 'large'),
+            transcription_backend=form_data.get('transcription_backend', 'whisper_local'),
+            use_clean_audio=bool(form_data.get('use_clean_audio', False)),
+            clean_audio_script=form_data.get('clean_audio_script',
+                                            '~/Documents/Repositories/deepfilternet/clean-audio.py'),
+            clean_audio_device=form_data.get('clean_audio_device', 'auto'),
+            generate_short_title=bool(form_data.get('generate_short_title', False)),
+            progress_callback=progress_cb,
+        )
+
+        if result.get('success'):
+            sermon_id = result.get('sermon_id')
+            job.add_log(f"✅ Sermon created: {sermon_id or '(dry run)'}")
+            return JobResult(
+                success=True,
+                message=f"Sermon processed successfully: {sermon_id or 'dry run'}",
+                data=result,
+            )
+        else:
+            err = result.get('error') or 'Unknown processing error'
+            job.add_log(f"❌ {err}")
+            return JobResult(
+                success=False,
+                message=f"Processing failed: {err}",
+                error=err,
+                data=result,
+            )
+
     except Exception as e:
-        error_msg = f"Processing job failed: {str(e)}"
+        error_msg = f"Sermon processing job failed: {e}"
         job.add_log(f"❌ {error_msg}")
-        logger.error(error_msg)
+        logger.exception(error_msg)
         return JobResult(
             success=False,
-            message="Processing job failed",
-            error=str(e)
+            message="Sermon processing job failed",
+            error=str(e),
         )
 
 
@@ -318,7 +408,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
 
         actions = job.parameters.get('actions', {})
         config = job.parameters.get('config', {})
-        
+
         if not config:
             return JobResult(
                 success=False,
@@ -340,7 +430,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
         sys.path.insert(0, str(Path(__file__).parent.parent))
         import sermon_updater
         from sermon_updater import DescriptionValidator
-        
+
         # Set the global config in sermon_updater module
         sermon_updater.config = config
 
@@ -351,7 +441,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                 if job.status == JobStatus.CANCELLED:
                     job.add_log("Batch processing cancelled by user")
                     break
-                    
+
                 progress = 20 + (i / len(sermon_ids)) * 70  # 20-90% for processing
                 job.update_progress(progress, f"Processing sermon {sermon_id} ({i+1}/{len(sermon_ids)})")
 
@@ -376,14 +466,14 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                             force_hashtags=actions.get('generate_hashtags', False),
                             no_metadata=False
                         )
-                        
+
                         if actions.get('generate_description'):
                             sermon_result['actions_performed'].append('description')
                         if actions.get('generate_hashtags'):
                             sermon_result['actions_performed'].append('hashtags')
                         if actions.get('enhance_audio'):
                             sermon_result['actions_performed'].append('audio')
-                            
+
                     except Exception as e:
                         sermon_result['errors'].append(f'Processing error: {str(e)}')
 
@@ -439,13 +529,84 @@ def execute_batch_processing_job(job: Job) -> JobResult:
         )
 
 
+def execute_metadata_update_job(job: Job) -> JobResult:
+    """Execute a metadata update job (AI description/hashtag generation)"""
+    try:
+        sermon_ids = job.parameters.get('sermon_ids', [])
+        actions = job.parameters.get('actions', {})
+        config = job.parameters.get('config', {})
+
+        if not sermon_ids:
+            return JobResult(
+                success=False,
+                message="No sermon IDs provided",
+                error="Missing sermon_ids parameter"
+            )
+
+        if not config:
+            return JobResult(
+                success=False,
+                message="No configuration provided",
+                error="Missing config parameter"
+            )
+
+        job.update_progress(10, f"Starting metadata update for {len(sermon_ids)} sermons...")
+
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        import sermon_updater
+        from sermon_updater import DescriptionValidator
+
+        sermon_updater.config = config
+
+        results = {
+            'total': len(sermon_ids),
+            'completed': 0,
+            'failed': 0,
+            'details': []
+        }
+
+        for i, sermon_id in enumerate(sermon_ids):
+            try:
+                progress = 10 + (i / len(sermon_ids)) * 80
+                job.update_progress(progress, f"Processing sermon {sermon_id} ({i+1}/{len(sermon_ids)})")
+
+                sermon_updater.process_single_sermon(
+                    sermon_id,
+                    no_upload=False,
+                    verbose=False,
+                    skip_audio=True,
+                    force_description=actions.get('generate_description', False),
+                    force_hashtags=actions.get('generate_hashtags', False),
+                    no_metadata=False
+                )
+
+                results['completed'] += 1
+                job.add_log(f"✅ Sermon {sermon_id}: Updated")
+
+            except Exception as e:
+                results['failed'] += 1
+                job.add_log(f"❌ Sermon {sermon_id}: {str(e)}")
+                logger.error(f"Metadata update error for {sermon_id}: {e}")
+
+        summary = f"Metadata update: {results['completed']} completed, {results['failed']} failed"
+        job.update_progress(100, summary)
+
+        return JobResult(success=True, message=summary, data=results)
+
+    except Exception as e:
+        error_msg = f"Metadata update job failed: {str(e)}"
+        job.add_log(f"❌ {error_msg}")
+        return JobResult(success=False, message="Metadata update job failed", error=str(e))
+
+
 # Job executor registry
 _EXECUTORS: dict[JobType, Callable[[Job], JobResult]] = {
     JobType.VALIDATION: execute_validation_job,
     JobType.SERMON_IMPORT: execute_sermon_import_job,
     JobType.SERMON_PROCESSING: execute_sermon_processing_job,
     JobType.BATCH_PROCESSING: execute_batch_processing_job,
-    # Add more executors as needed
+    JobType.METADATA_UPDATE: execute_metadata_update_job,
 }
 
 

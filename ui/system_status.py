@@ -232,7 +232,7 @@ class SystemStatusManager:
 
             if provider == 'ollama':
                 return self._check_ollama_status(llm_config, provider_type)
-            elif provider in ['openai', 'anthropic', 'xai', 'google', 'groq']:
+            elif provider in ['openai', 'anthropic', 'xai', 'google', 'groq', 'openrouter']:
                 return self._check_api_llm_status(llm_config, provider_type)
             else:
                 return {

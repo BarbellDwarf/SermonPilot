@@ -8,8 +8,10 @@ Includes Q&A audio normalization for automatically adjusting audience question l
 import logging
 import os
 import shutil
+import sys
 import tempfile
 import time
+import types
 import warnings
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
@@ -45,8 +47,36 @@ def peak_normalize(audio_data: np.ndarray, peak_db: float = -1.0) -> np.ndarray:
     gain = target_peak / peak
     return audio_data * gain
 
+def _ensure_torchaudio_backend_compat():
+    """
+    DeepFilterNet expects `torchaudio.backend.common.AudioMetaData`, which was
+    removed in torchaudio 2.9+.
+    """
+    try:
+        from torchaudio.backend.common import AudioMetaData  # noqa: F401
+        return
+    except ModuleNotFoundError:
+        pass
+    backend_mod = sys.modules.get("torchaudio.backend")
+    if backend_mod is None:
+        backend_mod = types.ModuleType("torchaudio.backend")
+        sys.modules["torchaudio.backend"] = backend_mod
+    common_mod = types.ModuleType("torchaudio.backend.common")
+    class AudioMetaData:
+        pass
+    common_mod.AudioMetaData = AudioMetaData
+    backend_mod.common = common_mod
+    sys.modules["torchaudio.backend.common"] = common_mod
+
+
+_ensure_torchaudio_backend_compat()
+
 try:
     print(f"PyTorch version: {torch.__version__}")
+    is_rocm = getattr(torch.version, "hip", None) is not None or \
+              "rocm" in (getattr(torch.version, "cuda", "") or "").lower()
+    if is_rocm:
+        print(f"ROCm available: yes (hip={torch.version.hip})")
     print(f"CUDA available: {torch.cuda.is_available()}")
     if torch.cuda.is_available():
         print(f"CUDA device: {torch.cuda.get_device_name(0)}")
@@ -105,9 +135,14 @@ class AudioProcessor:
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         if self.device == "cuda":
-            gpu_name = torch.cuda.get_device_name(0)
-            gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-            logger.info(f"Using GPU: {gpu_name} ({gpu_memory:.1f} GB)")
+            is_rocm = getattr(torch.version, "hip", None) is not None or \
+                      "rocm" in (getattr(torch.version, "cuda", "") or "").lower()
+            if is_rocm:
+                logger.info("Using AMD GPU (ROCm) for processing")
+            else:
+                gpu_name = torch.cuda.get_device_name(0)
+                gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                logger.info(f"Using GPU: {gpu_name} ({gpu_memory:.1f} GB)")
         else:
             logger.info("Using CPU for processing")
 
@@ -163,9 +198,9 @@ class AudioProcessor:
                 # Suppress DF initialization logs if not in debug mode
                 if logger.level > logging.DEBUG:
                     with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-                        self.df_model, self.df_state, _ = init_df()
+                        self.df_model, self.df_state, *_ = init_df()
                 else:
-                    self.df_model, self.df_state, _ = init_df()
+                    self.df_model, self.df_state, *_ = init_df()
 
                 logger.info("DeepFilterNet initialized successfully")
             except Exception as e:
@@ -184,9 +219,11 @@ class AudioProcessor:
             except Exception as e:
                 logger.error(f"Failed to initialize Resemble Enhance: {e}")
                 logger.info("Falling back to DeepFilterNet")
+                self.enhancement_method = "deepfilternet"
                 self._init_deepfilternet()
         else:
             logger.error("Resemble Enhance not available, falling back to DeepFilterNet")
+            self.enhancement_method = "deepfilternet"
             self._init_deepfilternet()
 
     def _fallback_to_basic(self):
@@ -228,11 +265,14 @@ class AudioProcessor:
                 samples = np.mean(samples, axis=1)
 
             # Normalize to [-1, 1] range
+            orig_dtype = samples.dtype
             samples = samples.astype(np.float32)
-            if samples.dtype == np.int16:
+            if orig_dtype == np.int16:
                 samples = samples / 32768.0
-            elif samples.dtype == np.int32:
+            elif orig_dtype == np.int32:
                 samples = samples / 2147483648.0
+            elif orig_dtype == np.uint8:
+                samples = (samples - 128.0) / 128.0
 
             return samples, audio.frame_rate
         except Exception as e:
@@ -373,7 +413,7 @@ class AudioProcessor:
         if self.enhancement_method == "resemble_enhance":
             memory_per_minute_gb = 0.25  # More memory intensive, increased estimate
         else:  # DeepFilterNet or others
-            memory_per_minute_gb = 0.10  # Empirical: ~100MB per minute within VRAM
+            memory_per_minute_gb = 0.35  # ~350MB/min — DeepFilterNet needs ~5GB+ intermediate buffers for full audio
 
         # Calculate total VRAM needed
         audio_duration_minutes = audio_length / sample_rate / 60
@@ -394,14 +434,14 @@ class AudioProcessor:
             else:
                 # Use large but stable chunks for longer audio
                 if self.enhancement_method == "resemble_enhance":
-                    max_chunk_seconds = 180  # 3-minute chunks for Resemble Enhance stability
+                    max_chunk_seconds = 300  # 5-minute chunks for Resemble Enhance stability
                     logger.info(
-                        f"Audio fits in VRAM but using 3-min chunks for "
+                        f"Audio fits in VRAM but using 5-min chunks for "
                         f"Resemble Enhance stability (audio: {audio_duration_seconds/60:.0f} min)."
                     )
                 else:
-                    max_chunk_seconds = 600  # 10-minute chunks for other methods
-                    logger.info(f"Audio fits in VRAM but using 10-min chunks for stability (audio: {audio_duration_seconds/60:.0f} min).")
+                    max_chunk_seconds = 300  # 5-minute chunks for DeepFilterNet stability
+                    logger.info(f"Audio fits in VRAM but using {max_chunk_seconds}-sec chunks for DeepFilterNet stability (audio: {audio_duration_seconds/60:.0f} min).")
         else:
             # Calculate optimal chunk size that fits in VRAM
             available_for_audio = effective_memory_gb - base_memory_gb
@@ -409,22 +449,17 @@ class AudioProcessor:
 
             # Cap chunks at reasonable sizes for stability
             if self.enhancement_method == "resemble_enhance":
-                # Smaller chunks for Resemble Enhance
                 if effective_memory_gb >= 6:  # High-end GPU
-                    max_chunk_seconds = min(max_chunk_minutes * 60, 180)  # Max 3 minutes
-                else:  # Lower-end GPU
-                    max_chunk_seconds = min(max_chunk_minutes * 60, 120)  # Max 2 minutes
-            else:
-                # Larger chunks for other methods
-                if effective_memory_gb >= 6:  # High-end GPU
-                    max_chunk_seconds = min(max_chunk_minutes * 60, 600)  # Max 10 minutes
-                else:  # Lower-end GPU
                     max_chunk_seconds = min(max_chunk_minutes * 60, 300)  # Max 5 minutes
+                else:  # Lower-end GPU
+                    max_chunk_seconds = min(max_chunk_minutes * 60, 180)  # Max 3 minutes
+            else:
+                max_chunk_seconds = min(max_chunk_minutes * 60, 300)  # Max 5 minutes for DeepFilterNet stability
 
             logger.info(f"Using VRAM-optimized chunks: {max_chunk_seconds/60:.1f} minutes per chunk.")
 
         # Ensure minimum chunk size for quality
-        max_chunk_seconds = max(10, max_chunk_seconds)  # At least 10 seconds
+        max_chunk_seconds = max(30, max_chunk_seconds)  # At least 30 seconds
 
         chunk_samples = int(max_chunk_seconds * sample_rate)
 
@@ -442,6 +477,9 @@ class AudioProcessor:
                                      chunk_size_seconds: float = 30.0) -> np.ndarray:
         """
         Process large audio files in chunks using the selected enhancement method.
+
+        Uses overlap-add between chunks to prevent boundary artifacts from
+        DeepFilterNet's recurrent state resets.
 
         Args:
             audio_data: Input audio data
@@ -467,29 +505,46 @@ class AudioProcessor:
 
         # Calculate chunk size in samples
         chunk_size = int(chunk_size_seconds * sample_rate)
+        overlap_samples = int(chunk_size * 0.1)  # 10% overlap for cross-fade
+        hop_size = chunk_size - overlap_samples
+
+        # Warmup/cooldown samples to stabilize DeepFilterNet's recurrent state
+        warmup_samples = int(3.0 * sample_rate)  # 3 seconds of context
 
         # Calculate number of chunks
-        num_chunks = (len(audio_data) + chunk_size - 1) // chunk_size
+        num_chunks = (len(audio_data) + hop_size - 1) // hop_size
 
-        # Process each chunk
-        output_audio = np.zeros_like(audio_data)
+        # Process each chunk with overlap-add
+        output_audio = np.zeros(len(audio_data), dtype=np.float64)
+        window_sum = np.zeros(len(audio_data), dtype=np.float64)
+
+        # Hann window for cross-fade
+        fade_in = np.sin(np.pi * np.arange(overlap_samples) / (2 * overlap_samples)) ** 2
+        fade_out = np.sin(np.pi * (np.arange(overlap_samples) + overlap_samples) / (2 * overlap_samples)) ** 2
 
         for i in range(num_chunks):
-            start = i * chunk_size
+            start = i * hop_size
             end = min(start + chunk_size, len(audio_data))
             chunk = audio_data[start:end]
+
+            # Add warmup context from previous chunk to stabilize recurrent state
+            warmup_start = max(0, start - warmup_samples)
+            chunk_with_warmup = audio_data[warmup_start:end]
+            warmup_len = start - warmup_start
 
             individual_chunk_start = time.time()
             logger.info(f"Processing chunk {i+1}/{num_chunks} with {self.enhancement_method}")
 
             try:
                 if self.enhancement_method == "deepfilternet":
-                    processed_chunk = self._process_chunk_deepfilternet(chunk)
+                    processed_with_warmup = self._process_chunk_deepfilternet(chunk_with_warmup)
                 elif self.enhancement_method == "resemble_enhance":
-                    processed_chunk = self._process_chunk_resemble_enhance(chunk, sample_rate)
+                    processed_with_warmup = self._process_chunk_resemble_enhance(chunk_with_warmup, sample_rate)
                 else:
-                    # No enhancement, just copy
-                    processed_chunk = chunk if chunk.ndim == 1 else chunk[0]
+                    processed_with_warmup = chunk_with_warmup if chunk_with_warmup.ndim == 1 else chunk_with_warmup[0]
+
+                # Strip warmup from output, keeping only the actual chunk
+                processed_chunk = processed_with_warmup[warmup_len:]
 
                 individual_chunk_end = time.time()
                 chunk_duration = (end - start) / sample_rate
@@ -513,12 +568,31 @@ class AudioProcessor:
                     processed_chunk = processed_chunk[:orig_len]
 
                 processed_chunk = np.clip(processed_chunk, -1.0, 1.0)
-                output_audio[start:end] = processed_chunk
+
+                # Apply cross-fade in overlap region
+                chunk_window = np.ones(orig_len)
+                if i > 0 and overlap_samples > 0:
+                    chunk_window[:overlap_samples] = fade_in
+                if end < len(audio_data) and overlap_samples > 0:
+                    chunk_window[-overlap_samples:] = fade_out
+
+                output_audio[start:end] += processed_chunk * chunk_window
+                window_sum[start:end] += chunk_window
 
             except Exception as e:
                 logger.error(f"Error processing chunk {i+1}: {e}")
-                # Fall back to original chunk
-                output_audio[start:end] = chunk if chunk.ndim == 1 else chunk[0]
+                chunk_window = np.ones(orig_len)
+                if i > 0 and overlap_samples > 0:
+                    chunk_window[:overlap_samples] = fade_in
+                if end < len(audio_data) and overlap_samples > 0:
+                    chunk_window[-overlap_samples:] = fade_out
+                output_audio[start:end] += (chunk if chunk.ndim == 1 else chunk[0]) * chunk_window
+                window_sum[start:end] += chunk_window
+
+        # Normalize by window sum to avoid amplitude modulation
+        window_sum = np.maximum(window_sum, 1e-10)
+        output_audio = output_audio / window_sum
+        output_audio = np.clip(output_audio, -1.0, 1.0).astype(np.float32)
 
         # Monitor memory after chunking
         if torch.cuda.is_available():
@@ -915,9 +989,12 @@ class AudioProcessor:
             logger.info("Using DeepFilterNet for noise reduction")
             single_start_time = time.time()
 
-            if audio_data.ndim == 1:
-                audio_data = audio_data[np.newaxis, :]
-            audio_tensor = torch.from_numpy(audio_data).contiguous()
+            was_1d = audio_data.ndim == 1
+            if was_1d:
+                audio_data_2d = audio_data[np.newaxis, :]
+            else:
+                audio_data_2d = audio_data
+            audio_tensor = torch.from_numpy(audio_data_2d).contiguous()
             processed_tensor = enhance(self.df_model, self.df_state, audio_tensor)
 
             if isinstance(processed_tensor, torch.Tensor):
@@ -932,20 +1009,30 @@ class AudioProcessor:
             processing_time = single_end_time - single_start_time
             logger.info(f"⏱️  SINGLE PROCESSING: Total time {total_time:.1f}s, Pure processing: {processing_time:.1f}s")
             # Ensure output length matches input
-            if reduced_noise.shape[0] != audio_data.shape[-1]:
-                logger.warning(f"DeepFilterNet output length {reduced_noise.shape[0]} does not match input {audio_data.shape[-1]}. Padding or trimming as needed.")
-                if reduced_noise.shape[0] < audio_data.shape[-1]:
-                    padded = np.zeros(audio_data.shape[-1], dtype=reduced_noise.dtype)
+            input_len = audio_data.shape[-1]
+            if reduced_noise.shape[0] != input_len:
+                logger.warning(f"DeepFilterNet output length {reduced_noise.shape[0]} does not match input {input_len}. Padding or trimming as needed.")
+                if reduced_noise.shape[0] < input_len:
+                    padded = np.zeros(input_len, dtype=reduced_noise.dtype)
                     padded[:reduced_noise.shape[0]] = reduced_noise
                     reduced_noise = padded
                 else:
-                    reduced_noise = reduced_noise[:audio_data.shape[-1]]
+                    reduced_noise = reduced_noise[:input_len]
             logger.info("DeepFilterNet noise reduction completed successfully")
             return reduced_noise
         except Exception as e:
             logger.error(f"DeepFilterNet processing failed: {e}")
-            logger.warning("Falling back to custom noise reduction")
-            return self.custom_noise_reduction(audio_data, sample_rate, noise_reduction_amount=0.7)
+            # Retry with chunking if it failed (e.g., OOM on full audio)
+            try:
+                logger.info("Retrying DeepFilterNet with chunked processing")
+                chunk_seconds = 30
+                return self.process_large_audio_in_chunks(
+                    audio_data, sample_rate, chunk_size_seconds=chunk_seconds
+                )
+            except Exception as e2:
+                logger.error(f"DeepFilterNet chunked processing also failed: {e2}")
+                logger.warning("Falling back to custom noise reduction")
+                return self.custom_noise_reduction(audio_data if audio_data.ndim == 1 else audio_data[0], sample_rate, noise_reduction_amount=0.7)
 
     def amplify_audio(self, audio_data: np.ndarray, gain_db: float = 3.0) -> np.ndarray:
         """
@@ -961,7 +1048,7 @@ class AudioProcessor:
         logger.info(f"Amplifying audio by {gain_db} dB")
 
         # Convert dB to linear gain
-        gain_linear = 10 ** (gain_db / 15.0)
+        gain_linear = 10 ** (gain_db / 20.0)
 
         # Apply gain
         amplified = audio_data * gain_linear

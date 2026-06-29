@@ -128,6 +128,7 @@ start_server() {
         --browser.gatherUsageStats false \
         --server.headless true \
         --server.fileWatcherType none \
+        --server.maxUploadSize 2000 \
         --theme.base light \
         > "$LOGFILE" 2>&1 &
 

@@ -182,3 +182,25 @@ metadata_processing:
 default_criteria:
   event_type: "sunday_service"  # Options: sunday_service, sunday_school, midweek_service
   date_range: 7  # Days back from today
+
+# Transcription Settings
+transcription:
+  backend: faster_whisper_local  # Options: whisper_local, faster_whisper_local, whisper_openai, whisper_openrouter
+  whisper_local:
+    compute_type: float16  # Options: float16, int8, int8_float16, int8_uint8, int16, float32
+    device: auto  # Options: auto, cpu, cuda
+    language: en  # Language code (en, es, fr, etc.) or None for auto-detection
+    model: base  # Options: tiny, base, small, medium, large
+  faster_whisper_local:
+    compute_type: float16  # Options: float16, int8, int8_float16, int8_uint8, int16, float32
+    device: auto  # Options: auto, cpu, cuda
+    language: en  # Language code (en, es, fr, etc.) or None for auto-detection
+    model: base  # Options: tiny, base, small, medium, large
+  whisper_openai:
+    api_key: ${OPENAI_API_KEY}  # OpenAI API key
+    base_url: https://api.openai.com/v1  # OpenAI API base URL
+    model: whisper-1  # Options: whisper-1
+  whisper_openrouter:
+    api_key: ${OPENROUTER_API_KEY}  # OpenRouter API key
+    base_url: https://openrouter.ai/api/v1  # OpenRouter API base URL
+    model: openai/whisper-large-v3  # Options: openai/whisper-large-v3, etc.

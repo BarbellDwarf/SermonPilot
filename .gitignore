@@ -23,6 +23,17 @@ analytics_cache/
 analytics_vector_db/
 .playwright-mcp/ 
 
+# Standalone summary / informational docs (keep local, don't push to GitHub)
+CLEANUP_PHASE1_SUMMARY.md
+CONTAINERIZATION.md
+CONTAINERIZATION_README.md
+SECURITY_IMPLEMENTATION_SUMMARY.md
+testing-environment-requirements.md
+
+# Demo and test scripts (keep local)
+demo_enhanced_workflow.py
+test_docker_setup.py
+
 # Audio Files
 *.mp3
 *.wav
