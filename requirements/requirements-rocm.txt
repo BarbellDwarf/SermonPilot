@@ -1,0 +1,16 @@
+# ROCm-enabled requirements for SermonAudio AI Audio Processor
+# Install with: pip install -r requirements/requirements-rocm.txt
+
+# Use PyTorch ROCm index
+--extra-index-url https://download.pytorch.org/whl/rocm6.2
+
+# Core dependencies
+-r requirements.txt
+
+# ROCm-specific PyTorch overrides
+torch==2.1.1+rocm6.2
+torchaudio==2.1.1+rocm6.2
+torchvision==0.16.1+rocm6.2
+
+# DeepFilterNet with ROCm support
+deepfilternet>=0.5.6
