@@ -35,7 +35,10 @@ services:
         condition: service_healthy
     deploy:
       resources:
+        limits:
+          memory: ${MEMORY_LIMIT:-8g}
         reservations:
+          memory: ${MEMORY_RESERVE:-2g}
           devices:
             - driver: ${GPU_DRIVER:-nvidia}
               count: 1
@@ -61,7 +64,10 @@ services:
       - ollama_data:/root/.ollama
     deploy:
       resources:
+        limits:
+          memory: ${OLLAMA_MEMORY_LIMIT:-16g}
         reservations:
+          memory: ${OLLAMA_MEMORY_RESERVE:-4g}
           devices:
             - driver: ${GPU_DRIVER:-nvidia}
               count: 1
