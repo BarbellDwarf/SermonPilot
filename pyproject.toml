@@ -40,16 +40,14 @@ dependencies = [
     # LLM providers
     "ollama>=0.1.0",
     "openai>=1.0.0",
-    "langchain>=0.0.200",
-    "langchain-community>=0.0.1",
     # Utilities
     "tenacity>=8.2.0",
     "tqdm>=4.66.1", # Updated for resemble-enhance compatibility
     "colorlog>=6.7.0",
     "schedule>=1.1.0",
     "psutil>=5.9.0", # Updated version
-    "chromadb>=1.0.20",
-    "sentence-transformers>=5.1.0",
+    "chromadb>=0.4.22",
+    "sentence-transformers>=2.2.0",
     "plotly>=6.3.0",
 ]
 
