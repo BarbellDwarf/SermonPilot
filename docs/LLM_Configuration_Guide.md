@@ -14,7 +14,7 @@ llm:
   primary:
     provider: "ollama"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
     ollama:
-      host: "http://REDACTED-INTERNAL-IP:11434"
+      host: "http://localhost:11434"
       model: "llama3.1:8b"
     openai:
       api_key: "your-openai-key"
@@ -38,7 +38,7 @@ llm:
     enabled: true
     provider: "openai"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
     ollama:
-      host: "http://REDACTED-INTERNAL-IP:11434"
+      host: "http://localhost:11434"
       model: "llama2"
     openai:
       api_key: "your-openai-key"
