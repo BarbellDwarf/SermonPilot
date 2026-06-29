@@ -1,5 +1,5 @@
 # Dockerfile.dev - Development version
-FROM app AS dev
+FROM sermon-processor:latest AS dev
 
 USER root
 

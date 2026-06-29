@@ -32,6 +32,7 @@ import argparse
 import datetime as dt
 import logging
 import os
+import re
 import sys
 import time
 import traceback
@@ -48,7 +49,6 @@ print("   📦 Loading dependencies...")
 
 import requests
 import sermonaudio
-import yaml
 from dotenv import load_dotenv
 from sermonaudio.node.requests import Node
 
@@ -72,19 +72,21 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     # Also suppress torchaudio warnings in logging
     logging.getLogger("torchaudio").setLevel(logging.CRITICAL)
     logging.getLogger("torchaudio").disabled = True
-    from audio_processing import process_sermon_audio
-    from llm_manager import LLMManager, migrate_legacy_config
-    from cli.parser import CLIParser, confirm, parse_years
+    try:
+        from audio_processing import process_sermon_audio
+    except Exception:
+        # Fallback no-op processor if dependencies missing
+        def process_sermon_audio(*args, **kwargs):
+            return False
+    from cli.parser import CLIParser, confirm
     from core.config import ConfigManager
+    from llm_manager import LLMManager
     from processing.orchestrator import (
-        ProcessingOptions,
-        ValidationOptions,
         ArgumentsNormalizer,
         ProcessingOrchestrator,
         SermonFilter,
     )
-
-    # Import database for Q&A processing tracking
+    from transcription import transcribe
     try:
         sys.path.insert(0, str(Path(__file__).parent / "ui"))
         from database import SermonRepository
@@ -101,11 +103,16 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
         enhanced_processor_available = False
         EnhancedAudioProcessor = None
 
-print("   ⚙️  Configuring environment...")
+# Guard module-level prints to avoid noise when importing as a library
+_is_cli = __name__ == '__main__'
+
+if _is_cli:
+    print("   ⚙️  Configuring environment...")
 load_dotenv()
 
-print("✅ Initialization complete!")
-print("📃Retrieving Sermon List....")
+if _is_cli:
+    print("✅ Initialization complete!")
+    print("📃Retrieving Sermon List....")
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -317,7 +324,10 @@ def get_sermon_details(sermon_id: str) -> dict:
             logger.debug(f"Sermon details retrieved successfully for {sermon_id}")
             return data
         else:
-            logger.warning(f"Failed to get sermon details for {sermon_id}: HTTP {resp.status_code}")
+            if resp.status_code == 404:
+                logger.info(f"Sermon {sermon_id} not yet available on SermonAudio (404)")
+            else:
+                logger.warning(f"Failed to get sermon details for {sermon_id}: HTTP {resp.status_code}")
             return {}
     except Exception as e:
         logger.error(f"Error retrieving sermon details for {sermon_id}: {e}")
@@ -920,11 +930,14 @@ def validate_and_regenerate_descriptions(
     }
 
 
-def update_sermon_metadata(sermon_id: str, description: str, hashtags: str | list[str]) -> bool:
+def update_sermon_metadata(sermon_id: str, description: str, hashtags: str | list[str],
+                          series_title: str = None) -> bool:
     url = BASE_URL + f'node/sermons/{sermon_id}'
     headers = get_api_headers()
     keywords = hashtags if isinstance(hashtags, str) else ','.join(hashtags)
     payload = {'moreInfoText': description, 'keywords': keywords}
+    if series_title:
+        payload['seriesTitle'] = series_title[:100]
     resp = requests.patch(url, headers=headers, json=payload, timeout=60)
     logger.debug("Update sermon status: %d", resp.status_code)
     if resp.status_code not in (200, 204):
@@ -947,30 +960,52 @@ def update_sermon_metadata(sermon_id: str, description: str, hashtags: str | lis
 
 def upload_audio_file(sermon_id: str, audio_path: str) -> bool:
     logger.debug("Uploading audio for sermon %s from %s", sermon_id, audio_path)
-    url = BASE_URL + 'media'
+    return upload_media_file(sermon_id, audio_path, "original-audio")
+
+
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".webm", ".mkv", ".m4v"}
+
+
+def is_video_file(path: str | Path) -> bool:
+    return Path(path).suffix.lower() in VIDEO_EXTENSIONS
+
+
+def _media_type_for_ext(path: str | Path) -> str:
+    ext = Path(path).suffix.lower()
+    return "video/mp4" if ext == ".mp4" else "video/mp4" if is_video_file(path) else "audio/mpeg"
+
+
+def upload_media_file(sermon_id: str, file_path: str,
+                       upload_type: str = "original-audio") -> bool:
+    """Upload a media file (audio or video) to SermonAudio.
+
+    POSTs to /v2/media with the given uploadType to get an upload URL,
+    then PUTs the file to that URL.
+    """
+    logger.debug("Uploading media for sermon %s from %s (type=%s)",
+                 sermon_id, file_path, upload_type)
+    url = BASE_URL + "media"
     headers = get_api_headers()
-    payload = {'uploadType': 'original-audio', 'sermonID': sermon_id}
+    payload = {"uploadType": upload_type, "sermonID": sermon_id}
     resp = requests.post(url, headers=headers, json=payload, timeout=60)
-    logger.debug("Audio upload initiation status: %d", resp.status_code)
+    logger.debug("Media upload initiation status: %d", resp.status_code)
     if resp.status_code != 201:
-        logger.error("Failed to initiate audio upload: %s", resp.text[:200])
+        logger.error("Failed to initiate media upload: %s", resp.text[:200])
         return False
     data = resp.json()
-    upload_url = data.get('uploadURL')
+    upload_url = data.get("uploadURL")
     if not upload_url:
         logger.error("No upload URL returned.")
         return False
+    content_type = _media_type_for_ext(file_path)
     try:
-        with open(audio_path, 'rb') as fh:
-            up = requests.post(
-                upload_url,
-                data=fh,
-                headers={'Content-Type': 'audio/mpeg'},
-                timeout=600,
-            )
+        with open(file_path, "rb") as fh:
+            up = requests.post(upload_url, data=fh,
+                               headers={"Content-Type": content_type},
+                               timeout=600)
         logger.debug("Direct upload status: %d", up.status_code)
         return up.status_code in (200, 201, 204)
-    except Exception as e:  # pragma: no cover
+    except Exception as e:
         logger.error("Error uploading file: %s", e)
         return False
 
@@ -1051,6 +1086,39 @@ Generate a compelling sermon title:"""
         return fallback[:85]
 
 
+def generate_short_display_title(full_title: str) -> str:
+    """Generate a short display title (≤30 chars) from the full title using LLM.
+
+    Args:
+        full_title: The full sermon title
+
+    Returns:
+        Shortened display title string
+    """
+    if len(full_title) <= 30:
+        return full_title
+
+    prompt = f"""Shorten this sermon title to a concise version (maximum 30 characters, STRICT LIMIT).
+Keep the core meaning but make it brief. No quotes, no explanation, just the shortened title.
+
+Original title: {full_title}
+
+Shortened title (max 30 chars):"""
+
+    try:
+        response = llm_manager.chat([{'role': 'user', 'content': prompt}])
+        short_title = response.strip().strip('"').strip("'")
+        if len(short_title) > 30:
+            short_title = short_title[:27] + "..."
+        if short_title:
+            logger.debug("Generated short display title (%d chars): %s", len(short_title), short_title)
+            return short_title
+    except Exception as e:
+        logger.warning("Short title generation failed: %s", e)
+
+    return full_title[:27] + "..." if len(full_title) > 30 else full_title
+
+
 def transcribe_audio(audio_path: str, model_size: str = "base") -> str:
     """Transcribe audio file using OpenAI Whisper.
     
@@ -1105,10 +1173,79 @@ def transcribe_audio(audio_path: str, model_size: str = "base") -> str:
         return ""
 
 
+def parse_bible_reference(text: str | None) -> dict | None:
+    """Parse a bible reference string into structured fields.
+
+    Understands formats like:
+      "John 3:16"       -> {book: "John", chapter: 3, verse_start: 16, verse_end: 16}
+      "Genesis 1:1-10"  -> {book: "Genesis", chapter: 1, verse_start: 1, verse_end: 10}
+      "Psalm 23"        -> {book: "Psalm", chapter: 23, verse_start: None, verse_end: None}
+      "Romans 8:28-39"  -> {book: "Romans", chapter: 8, verse_start: 28, verse_end: 39}
+
+    Returns the raw text keyed as 'bibleText' and structured fields, or None if parsing fails.
+    """
+    if not text or not text.strip():
+        return None
+    text = text.strip()
+    result = {"bibleText": text}
+    # Try to match "Book Chapter:Verse-Verse"
+    # Use a pattern that handles book names starting with a number (e.g. "1 Peter 3:16")
+    m = re.match(r'^(\d*\s*\D+?)\s*(\d+)\s*:\s*(\d+)\s*-\s*(\d+)$', text)
+    if m:
+        result["book"] = m.group(1).strip()
+        result["chapter"] = int(m.group(2))
+        result["verseStart"] = int(m.group(3))
+        result["verseEnd"] = int(m.group(4))
+    else:
+        m = re.match(r'^(\d*\s*\D+?)\s*(\d+)\s*:\s*(\d+)$', text)
+        if m:
+            result["book"] = m.group(1).strip()
+            result["chapter"] = int(m.group(2))
+            result["verseStart"] = int(m.group(3))
+            result["verseEnd"] = int(m.group(3))
+        else:
+            m = re.match(r'^(\d*\s*\D+?)\s*(\d+)$', text)
+            if m:
+                result["book"] = m.group(1).strip()
+                result["chapter"] = int(m.group(2))
+    return result
+
+
+def resolve_speaker_id(speaker_name: str) -> int | None:
+    """Resolve a speaker name to a numeric speaker ID via the SermonAudio API.
+
+    Queries /v2/node/speakers for exact (case-insensitive) name match.
+    Returns None if not found or API unavailable.
+    """
+    try:
+        headers = get_api_headers()
+        url = BASE_URL + 'node/speakers'
+        resp = requests.get(url, headers=headers, timeout=30)
+        if resp.status_code != 200:
+            logger.warning("Failed to fetch speakers list: %d", resp.status_code)
+            return None
+        speakers = resp.json()
+        if not isinstance(speakers, list):
+            speakers = speakers.get('results', speakers) if isinstance(speakers, dict) else []
+        for sp in speakers:
+            display = sp.get('displayName', '')
+            if display.strip().lower() == speaker_name.strip().lower():
+                sp_id = sp.get('speakerID')
+                logger.info("Resolved speaker '%s' -> ID %s", speaker_name, sp_id)
+                return sp_id
+        logger.info("Speaker '%s' not found in SermonAudio directory", speaker_name)
+        return None
+    except Exception as e:
+        logger.warning("Error resolving speaker ID for '%s': %s", speaker_name, e)
+        return None
+
+
 def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
                          event_type: str = "Sunday Service", bible_text: str = None,
                          subtitle: str = None, description: str = None,
-                         hashtags: str = None) -> str:
+                         hashtags: str = None, speaker_id: int | None = None,
+                         series_title: str = None,
+                         display_title: str = None) -> str:
     """Create a new sermon via the SermonAudio API.
     
     Args:
@@ -1120,6 +1257,10 @@ def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
         subtitle: Sermon subtitle (max 30 chars, optional)
         description: Sermon description (optional)
         hashtags: Hashtags/keywords (optional)
+        speaker_id: Numeric speaker ID (optional, preferred over speaker_name)
+        series_title: Series name (optional)
+        display_title: Short display title (max 30 chars, optional). If not provided,
+                       generated from full title by truncation.
         
     Returns:
         Created sermon ID if successful, None if failed
@@ -1137,6 +1278,10 @@ def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
         'languageCode': 'eng'  # Default to English
     }
 
+    # Use numeric speakerID if available (more reliable)
+    if speaker_id is not None:
+        payload['speakerID'] = speaker_id
+
     # Add optional fields
     if bible_text:
         payload['bibleText'] = bible_text
@@ -1146,10 +1291,14 @@ def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
         payload['moreInfoText'] = description
     if hashtags:
         payload['keywords'] = hashtags
+    if series_title:
+        payload['seriesTitle'] = series_title[:100]
 
-    # Generate display title from full title
-    display_title = title[:30] if len(title) <= 30 else title[:27] + "..."
-    payload['displayTitle'] = display_title
+    # Use provided display_title or generate from full title
+    if display_title:
+        payload['displayTitle'] = display_title[:30]
+    else:
+        payload['displayTitle'] = title[:30] if len(title) <= 30 else title[:27] + "..."
 
     try:
         logger.debug("Creating new sermon with title: %s", title)
@@ -1172,11 +1321,18 @@ def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
 def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       event_type: str = "Sunday Service", bible_text: str = None,
                       title: str = None, subtitle: str = None,
-                      description: str = None, hashtags: str = None,
+                      series_title: str = None, description: str = None, hashtags: str = None,
                       dry_run: bool = False, skip_transcription: bool = False,
-                      whisper_model: str = "base") -> bool:
+                      skip_audio: bool = False, skip_ai_generation: bool = False,
+                      whisper_model: str = "large",
+                      transcription_backend: str = "whisper_local",
+                      use_clean_audio: bool = False,
+                      clean_audio_script: str = "~/Documents/Repositories/deepfilternet/clean-audio.py",
+                      clean_audio_device: str = "auto",
+                      generate_short_title: bool = False,
+                      progress_callback=None) -> dict:
     """Process a new sermon from audio file with automatic metadata generation.
-    
+
     Args:
         audio_file: Path to audio file
         speaker_name: Name of the speaker
@@ -1189,63 +1345,225 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         hashtags: Hashtags/keywords (optional, will be generated if not provided)
         dry_run: If True, process but don't upload
         skip_transcription: If True, skip audio transcription for faster processing
+        skip_audio: If True, skip audio enhancement (use file as-is, e.g. already cleaned in kdenlive)
         whisper_model: Whisper model size for transcription
-        
+        progress_callback: Optional callable(progress_pct: float, message: str) for progress reporting
+
     Returns:
-        True if successful, False if failed
+        Dict with keys: success, sermon_id, title, description, hashtags,
+                        enhanced_audio_path, transcript_length, error
     """
+    def _report(progress, msg):
+        if progress_callback is not None:
+            try:
+                progress_callback(progress, msg)
+            except Exception:
+                pass
+
+    result = {
+        'success': False,
+        'sermon_id': None,
+        'title': None,
+        'description': None,
+        'hashtags': None,
+        'subtitle': subtitle,
+        'speaker': speaker_name,
+        'event_type': event_type,
+        'bible_text': bible_text,
+        'recorded_date': recorded_date,
+        'enhanced_audio_path': None,
+        'is_video': False,
+        'final_upload_path': None,
+        'upload_type': "original-audio",
+        'transcript_length': 0,
+        'transcript': None,
+        'output_dir': None,
+        'error': None,
+    }
+
     from pathlib import Path
 
-    from src.audio_processing import AudioProcessor
+    try:
+        from src.audio_processing import AudioProcessor
+        audio_processor_available = True
+    except Exception as e:
+        logger.warning(f"AudioProcessor unavailable: {e}")
+        audio_processor_available = False
 
     audio_path = Path(audio_file)
+    original_input_path = audio_path  # keep for video muxing
     if not audio_path.exists():
         logger.error("Audio file not found: %s", audio_file)
-        return False
+        result['error'] = f"Audio file not found: {audio_file}"
+        return result
+
+    input_is_video = is_video_file(str(audio_path))
+
+    # Preprocessing: optional clean-audio.py step (runs before enhancement)
+    if use_clean_audio:
+        console_print("🧹 Running external clean-audio.py preprocessing...")
+        _report(3, "Running clean-audio.py (Audacity macro + DeepFilterNet)...")
+        import subprocess
+        clean_script = Path(clean_audio_script).expanduser()
+        if not clean_script.exists():
+            logger.error("clean-audio.py not found: %s", clean_script)
+            result['error'] = f"clean-audio.py not found: {clean_script}"
+            return result
+        clean_output = audio_path.with_name(f"{audio_path.stem}_cleaned.wav")
+        cmd = [
+            sys.executable, str(clean_script),
+            str(audio_path),
+            str(clean_output),
+            "--device", clean_audio_device,
+        ]
+        logger.info("Running: %s", " ".join(cmd))
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+            if proc.returncode != 0:
+                logger.error("clean-audio.py failed: %s", proc.stderr)
+                result['error'] = f"clean-audio.py failed: {proc.stderr[:200]}"
+                return result
+            if not clean_output.exists():
+                logger.error("clean-audio.py did not produce output: %s", clean_output)
+                result['error'] = "clean-audio.py produced no output"
+                return result
+            # Replace audio_path with cleaned file (enhancements will still run on it)
+            audio_path = clean_output
+            console_print(f"✅ clean-audio.py done: {clean_output.name}")
+            _report(7, "clean-audio.py complete")
+        except subprocess.TimeoutExpired:
+            logger.error("clean-audio.py timed out after 30 minutes")
+            result['error'] = "clean-audio.py timed out"
+            return result
+        except FileNotFoundError:
+            logger.error("clean-audio.py cannot be executed (Python not found?)")
+            result['error'] = "clean-audio.py not executable"
+            return result
 
     logger.info("Processing new sermon from audio file: %s", audio_file)
+    _report(5, f"Loaded audio file: {audio_path.name}")
 
+    temp_dir = None
+    import tempfile as _tempfile
+    import subprocess as _subprocess
     try:
-        # Step 1: Process the audio
-        console_print("🎵 Processing audio...")
-        processor = AudioProcessor()
-
-        # Create temporary output directory
-        temp_dir = Path("temp_sermon_processing")
-        temp_dir.mkdir(exist_ok=True)
-
-        # Process audio with enhancement
-        enhanced_audio_path = temp_dir / f"enhanced_{audio_path.name}"
-        success = processor.process_sermon_audio(
-            str(audio_path),
-            str(enhanced_audio_path)
-        )
-
-        if not success:
-            logger.warning("Audio processing failed, using original file")
+        # Step 1: Process the audio (or skip if requested)
+        if skip_audio:
+            console_print("⏭️  Skipping audio enhancement (--skip-audio enabled)")
+            logger.info("Skipping audio enhancement per user request")
+            _report(20, "Skipping audio enhancement (using file as-is)")
             enhanced_audio_path = audio_path
+        else:
+            console_print("🎵 Processing audio...")
+            _report(10, "Initializing audio processor...")
+            if audio_processor_available:
+                # Create temporary output directory (absolute path)
+                temp_dir = Path(_tempfile.gettempdir()) / "sermon_processing"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+
+                # For video inputs, extract audio to WAV first
+                process_input = audio_path
+                if input_is_video:
+                    _report(12, "Extracting audio from video...")
+                    extracted_wav = temp_dir / "extracted_audio.wav"
+                    try:
+                        _subprocess.run(
+                            ["ffmpeg", "-y", "-i", str(audio_path),
+                             "-vn", "-acodec", "pcm_s16le", "-ar", "48000",
+                             "-ac", "1", str(extracted_wav)],
+                            capture_output=True, text=True, timeout=300, check=True
+                        )
+                        process_input = extracted_wav
+                        _report(14, "Audio extracted from video")
+                    except Exception as e:
+                        logger.warning("Failed to extract audio from video: %s", e)
+                        _report(14, "Audio extraction failed, using original file")
+
+                processor = AudioProcessor(
+                    enhancement_method=config.get('audio_enhancement_method', 'deepfilternet')
+                )
+                enhanced_audio_path = temp_dir / "enhanced_audio.wav"
+                _report(15, f"Running audio enhancement ({processor.enhancement_method})...")
+                success, proc_result = processor.process_sermon_audio(
+                    str(process_input),
+                    str(enhanced_audio_path)
+                )
+                if not success or not enhanced_audio_path.exists():
+                    logger.warning("Audio processing failed, using original file")
+                    _report(20, "Audio processing failed, falling back to original")
+                    enhanced_audio_path = audio_path
+                else:
+                    _report(30, "Audio enhancement complete")
+            else:
+                logger.warning("AudioProcessor unavailable, skipping enhancement")
+                enhanced_audio_path = audio_path
+
+        result['enhanced_audio_path'] = str(enhanced_audio_path)
+
+        # If the original input was a video, mux the enhanced audio back in
+        final_upload_path = enhanced_audio_path
+        upload_type = "original-audio"
+        if input_is_video:
+            audio_was_enhanced = enhanced_audio_path != audio_path and enhanced_audio_path.exists()
+            if audio_was_enhanced:
+                try:
+                    import subprocess as mux_proc
+                    final_video = original_input_path.with_name(
+                        f"{original_input_path.stem}_enhanced{original_input_path.suffix}"
+                    )
+                    mux_cmd = [
+                        "ffmpeg", "-y",
+                        "-i", str(original_input_path),
+                        "-i", str(enhanced_audio_path),
+                        "-c:v", "copy",
+                        "-c:a", "aac",
+                        "-map", "0:v:0",
+                        "-map", "1:a:0",
+                        "-shortest",
+                        str(final_video),
+                    ]
+                    logger.info("Muxing enhanced audio into video: %s", " ".join(mux_cmd))
+                    mux_proc.run(mux_cmd, capture_output=True, text=True, timeout=600, check=True)
+                    final_upload_path = final_video
+                    upload_type = "original-video"
+                    console_print(f"🎬 Muxed enhanced audio into video: {final_video.name}")
+                except Exception as e:
+                    logger.warning("Video muxing failed, falling back to audio upload: %s", e)
+                    console_print("⚠️  Video mux failed, uploading audio only")
+            else:
+                console_print("🎬 Uploading original video (no audio enhancement)")
+                final_upload_path = original_input_path
+                upload_type = "original-video"
 
         # Step 2: Transcribe audio for metadata generation
         transcript = ""
         if (not title or not description or not hashtags) and not skip_transcription:
-            # Try to get transcript from processed audio
+            _report(35, f"Starting transcription ({whisper_model} model)...")
             try:
-                transcript = transcribe_audio(str(enhanced_audio_path), model_size=whisper_model)
+                transcript = transcribe(str(enhanced_audio_path), model_size=whisper_model, config=config,
+                                        backend_override=transcription_backend)
                 if not transcript:
-                    # If transcription failed, try original audio
-                    transcript = transcribe_audio(str(audio_path), model_size=whisper_model)
+                    _report(45, "First transcription attempt produced no result, retrying with original audio...")
+                    transcript = transcribe(str(audio_path), model_size=whisper_model, config=config,
+                                            backend_override=transcription_backend)
             except Exception as e:
                 logger.warning("Transcription failed: %s", e)
                 transcript = ""
+            _report(55, f"Transcription complete: {len(transcript)} characters")
         elif skip_transcription:
             console_print("⏭️  Skipping transcription (--skip-transcription enabled)")
+            _report(55, "Skipped transcription")
+
+        result['transcript'] = transcript
+        result['transcript_length'] = len(transcript) if transcript else 0
 
         # Step 3: Generate metadata using transcript or fallback
-        if transcript:
+        if transcript and not skip_ai_generation:
             console_print("🤖 Generating metadata from transcript...")
 
             if not title:
                 try:
+                    _report(60, "Generating title...")
                     title = generate_title(
                         transcript=transcript,
                         speaker_name=speaker_name,
@@ -1254,10 +1572,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     )
                 except Exception as e:
                     logger.warning("LLM title generation failed: %s", e)
-                    title = None
 
             if not description:
                 try:
+                    _report(70, "Generating description...")
                     description = generate_summary(
                         transcript,
                         event_type=event_type,
@@ -1269,33 +1587,56 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             if not hashtags:
                 try:
+                    _report(80, "Generating hashtags...")
                     hashtags = generate_hashtags(transcript)
                 except Exception as e:
                     logger.warning("LLM hashtag generation failed: %s", e)
                     hashtags = None
+        elif skip_ai_generation:
+            console_print("⏭️  Skipping AI metadata generation")
         else:
             console_print("⚠️  No transcript available, using basic metadata...")
 
         # Fallback metadata generation for any missing fields
-        if not title:
-            title = f"Sermon by {speaker_name}"
-            if bible_text:
-                title += f" - {bible_text}"
+        if skip_ai_generation:
+            if not title:
+                title = title or speaker_name or recorded_date
+            if not description:
+                description = description or ''
+            if not hashtags:
+                hashtags = hashtags or ''
+        else:
+            if not title:
+                title = f"Sermon by {speaker_name}"
+                if bible_text:
+                    title += f" - {bible_text}"
 
-        if not description:
-            description = f"A sermon by {speaker_name}"
-            if bible_text:
-                description += f" on {bible_text}"
-            description += f" from {event_type} on {recorded_date}."
+            if not description:
+                description = f"A sermon by {speaker_name}"
+                if bible_text:
+                    description += f" on {bible_text}"
+                description += f" from {event_type} on {recorded_date}."
 
-        if not hashtags:
-            base_tags = ["#sermon", f"#{speaker_name.replace(' ', '')}", f"#{event_type.replace(' ', '').replace('-', '')}"]
-            if bible_text:
-                # Extract book name for hashtag
-                book = bible_text.split()[0] if bible_text else ""
-                if book:
-                    base_tags.append(f"#{book}")
-            hashtags = " ".join(base_tags[:5])  # Limit to 5 tags
+            if not hashtags:
+                base_tags = ["#sermon", f"#{speaker_name.replace(' ', '')}", f"#{event_type.replace(' ', '').replace('-', '')}"]
+                if bible_text:
+                    book = bible_text.split()[0] if bible_text else ""
+                    if book:
+                        base_tags.append(f"#{book}")
+                hashtags = " ".join(base_tags[:5])
+
+        result['title'] = title
+        result['description'] = description
+        result['hashtags'] = hashtags
+
+        # Generate short display title if requested
+        short_display_title = None
+        if generate_short_title and title:
+            try:
+                short_display_title = generate_short_display_title(title)
+                console_print(f"📝 Short display title: {short_display_title}")
+            except Exception as e:
+                logger.warning("Short title generation failed: %s", e)
 
         console_print(f"📝 Generated title: {title}")
         console_print(f"📝 Generated description: {description[:100]}...")
@@ -1312,45 +1653,41 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             console_print(f"  Description: {description[:100]}...")
             console_print(f"  Hashtags: {hashtags}")
             console_print(f"  Audio: {enhanced_audio_path}")
+            if input_is_video:
+                console_print(f"  Video: {final_upload_path}")
+            console_print(f"  Upload type: {upload_type}")
+            if short_display_title:
+                console_print(f"  Display Title: {short_display_title}")
             console_print(f"  Transcript: {len(transcript)} characters" if transcript else "  Transcript: None")
-            return True
 
-        # Step 4: Create sermon via API
-        console_print("📤 Creating sermon on SermonAudio...")
-        sermon_id = create_new_sermon_api(
-            title=title,
-            speaker_name=speaker_name,
-            recorded_date=recorded_date,
-            event_type=event_type,
-            bible_text=bible_text,
-            subtitle=subtitle,
-            description=description,
-            hashtags=hashtags
-        )
+            # Save dry run results for visibility in the Library page
+            import re
+            safe_title = re.sub(r'[^a-zA-Z0-9]+', '_', (title or 'Untitled').strip().lower())[:40]
+            safe_speaker = re.sub(r'[^a-zA-Z0-9]+', '_', (speaker_name or 'Unknown').strip().lower())[:20]
+            safe_date = (recorded_date or 'nodate').replace('-', '')
+            sermon_id = f"draft_{safe_speaker}_{safe_date}_{safe_title}"
+            result['sermon_id'] = sermon_id
 
-        if not sermon_id:
-            logger.error("Failed to create sermon")
-            return False
-
-        # Step 5: Upload the audio
-        console_print(f"📤 Uploading audio for sermon {sermon_id}...")
-        upload_success = upload_audio_file(sermon_id, str(enhanced_audio_path))
-
-        if upload_success:
-            console_print(f"✅ Successfully created and uploaded sermon {sermon_id}")
-
-            # Create local output directory
-            output_dir = Path("processed_sermons") / sermon_id
+            output_root = Path(config.get('output_directory', 'processed_sermons'))
+            if not output_root.is_absolute():
+                output_root = Path(__file__).parent / output_root
+            output_dir = output_root / sermon_id
             output_dir.mkdir(parents=True, exist_ok=True)
+            result['output_dir'] = str(output_dir)
 
-            # Copy audio to output directory
-            final_audio_path = output_dir / f"sermon_{sermon_id}.mp3"
-            if enhanced_audio_path != audio_path:
-                import shutil
-                shutil.copy2(enhanced_audio_path, final_audio_path)
+            # Copy processed file to output directory
+            import shutil
+            if input_is_video and upload_type == "original-video":
+                final_output_path = output_dir / f"sermon_{sermon_id}{original_input_path.suffix}"
+                if final_upload_path.exists():
+                    shutil.copy2(final_upload_path, final_output_path)
+                else:
+                    final_output_path = output_dir / f"sermon_{sermon_id}.mp3"
+                    shutil.copy2(enhanced_audio_path, final_output_path)
             else:
-                import shutil
-                shutil.copy2(audio_path, final_audio_path)
+                final_output_path = output_dir / f"sermon_{sermon_id}.mp3"
+                source = enhanced_audio_path if enhanced_audio_path != audio_path else audio_path
+                shutil.copy2(source, final_output_path)
 
             # Save metadata
             metadata = {
@@ -1363,8 +1700,148 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'subtitle': subtitle,
                 'description': description,
                 'hashtags': hashtags,
-                'original_audio': str(audio_path),
-                'processed_audio': str(final_audio_path),
+                'original_file': str(audio_path),
+                'processed_file': str(final_output_path),
+                'is_video': input_is_video,
+                'upload_type': upload_type,
+                'transcript_length': len(transcript) if transcript else 0,
+                'has_transcript': bool(transcript),
+                'dry_run': True,
+            }
+            import json
+            with open(output_dir / "metadata.json", 'w') as f:
+                json.dump(metadata, f, indent=2)
+
+            if transcript:
+                with open(output_dir / f"{sermon_id}_transcript.txt", 'w', encoding='utf-8') as f:
+                    f.write(transcript)
+
+            # Save to local database for UI visibility
+            try:
+                from ui.database import SermonRepository
+                repo = SermonRepository()
+                duration = 0
+                try:
+                    import subprocess, json as _json
+                    r = subprocess.run(['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', str(enhanced_audio_path)], capture_output=True, text=True, timeout=30)
+                    if r.returncode == 0:
+                        info = _json.loads(r.stdout)
+                        duration = float(info.get('format', {}).get('duration', 0))
+                except Exception:
+                    pass
+                repo.save_sermon({
+                    'id': sermon_id,
+                    'title': title or '',
+                    'subtitle': subtitle or '',
+                    'series_title': series_title or '',
+                    'description': description or '',
+                    'scripture_reference': bible_text or '',
+                    'speaker': speaker_name or '',
+                    'recorded_date': recorded_date or '',
+                    'event_type': event_type or '',
+                    'bible_text': bible_text or '',
+                    'duration': duration,
+                    'status': 'draft',
+                    'file_paths': {
+                        'audio': str(final_output_path),
+                        'metadata': str(output_dir / "metadata.json"),
+                    },
+                    'content': {
+                        'transcript_text': transcript or '',
+                        'description': description or '',
+                        'hashtags': hashtags or '',
+                    },
+                })
+                console_print(f"💾 Dry run sermon saved to local database (status: draft)")
+            except Exception as e:
+                logger.warning(f"Failed to save dry run sermon to local database: {e}")
+
+            console_print(f"📁 Dry run files saved to: {output_dir}")
+            _report(100, "Dry run complete")
+            result['success'] = True
+            return result
+
+        # Step 4: Create sermon via API
+        _report(83, "Resolving speaker...")
+        console_print("👤 Resolving speaker...")
+        speaker_id = resolve_speaker_id(speaker_name)
+        if speaker_id:
+            console_print(f"✅ Resolved speaker '{speaker_name}' to ID {speaker_id}")
+        else:
+            console_print(f"ℹ️  Using speaker name '{speaker_name}' as-is (no numeric ID found)")
+
+        _report(85, "Creating sermon on SermonAudio...")
+        console_print("📤 Creating sermon on SermonAudio...")
+        sermon_id = create_new_sermon_api(
+            title=title,
+            speaker_name=speaker_name,
+            recorded_date=recorded_date,
+            event_type=event_type,
+            bible_text=bible_text,
+            subtitle=subtitle,
+            description=description,
+            hashtags=hashtags,
+            speaker_id=speaker_id,
+            series_title=series_title,
+            display_title=short_display_title,
+        )
+
+        if not sermon_id:
+            logger.error("Failed to create sermon")
+            result['error'] = "Failed to create sermon on SermonAudio API"
+            return result
+
+        result['sermon_id'] = sermon_id
+        _report(90, f"Created sermon: {sermon_id}")
+
+        # Step 5: Upload the media (audio or video)
+        media_label = "video" if upload_type == "original-video" else "audio"
+        console_print(f"📤 Uploading {media_label} for sermon {sermon_id}...")
+        _report(92, f"Uploading {media_label} to SermonAudio...")
+        upload_success = upload_media_file(sermon_id, str(final_upload_path), upload_type)
+
+        if upload_success:
+            console_print(f"✅ Successfully created and uploaded {media_label} for sermon {sermon_id}")
+            _report(95, f"{media_label.capitalize()} uploaded successfully")
+
+            # Create local output directory
+            output_root = Path(config.get('output_directory', 'processed_sermons'))
+            if not output_root.is_absolute():
+                output_root = Path(__file__).parent / output_root
+            output_dir = output_root / sermon_id
+            output_dir.mkdir(parents=True, exist_ok=True)
+            result['output_dir'] = str(output_dir)
+
+            # Copy processed file to output directory
+            if input_is_video and upload_type == "original-video":
+                final_output_path = output_dir / f"sermon_{sermon_id}{original_input_path.suffix}"
+                import shutil
+                if final_upload_path.exists():
+                    shutil.copy2(final_upload_path, final_output_path)
+                else:
+                    final_output_path = output_dir / f"sermon_{sermon_id}.mp3"
+                    shutil.copy2(enhanced_audio_path, final_output_path)
+            else:
+                final_output_path = output_dir / f"sermon_{sermon_id}.mp3"
+                import shutil
+                source = enhanced_audio_path if enhanced_audio_path != audio_path else audio_path
+                shutil.copy2(source, final_output_path)
+
+            # Save metadata
+            metadata = {
+                'sermonID': sermon_id,
+                'title': title,
+                'speaker': speaker_name,
+                'recorded_date': recorded_date,
+                'event_type': event_type,
+                'bible_text': bible_text,
+                'subtitle': subtitle,
+                'description': description,
+                'hashtags': hashtags,
+                'original_file': str(audio_path),
+                'processed_file': str(final_output_path),
+                'is_video': input_is_video,
+                'upload_type': upload_type,
                 'transcript_length': len(transcript) if transcript else 0,
                 'has_transcript': bool(transcript)
             }
@@ -1379,23 +1856,282 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     f.write(transcript)
                 console_print(f"📝 Transcript saved ({len(transcript)} characters)")
 
+            # Save to local database for UI visibility
+            try:
+                from ui.database import SermonRepository
+                repo = SermonRepository()
+                duration = 0
+                try:
+                    import subprocess, json
+                    r = subprocess.run(['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', str(enhanced_audio_path)], capture_output=True, text=True, timeout=30)
+                    if r.returncode == 0:
+                        info = json.loads(r.stdout)
+                        duration = float(info.get('format', {}).get('duration', 0))
+                except Exception:
+                    pass
+                repo.save_sermon({
+                    'id': sermon_id,
+                    'title': title or '',
+                    'subtitle': subtitle or '',
+                    'series_title': series_title or '',
+                    'description': description or '',
+                    'scripture_reference': bible_text or '',
+                    'speaker': speaker_name or '',
+                    'recorded_date': recorded_date or '',
+                    'event_type': event_type or '',
+                    'bible_text': bible_text or '',
+                    'duration': duration,
+                    'status': 'processed',
+                    'file_paths': {
+                        'audio': str(final_output_path),
+                        'metadata': str(output_dir / 'metadata.json'),
+                    },
+                    'content': {
+                        'transcript_text': transcript or '',
+                        'description': description or '',
+                        'hashtags': hashtags or '',
+                    },
+                })
+                console_print(f"💾 Sermon saved to local database")
+            except Exception as e:
+                logger.warning(f"Failed to save sermon to local database: {e}")
+
             console_print(f"📁 Sermon files saved to: {output_dir}")
-            return True
+            _report(100, f"Done - sermon {sermon_id} created and uploaded")
+            result['success'] = True
+            return result
         else:
             logger.error("Failed to upload audio")
-            return False
+            result['error'] = "Sermon created but audio upload failed"
+            # Save to local DB so user can retry upload from Library
+            try:
+                from ui.database import SermonRepository
+                repo = SermonRepository()
+                repo.save_sermon({
+                    'id': sermon_id,
+                    'title': title or '',
+                    'subtitle': subtitle or '',
+                    'series_title': series_title or '',
+                    'description': description or '',
+                    'scripture_reference': bible_text or '',
+                    'speaker': speaker_name or '',
+                    'recorded_date': recorded_date or '',
+                    'event_type': event_type or '',
+                    'bible_text': bible_text or '',
+                    'status': 'error',
+                    'file_paths': {
+                        'audio': str(final_upload_path),
+                    },
+                    'content': {
+                        'transcript_text': transcript or '',
+                        'description': description or '',
+                        'hashtags': hashtags or '',
+                    },
+                })
+            except Exception as e:
+                logger.warning(f"Failed to save failed-upload sermon to DB: {e}")
+            return result
 
     except Exception as e:
         logger.error("Error processing new sermon: %s", e)
-        return False
+        result['error'] = str(e)
+        return result
     finally:
         # Clean up temporary files
-        if 'temp_dir' in locals() and temp_dir.exists():
+        if temp_dir is not None and temp_dir.exists():
             import shutil
             try:
                 shutil.rmtree(temp_dir)
             except Exception:
                 pass  # Ignore cleanup errors
+
+
+def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
+    """Publish a locally-saved dry run sermon to SermonAudio.
+
+    Creates a new sermon via the SermonAudio API using the dry run's stored
+    metadata, uploads the audio, and migrates the local database entry from
+    the dry-run ID to the real SermonAudio ID.
+
+    Args:
+        dry_run_id: The local dry run sermon ID (e.g. ``draft_<speaker>_<date>_<title>``).
+
+    Returns:
+        Dict with keys: ``success``, ``sermon_id`` (new), ``error``.
+    """
+    result: dict[str, Any] = {'success': False, 'sermon_id': None, 'error': None}
+
+    try:
+        from ui.database import SermonRepository
+        repo = SermonRepository()
+        sermon_data = repo.get_sermon(dry_run_id)
+
+        if not sermon_data:
+            result['error'] = f"Dry run sermon {dry_run_id} not found in database"
+            return result
+
+        title = sermon_data.get('title', '') or ''
+        speaker_name = sermon_data.get('speaker', '') or ''
+        recorded_date = sermon_data.get('recorded_date', '') or ''
+        event_type = sermon_data.get('event_type', 'Sunday Service') or 'Sunday Service'
+        bible_text = sermon_data.get('bible_text') or sermon_data.get('scripture_reference') or ''
+        subtitle = sermon_data.get('subtitle', '') or ''
+        series_title = sermon_data.get('series_title', '') or ''
+
+        content = sermon_data.get('content', {}) or {}
+        description = content.get('description', '') or sermon_data.get('description', '') or ''
+        hashtags = content.get('hashtags', '') or ''
+        transcript = content.get('transcript_text', '') or ''
+
+        file_paths = sermon_data.get('file_paths', {}) or {}
+        audio_path_str = file_paths.get('audio', '') or ''
+        if not audio_path_str or not Path(audio_path_str).exists():
+            # Fall back to looking in processed_sermons/{id}/ directory
+            output_root = Path(config.get('output_directory', 'processed_sermons'))
+            if not output_root.is_absolute():
+                output_root = Path(__file__).parent / output_root
+            fallback_dir = output_root / dry_run_id
+            if fallback_dir.exists():
+                for f in fallback_dir.iterdir():
+                    if f.suffix.lower() in ('.mp3', '.wav', '.mp4', '.m4a', '.ogg', '.flac', '.mov', '.mkv', '.webm'):
+                        audio_path_str = str(f)
+                        break
+        if not audio_path_str or not Path(audio_path_str).exists():
+            result['error'] = f"Audio file not found: {audio_path_str}"
+            return result
+
+        console_print(f"📤 Publishing dry run sermon: {title}")
+        console_print(f"   Speaker: {speaker_name}, Date: {recorded_date}")
+
+        speaker_id = resolve_speaker_id(speaker_name)
+        if speaker_id:
+            console_print(f"✅ Resolved speaker '{speaker_name}' to ID {speaker_id}")
+
+        console_print("📤 Creating sermon on SermonAudio...")
+        new_sermon_id = create_new_sermon_api(
+            title=title,
+            speaker_name=speaker_name,
+            recorded_date=recorded_date,
+            event_type=event_type,
+            bible_text=bible_text or None,
+            subtitle=subtitle or None,
+            description=description or None,
+            hashtags=hashtags or None,
+            speaker_id=speaker_id,
+            series_title=series_title,
+        )
+
+        if not new_sermon_id:
+            result['error'] = "Failed to create sermon on SermonAudio API"
+            return result
+
+        console_print(f"✅ Sermon created with ID: {new_sermon_id}")
+
+        # Determine upload type from metadata.json (stored during dry run)
+        upload_type = "original-audio"
+        upload_path = Path(audio_path_str)
+        metadata_path_str = file_paths.get('metadata', '')
+        if metadata_path_str and Path(metadata_path_str).exists():
+            import json as _json
+            try:
+                with open(metadata_path_str) as _f:
+                    meta = _json.load(_f)
+                if meta.get('is_video') and meta.get('upload_type') == 'original-video':
+                    upload_type = "original-video"
+                    processed = meta.get('processed_file')
+                    if processed and Path(processed).exists():
+                        upload_path = Path(processed)
+                elif meta.get('upload_type') == 'original-video':
+                    upload_type = "original-video"
+                    original = meta.get('original_file')
+                    if original and Path(original).exists():
+                        upload_path = Path(original)
+                    else:
+                        processed = meta.get('processed_file')
+                        if processed and Path(processed).exists():
+                            upload_path = Path(processed)
+                elif is_video_file(audio_path_str):
+                    upload_type = "original-video"
+            except Exception:
+                pass
+
+        media_label = "video" if upload_type == "original-video" else "audio"
+        console_print(f"📤 Uploading {media_label}...")
+        upload_success = upload_media_file(new_sermon_id, str(upload_path), upload_type)
+
+        if upload_success:
+            console_print(f"✅ {media_label.capitalize()} uploaded successfully")
+        else:
+            console_print(f"⚠️  Sermon created but {media_label} upload failed")
+
+        # Update local database: save with real ID, delete old dry run entry
+        duration = sermon_data.get('duration', 0)
+
+        repo.save_sermon({
+            'id': new_sermon_id,
+            'title': title,
+            'subtitle': subtitle,
+            'series_title': series_title,
+            'description': description,
+            'scripture_reference': bible_text,
+            'speaker': speaker_name,
+            'recorded_date': recorded_date,
+            'event_type': event_type,
+            'bible_text': bible_text,
+            'duration': duration,
+            'status': 'processed' if upload_success else 'error',
+            'file_paths': {
+                'audio': str(upload_path),
+                'metadata': str(file_paths.get('metadata', '')),
+            },
+            'content': {
+                'transcript_text': transcript or '',
+                'description': description or '',
+                'hashtags': hashtags or '',
+            },
+        })
+
+        # Move output directory from old ID to new ID
+        output_root = Path(config.get('output_directory', 'processed_sermons'))
+        if not output_root.is_absolute():
+            output_root = Path(__file__).parent / output_root
+        old_output_dir = output_root / dry_run_id
+        new_output_dir = output_root / new_sermon_id
+        if old_output_dir.exists():
+            import shutil
+            shutil.copytree(str(old_output_dir), str(new_output_dir), dirs_exist_ok=True)
+            shutil.rmtree(str(old_output_dir))
+
+        # Delete old dry run database entry
+        repo.delete_sermon(dry_run_id)
+
+        if upload_success:
+            console_print(f"✅ Dry run sermon published as: {new_sermon_id}")
+        else:
+            console_print(f"⚠️  Sermon created ({new_sermon_id}) but media upload failed")
+        result['success'] = upload_success
+        result['sermon_id'] = new_sermon_id
+        return result
+
+    except Exception as e:
+        logger.exception(f"Failed to publish dry run sermon {dry_run_id}")
+        result['error'] = str(e)
+        return_result = result
+        return return_result
+
+
+def reupload_media_for_sermon(sermon_id: str, file_path: str) -> bool:
+    """Re-upload media to an existing sermon on SermonAudio.
+
+    Args:
+        sermon_id: The existing sermon ID on SermonAudio
+        file_path: Path to the media file to upload
+
+    Returns:
+        True if upload succeeded, False otherwise
+    """
+    upload_type = "original-video" if is_video_file(file_path) else "original-audio"
+    return upload_media_file(sermon_id, file_path, upload_type)
 
 
 def download_file(url: str, local_path: str):
@@ -1577,9 +2313,9 @@ def generate_summary(
 
     # Build speaker instruction
     speaker_instruction = (
-        f"- The speaker's name is {speaker_name}\n"
+        f"- The speaker is Pastor {speaker_name}. You MUST begin the description with 'Pastor {speaker_name} teaches on...' or 'Pastor {speaker_name} taught from...'.\n"
         if speaker_name
-        else "- Identify the primary speaker from the transcript\n"
+        else "- Identify the primary speaker from the transcript and refer to them as 'Pastor [Name]'. You MUST begin the description with 'Pastor [Name] teaches on...'.\n"
     )
 
     prompt = (
@@ -1594,6 +2330,9 @@ def generate_summary(
         "- Do not prefix with 'Summary:'\n- If incomplete, infer likely main message\n"
         "- Keep under 1600 characters or the upload will fail\n"
         "- Use the actual speaker name, not placeholder text\n"
+        "- Include specific scripture references, source material, and concrete examples from the transcript\n"
+        "- Mention the specific doctrines, rules, or texts the speaker expounded\n"
+        "- Describe the practical application the speaker gave\n"
         "- IMPORTANT: Return ONLY the final summary paragraph. Do not include any reasoning, "
         "thinking process, explanations, or commentary. Start directly with the summary content."
     )
@@ -1923,6 +2662,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
 
     # Audio processing (if needed)
     output_audio = None
+    qa_processing_info = None
     if needs_audio:
         if not verbose:
             print("   🎵 Downloading audio...")
@@ -1969,7 +2709,6 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                     logger.warning("Failed to save original audio: %s", e)
 
             # Process audio
-            qa_processing_info = None
             if not verbose:
                 print("   🔧 Processing audio...")
             try:
@@ -2632,8 +3371,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     new_sermon.add_argument('--subtitle', help='Sermon subtitle')
     new_sermon.add_argument('--description', help='Sermon description (will be generated if not provided)')
     new_sermon.add_argument('--hashtags', help='Hashtags/keywords (will be generated if not provided)')
+    new_sermon.add_argument('--series', dest='series_title', help='Series name')
     new_sermon.add_argument('--skip-transcription', action='store_true',
                           help='Skip audio transcription (faster but less accurate metadata)')
+    new_sermon.add_argument('--skip-audio', '--skip-audio-processing', dest='skip_audio',
+                          action='store_true',
+                          help='Skip audio enhancement (use file as-is, e.g. already cleaned in kdenlive)')
     new_sermon.add_argument('--whisper-model', default='base',
                           choices=['tiny', 'base', 'small', 'medium', 'large'],
                           help='Whisper model size for transcription (default: base)')
@@ -2824,7 +3567,7 @@ def handle_new_sermon(args):
     """Handle new-sermon subcommand."""
     console_print("🎵 Creating new sermon from audio file...")
 
-    success = process_new_sermon(
+    result = process_new_sermon(
         audio_file=args.audio_file,
         speaker_name=args.speaker,
         recorded_date=args.date,
@@ -2832,17 +3575,28 @@ def handle_new_sermon(args):
         bible_text=args.bible_text,
         title=args.title,
         subtitle=args.subtitle,
+        series_title=getattr(args, 'series_title', None),
         description=args.description,
         hashtags=args.hashtags,
         dry_run=args.dry_run,
         skip_transcription=args.skip_transcription,
-        whisper_model=args.whisper_model
+        skip_audio=getattr(args, 'skip_audio', False) or getattr(args, 'skip_audio_processing', False),
+        whisper_model=args.whisper_model,
+        transcription_backend=getattr(args, 'transcription_backend', 'whisper_local'),
+        use_clean_audio=getattr(args, 'use_clean_audio', False),
+        clean_audio_script=getattr(args, 'clean_audio_script', '~/Documents/Repositories/deepfilternet/clean-audio.py'),
+        clean_audio_device=getattr(args, 'clean_audio_device', 'auto'),
     )
 
-    if success:
-        console_print("✅ New sermon created successfully!")
+    if result.get('success'):
+        sermon_id = result.get('sermon_id')
+        if sermon_id:
+            console_print(f"✅ New sermon created successfully! ID: {sermon_id}")
+        else:
+            console_print("✅ New sermon processed successfully (dry run)")
     else:
-        console_print("❌ Failed to create new sermon", "error")
+        error_msg = result.get('error', 'Unknown error')
+        console_print(f"❌ Failed to create new sermon: {error_msg}", "error")
         exit(1)
 
 
@@ -2937,18 +3691,18 @@ def handle_original_processing(args):
     """Handle the original sermon processing logic for backward compatibility."""
     # Normalize arguments using the new orchestrator
     processing_options, validation_options = ArgumentsNormalizer.normalize_args(args)
-    
+
     # Create orchestrator and filter instances
     orchestrator = ProcessingOrchestrator(config, console_print)
     sermon_filter = SermonFilter(config)
-    
+
     # Validate processing requirements
     issues = orchestrator.validate_processing_requirements(processing_options, validation_options)
     if issues:
         for issue in issues:
             console_print(f"❌ {issue}", "error")
         return
-    
+
     # Resolve audio and transcript save options
     save_original_audio = ArgumentsNormalizer.resolve_audio_save_option(args, config)
     save_transcript = ArgumentsNormalizer.resolve_transcript_save_option(args, config)

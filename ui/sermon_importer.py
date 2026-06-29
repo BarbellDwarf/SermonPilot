@@ -234,7 +234,7 @@ class SermonImporter:
                 if 'preachDate' in api_data:
                     metadata['recorded_date'] = api_data['preachDate']
                 if 'seriesTitle' in api_data:
-                    metadata['series'] = api_data['seriesTitle']
+                    metadata['series_title'] = api_data['seriesTitle']
                 if 'description' in api_data and not metadata['content'].get('description'):
                     metadata['content']['description'] = api_data['description']
                 if 'moreInfoText' in api_data and not metadata['content'].get('description'):

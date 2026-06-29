@@ -9,6 +9,7 @@ import datetime
 
 import pandas as pd
 import streamlit as st
+from ui.pages import batch_update, new_sermon, settings, validation
 
 
 def show_dashboard():
@@ -35,99 +36,77 @@ def show_dashboard():
         show_processing_queue()
 
 def show_quick_stats():
-    """Display key metrics in a row"""
+    """Display key metrics from the real database"""
     st.markdown("### 📈 Quick Statistics")
+    try:
+        from database import SermonRepository
+        repo = SermonRepository()
+        sermons = repo.get_all_sermons()
+    except Exception:
+        sermons = []
 
-    # Calculate stats from processing history
-    processing_history = st.session_state.get('processing_history', [])
-
-    # Calculate real statistics
-    total_sermons = len(processing_history) if processing_history else 0
-    success_count = sum(1 for item in processing_history if item.get('status') == 'completed')
-    success_rate = (success_count / total_sermons * 100) if total_sermons > 0 else 0
-
-    # Calculate last 24h activity
+    total_sermons = len(sermons)
     now = datetime.datetime.now()
-    last_24h = sum(1 for item in processing_history
-                   if datetime.datetime.fromisoformat(item.get('timestamp', '2024-01-01')) > now - datetime.timedelta(hours=24))
+    twenty_four_hours = now - datetime.timedelta(hours=24)
 
-    # Calculate average processing time from real data
-    processing_times = []
-    for item in processing_history:
-        if item.get('duration'):
+    last_24h = 0
+    processed_status = 0
+    for s in sermons:
+        updated = s.get('updated_at')
+        if updated and isinstance(updated, str):
             try:
-                duration_str = item.get('duration', '0')
-                if 'min' in duration_str:
-                    processing_times.append(float(duration_str.replace('min', '').strip()))
-                elif 'sec' in duration_str:
-                    processing_times.append(float(duration_str.replace('sec', '').strip()) / 60)
-            except:
-                continue
-
-    avg_time = sum(processing_times) / len(processing_times) if processing_times else 0
+                parsed = datetime.datetime.fromisoformat(updated.replace('Z', '+00:00'))
+                if parsed > twenty_four_hours:
+                    last_24h += 1
+            except Exception:
+                pass
+        if s.get('status') == 'processed':
+            processed_status += 1
 
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric(
-            "Total Sermons Processed",
-            str(total_sermons),
-            f"+{last_24h} today" if last_24h > 0 else "No recent activity"
-        )
+        st.metric("Total Sermons", str(total_sermons),
+                  f"+{last_24h} today" if last_24h > 0 else "No recent activity")
 
     with col2:
-        st.metric(
-            "Success Rate",
-            f"{success_rate:.1f}%",
-            f"{success_count}/{total_sermons}" if total_sermons > 0 else "N/A"
-        )
+        st.metric("Processed", str(processed_status),
+                  f"{processed_status}/{total_sermons}" if total_sermons > 0 else "N/A")
 
     with col3:
-        st.metric(
-            "Avg Processing Time",
-            f"{avg_time:.1f} min",
-            "-1.2 min vs last week" if avg_time > 0 else "N/A"
-        )
+        uploaded = sum(1 for s in sermons if s.get('upload_status'))
+        st.metric("Uploaded to SA", str(uploaded),
+                  f"{uploaded}/{total_sermons}" if total_sermons > 0 else "N/A")
 
     with col4:
-        st.metric(
-            "Last 24 Hours",
-            str(last_24h),
-            f"vs {max(0, last_24h - 2)} yesterday"
-        )
+        st.metric("Last 24h", str(last_24h),
+                  f"out of {total_sermons} total" if total_sermons > 0 else "N/A")
 
 def show_recent_activity():
-    """Show recent processing activity"""
+    """Show recent sermons from the database"""
     st.markdown("### 📋 Recent Activity")
+    try:
+        from database import SermonRepository
+        repo = SermonRepository()
+        sermons = repo.get_all_sermons(limit=10)
+    except Exception:
+        sermons = []
 
-    processing_history = st.session_state.get('processing_history', [])
-
-    if not processing_history:
-        st.info("💡 No processing activity yet. Start processing sermons to see activity here.")
+    if not sermons:
+        st.info("💡 No sermons in the database yet. Start processing to see activity here.")
         return
-    else:
-        # Show real data from the last 10 processing events
-        recent_items = processing_history[-10:]
 
-        # Format data for display
-        formatted_data = []
-        for item in recent_items:
-            formatted_data.append({
-                'Time': item.get('timestamp', 'Unknown'),
-                'Sermon ID': item.get('sermon_id', 'Unknown'),
-                'Operation': item.get('operation', 'Unknown'),
-                'Status': "✅ Success" if item.get('status') == 'completed' else
-                         "❌ Error" if item.get('status') == 'failed' else
-                         "⏳ Processing" if item.get('status') == 'processing' else
-                         item.get('status', 'Unknown'),
-                'Duration': item.get('duration', 'N/A')
-            })
+    formatted_data = []
+    for s in sermons:
+        formatted_data.append({
+            'Date': s.get('recorded_date', s.get('updated_at', '')[:10] if s.get('updated_at') else ''),
+            'Title': s.get('title', '(no title)'),
+            'Speaker': s.get('speaker', ''),
+            'Status': "✅" if s.get('status') == 'processed' else "⏳" if s.get('status') == 'processing' else "❌",
+        })
 
-        if formatted_data:
-            df = pd.DataFrame(formatted_data)
-            st.dataframe(df, width='stretch', hide_index=True)
-        else:
-            st.info("💡 No processing activity yet. Start processing sermons to see activity here.")
+    df = pd.DataFrame(formatted_data)
+    st.dataframe(df, width='stretch', hide_index=True)
 
 def show_quick_actions():
     """Show quick action shortcuts for common tasks"""
@@ -138,74 +117,55 @@ def show_quick_actions():
 
     with col1:
         if st.button("🎵 Process New Sermon", type="primary", width='stretch'):
-            st.session_state.current_page = 'new_sermon'
-            st.rerun()
-        st.caption("Upload and process a single sermon")
+            st.switch_page(new_sermon)
 
     with col2:
         if st.button("🔄 Batch Update", width='stretch'):
-            st.session_state.current_page = 'batch_update'
-            st.rerun()
-        st.caption("Update multiple sermons at once")
+            st.switch_page(batch_update)
 
     with col3:
         if st.button("✅ Validate Descriptions", width='stretch'):
-            st.session_state.current_page = 'validation'
-            st.rerun()
-        st.caption("Check description quality and errors")
+            st.switch_page(validation)
 
 def show_system_status():
-    """Show detailed system status"""
+    """Show compact system health metrics"""
     st.markdown("### 🔍 System Health")
 
-    # Get system status
     status = check_system_components()
-
-    for component, details in status.items():
-        is_healthy = details['status']
-        icon = "✅" if is_healthy else "❌"
-        color = "#10b981" if is_healthy else "#ef4444"
-
-        with st.container():
-            st.markdown(f"""
-            <div style="
-                padding: 0.75rem; 
-                border-left: 4px solid {color}; 
-                background-color: var(--background-color, {'rgba(16, 185, 129, 0.1)' if is_healthy else 'rgba(239, 68, 68, 0.1)'});
-                color: var(--text-color, inherit);
-                margin: 0.5rem 0;
-                border-radius: 0.5rem;
-                border: 1px solid var(--border-color, {'rgba(16, 185, 129, 0.2)' if is_healthy else 'rgba(239, 68, 68, 0.2)'});
-            ">
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                    <span style="font-size: 1.2rem;">{icon}</span>
-                    <strong style="color: inherit;">{component}</strong>
-                </div>
-                <div style="margin-top: 0.25rem; opacity: 0.8; font-size: 0.9rem;">
-                    {details['message']}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+    cols = st.columns(len(status))
+    for col, (component, details) in zip(cols, status.items()):
+        with col:
+            healthy = details['status']
+            icon = "✅" if healthy else "❌"
+            st.metric(component, f"{icon} {'OK' if healthy else 'Error'}", help=details.get('message', ''))
 
 def show_processing_queue():
-    """Show current processing queue"""
+    """Show current processing queue from job_queue module"""
     st.markdown("### 📤 Processing Queue")
+    try:
+        from job_queue import get_job_queue, JobStatus
+        jq = get_job_queue()
+        active = jq.get_all_jobs(JobStatus.RUNNING) or []
+        queued = jq.get_all_jobs(JobStatus.QUEUED) or []
+    except Exception:
+        active = []
+        queued = []
 
-    # Real queue data from session state or database
-    queue_items = st.session_state.get('processing_queue', [])
-
-    if not queue_items:
+    if not active and not queued:
         st.info("No items in processing queue")
-    else:
-        for item in queue_items:
-            with st.container():
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.write(f"📄 {item.get('title', item.get('sermon_id', 'Unknown'))}")
-                    st.caption(f"Status: {item.get('status', 'Pending')}")
-                with col2:
-                    if st.button("⏸️", key=f"pause_{item.get('id', item.get('sermon_id'))}"):
-                        st.info("Paused processing")
+        return
+
+    for job in active:
+        sid = job.parameters.get('sermon_id', job.parameters.get('form_data', {}).get('title', job.id))
+        st.write(f"🔄 {sid} — running ({job.progress:.0f}%)")
+
+    for job in queued[:5]:
+        sid = job.parameters.get('sermon_id', job.parameters.get('form_data', {}).get('title', job.id))
+        st.write(f"⏳ {sid} — queued")
+
+    remaining = len(queued) - 5
+    if remaining > 0:
+        st.caption(f"... and {remaining} more queued")
 
 def show_setup_guide():
     """Show setup guide when configuration is missing"""
@@ -224,8 +184,7 @@ def show_setup_guide():
 
     with col1:
         if st.button("📁 Go to Settings", type="primary", width='stretch'):
-            st.session_state.current_page = 'settings'
-            st.rerun()
+            st.switch_page(settings)
 
     with col2:
         if st.button("📖 View Documentation", width='stretch'):

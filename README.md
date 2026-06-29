@@ -5,7 +5,7 @@ Automated sermon processing tool that enhances audio quality, generates AI summa
 ## Features
 
 - **Complete Sermon Workflow**:
-  - **Create new sermons** from audio files with AI-generated metadata
+  - **Create new sermons** from audio or video files with AI-generated metadata
   - **Update existing sermons** with enhanced audio and improved descriptions
   - **Metadata-only processing** for quick content updates
   - **Validation and regeneration** of sermon descriptions
@@ -15,14 +15,16 @@ Automated sermon processing tool that enhances audio quality, generates AI summa
   - Audio amplification and normalization
   - Dynamic range compression
   - Support for both native Python processing and Audacity integration
+  - **Video support**: Upload MP4/MOV/WebM/MKV — audio is extracted, enhanced, and muxed back into the video
 
 - **AI-Powered Content Generation**:
-  - **Audio transcription** using OpenAI Whisper (multiple model sizes)
+  - **Audio transcription** using local Whisper, OpenAI API, or OpenRouter
+  - Support for multiple LLM providers (Ollama, OpenAI, VaultAI, OpenRouter)
   - Automatic sermon transcript summarization
   - Intelligent hashtag generation with verification system
   - Two-pass hashtag processing: generation + verification for clean output
   - Automatic removal of LLM comments and explanations from hashtags
-  - Support for multiple LLM providers (Ollama, OpenAI, VaultAI)
+  - **Structured Bible reference parsing** (book/chapter/verse) from free-text input
 
 - **📈 Advanced Analytics & Insights**:
   - **Real-time Performance Monitoring**: CPU, memory, GPU usage tracking
@@ -44,6 +46,11 @@ Automated sermon processing tool that enhances audio quality, generates AI summa
   - Update sermon descriptions and keywords
   - Upload processed audio files
   - Create new sermons directly from audio files
+  - **Automatic speaker ID resolution** from speaker name
+
+- **Configuration & Deployment**:
+  - **Environment variable support** via `.env` file (API keys, secrets)
+  - AMD ROCm GPU detection alongside NVIDIA CUDA
 
 ## Installation
 
@@ -268,11 +275,16 @@ streamlit run streamlit_app.py --server.port 8501
 
 ## Usage
 
-### Creating New Sermons from Audio Files
+### Creating New Sermons from Audio/Video Files
 
 Create a new sermon with AI-generated metadata:
 ```bash
 python sermon_updater.py new-sermon audio.mp3 --speaker "Pastor Smith" --date "2024-01-15"
+```
+
+Video files (MP4, MOV, WebM, MKV) are automatically detected — the audio track is extracted, processed, and muxed back into the video for upload:
+```bash
+python sermon_updater.py new-sermon sermon.mp4 --speaker "Pastor Smith" --date "2024-01-15"
 ```
 
 With Bible reference for better content generation:
@@ -283,6 +295,19 @@ python sermon_updater.py new-sermon audio.mp3 --speaker "Pastor Smith" --date "2
 Fast processing without transcription:
 ```bash
 python sermon_updater.py new-sermon audio.mp3 --speaker "Pastor Smith" --date "2024-01-15" --skip-transcription
+```
+
+Use OpenRouter or OpenAI for transcription (instead of local Whisper):
+```bash
+python sermon_updater.py new-sermon audio.mp3 --speaker "Pastor Smith" --date "2024-01-15" --transcription-backend whisper_openrouter
+python sermon_updater.py new-sermon audio.mp3 --speaker "Pastor Smith" --date "2024-01-15" --transcription-backend whisper_openai
+```
+
+Preprocess audio with external clean-audio.py (DeepFilterNet overlapping-chunk enhancement):
+```bash
+python sermon_updater.py new-sermon audio.mp3 --speaker "Pastor Smith" --date "2024-01-15" --clean-audio
+# Custom script path and device:
+python sermon_updater.py new-sermon audio.mp3 --speaker "Pastor Smith" --date "2024-01-15" --clean-audio --clean-audio-script /path/to/clean-audio.py --clean-audio-device cuda:0
 ```
 
 Test what would be created (dry run):
@@ -404,6 +429,22 @@ All of these are optional; combine as needed. Boolean flags set the underlying A
 | `--event-type` | `eventType` | Event type string |
 | `--broadcaster-id` | `broadcasterID` | Override broadcaster |
 | `--sort-by` | `sortBy` | Sort field |
+
+### New-Sermon Specific Flags
+
+| Flag | Description |
+|------|-------------|
+| `--speaker NAME` | Speaker name (resolved to numeric speakerID via API) |
+| `--date YYYY-MM-DD` | Date the sermon was recorded |
+| `--bible-text REF` | Bible reference (e.g., "John 3:16") |
+| `--title TEXT` | Custom title (auto-generated from transcript if omitted) |
+| `--skip-transcription` | Skip audio transcription |
+| `--skip-audio` | Skip audio enhancement (use file as-is) |
+| `--whisper-model SIZE` | Local Whisper model: tiny/base/small/medium/large |
+| `--transcription-backend BACKEND` | Backend: `whisper_local` (default), `whisper_openai`, or `whisper_openrouter` |
+| `--clean-audio` | Preprocess with external clean-audio.py (DeepFilterNet) |
+| `--clean-audio-script PATH` | Path to clean-audio.py script |
+| `--clean-audio-device DEVICE` | Device for clean-audio: auto, cpu, cuda:0, etc. |
 
 Tip: If you only need a quick list, add `--list-only` to avoid processing overhead.
 

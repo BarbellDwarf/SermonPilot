@@ -9,22 +9,36 @@ import sys
 from pathlib import Path
 
 import streamlit as st
+from ui.pages import jobs, library
 import yaml
+
+OPENAI_PRESETS = {
+    "OpenAI": {"base_url": "", "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]},
+    "Azure OpenAI": {"base_url": "https://YOUR_RESOURCE.openai.azure.com", "models": ["gpt-4o", "gpt-4o-mini", "gpt-4"]},
+    "Groq": {"base_url": "https://api.groq.com/openai/v1", "models": ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]},
+    "OpenRouter": {"base_url": "https://openrouter.ai/api/v1", "models": ["openai/gpt-4o", "openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash-exp"]},
+    "xAI": {"base_url": "https://api.x.ai/v1", "models": ["grok-beta", "grok-2-1212"]},
+    "DeepSeek": {"base_url": "https://api.deepseek.com", "models": ["deepseek-chat", "deepseek-reasoner"]},
+    "Together AI": {"base_url": "https://api.together.xyz/v1", "models": ["mistralai/Mixtral-8x22B-Instruct-v0.1", "meta-llama/Llama-3.3-70B-Instruct-Turbo"]},
+    "Perplexity": {"base_url": "https://api.perplexity.ai", "models": ["sonar-pro", "sonar"]},
+    "Fireworks AI": {"base_url": "https://api.fireworks.ai/inference/v1", "models": ["accounts/fireworks/models/llama-v3p3-70b-instruct", "accounts/fireworks/models/llama-v3p1-8b-instruct"]},
+    "Anyscale": {"base_url": "https://api.endpoints.anyscale.com/v1", "models": ["meta-llama/Meta-Llama-3.1-70B-Instruct"]},
+}
 
 
 def show_settings():
     """Main settings management interface"""
     st.markdown('<div class="main-header">⚙️ Settings</div>', unsafe_allow_html=True)
 
-    # Settings tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "🔧 General",
         "🤖 LLM Providers",
         "🧠 Embeddings",
         "🎵 Audio Processing",
         "✅ Validation",
         "📥 Import Sermons",
-        "💾 Backup & Restore"
+        "💾 Backup & Restore",
+        "🗄️ Config Management"
     ])
 
     with tab1:
@@ -47,6 +61,9 @@ def show_settings():
 
     with tab7:
         show_backup_restore()
+
+    with tab8:
+        show_config_management_settings()
 
 def show_general_settings():
     """General configuration settings"""
@@ -178,14 +195,19 @@ def initialize_provider_session_state(provider_config, provider_type, key_prefix
                 st.session_state[f'{key_prefix}_ollama_host'] = settings.get('host', 'http://localhost:11434')
             if f'{key_prefix}_ollama_model' not in st.session_state:
                 st.session_state[f'{key_prefix}_ollama_model'] = settings.get('model', 'llama3')
+            if f'{key_prefix}_ollama_api_key' not in st.session_state:
+                st.session_state[f'{key_prefix}_ollama_api_key'] = settings.get('api_key', '')
 
         elif provider_type == 'openai':
+            preset = settings.get('preset', 'OpenAI')
+            if f'{key_prefix}_openai_preset' not in st.session_state:
+                st.session_state[f'{key_prefix}_openai_preset'] = preset
             if f'{key_prefix}_openai_key' not in st.session_state:
                 st.session_state[f'{key_prefix}_openai_key'] = settings.get('api_key', '')
             if f'{key_prefix}_openai_url' not in st.session_state:
                 st.session_state[f'{key_prefix}_openai_url'] = settings.get('base_url', '')
             if f'{key_prefix}_openai_model' not in st.session_state:
-                st.session_state[f'{key_prefix}_openai_model'] = settings.get('model', 'gpt-3.5-turbo')
+                st.session_state[f'{key_prefix}_openai_model'] = settings.get('model', 'gpt-4o-mini')
 
         elif provider_type == 'anthropic':
             if f'{key_prefix}_anthropic_key' not in st.session_state:
@@ -193,26 +215,14 @@ def initialize_provider_session_state(provider_config, provider_type, key_prefix
             if f'{key_prefix}_anthropic_model' not in st.session_state:
                 st.session_state[f'{key_prefix}_anthropic_model'] = settings.get('model', 'claude-3-5-sonnet-20241022')
 
-        elif provider_type == 'xai':
-            if f'{key_prefix}_xai_key' not in st.session_state:
-                st.session_state[f'{key_prefix}_xai_key'] = settings.get('api_key', '')
-            if f'{key_prefix}_xai_model' not in st.session_state:
-                st.session_state[f'{key_prefix}_xai_model'] = settings.get('model', 'grok-beta')
-
         elif provider_type == 'google':
             if f'{key_prefix}_google_key' not in st.session_state:
                 st.session_state[f'{key_prefix}_google_key'] = settings.get('api_key', '')
             if f'{key_prefix}_google_model' not in st.session_state:
                 st.session_state[f'{key_prefix}_google_model'] = settings.get('model', 'gemini-1.5-flash')
 
-        elif provider_type == 'groq':
-            if f'{key_prefix}_groq_key' not in st.session_state:
-                st.session_state[f'{key_prefix}_groq_key'] = settings.get('api_key', '')
-            if f'{key_prefix}_groq_model' not in st.session_state:
-                st.session_state[f'{key_prefix}_groq_model'] = settings.get('model', 'llama-3.1-70b-versatile')
-
-        # Clear cached models when API key changes for all providers that use API keys
-        if provider_type in ['openai', 'anthropic', 'xai', 'google', 'groq']:
+        # Clear cached models when API key changes
+        if provider_type in ['openai', 'anthropic', 'google']:
             current_key = st.session_state.get(f'{key_prefix}_{provider_type}_key', '')
             stored_key = settings.get('api_key', '')
             if current_key != stored_key and current_key:
@@ -237,12 +247,11 @@ def show_llm_settings():
     col1, col2 = st.columns(2)
 
     with col1:
-        provider_options = ["ollama", "openai", "anthropic", "xai", "google", "groq"]
+        provider_options = ["ollama", "openai", "anthropic", "google"]
         current_provider = primary_config.get('provider', 'ollama')
-        try:
-            provider_index = provider_options.index(current_provider)
-        except ValueError:
-            provider_index = 0  # Default to ollama if unknown provider
+        if current_provider not in provider_options:
+            current_provider = 'openai'
+        provider_index = provider_options.index(current_provider)
 
         primary_provider = st.selectbox(
             "Primary Provider",
@@ -255,19 +264,14 @@ def show_llm_settings():
         if st.button("🔍 Test Primary Provider"):
             test_llm_provider(primary_provider, primary_config.get(primary_provider, {}))
 
-    # Provider-specific settings
     if primary_provider == "ollama":
         show_ollama_settings("Primary", primary_config.get('ollama', {}), "primary")
     elif primary_provider == "openai":
         show_openai_settings("Primary", primary_config.get('openai', {}), "primary")
     elif primary_provider == "anthropic":
         show_anthropic_settings("Primary", primary_config.get('anthropic', {}), "primary")
-    elif primary_provider == "xai":
-        show_xai_settings("Primary", primary_config.get('xai', {}), "primary")
     elif primary_provider == "google":
         show_google_settings("Primary", primary_config.get('google', {}), "primary")
-    elif primary_provider == "groq":
-        show_groq_settings("Primary", primary_config.get('groq', {}), "primary")
 
     # Fallback Provider
     st.markdown("#### 🥈 Fallback Provider")
@@ -285,12 +289,11 @@ def show_llm_settings():
 
     with col2:
         if fallback_enabled:
-            provider_options = ["openai", "ollama", "anthropic", "xai", "google", "groq"]
+            provider_options = ["openai", "ollama", "anthropic", "google"]
             current_fallback_provider = fallback_config.get('provider', 'openai')
-            try:
-                fallback_provider_index = provider_options.index(current_fallback_provider)
-            except ValueError:
-                fallback_provider_index = 0  # Default to openai if unknown provider
+            if current_fallback_provider not in provider_options:
+                current_fallback_provider = 'openai'
+            fallback_provider_index = provider_options.index(current_fallback_provider)
 
             fallback_provider = st.selectbox(
                 "Fallback Provider",
@@ -306,12 +309,8 @@ def show_llm_settings():
             show_openai_settings("Fallback", fallback_config.get('openai', {}), "fallback")
         elif fallback_provider == "anthropic":
             show_anthropic_settings("Fallback", fallback_config.get('anthropic', {}), "fallback")
-        elif fallback_provider == "xai":
-            show_xai_settings("Fallback", fallback_config.get('xai', {}), "fallback")
         elif fallback_provider == "google":
             show_google_settings("Fallback", fallback_config.get('google', {}), "fallback")
-        elif fallback_provider == "groq":
-            show_groq_settings("Fallback", fallback_config.get('groq', {}), "fallback")
 
     # Validator Provider
     st.markdown("#### ✅ Validator Provider (Optional)")
@@ -329,12 +328,11 @@ def show_llm_settings():
         col1, col2 = st.columns(2)
 
         with col1:
-            provider_options = ["ollama", "openai", "anthropic", "xai", "google", "groq"]
+            provider_options = ["ollama", "openai", "anthropic", "google"]
             current_validator_provider = validator_config.get('provider', 'ollama')
-            try:
-                validator_provider_index = provider_options.index(current_validator_provider)
-            except ValueError:
-                validator_provider_index = 0  # Default to ollama if unknown provider
+            if current_validator_provider not in provider_options:
+                current_validator_provider = 'openai'
+            validator_provider_index = provider_options.index(current_validator_provider)
 
             validator_provider = st.selectbox(
                 "Validator Provider",
@@ -349,12 +347,8 @@ def show_llm_settings():
             show_openai_settings("Validator", validator_config.get('openai', {}), "validator")
         elif validator_provider == "anthropic":
             show_anthropic_settings("Validator", validator_config.get('anthropic', {}), "validator")
-        elif validator_provider == "xai":
-            show_xai_settings("Validator", validator_config.get('xai', {}), "validator")
         elif validator_provider == "google":
             show_google_settings("Validator", validator_config.get('google', {}), "validator")
-        elif validator_provider == "groq":
-            show_groq_settings("Validator", validator_config.get('groq', {}), "validator")
 
     # Save button
     if st.button("💾 Save LLM Settings", type="primary"):
@@ -371,6 +365,14 @@ def show_ollama_settings(label, config, key_prefix):
             key=f"{key_prefix}_ollama_host"
         )
 
+        api_key = st.text_input(
+            f"{label} Ollama API Key (Optional)",
+            value=config.get('api_key', ''),
+            type="password",
+            key=f"{key_prefix}_ollama_api_key",
+            help="Required if Ollama is behind an authenticated proxy"
+        )
+
     with col2:
         # Auto-refresh models when host changes or button clicked
         available_models = []
@@ -378,11 +380,10 @@ def show_ollama_settings(label, config, key_prefix):
 
         if refresh_clicked or not st.session_state.get(f"{key_prefix}_ollama_models"):
             try:
-                # Import here to avoid issues if not installed
                 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
                 from llm_manager import OllamaProvider
 
-                ollama_provider = OllamaProvider({'host': host})
+                ollama_provider = OllamaProvider({'host': host, 'api_key': api_key})
                 available_models = ollama_provider.list_models()
                 st.session_state[f"{key_prefix}_ollama_models"] = available_models
 
@@ -420,7 +421,25 @@ def show_ollama_settings(label, config, key_prefix):
             )
 
 def show_openai_settings(label, config, key_prefix):
-    """Show OpenAI-specific settings with automatic model loading"""
+    """Show OpenAI-compatible provider settings with preset dropdown"""
+    preset_names = list(OPENAI_PRESETS.keys())
+    stored_preset = config.get('preset', 'OpenAI')
+    if stored_preset not in preset_names:
+        stored_preset = 'OpenAI'
+    preset_index = preset_names.index(stored_preset)
+
+    selected_preset = st.selectbox(
+        f"{label} API Type",
+        options=preset_names,
+        index=preset_index,
+        key=f"{key_prefix}_openai_preset",
+        help="Select the OpenAI-compatible API provider"
+    )
+
+    preset = OPENAI_PRESETS[selected_preset]
+
+    default_base_url = config.get('base_url', '') or preset['base_url']
+
     col1, col2 = st.columns(2)
 
     with col1:
@@ -432,21 +451,18 @@ def show_openai_settings(label, config, key_prefix):
         )
 
         base_url = st.text_input(
-            f"{label} Base URL (Optional)",
-            value=config.get('base_url', ''),
-            placeholder="https://api.openai.com/v1",
-            help="For custom endpoints (xAI, Anthropic, etc.)",
+            f"{label} Base URL",
+            value=default_base_url,
+            placeholder=preset['base_url'] or "https://api.openai.com/v1",
+            help=f"Base URL for {selected_preset} API",
             key=f"{key_prefix}_openai_url"
         )
 
     with col2:
-        # Auto-load models if API key is provided
-        available_models = []
-        model_options = ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo', 'gpt-3.5-turbo-16k']  # Default options
+        model_options = list(preset['models'])
 
         if api_key and st.button(f"🔄 Load {label} Models", key=f"{key_prefix}_load_models"):
             try:
-                # Import OpenAI provider to list models
                 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
                 from llm_manager import OpenAIProvider
 
@@ -460,25 +476,17 @@ def show_openai_settings(label, config, key_prefix):
                 if available_models:
                     st.session_state[f"{key_prefix}_openai_models"] = available_models
                     st.success(f"Loaded {len(available_models)} models")
-                    # Filter to commonly used models for better UX
-                    model_options = [m for m in available_models if any(x in m.lower() for x in ['gpt-4', 'gpt-3.5', 'claude', 'grok', 'gemini', 'llama'])]
-                    if not model_options:
-                        model_options = available_models[:10]  # Take first 10 if no common ones found
+                    model_options = available_models[:20]
                 else:
                     st.warning("No models found - check API credentials")
             except Exception as e:
                 st.error(f"Failed to load models: {e}")
 
-        # Get cached models if available
         cached_models = st.session_state.get(f"{key_prefix}_openai_models", [])
         if cached_models:
-            # Filter to commonly used models
-            model_options = [m for m in cached_models if any(x in m.lower() for x in ['gpt-4', 'gpt-3.5', 'claude', 'grok', 'gemini', 'llama'])]
-            if not model_options:
-                model_options = cached_models[:10]
+            model_options = cached_models[:20]
 
-        # Model selection
-        current_model = config.get('model', 'gpt-3.5-turbo')
+        current_model = config.get('model', preset['models'][0])
         if model_options and len(model_options) > 1:
             try:
                 model_index = model_options.index(current_model)
@@ -489,15 +497,13 @@ def show_openai_settings(label, config, key_prefix):
                 f"{label} Model",
                 options=model_options,
                 index=model_index,
-                key=f"{key_prefix}_openai_model",
-                help="Select from available models"
+                key=f"{key_prefix}_openai_model"
             )
         else:
             model = st.text_input(
                 f"{label} Model",
                 value=current_model,
-                key=f"{key_prefix}_openai_model",
-                help="Enter model name or click 'Load Models' to see available options"
+                key=f"{key_prefix}_openai_model"
             )
 
 def show_anthropic_settings(label, config, key_prefix):
@@ -584,84 +590,6 @@ def show_anthropic_settings(label, config, key_prefix):
 
     st.info("💡 Anthropic endpoint (https://api.anthropic.com/v1) is automatically configured")
 
-def show_xai_settings(label, config, key_prefix):
-    """Show xAI-specific settings with dynamic model loading"""
-    col1, col2 = st.columns(2)
-
-    with col1:
-        api_key = st.text_input(
-            f"{label} API Key",
-            value=config.get('api_key', ''),
-            type="password",
-            key=f"{key_prefix}_xai_key",
-            help="Your xAI API key"
-        )
-
-    with col2:
-        # Dynamic model loading for xAI
-        available_models = []
-        model_options = ['grok-beta', 'grok-vision-beta']  # Default fallbacks
-
-        if api_key and st.button(f"🔄 Load {label} Models", key=f"{key_prefix}_load_xai_models"):
-            try:
-                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-                from llm_manager import XAIProvider
-
-                provider = XAIProvider({'api_key': api_key})
-                available_models = provider.list_models()
-
-                if available_models:
-                    st.session_state[f"{key_prefix}_xai_models"] = available_models
-                    st.success(f"Loaded {len(available_models)} models")
-                    model_options = available_models
-                else:
-                    st.warning("No models found - using default options")
-            except Exception as e:
-                st.error(f"Failed to load models: {e}")
-                st.info("Using default model options")
-
-        # Get cached models if available
-        cached_models = st.session_state.get(f"{key_prefix}_xai_models", [])
-        if cached_models:
-            model_options = cached_models
-
-        # Model selection
-        current_model = config.get('model', 'grok-beta')
-        if model_options and len(model_options) > 1:
-            try:
-                model_index = model_options.index(current_model)
-            except ValueError:
-                model_index = 0
-
-            model = st.selectbox(
-                f"{label} Model",
-                options=model_options,
-                index=model_index,
-                key=f"{key_prefix}_xai_model",
-                help="Select from available xAI models"
-            )
-        else:
-            model = st.text_input(
-                f"{label} Model",
-                value=current_model,
-                key=f"{key_prefix}_xai_model",
-                help="Enter model name or click 'Load Models' to see available options"
-            )
-
-        # Show test button if API key is provided
-        if api_key and st.button(f"🔍 Test {label} Connection", key=f"{key_prefix}_test_xai"):
-            try:
-                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-                from llm_manager import XAIProvider
-
-                provider = XAIProvider({'api_key': api_key, 'model': model})
-                test_response = provider.chat([{"role": "user", "content": "Hello, this is a test."}])
-                st.success("✅ xAI connection successful!")
-            except Exception as e:
-                st.error(f"❌ Connection failed: {e}")
-
-    st.info("💡 xAI endpoint (https://api.x.ai/v1) is automatically configured")
-
 def show_google_settings(label, config, key_prefix):
     """Show Google-specific settings with dynamic model loading"""
     col1, col2 = st.columns(2)
@@ -743,90 +671,6 @@ def show_google_settings(label, config, key_prefix):
                 st.error(f"❌ Connection failed: {e}")
 
     st.info("💡 Google AI endpoint (https://generativelanguage.googleapis.com/v1beta) is automatically configured")
-
-def show_groq_settings(label, config, key_prefix):
-    """Show Groq-specific settings with dynamic model loading"""
-    col1, col2 = st.columns(2)
-
-    with col1:
-        api_key = st.text_input(
-            f"{label} API Key",
-            value=config.get('api_key', ''),
-            type="password",
-            key=f"{key_prefix}_groq_key",
-            help="Your Groq API key (gsk-...)"
-        )
-
-    with col2:
-        # Dynamic model loading for Groq
-        available_models = []
-        model_options = [  # Default fallbacks
-            'llama-3.1-70b-versatile',
-            'llama-3.1-8b-instant',
-            'llama-3.2-90b-text-preview',
-            'mixtral-8x7b-32768',
-            'gemma2-9b-it'
-        ]
-
-        if api_key and st.button(f"🔄 Load {label} Models", key=f"{key_prefix}_load_groq_models"):
-            try:
-                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-                from llm_manager import GroqProvider
-
-                provider = GroqProvider({'api_key': api_key})
-                available_models = provider.list_models()
-
-                if available_models:
-                    st.session_state[f"{key_prefix}_groq_models"] = available_models
-                    st.success(f"Loaded {len(available_models)} models")
-                    model_options = available_models
-                else:
-                    st.warning("No models found - using default options")
-            except Exception as e:
-                st.error(f"Failed to load models: {e}")
-                st.info("Using default model options")
-
-        # Get cached models if available
-        cached_models = st.session_state.get(f"{key_prefix}_groq_models", [])
-        if cached_models:
-            model_options = cached_models
-
-        # Model selection
-        current_model = config.get('model', 'llama-3.1-70b-versatile')
-        if model_options and len(model_options) > 1:
-            try:
-                model_index = model_options.index(current_model)
-            except ValueError:
-                model_index = 0
-
-            model = st.selectbox(
-                f"{label} Model",
-                options=model_options,
-                index=model_index,
-                key=f"{key_prefix}_groq_model",
-                help="Select from available Groq models"
-            )
-        else:
-            model = st.text_input(
-                f"{label} Model",
-                value=current_model,
-                key=f"{key_prefix}_groq_model",
-                help="Enter model name or click 'Load Models' to see available options"
-            )
-
-        # Show test button if API key is provided
-        if api_key and st.button(f"🔍 Test {label} Connection", key=f"{key_prefix}_test_groq"):
-            try:
-                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-                from llm_manager import GroqProvider
-
-                provider = GroqProvider({'api_key': api_key, 'model': model})
-                test_response = provider.chat([{"role": "user", "content": "Hello, this is a test."}])
-                st.success("✅ Groq connection successful!")
-            except Exception as e:
-                st.error(f"❌ Connection failed: {e}")
-
-    st.info("💡 Groq endpoint (https://api.groq.com/openai/v1) is automatically configured")
 
 def show_embedding_settings():
     """Embedding provider configuration for RAG system"""
@@ -1505,8 +1349,7 @@ def show_import_sermons():
 
                             # Add button to go to jobs page
                             if st.button("📊 View Job Progress", type="secondary"):
-                                st.session_state.current_page = 'jobs'
-                                st.rerun()
+                                st.switch_page(jobs)
 
                         except Exception as e:
                             st.error(f"❌ Failed to start import job: {e}")
@@ -1579,8 +1422,7 @@ def show_import_sermons():
 
             with col2:
                 if st.button("📊 Go to Library"):
-                    st.session_state.current_page = 'library'
-                    st.rerun()
+                    st.switch_page(library)
 
         # Help section
         st.markdown("#### ℹ️ How It Works")
@@ -1788,13 +1630,18 @@ def save_provider_settings(provider_config, provider_type, key_prefix):
     if provider_type == 'ollama':
         host = st.session_state.get(f'{key_prefix}_ollama_host', 'http://localhost:11434')
         model = st.session_state.get(f'{key_prefix}_ollama_model', 'llama3')
+        api_key = st.session_state.get(f'{key_prefix}_ollama_api_key', '')
         provider_settings['host'] = host
         provider_settings['model'] = model
+        if api_key:
+            provider_settings['api_key'] = api_key
 
     elif provider_type == 'openai':
+        preset = st.session_state.get(f'{key_prefix}_openai_preset', 'OpenAI')
         api_key = st.session_state.get(f'{key_prefix}_openai_key', '')
         base_url = st.session_state.get(f'{key_prefix}_openai_url', '')
-        model = st.session_state.get(f'{key_prefix}_openai_model', 'gpt-3.5-turbo')
+        model = st.session_state.get(f'{key_prefix}_openai_model', 'gpt-4o-mini')
+        provider_settings['preset'] = preset
         if api_key:
             provider_settings['api_key'] = api_key
         if base_url:
@@ -1808,23 +1655,9 @@ def save_provider_settings(provider_config, provider_type, key_prefix):
             provider_settings['api_key'] = api_key
         provider_settings['model'] = model
 
-    elif provider_type == 'xai':
-        api_key = st.session_state.get(f'{key_prefix}_xai_key', '')
-        model = st.session_state.get(f'{key_prefix}_xai_model', 'grok-beta')
-        if api_key:
-            provider_settings['api_key'] = api_key
-        provider_settings['model'] = model
-
     elif provider_type == 'google':
         api_key = st.session_state.get(f'{key_prefix}_google_key', '')
         model = st.session_state.get(f'{key_prefix}_google_model', 'gemini-1.5-flash')
-        if api_key:
-            provider_settings['api_key'] = api_key
-        provider_settings['model'] = model
-
-    elif provider_type == 'groq':
-        api_key = st.session_state.get(f'{key_prefix}_groq_key', '')
-        model = st.session_state.get(f'{key_prefix}_groq_model', 'llama-3.1-70b-versatile')
         if api_key:
             provider_settings['api_key'] = api_key
         provider_settings['model'] = model
@@ -1874,6 +1707,48 @@ def reset_to_defaults():
 
     except Exception as e:
         st.error(f"Failed to reset to defaults: {e}")
+
+def show_config_management_settings():
+    """Embedded configuration management within the Settings tab"""
+    from ui.ui_pages.config_management import (
+        show_config_editor, show_import_export, show_config_history,
+        show_backup_restore as show_cm_backup_restore, show_database_management,
+        SQL_CONFIG_AVAILABLE
+    )
+
+    if not SQL_CONFIG_AVAILABLE:
+        st.error("❌ SQL Configuration system is not available.")
+        return
+
+    db_path = "sermon_config.db"
+
+    import os
+    db_exists = os.path.exists(db_path)
+
+    if not db_exists:
+        st.info("Configuration database not found. Create one below.")
+        from ui.ui_pages.config_management import show_database_setup
+        show_database_setup(db_path)
+        return
+
+    cm_tab1, cm_tab2, cm_tab3, cm_tab4 = st.tabs([
+        "📝 Edit Config",
+        "📥 Import/Export",
+        "📊 History",
+        "💾 Backup & Restore"
+    ])
+
+    with cm_tab1:
+        show_config_editor(db_path)
+
+    with cm_tab2:
+        show_import_export(db_path)
+
+    with cm_tab3:
+        show_config_history(db_path)
+
+    with cm_tab4:
+        show_cm_backup_restore(db_path)
 
 if __name__ == "__main__":
     show_settings()

@@ -1,5 +1,5 @@
 # Dockerfile.prod - Production version
-FROM app AS prod
+FROM sermon-processor:latest AS prod
 
 # Remove development files
 RUN rm -rf /app/tests /app/Test* /app/copilot-plans /app/.git* /app/examples
