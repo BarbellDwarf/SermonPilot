@@ -66,7 +66,7 @@ def test_config_switching():
                 'primary': {
                     'provider': 'ollama',
                     'ollama': {
-                        'host': 'http://REDACTED-INTERNAL-IP:11434',
+                        'host': 'http://localhost:11434',
                         'model': 'llama3.1:8b'
                     }
                 },
@@ -93,7 +93,7 @@ def test_config_switching():
                     'enabled': True,
                     'provider': 'ollama',
                     'ollama': {
-                        'host': 'http://REDACTED-INTERNAL-IP:11434',
+                        'host': 'http://localhost:11434',
                         'model': 'llama3.1:8b'
                     }
                 }

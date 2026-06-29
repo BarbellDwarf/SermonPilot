@@ -299,7 +299,7 @@ class AnalyticsChatInterface:
                     try:
                         import ollama
                         import os
-                        os.environ["OLLAMA_HOST"] = "http://REDACTED-INTERNAL-IP:11434"
+                        os.environ["OLLAMA_HOST"] = os.getenv("OLLAMA_HOST", "http://localhost:11434")
                         models_list = ollama.list()
                         available_ollama_models = []
                         for model in models_list.get('models', []):
@@ -375,7 +375,7 @@ class AnalyticsChatInterface:
                             try:
                                 import ollama
                                 import os
-                                os.environ["OLLAMA_HOST"] = "http://REDACTED-INTERNAL-IP:11434"
+                                os.environ["OLLAMA_HOST"] = os.getenv("OLLAMA_HOST", "http://localhost:11434")
                                 
                                 with st.spinner("Fetching available Ollama models..."):
                                     models_list = ollama.list()
@@ -459,7 +459,7 @@ class AnalyticsChatInterface:
                                 }
                                 
                                 if is_ollama_model:
-                                    new_config['primary']['host'] = 'http://REDACTED-INTERNAL-IP:11434'
+                                    new_config['primary']['host'] = os.getenv("OLLAMA_HOST", "http://localhost:11434")
                                     new_config['primary']['auto_download'] = True
                                 
                                 # Switch the embedding provider

@@ -19,7 +19,7 @@ def test_validation():
             'primary': {
                 'provider': 'ollama',
                 'ollama': {
-                    'host': 'http://REDACTED-INTERNAL-IP:11434',
+                    'host': 'http://localhost:11434',
                     'model': 'phi3:14b'
                 }
             },
@@ -27,7 +27,7 @@ def test_validation():
                 'enabled': True,
                 'provider': 'ollama',
                 'ollama': {
-                    'host': 'http://REDACTED-INTERNAL-IP:11434',
+                    'host': 'http://localhost:11434',
                     'model': 'gemma3:12b'
                 }
             },
@@ -35,7 +35,7 @@ def test_validation():
                 'enabled': True,
                 'provider': 'ollama',
                 'ollama': {
-                    'host': 'http://REDACTED-INTERNAL-IP:11434',
+                    'host': 'http://localhost:11434',
                     'model': 'gemma2:2b'
                 }
             }
