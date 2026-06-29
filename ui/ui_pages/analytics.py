@@ -464,71 +464,53 @@ def show_success_rate_chart(metrics_data):
     """Show success rate over time"""
     st.markdown("#### ✅ Success Rate Trend")
     
-    if metrics_data.get('total_processed', 0) > 0:
-        # Use real data to generate trend
-        dates = pd.date_range(start=datetime.date.today() - datetime.timedelta(days=29), 
-                             end=datetime.date.today(), freq='D')
-        # Generate trend based on current success rate with some variation
-        base_rate = metrics_data.get('success_rate', 85)
-        success_rates = [base_rate + (i % 5 - 2) * 2 for i in range(len(dates))]
-        
-        df_success = pd.DataFrame({'date': dates, 'success_rate': success_rates})
-        st.line_chart(df_success.set_index('date'))
+    if metrics_data.get('trend_data'):
+        df = pd.DataFrame(metrics_data['trend_data'])
+        if 'date' in df.columns and 'rate' in df.columns:
+            st.line_chart(df.set_index('date'))
+        else:
+            st.info("Insufficient data for trend chart")
     else:
-        st.info("No processing data available yet for trend analysis")
+        st.info("No trend data available yet — data appears after multiple processing sessions")
 
 def show_processing_volume_chart(metrics_data):
     """Show processing volume over time"""
     st.markdown("#### 📈 Processing Volume")
     
-    if metrics_data.get('total_processed', 0) > 0:
-        # Use real data to generate volume trend
-        dates = pd.date_range(start=datetime.date.today() - datetime.timedelta(days=29), 
-                             end=datetime.date.today(), freq='D')
-        # Distribute total processing over the period with some variation
-        daily_avg = metrics_data.get('total_processed', 0) / 30
-        volumes = [max(0, daily_avg + (i % 7 - 3) * daily_avg * 0.3) for i in range(len(dates))]
-        
-        df_volume = pd.DataFrame({'date': dates, 'volume': volumes})
-        st.area_chart(df_volume.set_index('date'))
+    if metrics_data.get('volume_data'):
+        df = pd.DataFrame(metrics_data['volume_data'])
+        if 'date' in df.columns and 'count' in df.columns:
+            st.area_chart(df.set_index('date'))
+        else:
+            st.info("Insufficient data for volume chart")
     else:
-        st.info("No processing data available yet for volume analysis")
+        st.info("No volume data available yet — data appears after multiple processing sessions")
 
 def show_error_types_chart(metrics_data):
     """Show error type distribution"""
     st.markdown("#### ❌ Error Types")
     
-    if metrics_data.get('total_errors', 0) > 0:
-        # Use actual error data if available
-        error_types = ["LLM Timeout", "Audio Processing", "API Error", "Network Error", "Other"]
-        total_errors = metrics_data.get('total_errors', 0)
-        # Distribute errors across types (this could be enhanced with real error tracking)
-        error_counts = [
-            int(total_errors * 0.4),  # LLM Timeout
-            int(total_errors * 0.3),  # Audio Processing
-            int(total_errors * 0.15), # API Error
-            int(total_errors * 0.1),  # Network Error
-            int(total_errors * 0.05)  # Other
-        ]
-        
-        df_errors = pd.DataFrame({'error_type': error_types, 'count': error_counts})
-        st.bar_chart(df_errors.set_index('error_type'))
+    if metrics_data.get('error_data'):
+        df = pd.DataFrame(metrics_data['error_data'])
+        if 'type' in df.columns and 'count' in df.columns:
+            st.bar_chart(df.set_index('type'))
+        else:
+            st.info("Insufficient error data for chart")
+    elif metrics_data.get('total_errors', 0) == 0:
+        st.info("No errors recorded — great job! 🎉")
     else:
-        st.info("No error data available - great job! 🎉")
+        st.info("No detailed error breakdown available yet")
 
 def show_processing_time_trend(metrics_data):
     """Show processing time trend"""
     st.markdown("#### ⏱️ Processing Time Trend")
     
-    if metrics_data.get('avg_time', 0) > 0:
-        # Use real average time with trend
-        dates = pd.date_range(start=datetime.date.today() - datetime.timedelta(days=29), 
-                             end=datetime.date.today(), freq='D')
-        base_time = metrics_data.get('avg_time', 5.0)
-        times = [base_time + (i % 3 - 1) * 0.5 for i in range(len(dates))]
-        
-        df_times = pd.DataFrame({'date': dates, 'avg_time': times})
-        st.line_chart(df_times.set_index('date'))
+    if metrics_data.get('time_trend_data'):
+        df = pd.DataFrame(metrics_data['time_trend_data'])
+        if 'date' in df.columns and 'avg_time' in df.columns:
+            st.line_chart(df.set_index('date'))
+        else:
+            st.info("Insufficient data for time trend chart")
     else:
         st.info("No processing time data available yet")
 
@@ -913,41 +895,19 @@ def get_real_performance_data():
             
             return {
                 'avg_processing_time': avg_processing_time,
-                'processing_time_change': -0.3 if avg_processing_time > 0 else 0,
+                'processing_time_change': 0,
                 'success_rate': success_rate,
-                'success_rate_change': 2.1 if success_rate > 80 else -1.5,
-                'queue_length': 0,  # Would need actual queue tracking
+                'success_rate_change': 0,
+                'queue_length': 0,
                 'queue_change': 0,
                 'error_rate': error_rate,
-                'error_rate_change': -2.1 if error_rate < 20 else 1.5,
-                'step_performance': [
-                    {'step': 'Audio Enhancement', 'avg_time': 120.0, 'success_rate': 95.0, 'bottleneck_score': 0.80},
-                    {'step': 'Transcription', 'avg_time': 45.0, 'success_rate': 98.0, 'bottleneck_score': 0.30},
-                    {'step': 'Description Generation', 'avg_time': 15.0, 'success_rate': 92.0, 'bottleneck_score': 0.20},
-                    {'step': 'Hashtag Generation', 'avg_time': 8.0, 'success_rate': 94.0, 'bottleneck_score': 0.15},
-                    {'step': 'Validation', 'avg_time': 5.0, 'success_rate': 97.0, 'bottleneck_score': 0.10}
-                ],
-                'resource_usage': {
-                    'cpu_usage': 35.0,
-                    'memory_usage': 45.0,
-                    'disk_usage': 25.0,
-                    'network_io': 8.5,
-                    'gpu_usage': 60.0,
-                    'gpu_memory': 70.0
-                },
-                'recommendations': [
-                    {
-                        'title': 'Performance Monitor Unavailable',
-                        'priority': 'Medium',
-                        'description': 'Real-time performance monitoring failed. Using fallback metrics.',
-                        'impact': 'Limited optimization insights',
-                        'effort': 'Check system requirements for psutil'
-                    }
-                ]
+                'error_rate_change': 0,
+                'step_performance': [],
+                'resource_usage': {},
+                'recommendations': []
             }
             
-        except Exception as fallback_error:
-            # Ultimate fallback
+        except Exception:
             return {
                 'avg_processing_time': 0,
                 'processing_time_change': 0,
@@ -958,23 +918,8 @@ def get_real_performance_data():
                 'error_rate': 0,
                 'error_rate_change': 0,
                 'step_performance': [],
-                'resource_usage': {
-                    'cpu_usage': 0,
-                    'memory_usage': 0,
-                    'disk_usage': 0,
-                    'network_io': 0,
-                    'gpu_usage': 0,
-                    'gpu_memory': 0
-                },
-                'recommendations': [
-                    {
-                        'title': 'Performance Monitoring Unavailable',
-                        'priority': 'High',
-                        'description': f'Both primary and fallback performance monitoring failed: {e}, {fallback_error}',
-                        'impact': 'No performance insights available',
-                        'effort': 'Check system configuration and dependencies'
-                    }
-                ]
+                'resource_usage': {},
+                'recommendations': []
             }
 def get_validated_sermon_ids(db):
     """Get all sermon IDs that have been validated or processed"""
@@ -1271,11 +1216,11 @@ def show_sermonaudio_data_view():
             if available_columns:
                 st.dataframe(
                     df[available_columns],
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True
                 )
             else:
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                st.dataframe(df, width='stretch', hide_index=True)
             
             # Charts
             col1, col2 = st.columns(2)
@@ -1327,7 +1272,7 @@ def show_sermonaudio_data_view():
                 speaker_df = pd.DataFrame.from_dict(speaker_stats, orient='index')
                 speaker_df = speaker_df.sort_values('total_views', ascending=False)
                 
-                st.dataframe(speaker_df, use_container_width=True)
+                st.dataframe(speaker_df, width='stretch')
                 
             except Exception as e:
                 st.error(f"❌ Error processing speaker data: {e}")
@@ -1337,7 +1282,7 @@ def show_sermonaudio_data_view():
             
             # Raw data view
             with st.expander("🔍 View Raw Data"):
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                st.dataframe(df, width='stretch', hide_index=True)
                 
         else:
             st.info("📄 No SermonAudio data loaded. Click 'Load Data' to fetch analytics.")

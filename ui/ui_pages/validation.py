@@ -5,9 +5,14 @@ Handles description validation, quality metrics, failed descriptions management,
 and batch validation with detailed reporting.
 """
 
+import csv
 import datetime as dt
+import io
+import json
 
 import streamlit as st
+
+from ui.pages import jobs
 
 
 def show_validation():
@@ -19,11 +24,12 @@ def show_validation():
         return
 
     # Validation tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Quality Metrics",
         "❌ Failed Descriptions",
         "🔄 Batch Validation",
-        "📈 Trends"
+        "📈 Trends",
+        "📝 Manual Review"
     ])
 
     with tab1:
@@ -37,6 +43,9 @@ def show_validation():
 
     with tab4:
         show_validation_trends()
+
+    with tab5:
+        show_manual_review()
 
 def show_quality_metrics():
     """Display validation metrics and quality scores"""
@@ -477,8 +486,7 @@ def start_background_validation(scope: str, options: dict):
 
         # Add button to go to jobs page
         if st.button("📊 View Job Progress", type="secondary"):
-            st.session_state.current_page = 'jobs'
-            st.rerun()
+            st.switch_page(jobs)
 
     except Exception as e:
         st.error(f"❌ Failed to start validation job: {e}")
@@ -686,24 +694,154 @@ def show_validation_trends():
         st.info("📈 No trend data available. Run validations over time to see trends here.")
 
 def regenerate_description(sermon_id):
-    """Regenerate description for a specific sermon"""
-    st.success(f"✅ Regeneration started for sermon {sermon_id}")
+    """Submit a regeneration job for a specific sermon"""
+    try:
+        from job_queue import JobType, get_job_queue
+        config = st.session_state.get('config', {})
+        if not config:
+            st.error("❌ No configuration loaded")
+            return
+        job_queue = get_job_queue()
+        job_id = job_queue.add_job(
+            job_type=JobType.METADATA_UPDATE,
+            title=f"Regenerate: {sermon_id}",
+            description=f"Regenerating description for sermon {sermon_id}",
+            parameters={
+                'sermon_ids': [sermon_id],
+                'actions': {'generate_description': True, 'generate_hashtags': True},
+                'config': config
+            },
+            priority=7
+        )
+        st.success(f"✅ Regeneration job created: {job_id[:8]}")
+    except Exception as e:
+        st.error(f"❌ Failed to create regeneration job: {e}")
 
 def mark_for_manual_review(sermon_id):
-    """Mark sermon for manual review"""
-    st.info(f"📝 Sermon {sermon_id} marked for manual review")
+    """Mark sermon for manual review and navigate to library"""
+    try:
+        from database import SermonRepository, get_db
+        db = get_db()
+        db.add_manual_review(sermon_id, reason="Marked from validation page")
+        st.success(f"📝 Sermon {sermon_id} added to manual review queue")
+        # Store selected sermon and navigate to library
+        repo = SermonRepository()
+        sermon = repo.get_sermon(sermon_id)
+        if sermon:
+            st.session_state.selected_sermon = sermon
+        st.switch_page("ui/ui_pages/library.py")
+    except Exception as e:
+        st.error(f"❌ Error marking for manual review: {e}")
 
 def regenerate_high_priority():
-    """Regenerate all high priority failed descriptions"""
-    st.success("🔄 Started regenerating all high priority descriptions")
+    """Submit a batch regeneration job for all high-priority failures"""
+    try:
+        from job_queue import JobType, get_job_queue
+        from ui_processor import get_processor
+        processor = get_processor()
+        all_results = processor.get_validation_results()
+        failed_ids = [
+            r['sermon_id'] for r in all_results
+            if not r.get('is_valid', True) and r.get('score', 1.0) < 0.4
+        ]
+        if not failed_ids:
+            st.info("No high-priority failures found")
+            return
+        config = st.session_state.get('config', {})
+        if not config:
+            st.error("❌ No configuration loaded")
+            return
+        job_queue = get_job_queue()
+        job_id = job_queue.add_job(
+            job_type=JobType.METADATA_UPDATE,
+            title=f"Bulk Regeneration: {len(failed_ids)} sermons",
+            description=f"Regenerating {len(failed_ids)} high-priority failed descriptions",
+            parameters={
+                'sermon_ids': failed_ids,
+                'actions': {'generate_description': True, 'generate_hashtags': True},
+                'config': config
+            },
+            priority=8
+        )
+        st.success(f"✅ Bulk regeneration job created: {job_id[:8]} for {len(failed_ids)} sermons")
+    except Exception as e:
+        st.error(f"❌ Failed to create bulk regeneration job: {e}")
 
 def export_failed_list():
-    """Export list of failed descriptions"""
-    st.success("📥 Failed descriptions list exported")
+    """Export list of failed descriptions as CSV"""
+    try:
+        from ui_processor import get_processor
+        processor = get_processor()
+        all_results = processor.get_validation_results()
+        failed = [r for r in all_results if not r.get('is_valid', True)]
+        if not failed:
+            st.info("No failed descriptions to export")
+            return
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['Sermon ID', 'Score', 'Reason', 'Validated At'])
+        for r in failed:
+            writer.writerow([
+                r.get('sermon_id', ''),
+                f"{r.get('score', 0):.2f}",
+                r.get('reason', ''),
+                str(r.get('validated_at', ''))[:10]
+            ])
+        st.download_button(
+            "📥 Download CSV",
+            data=output.getvalue(),
+            file_name=f"failed_descriptions_{dt.datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+            key="dl_failed_csv"
+        )
+    except Exception as e:
+        st.error(f"❌ Error exporting failed list: {e}")
 
 def generate_validation_report():
-    """Generate validation report"""
-    st.success("📊 Validation report generated")
+    """Generate a validation report as downloadable JSON"""
+    try:
+        from ui_processor import get_processor
+        processor = get_processor()
+        all_results = processor.get_validation_results()
+        if not all_results:
+            st.info("No validation data to report")
+            return
+        total = len(all_results)
+        valid = sum(1 for r in all_results if r.get('is_valid', False))
+        invalid = total - valid
+        scores = [r.get('score', 0) for r in all_results]
+        avg_score = sum(scores) / total if total else 0
+        excellent = sum(1 for s in scores if s >= 0.8)
+        good = sum(1 for s in scores if 0.6 <= s < 0.8)
+        fair = sum(1 for s in scores if 0.4 <= s < 0.6)
+        poor = sum(1 for s in scores if s < 0.4)
+        report = {
+            'generated_at': str(dt.datetime.now()),
+            'summary': {
+                'total_validated': total,
+                'valid': valid,
+                'invalid': invalid,
+                'validation_rate': round(valid / total * 100, 1) if total else 0,
+                'average_score': round(avg_score, 2)
+            },
+            'score_distribution': {
+                'excellent_ge_0.8': excellent,
+                'good_0.6_0.8': good,
+                'fair_0.4_0.6': fair,
+                'poor_lt_0.4': poor
+            }
+        }
+        report_json = json.dumps(report, indent=2)
+        st.download_button(
+            "📥 Download Report (JSON)",
+            data=report_json,
+            file_name=f"validation_report_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+            mime="application/json",
+            key="dl_report"
+        )
+        st.json(report)
+    except Exception as e:
+        st.error(f"❌ Error generating report: {e}")
 
 def start_batch_validation():
     """Start batch validation process"""
@@ -730,6 +868,65 @@ def show_batch_validation_progress():
     if progress >= 1.0:
         st.session_state.batch_validation_running = False
         st.success("✅ Batch validation completed!")
+
+def show_manual_review():
+    """Display and manage the manual review queue"""
+    st.markdown("### 📝 Manual Review Queue")
+
+    try:
+        from database import get_db
+        db = get_db()
+
+        status_filter = st.selectbox(
+            "Filter by status",
+            ["All", "pending", "reviewed"],
+            key="manual_review_status"
+        )
+
+        reviews = db.get_manual_reviews(
+            status=None if status_filter == "All" else status_filter
+        )
+
+        if not reviews:
+            st.info("No sermons in the manual review queue.")
+            st.markdown("""
+            **How to add to manual review:**
+            1. Go to **Failed Descriptions** tab
+            2. Click **Manual Review** on any failed sermon
+            3. The sermon will appear here and open in the Library for editing
+            """)
+            return
+
+        for review in reviews:
+            with st.expander(
+                f"{'🟡' if review['status'] == 'pending' else '🟢'} "
+                f"Sermon {review['sermon_id']} — {review['status'].title()}"
+            ):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown(f"**Reason:** {review.get('reason', 'No reason')}")
+                    st.markdown(f"**Created:** {review.get('created_at', 'Unknown')[:19]}")
+                    if review.get('notes'):
+                        st.markdown(f"**Review Notes:** {review['notes']}")
+                with col2:
+                    sid = review['sermon_id']
+                    st.markdown("**Actions:**")
+                    if st.button("🔍 Open in Library", key=f"open_review_{review['id']}"):
+                        from database import SermonRepository
+                        repo = SermonRepository()
+                        sermon = repo.get_sermon(sid)
+                        if sermon:
+                            st.session_state.selected_sermon = sermon
+                        st.switch_page("ui/ui_pages/library.py")
+                    if review['status'] == 'pending':
+                        if st.button("✅ Mark Reviewed", key=f"mark_reviewed_{review['id']}"):
+                            db.update_manual_review_status(review['id'], 'reviewed')
+                            st.rerun()
+
+    except Exception as e:
+        st.error(f"❌ Error loading manual review queue: {e}")
+        st.info("Manual review queue requires database setup.")
+
 
 if __name__ == "__main__":
     show_validation()

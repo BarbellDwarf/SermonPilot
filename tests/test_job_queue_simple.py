@@ -143,8 +143,8 @@ def test_ui_imports():
         print("✅ batch_update.py imports successfully")
         
         # Test new sermon page imports
-        from ui.ui_pages.new_sermon import start_processing
-        print("✅ new_sermon.py imports successfully")
+        from ui.ui_pages.new_sermon_enhanced import show_new_sermon_enhanced
+        print("✅ new_sermon_enhanced.py imports successfully")
         
         # Test jobs page imports
         from ui.ui_pages.jobs import show_jobs

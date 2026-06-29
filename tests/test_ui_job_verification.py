@@ -70,7 +70,7 @@ def show_test_results():
     print("   - UI controls check job.status instead of session_state")
     print("   - Jobs persist when navigating away from the page")
     
-    print("\n2. ✅ Refactored ui/ui_pages/new_sermon.py:")
+    print("\n2. ✅ Refactored ui/ui_pages/new_sermon_enhanced.py:")
     print("   - start_processing() now creates JobType.SERMON_PROCESSING jobs")
     print("   - show_processing_progress() reads from job queue")
     print("   - Results displayed from job.result instead of session state")

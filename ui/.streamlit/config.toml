@@ -1,6 +1,7 @@
 [server]
 fileWatcherType = "none"
 runOnSave = false
+maxUploadSize = 2000
 
 [global]
 developmentMode = false

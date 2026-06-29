@@ -158,7 +158,7 @@ class ProcessingModeSelector:
                         f"{mode['icon']} {mode['name']}", 
                         key=f"mode_{mode_key}",
                         help=mode['description'],
-                        use_container_width=True
+                        width='stretch'
                     ):
                         selected_mode = mode_key
                         st.session_state.selected_processing_mode = mode_key
@@ -476,7 +476,7 @@ class ProcessingModeSelector:
         if settings.get('preserve_questions', False):
             quality += 0.05
         
-        return max(min(quality, 1.0), 0.5) * 100
+        return max(min(quality, 1.0), 0.5)
 
     def _check_compatibility(self, settings: Dict[str, Any]) -> float:
         """Check feature compatibility with current system."""
@@ -506,7 +506,7 @@ class ProcessingModeSelector:
             except ImportError:
                 available_features -= 0.5
         
-        return (available_features / total_features) * 100 if total_features > 0 else 100
+        return (available_features / total_features) if total_features > 0 else 1.0
 
     def _render_processing_summary(self, settings: Dict[str, Any]):
         """Render a summary of processing steps."""

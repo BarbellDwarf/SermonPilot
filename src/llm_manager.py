@@ -10,7 +10,10 @@ import time
 from pathlib import Path
 from typing import Any
 
-import openai
+try:
+    import openai
+except Exception:
+    openai = None  # OpenAI library not available, will be handled later
 import requests
 
 logger = logging.getLogger(__name__)
@@ -49,6 +52,7 @@ class OllamaProvider(LLMProvider):
         super().__init__(config)
         self.host = config.get('host', 'http://localhost:11434')
         self.model = config.get('model', 'llama3')
+        self.api_key = config.get('api_key', '')
 
         os.environ["OLLAMA_HOST"] = self.host
 
@@ -60,13 +64,17 @@ class OllamaProvider(LLMProvider):
             self.ollama = None
 
     def __str__(self) -> str:
-        """String representation of the provider."""
         return f"OllamaProvider(model={self.model}, host={self.host})"
+
+    def _headers(self) -> dict[str, str]:
+        headers = {}
+        if self.api_key:
+            headers['Authorization'] = f'Bearer {self.api_key}'
+        return headers
 
     def list_models(self) -> list[str]:
         """List available models from Ollama."""
         try:
-            # Try using ollama library first
             if self.ollama:
                 response = self.ollama.list()
                 models = response.get('models', [])
@@ -85,9 +93,8 @@ class OllamaProvider(LLMProvider):
         except Exception:
             logger.debug("Ollama library failed for model listing, trying HTTP...")
 
-        # Fallback to HTTP request
         try:
-            response = requests.get(f"{self.host}/api/tags", timeout=10)
+            response = requests.get(f"{self.host}/api/tags", headers=self._headers(), timeout=5)
             if response.status_code == 200:
                 data = response.json()
                 names: list[str] = []
@@ -134,7 +141,8 @@ class OllamaProvider(LLMProvider):
             response = requests.post(
                 f"{self.host}/api/chat",
                 json=payload,
-                timeout=60
+                headers=self._headers(),
+                timeout=30
             )
 
             if response.status_code == 200:
@@ -295,6 +303,22 @@ class GroqProvider(OpenAIProvider):
         return f"GroqProvider(model={self.model})"
 
 
+class OpenRouterProvider(OpenAIProvider):
+    """OpenRouter LLM provider."""
+
+    def __init__(self, config: dict[str, Any]):
+        if 'model' not in config:
+            config['model'] = 'openai/gpt-4o-mini'
+
+        if 'base_url' not in config:
+            config['base_url'] = 'https://openrouter.ai/api/v1'
+
+        super().__init__(config)
+
+    def __str__(self) -> str:
+        return f"OpenRouterProvider(model={self.model})"
+
+
 class LLMManager:
     """Manages LLM providers with primary and fallback support."""
 
@@ -329,7 +353,7 @@ class LLMManager:
 
             # Check if fallback provider has required configuration
             try:
-                if fallback_provider_type in ['openai', 'anthropic', 'xai', 'google', 'groq']:
+                if fallback_provider_type in ['openai', 'anthropic', 'xai', 'google', 'groq', 'openrouter']:
                     # These providers require an API key
                     if not fallback_provider_config.get('api_key'):
                         logger.info(f"Fallback provider {fallback_provider_type} disabled: no API key configured")
@@ -385,6 +409,8 @@ class LLMManager:
             return GoogleProvider(provider_config)
         elif provider_type == 'groq':
             return GroqProvider(provider_config)
+        elif provider_type == 'openrouter':
+            return OpenRouterProvider(provider_config)
         else:
             raise ValueError(f"Unsupported provider type: {provider_type}")
 
@@ -530,6 +556,12 @@ class LLMManager:
             'groq': {
                 'llama-3.1-8b-instant': 0.0001,
                 'mixtral-8x7b-32768': 0.0002
+            },
+            'openrouter': {
+                'openai/gpt-4o-mini': 0.00015,
+                'openai/gpt-4o': 0.005,
+                'anthropic/claude-3.5-sonnet': 0.003,
+                'google/gemini-1.5-flash': 0.0001,
             },
             'ollama': {}  # Ollama is free for local models
         }

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from ui.pages import jobs
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
@@ -605,8 +606,7 @@ def start_batch_processing():
         
         # Add button to go to jobs page
         if st.button("📊 View Job Progress", type="secondary"):
-            st.session_state.current_page = 'jobs'
-            st.rerun()
+            st.switch_page(jobs)
             
     except Exception as e:
         st.error(f"❌ Failed to start batch processing job: {e}")
@@ -703,15 +703,15 @@ def show_batch_progress():
 
 def export_sermon_list():
     """Export sermon list"""
-    st.info("📥 Sermon list exported")
+    st.info("📥 Sermon list export is coming in a future update")
 
 def export_results_csv():
     """Export results as CSV"""
-    st.info("📥 Results exported as CSV")
+    st.info("📥 CSV export is coming in a future update")
 
 def generate_batch_report():
     """Generate processing report"""
-    st.info("📄 Processing report generated")
+    st.info("📄 Report generation is coming in a future update")
 
 if __name__ == "__main__":
     show_batch_update()

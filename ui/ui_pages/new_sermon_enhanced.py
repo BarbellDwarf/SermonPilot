@@ -7,11 +7,14 @@ providing a comprehensive interface for content creators.
 """
 
 import datetime
+import json
+import subprocess
 import sys
 import tempfile
 import os
 from pathlib import Path
-import numpy as np
+import logging
+import time as _time
 
 import streamlit as st
 
@@ -28,37 +31,22 @@ from ui.sermon_metadata import (
     show_metadata_refresh_section,
 )
 
-# Import our new audio editing components
-try:
-    from ui.components.audio_waveform import AudioWaveformViewer
-    from ui.components.audio_editor import AudioEditor
-    from ui.components.audio_preview import AudioPreview
-    from ui.components.processing_modes import ProcessingModeSelector
-    from src.audio.question_processor import QuestionProcessor
-    from src.audio.adaptive_processor import AdaptiveAudioProcessor
-    AUDIO_EDITING_AVAILABLE = True
-except ImportError as e:
-    st.error(f"Audio editing components not available: {e}")
-    AUDIO_EDITING_AVAILABLE = False
+from ui.components.processing_modes import ProcessingModeSelector
+
+logger = logging.getLogger(__name__)
 
 
 def show_new_sermon_enhanced():
     """Enhanced new sermon processing interface with audio editing."""
-    st.markdown('<div class="main-header">🎵 Enhanced New Sermon</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">🎵 New Sermon</div>', unsafe_allow_html=True)
     
     if not st.session_state.config:
         st.error("❌ Configuration not loaded. Please check the Settings page first.")
         return
     
-    if not AUDIO_EDITING_AVAILABLE:
-        st.error("❌ Audio editing components not available. Please check the installation.")
-        return
-
-    # Enhanced workflow tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    # Simplified workflow tabs (no audio analysis/editing - too resource intensive)
+    tab1, tab2, tab3 = st.tabs([
         "📁 Upload & Metadata",
-        "📊 Analyze Audio", 
-        "✂️ Edit Audio",
         "🎛️ Configure Processing",
         "▶️ Process & Upload"
     ])
@@ -67,21 +55,9 @@ def show_new_sermon_enhanced():
         show_upload_and_metadata()
 
     with tab2:
-        if _has_uploaded_file():
-            show_audio_analysis()
-        else:
-            st.info("📁 Please upload an audio file in the first tab to analyze it.")
-
-    with tab3:
-        if _has_uploaded_file():
-            show_audio_editing()
-        else:
-            st.info("📁 Please upload an audio file in the first tab to edit it.")
-
-    with tab4:
         show_processing_configuration()
 
-    with tab5:
+    with tab3:
         show_process_and_upload()
 
 
@@ -90,12 +66,12 @@ def show_upload_and_metadata():
     st.markdown("### 📁 Audio File Upload")
 
     # File upload with additional instructions
-    st.info("💡 **New Features:** After uploading, you can analyze and edit your audio before processing!")
+    st.info("💡 Upload your sermon audio/video file and fill in the metadata below.")
     
     uploaded_file = st.file_uploader(
-        "Select sermon audio file",
-        type=['mp3', 'wav', 'm4a', 'flac', 'ogg'],
-        help="Supported formats: MP3, WAV, M4A, FLAC, OGG"
+        "Select sermon audio or video file",
+        type=['mp3', 'wav', 'm4a', 'flac', 'ogg', 'mp4', 'mov', 'webm', 'mkv'],
+        help="Supported formats: Audio (MP3, WAV, M4A, FLAC, OGG) and Video (MP4, MOV, WebM, MKV)"
     )
 
     if uploaded_file:
@@ -112,18 +88,27 @@ def show_upload_and_metadata():
             file_name_display = uploaded_file.name[:15] + "..." if len(uploaded_file.name) > 15 else uploaded_file.name
             st.metric("File Name", file_name_display)
         with col4:
-            # Estimate duration (rough approximation)
-            estimated_duration = uploaded_file.size / (1024 * 16)  # Rough estimate assuming 16KB/s
-            st.metric("Est. Duration", f"{estimated_duration/60:.1f} min")
+            duration = _get_media_duration(uploaded_file)
+            if duration:
+                st.metric("Duration", f"{duration:.1f} min")
+            else:
+                st.metric("Duration", "\u23F1\uFE0F")
 
-        # Audio preview
-        try:
-            st.audio(uploaded_file, format=uploaded_file.type)
-        except Exception as e:
-            st.warning(f"Could not preview audio: {e}")
+        # Audio/Video preview (skip for large files to avoid browser limits)
+        max_preview_size = 100 * 1024 * 1024  # 100 MB
+        if uploaded_file.size <= max_preview_size:
+            try:
+                video_exts = ('.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v')
+                if any(uploaded_file.name.lower().endswith(e) for e in video_exts):
+                    st.video(uploaded_file)
+                else:
+                    st.audio(uploaded_file, format=uploaded_file.type)
+            except Exception as e:
+                st.warning(f"Could not preview file: {e}")
+        else:
+            st.info(f"ℹ️ Preview skipped for files over {max_preview_size // (1024*1024)} MB")
 
-        # Process and store audio data for editing
-        _process_uploaded_audio(uploaded_file)
+        
 
     st.markdown("### 📝 Sermon Metadata")
 
@@ -177,6 +162,7 @@ def show_upload_and_metadata():
             "Series (optional)",
             key="sermon_series"
         )
+        st.session_state.sermon_series = series
 
         description = st.text_area(
             "Description",
@@ -200,198 +186,45 @@ def show_upload_and_metadata():
         st.session_state.metadata_complete = False
 
 
-def show_audio_analysis():
-    """Audio analysis tab with waveform visualization and Q&A detection."""
-    st.markdown("### 🔍 Audio Analysis")
-    
-    if 'audio_data' not in st.session_state or 'sample_rate' not in st.session_state:
-        st.warning("⚠️ Audio data not processed. Please reload the audio file.")
-        return
 
-    audio_data = st.session_state.audio_data
-    sample_rate = st.session_state.sample_rate
-
-    # Initialize components
-    if 'waveform_viewer' not in st.session_state:
-        st.session_state.waveform_viewer = AudioWaveformViewer(audio_data, sample_rate)
-
-    waveform_viewer = st.session_state.waveform_viewer
-
-    # Render audio information
-    st.subheader("📊 Audio Information")
-    waveform_viewer.render_audio_info()
-
-    # Render waveform
-    st.subheader("🌊 Waveform Visualization")
-    selected_region = waveform_viewer.render_waveform()
-
-    # Analysis tools
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("🔍 Analyze Audio Quality", type="primary"):
-            with st.spinner("Analyzing audio..."):
-                issues = _analyze_audio_issues(audio_data, sample_rate)
-                if issues:
-                    st.warning("**Potential Issues Detected:**")
-                    for issue in issues:
-                        st.write(f"• {issue}")
-                else:
-                    st.success("✅ No significant issues detected!")
-
-    with col2:
-        if st.button("❓ Detect Q&A Segments", type="primary"):
-            with st.spinner("Detecting question segments..."):
-                question_processor = QuestionProcessor({'sample_rate': sample_rate})
-                question_segments = question_processor.detect_question_segments(audio_data)
-
-                if question_segments:
-                    st.success(f"🎯 Found {len(question_segments)} potential Q&A segments")
-
-                    # Mark segments on waveform
-                    waveform_viewer.clear_segments()
-                    for start_time, end_time in question_segments:
-                        waveform_viewer.add_segment(start_time, end_time, 'question')
-
-                    # Store for later use
-                    st.session_state.question_segments = question_segments
-
-                    # Display segment list
-                    st.subheader("📋 Detected Q&A Segments")
-                    for i, (start, end) in enumerate(question_segments):
-                        st.write(f"**Segment {i+1}:** {start:.1f}s - {end:.1f}s ({end-start:.1f}s duration)")
-                else:
-                    st.info("ℹ️ No Q&A segments automatically detected. You can mark them manually in the editing tab.")
-
-    # Processing recommendations
-    if 'question_segments' in st.session_state:
-        question_processor = QuestionProcessor({'sample_rate': sample_rate})
-        recommendations = question_processor.get_processing_recommendations(st.session_state.question_segments)
-        
-        st.subheader("💡 Processing Recommendations")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.info(f"**Recommended Mode:** {recommendations['recommended_mode']}")
-            st.info(f"**Has Questions:** {'Yes' if recommendations['has_questions'] else 'No'}")
-        
-        with col2:
-            st.info(f"**Noise Reduction:** {recommendations['noise_reduction_strength']:.1f}")
-            if recommendations.get('question_preservation'):
-                st.info("**Question Preservation:** Enabled")
-
-
-def show_audio_editing():
-    """Audio editing tab with manual controls."""
-    st.markdown("### ✂️ Audio Editing")
-    
-    if 'audio_data' not in st.session_state:
-        st.warning("⚠️ Audio data not processed. Please reload the audio file.")
-        return
-
-    audio_data = st.session_state.audio_data
-    sample_rate = st.session_state.sample_rate
-
-    # Initialize components
-    if 'audio_editor' not in st.session_state:
-        st.session_state.audio_editor = AudioEditor()
-    if 'audio_preview' not in st.session_state:
-        st.session_state.audio_preview = AudioPreview()
-    if 'waveform_viewer' not in st.session_state:
-        st.session_state.waveform_viewer = AudioWaveformViewer(audio_data, sample_rate)
-
-    audio_editor = st.session_state.audio_editor
-    audio_preview = st.session_state.audio_preview
-    waveform_viewer = st.session_state.waveform_viewer
-
-    # Editing controls
-    duration = len(audio_data) / sample_rate
-    edit_params = audio_editor.render_controls(duration)
-
-    # Handle segment addition
-    if edit_params.get('action') == 'add_segment':
-        start_time = edit_params['start_time']
-        end_time = edit_params['end_time']
-        action = edit_params['segment_action']
-        
-        waveform_viewer.add_segment(start_time, end_time, action)
-        st.success(f"✅ Added {action} segment: {start_time:.1f}s - {end_time:.1f}s")
-        st.rerun()
-
-    # Display current segments
-    waveform_viewer.render_segment_list()
-
-    # Preview controls
-    st.subheader("🔊 Audio Preview")
-    preview_controls = audio_preview.render_preview_controls()
-
-    # Handle preview actions
-    if preview_controls.get('action') == 'play_original':
-        # Create original preview
-        original_file = _create_original_preview(audio_data, sample_rate, preview_controls.get('preview_volume', 0.7))
-        if original_file:
-            audio_preview.render_audio_player(original_file, "Original Audio")
-
-    elif preview_controls.get('action') == 'play_edited':
-        # Apply edits and create preview
-        segments = waveform_viewer.get_segments()
-        if segments:
-            edited_file = audio_preview.create_preview_with_edits(
-                audio_data, sample_rate, segments, preview_controls.get('preview_volume', 0.7)
-            )
-            if edited_file:
-                audio_preview.render_audio_player(edited_file, "Edited Audio")
-        else:
-            st.info("ℹ️ No edits applied. Playing original audio.")
-            original_file = _create_original_preview(audio_data, sample_rate, preview_controls.get('preview_volume', 0.7))
-            if original_file:
-                audio_preview.render_audio_player(original_file, "Original Audio")
-
-    elif preview_controls.get('action') == 'compare':
-        # Side-by-side comparison
-        segments = waveform_viewer.get_segments()
-        original_file = _create_original_preview(audio_data, sample_rate, preview_controls.get('preview_volume', 0.7))
-        edited_file = audio_preview.create_preview_with_edits(
-            audio_data, sample_rate, segments, preview_controls.get('preview_volume', 0.7)
-        ) if segments else original_file
-        
-        if original_file and edited_file:
-            audio_preview.render_comparison_player(original_file, edited_file)
-
-    elif preview_controls.get('action') == 'reset':
-        waveform_viewer.clear_segments()
-        if 'question_segments' in st.session_state:
-            del st.session_state.question_segments
-        st.success("🔄 All edits cleared!")
-        st.rerun()
-
-    # Audio statistics
-    segments = waveform_viewer.get_segments()
-    if segments:
-        st.subheader("📈 Edit Summary")
-        summary = audio_editor.get_editing_summary(segments)
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Segments", summary['total_segments'])
-        with col2:
-            st.metric("Edited Duration", f"{summary['total_edited_duration']:.1f}s")
-        with col3:
-            remaining_duration = duration - sum(
-                end - start for start, end, action in segments if action == 'remove'
-            )
-            st.metric("Final Duration", f"{remaining_duration:.1f}s")
-
-        # Show actions breakdown
-        if summary['actions']:
-            st.markdown("**Actions Applied:**")
-            for action, info in summary['actions'].items():
-                st.write(f"• {action.title()}: {info['count']} segments ({info['duration']:.1f}s)")
 
 
 def show_processing_configuration():
     """Processing configuration with enhanced mode selection."""
     st.markdown("### 🎛️ Processing Configuration")
+
+    processing_mode = st.radio(
+        "Processing Mode",
+        options=[
+            "Full (Enhance + Transcribe + AI Metadata)",
+            "Transcribe + AI Only (Skip Audio Enhancement)",
+            "Transcribe Only (No Audio, No AI Gen)",
+            "Upload Only (Just Upload, No Processing)",
+        ],
+        index=0,
+        key="processing_mode",
+        help="Select the type of processing to perform on this sermon",
+    )
+
+    is_upload_only = processing_mode.startswith("Upload Only")
+    is_transcribe_only = processing_mode.startswith("Transcribe Only")
+    is_transcribe_ai = processing_mode.startswith("Transcribe + AI")
+    is_skip_audio = is_transcribe_ai or is_transcribe_only or is_upload_only
+    is_skip_transcription = is_upload_only
+    is_skip_ai = is_upload_only or is_transcribe_only
+
+    st.session_state.skip_audio_enhancement = is_skip_audio
+    st.session_state.skip_transcription = is_skip_transcription
+    st.session_state.generate_description = not is_skip_ai
+    st.session_state.generate_hashtags = not is_skip_ai
+
+    mode_details = {
+        "Full (Enhance + Transcribe + AI Metadata)": "🎵 Audio enhancement → 🎙️ Transcription → 🤖 AI description & hashtags → 📤 Upload",
+        "Transcribe + AI Only (Skip Audio Enhancement)": "⏭️ Skip audio enhancement → 🎙️ Transcription → 🤖 AI description & hashtags → 📤 Upload",
+        "Transcribe Only (No Audio, No AI Gen)": "⏭️ Skip audio enhancement → 🎙️ Transcription → 📤 Upload (no AI generation)",
+        "Upload Only (Just Upload, No Processing)": "⏭️ Skip audio enhancement → ⏭️ Skip transcription → 📤 Upload as-is",
+    }
+    st.caption(mode_details[processing_mode])
 
     # Initialize processing mode selector
     if 'mode_selector' not in st.session_state:
@@ -410,7 +243,7 @@ def show_processing_configuration():
     # Legacy processing options for compatibility
     st.markdown("### 🔧 Advanced Options")
     
-    with st.expander("Legacy Processing Options", expanded=False):
+    with st.expander("Additional Options", expanded=False):
         col1, col2 = st.columns(2)
 
         with col1:
@@ -418,25 +251,22 @@ def show_processing_configuration():
                 "Enhancement Method",
                 key="enhancement_method",
                 options=["deepfilternet", "resemble_enhance", "none"],
-                index=0,
+                index=0 if not is_skip_audio else 2,
+                disabled=is_skip_audio,
                 help="Choose AI enhancement method for audio quality improvement"
-            )
-
-            skip_transcription = st.checkbox(
-                "Skip Transcription",
-                key="skip_transcription",
-                help="Skip audio transcription to speed up processing"
             )
 
         with col2:
             whisper_model = st.selectbox(
                 "Whisper Model (if transcribing)",
                 key="whisper_model",
-                options=["tiny", "base", "small", "medium", "large"],
-                index=1,
-                help="Balance between speed and quality"
+                options=["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo"],
+                index=8,
+                help="Balance between speed and quality. .en models are English-only (faster). large-v3-turbo ≈ large quality with ~2x speed."
             )
 
+        col1, col2 = st.columns(2)
+        with col1:
             dry_run = st.checkbox(
                 "Dry Run (Preview Only)",
                 key="dry_run",
@@ -449,17 +279,25 @@ def show_processing_configuration():
     col1, col2 = st.columns(2)
 
     with col1:
+        # Auto-adjust generate_title default when manual title presence changes
+        has_manual_title = bool(st.session_state.get('sermon_title', '').strip())
+        prev_title_state = st.session_state.get('_prev_has_title', None)
+        if prev_title_state is not None and prev_title_state != has_manual_title:
+            st.session_state.generate_title = not has_manual_title and not is_skip_ai
+        st.session_state._prev_has_title = has_manual_title
+
         generate_title = st.checkbox(
             "Generate Title",
             key="generate_title",
-            value=True,
-            help="Use AI to generate sermon title from transcript"
+            disabled=is_skip_ai,
+            help="Use AI to generate sermon title from transcript. Unchecked by default when you type a title."
         )
 
         generate_description = st.checkbox(
             "Generate Description",
             key="generate_description",
-            value=True,
+            value=not is_skip_ai,
+            disabled=is_skip_ai,
             help="Use AI to generate detailed description from transcript"
         )
 
@@ -467,15 +305,25 @@ def show_processing_configuration():
         generate_hashtags = st.checkbox(
             "Generate Hashtags",
             key="generate_hashtags",
-            value=True,
+            value=not is_skip_ai,
+            disabled=is_skip_ai,
             help="Use AI to generate relevant hashtags from content"
         )
 
         validate_description = st.checkbox(
             "Validate Description Quality",
             key="validate_description",
-            value=True,
+            value=not is_skip_ai,
+            disabled=is_skip_ai,
             help="Use AI to validate and improve generated descriptions"
+        )
+
+        generate_short_title = st.checkbox(
+            "Generate Short Display Title",
+            key="generate_short_title",
+            value=False,
+            disabled=is_skip_ai,
+            help="Use AI to create a short (≤30 chars) display title from the full sermon title"
         )
 
 
@@ -506,122 +354,75 @@ def show_process_and_upload():
         st.write(f"• Size: {st.session_state.uploaded_file.size / (1024*1024):.1f} MB")
         st.write(f"• Speaker: {st.session_state.get('speaker_name', 'N/A')}")
         st.write(f"• Date: {st.session_state.get('recorded_date', 'N/A')}")
-        
-        # Show edit summary if any edits were made
-        if 'waveform_viewer' in st.session_state:
-            segments = st.session_state.waveform_viewer.get_segments()
-            if segments:
-                st.write(f"• Edits Applied: {len(segments)} segments")
 
     with col2:
         st.markdown("**Processing Settings:**")
-        mode_name = st.session_state.get('selected_mode', 'standard')
+        mode_name = st.session_state.get('processing_mode', 'Full')
         st.write(f"• Mode: {mode_name}")
-        st.write(f"• Enhancement: {st.session_state.get('enhancement_method', 'deepfilternet')}")
+        st.write(f"• Enhancement: {st.session_state.get('enhancement_method', 'deepfilternet')} {'(skipped)' if st.session_state.get('skip_audio_enhancement') else ''}")
         st.write(f"• Transcription: {'Enabled' if not st.session_state.get('skip_transcription', False) else 'Disabled'}")
         st.write(f"• Dry Run: {'Yes' if st.session_state.get('dry_run', False) else 'No'}")
-        
-        # Show question segments if detected
-        if 'question_segments' in st.session_state:
-            st.write(f"• Q&A Segments: {len(st.session_state.question_segments)}")
 
     # Processing controls
-    st.markdown("#### 🚀 Enhanced Processing")
+    st.markdown("#### 🚀 Processing Controls")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("🎵 Process with Audio Editing", type="primary", use_container_width=True):
+        if st.button("▶️ Start Processing", type="primary", width='stretch'):
             start_enhanced_processing()
 
     with col2:
-        if st.button("📊 Preview Processing", use_container_width=True):
-            preview_processing()
-
-    with col3:
-        if st.button("🔄 Reset All", use_container_width=True):
+        if st.button("🔄 Reset All", width='stretch'):
             reset_enhanced_form()
 
-    # Show processing status
-    _show_enhanced_processing_status()
+    # Show processing status based on job queue
+    job_id = st.session_state.get('current_sermon_job_id')
+    active_job = None
+    if job_id:
+        try:
+            from job_queue import JobStatus, get_job_queue
+            job_queue = get_job_queue()
+            active_job = job_queue.get_job(job_id)
+        except Exception:
+            pass
+
+    if active_job and active_job.status in [JobStatus.QUEUED, JobStatus.RUNNING]:
+        _show_enhanced_processing_progress(active_job)
+    elif active_job and active_job.status == JobStatus.COMPLETED:
+        _show_enhanced_processing_results(active_job)
+    elif active_job and active_job.status in [JobStatus.CANCELLED, JobStatus.FAILED]:
+        icon = "🚫" if active_job.status == JobStatus.CANCELLED else "🔴"
+        label = "Cancelled" if active_job.status == JobStatus.CANCELLED else "Failed"
+        st.warning(f"{icon} Job {label}")
+        if st.button("Clear", key="clear_cancelled_job"):
+            st.session_state.current_sermon_job_id = None
+            st.rerun()
 
 
-def _process_uploaded_audio(uploaded_file):
-    """Process uploaded audio file for editing."""
+def _get_media_duration(uploaded_file):
+    """Get media file duration using ffprobe (fast, metadata-only)."""
     try:
-        # Save to temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
-            temp_file.write(uploaded_file.getvalue())
-            temp_file_path = temp_file.name
-
-        # Load audio data
-        from pydub import AudioSegment
-        audio = AudioSegment.from_file(temp_file_path)
-
-        # Convert to numpy array
-        audio_data = np.array(audio.get_array_of_samples(), dtype=np.float32)
-        if audio.channels == 2:
-            audio_data = audio_data.reshape((-1, 2))
-            audio_data = np.mean(audio_data, axis=1)  # Convert to mono
-
-        # Normalize to [-1, 1]
-        if audio.sample_width == 2:  # 16-bit
-            audio_data = audio_data / 32768.0
-        elif audio.sample_width == 4:  # 32-bit
-            audio_data = audio_data / 2147483648.0
-        else:
-            # Auto-normalize based on max value
-            max_val = np.max(np.abs(audio_data))
-            if max_val > 0:
-                audio_data = audio_data / max_val
-
-        # Store in session state
-        st.session_state.audio_data = audio_data
-        st.session_state.sample_rate = audio.frame_rate
-        st.session_state.original_temp_file = temp_file_path
-
-        # Clear any existing components to reinitialize with new audio
-        for key in ['waveform_viewer', 'audio_editor', 'audio_preview']:
-            if key in st.session_state:
-                del st.session_state[key]
-
-    except Exception as e:
-        st.error(f"Error processing audio file: {e}")
-
-
-def _analyze_audio_issues(audio_data, sample_rate):
-    """Analyze audio for potential issues."""
-    issues = []
-
-    # Check for clipping
-    if np.max(np.abs(audio_data)) > 0.95:
-        issues.append("Audio may be clipped - consider reducing levels")
-
-    # Check for low volume
-    rms = np.sqrt(np.mean(audio_data**2))
-    if rms < 0.01:
-        issues.append("Audio levels are very low - will be amplified")
-
-    # Check for DC offset
-    dc_offset = np.mean(audio_data)
-    if abs(dc_offset) > 0.01:
-        issues.append("DC offset detected - will be corrected")
-
-    # Check for silence
-    silence_threshold = 0.001
-    silence_ratio = np.sum(np.abs(audio_data) < silence_threshold) / len(audio_data)
-    if silence_ratio > 0.3:
-        issues.append(f"High silence ratio ({silence_ratio:.1%}) - consider trimming")
-
-    return issues
-
-
-def _create_original_preview(audio_data, sample_rate, volume):
-    """Create preview of original audio."""
-    if 'audio_preview' not in st.session_state:
-        st.session_state.audio_preview = AudioPreview()
-    
-    return st.session_state.audio_preview.create_preview_audio(audio_data, sample_rate, volume=volume)
+        import subprocess
+        import json
+        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp:
+            tmp.write(uploaded_file.getvalue())
+            tmp_path = tmp.name
+        result = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', tmp_path],
+            capture_output=True, text=True, timeout=30
+        )
+        os.unlink(tmp_path)
+        if result.returncode == 0:
+            info = json.loads(result.stdout)
+            duration_sec = float(info['format']['duration'])
+            return duration_sec / 60.0
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+    return None
 
 
 def _has_uploaded_file():
@@ -630,130 +431,117 @@ def _has_uploaded_file():
 
 
 def start_enhanced_processing():
-    """Start enhanced processing with audio editing support."""
+    """Start sermon processing with audio editing support using job queue."""
     try:
-        # Collect all form data
-        form_data = _collect_enhanced_form_data()
-        
-        # Apply audio edits if any
-        processed_audio = _apply_audio_edits()
-        
-        # Start processing (this would integrate with the job queue)
-        st.success("🚀 Enhanced processing started!")
-        st.info("Processing will include audio edits and optimized settings for your content.")
-        
-        # TODO: Integrate with job queue system
-        
-    except Exception as e:
-        st.error(f"❌ Failed to start enhanced processing: {e}")
+        from job_queue import JobType, get_job_queue
 
+        config = st.session_state.get('config', {})
+        if not config:
+            st.error("❌ No configuration loaded. Please check the Settings page first.")
+            st.info("💡 Try going to Settings → Configuration and saving your settings, then return to this page.")
+            return
 
-def preview_processing():
-    """Preview what processing will be applied."""
-    st.subheader("📊 Processing Preview")
-    
-    # Show processing steps
-    steps = []
-    
-    # Audio editing steps
-    if 'waveform_viewer' in st.session_state:
-        segments = st.session_state.waveform_viewer.get_segments()
-        if segments:
-            steps.append("✂️ Apply audio edits")
-    
-    # Q&A processing
-    if 'question_segments' in st.session_state:
-        steps.append("❓ Apply Q&A-aware processing")
-    
-    # Standard processing steps
-    if not st.session_state.get('skip_transcription', False):
-        steps.append("🎙️ Generate transcript")
-    
-    steps.extend([
-        "🎵 Enhance audio quality",
-        "🤖 Generate metadata",
-        "📤 Upload to SermonAudio"
-    ])
-    
-    if steps:
-        st.write("**Processing Steps:**")
-        for step in steps:
-            st.write(step)
-    
-    # Show estimated time
-    base_time = 2.0  # Base processing time multiplier
-    if 'question_segments' in st.session_state:
-        base_time *= 1.3  # Additional time for Q&A processing
-    
-    estimated_minutes = base_time * (st.session_state.uploaded_file.size / (1024 * 1024)) / 2
-    st.info(f"⏱️ Estimated processing time: {estimated_minutes:.1f} minutes")
+        required_fields = ['api_key', 'broadcaster_id']
+        missing_fields = [field for field in required_fields if not config.get(field)]
+        if missing_fields:
+            st.error(f"❌ Configuration is missing required fields: {', '.join(missing_fields)}")
+            st.info("Please go to Settings → Configuration and ensure all required fields are filled out.")
+            return
 
+        if not st.session_state.get('metadata_complete', False):
+            st.error("❌ Required metadata incomplete. Please fill in speaker, date, and event type.")
+            return
 
-def _collect_enhanced_form_data():
-    """Collect form data including edits and processing settings."""
-    form_data = {}
-    
-    # Basic metadata
-    form_data.update({
-        'speaker_name': st.session_state.get('speaker_name'),
-        'recorded_date': st.session_state.get('recorded_date'),
-        'event_type': st.session_state.get('event_type'),
-        'bible_text': st.session_state.get('bible_text'),
-        'title': st.session_state.get('sermon_title'),
-        'subtitle': st.session_state.get('sermon_subtitle'),
-        'description': st.session_state.get('sermon_description'),
-        'hashtags': st.session_state.get('sermon_hashtags'),
-    })
-    
-    # Audio edits
-    if 'waveform_viewer' in st.session_state:
-        form_data['audio_edits'] = st.session_state.waveform_viewer.get_segments()
-    
-    # Question segments
-    if 'question_segments' in st.session_state:
-        form_data['question_segments'] = st.session_state.question_segments
-    
-    # Processing configuration
-    form_data['processing_config'] = st.session_state.get('processing_config', {})
-    
-    return form_data
+        uploaded_file = st.session_state.get('uploaded_file')
+        if uploaded_file is None:
+            st.error("❌ No file uploaded. Please upload an audio file in the first tab.")
+            return
 
+        upload_dir = Path(tempfile.gettempdir()) / "sermon_uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = Path(uploaded_file.name).name
+        saved_path = upload_dir / f"{int(_time.time() * 1000)}_{safe_name}"
+        with open(saved_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
 
-def _apply_audio_edits():
-    """Apply audio edits and return processed audio."""
-    if 'audio_data' not in st.session_state or 'waveform_viewer' not in st.session_state:
-        return None
-    
-    audio_data = st.session_state.audio_data.copy()
-    segments = st.session_state.waveform_viewer.get_segments()
-    
-    if not segments:
-        return audio_data
-    
-    # Apply edits in reverse order to maintain sample indices
-    segments = sorted(segments, key=lambda x: x[0], reverse=True)
-    
-    audio_editor = st.session_state.get('audio_editor')
-    if not audio_editor:
-        return audio_data
-    
-    sample_rate = st.session_state.sample_rate
-    
-    for start_time, end_time, action in segments:
-        audio_data = audio_editor.apply_edit(
-            audio_data, sample_rate, start_time, end_time, action
+        # Extract widget values from correct session state keys
+        speaker_name = st.session_state.get('speaker_name_select')
+        if not speaker_name or speaker_name == '[Select Pastor]':
+            speaker_name = st.session_state.get('speaker_name_custom')
+        event_type = st.session_state.get('event_type_select')
+        if not event_type or event_type == '[Select Event Type]':
+            event_type = st.session_state.get('event_type_custom')
+
+        recorded_date = st.session_state.get('recorded_date')
+        if recorded_date is not None and hasattr(recorded_date, 'isoformat'):
+            recorded_date = recorded_date.isoformat()
+
+        # Validate required form fields
+        missing_form_fields = []
+        if not speaker_name:
+            missing_form_fields.append('Speaker Name')
+        if not recorded_date:
+            missing_form_fields.append('Recording Date')
+        if not event_type:
+            missing_form_fields.append('Event Type')
+        if missing_form_fields:
+            st.error(f"❌ Missing required fields: {', '.join(missing_form_fields)}")
+            return
+
+        form_data = {
+            'speaker_name': speaker_name,
+            'recorded_date': recorded_date,
+            'event_type': event_type,
+            'bible_text': st.session_state.get('bible_text'),
+            'title': None if st.session_state.get('generate_title', False) else (st.session_state.get('sermon_title') or None),
+            'subtitle': st.session_state.get('sermon_subtitle') or None,
+            'series_title': st.session_state.get('sermon_series') or None,
+            'description': st.session_state.get('sermon_description') or None,
+            'hashtags': st.session_state.get('sermon_hashtags') or None,
+            'skip_audio': bool(st.session_state.get('skip_audio_enhancement', False)),
+            'skip_transcription': bool(st.session_state.get('skip_transcription', False)),
+            'skip_ai_generation': not bool(st.session_state.get('generate_description', True)),
+            'whisper_model': st.session_state.get('whisper_model', 'large'),
+            'enhancement_method': st.session_state.get('enhancement_method', 'deepfilternet'),
+            'dry_run': bool(st.session_state.get('dry_run', False)),
+            'generate_short_title': bool(st.session_state.get('generate_short_title', False)),
+        }
+
+        form_data['uploaded_file_path'] = str(saved_path)
+        form_data['original_filename'] = uploaded_file.name
+
+        job_queue = get_job_queue()
+        job_id = job_queue.add_job(
+            job_type=JobType.SERMON_PROCESSING,
+            title=f"New Sermon: {form_data.get('title') or 'Untitled'}",
+            description=f"Processing new sermon by {form_data.get('speaker_name', 'Unknown Speaker')}",
+            parameters={
+                'form_data': form_data,
+                'config': config,
+                'processing_type': 'new_sermon',
+                'uploaded_file_path': str(saved_path),
+            },
+            priority=8
         )
-    
-    return audio_data
+
+        st.session_state.current_sermon_job_id = job_id
+        st.success(f"✅ Sermon processing job created! Job ID: {job_id[:8]}")
+        st.info("🔍 Processing sermon in the background. Monitor progress below.")
+
+    except Exception as e:
+        st.error(f"❌ Failed to start sermon processing job: {e}")
+        logger.exception("Failed to start processing")
+
+
+
 
 
 def reset_enhanced_form():
     """Reset the enhanced form to initial state."""
     # Clear session state variables
     keys_to_clear = [
-        'uploaded_file', 'metadata_complete', 'audio_data', 'sample_rate',
-        'waveform_viewer', 'audio_editor', 'audio_preview', 'mode_selector',
-        'question_segments', 'processing_config', 'selected_mode',
+        'uploaded_file', 'metadata_complete', 'mode_selector',
+        'processing_config', 'selected_mode',
         'speaker_name', 'recorded_date', 'event_type', 'bible_text',
         'sermon_title', 'sermon_subtitle', 'sermon_description', 'sermon_hashtags'
     ]
@@ -766,12 +554,97 @@ def reset_enhanced_form():
     st.rerun()
 
 
-def _show_enhanced_processing_status():
-    """Show enhanced processing status."""
-    # This would integrate with the job queue system
-    # For now, just show placeholder
-    if st.session_state.get('processing_active'):
-        st.info("🔄 Processing in progress...")
+def _show_enhanced_processing_progress(job):
+    """Show real-time processing progress from job queue."""
+    st.markdown("#### 🔄 Processing Progress")
+
+    from job_queue import JobStatus
+
+    progress_bar = st.progress(job.progress / 100.0)
+
+    status_colors = {
+        JobStatus.QUEUED: "🔵",
+        JobStatus.RUNNING: "🟡",
+        JobStatus.COMPLETED: "🟢",
+        JobStatus.FAILED: "🔴",
+        JobStatus.CANCELLED: "⚫",
+        JobStatus.PAUSED: "🟠"
+    }
+
+    status_icon = status_colors.get(job.status, "❓")
+    st.text(f"{status_icon} Status: {job.status.value.title()}")
+    st.text(f"Progress: {job.progress:.1f}%")
+
+    if job.logs:
+        with st.expander("📋 Recent Activity", expanded=True):
+            for log in job.logs[-5:]:
+                st.text(log)
+
+    if job.status == JobStatus.COMPLETED and job.result:
+        _show_enhanced_processing_results(job)
+
+    if job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
+        if st.button("Clear Completed Job"):
+            st.session_state.current_sermon_job_id = None
+            st.rerun()
+
+
+def _show_enhanced_processing_results(job):
+    """Show processing results from completed job."""
+    if not job.result or not job.result.success:
+        st.error("❌ Processing failed")
+        if job.result and job.result.error:
+            st.error(f"Error: {job.result.error}")
+        return
+
+    results = job.result.data
+    if not results:
+        st.warning("⚠️ No results data available")
+        return
+
+    st.markdown("#### ✅ Processing Results")
+    st.success("✅ Processing completed successfully!")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        sermon_id = results.get('sermon_id') or 'Dry run (no upload)'
+        st.metric("Sermon ID", sermon_id)
+        if results.get('speaker'):
+            st.metric("Speaker", results.get('speaker'))
+        if results.get('event_type'):
+            st.metric("Event", results.get('event_type'))
+
+    with col2:
+        st.metric("Status", "Success" if results.get('success') else "Failed")
+        if results.get('title'):
+            title = results.get('title')
+            display = title[:50] + "..." if len(str(title)) > 50 else title
+            st.metric("Title", display)
+        if results.get('recorded_date'):
+            st.metric("Recorded Date", results.get('recorded_date'))
+
+    sermon_id = results.get('sermon_id')
+    if sermon_id:
+        sermon_url = f"https://www.sermonaudio.com/sermoninfo.asp?SID={sermon_id}"
+        st.markdown(f"[🎧 View on SermonAudio]({sermon_url})")
+
+    if results.get('description'):
+        st.markdown("**Generated Description:**")
+        st.text_area("Description", results['description'], height=150, disabled=True)
+
+    if results.get('hashtags'):
+        st.markdown("**Generated Hashtags:**")
+        st.write(results['hashtags'])
+
+    if results.get('transcript_file') or results.get('output_dir'):
+        transcript_path = results.get('transcript_file')
+        if not transcript_path and results.get('output_dir'):
+            transcript_path = f"{results['output_dir']}/{results.get('sermon_id', '')}_transcript.txt"
+        st.markdown(f"**Transcript File:** `{transcript_path or '(not saved)'}`")
+    if results.get('enhanced_audio') or results.get('enhanced_audio_path'):
+        audio_path = results.get('enhanced_audio') or results.get('enhanced_audio_path')
+        st.markdown(f"**Enhanced Audio:** `{audio_path}`")
 
 
 if __name__ == "__main__":

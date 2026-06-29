@@ -94,7 +94,7 @@ def test_ui_integration():
         sys.modules['streamlit'] = MockStreamlit()
 
         # Test importing new_sermon
-        print("✅ new_sermon.py imports successfully")
+        print("✅ new_sermon_enhanced.py imports successfully")
 
         # Test importing batch_update
         print("✅ batch_update.py imports successfully")
