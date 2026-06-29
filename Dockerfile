@@ -1,8 +1,20 @@
 # Dockerfile
-# Multi-stage build for optimized container size
+# Multi-stage build with GPU backend selection
+# Build with: docker build --build-arg GPU_BACKEND=cuda -t sermon-processor:cuda .
+# Options: cuda, rocm, cpu
 
-# Stage 1: Base dependencies
-FROM nvidia/cuda:12.9.1-devel-ubuntu22.04 AS base
+ARG GPU_BACKEND=cuda
+
+# ============================================================
+# Stage 1: Base image selection based on GPU backend
+# ============================================================
+FROM ubuntu:22.04 AS base-cpu
+
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 AS base-cuda
+
+FROM rocm/dev-ubuntu-22.04:6.2 AS base-rocm
+
+FROM base-${GPU_BACKEND} AS base
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -12,7 +24,6 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     curl \
     wget \
-    git \
     ffmpeg \
     libsndfile1 \
     libasound2-dev \
@@ -26,7 +37,9 @@ RUN useradd -m -u 1000 sermonapp && \
     mkdir -p /app /data /models /logs && \
     chown -R sermonapp:sermonapp /app /data /models /logs
 
+# ============================================================
 # Stage 2: Python dependencies
+# ============================================================
 FROM base AS python-deps
 
 # Install UV package manager
@@ -39,13 +52,21 @@ WORKDIR /app
 COPY requirements/ requirements/
 COPY pyproject.toml uv.lock ./
 
-# Install Python dependencies
-RUN uv venv /app/venv && \
+# Install Python dependencies based on GPU backend
+RUN . /app/venv/bin/activate 2>/dev/null || python3.11 -m venv /app/venv && \
     . /app/venv/bin/activate && \
     uv pip install -r requirements/requirements.txt && \
-    uv pip install -r requirements/requirements-gpu.txt
+    if [ "$GPU_BACKEND" = "cuda" ]; then \
+        uv pip install -r requirements/requirements-gpu.txt; \
+    elif [ "$GPU_BACKEND" = "rocm" ]; then \
+        uv pip install -r requirements/requirements-rocm.txt; \
+    else \
+        uv pip install -r requirements/requirements-cpu.txt; \
+    fi
 
+# ============================================================
 # Stage 3: Application code
+# ============================================================
 FROM python-deps AS app
 
 # Copy application code
@@ -57,25 +78,23 @@ RUN mkdir -p /app/processed_sermons \
              /app/analytics_vector_db \
              /app/api_cache \
              /app/logs \
-             /app/config_backups \
-             /app/docker
+             /app/config_backups
 
 # Set proper permissions
 RUN chown -R sermonapp:sermonapp /app && \
-    chmod +x /app/docker/start_production.sh && \
-    chmod +x /app/docker/wait_for_services.py 2>/dev/null || true
+    chmod +x /app/docker/start_production.sh
 
 # Switch to application user
 USER sermonapp
 
 # Set Python path
-ENV PYTHONPATH="/app:/app/src:$PYTHONPATH"
+ENV PYTHONPATH="/app:/app/src:/app/ui:$PYTHONPATH"
 ENV PATH="/app/venv/bin:$PATH"
 
-# Expose ports
-EXPOSE 8501 8000
+# Expose port
+EXPOSE 8501
 
-# Health check - check if Streamlit is responding
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8501/ || exit 1
 

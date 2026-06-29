@@ -1,37 +1,43 @@
-# docker-compose.yml - Complete stack
+# docker-compose.yml
+# Usage:
+#   NVIDIA: docker compose up -d
+#   AMD:    GPU_BACKEND=rocm docker compose up -d
+#   CPU:    GPU_BACKEND=cpu docker compose up -d
 
 services:
-  # Main application
   sermon-processor:
     build:
       context: .
       dockerfile: Dockerfile
-      target: app
+      args:
+        GPU_BACKEND: ${GPU_BACKEND:-cuda}
     container_name: sermon-processor
     restart: unless-stopped
     ports:
       - "8501:8501"
-      - "8000:8000"
     environment:
-      - ENVIRONMENT=development
-      - OLLAMA_HOST=http://ollama:11434
-      - DATABASE_URL=sqlite:///data/sermon_processor.db
-      - CUDA_VISIBLE_DEVICES=0
-      - PYTHONPATH=/app:/app/src
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/sermon_processor.db}
+      - SERMONAUDIO_API_KEY=${SERMONAUDIO_API_KEY}
+      - SERMONAUDIO_BROADCASTER_ID=${SERMONAUDIO_BROADCASTER_ID}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DEBUG=${DEBUG:-false}
     volumes:
       - sermon_data:/data
       - sermon_models:/models
       - sermon_logs:/app/logs
-      - sermon_config:/app/config_backups
-      - /tmp:/tmp
+    env_file:
+      - .env
     depends_on:
-      - ollama
-      - redis
+      ollama:
+        condition: service_healthy
     deploy:
       resources:
         reservations:
           devices:
-            - driver: nvidia
+            - driver: ${GPU_DRIVER:-nvidia}
               count: 1
               capabilities: [gpu]
     networks:
@@ -43,7 +49,6 @@ services:
       retries: 3
       start_period: 120s
 
-  # Ollama service for local LLM inference
   ollama:
     image: ollama/ollama:latest
     container_name: sermon-ollama
@@ -58,7 +63,7 @@ services:
       resources:
         reservations:
           devices:
-            - driver: nvidia
+            - driver: ${GPU_DRIVER:-nvidia}
               count: 1
               capabilities: [gpu]
     networks:
@@ -69,31 +74,11 @@ services:
       timeout: 10s
       retries: 3
 
-  # Redis for job queue and caching
-  redis:
-    image: redis:7-alpine
-    container_name: sermon-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis_data:/data
-    networks:
-      - sermon_network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
 volumes:
   sermon_data:
   sermon_models:
   sermon_logs:
-  sermon_config:
   ollama_data:
-  redis_data:
 
 networks:
   sermon_network:

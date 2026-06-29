@@ -21,6 +21,11 @@ coverage.xml
 *.cover
 .hypothesis/
 
+# Sensitive config
+config.yaml
+*.key
+*.secret
+
 # Logs
 *.log
 logs/
@@ -62,3 +67,13 @@ Thumbs.db
 *.tmp
 *.temp
 .cache/
+
+# Test files
+tests/
+conftest.py
+
+# Streamlit config (user-specific)
+.streamlit/
+
+# Agent files
+AGENTS.md
