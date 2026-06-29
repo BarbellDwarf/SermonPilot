@@ -49,8 +49,6 @@ openai>=1.0.0
 anthropic>=0.7.0
 cohere>=4.0.0
 voyageai>=0.2.0
-langchain>=0.0.200
-langchain-community>=0.0.1
 
 # Utilities
 tenacity>=8.2.0
@@ -63,8 +61,8 @@ psutil>=5.9.0
 streamlit>=1.28.0
 plotly>=5.10.0
 reportlab>=3.6.0  # For PDF generation
-chromadb>=1.0.20
-sentence-transformers>=5.1.0
+chromadb>=0.4.22
+sentence-transformers>=2.2.0
 
 # Database and Search
 sqlite-fts4>=1.0.3  # For full-text search capabilities
