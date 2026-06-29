@@ -68,12 +68,12 @@ class AudioWaveformViewer:
 
         # Add selection callback
         fig.update_layout(
-            selectdirection="horizontal",
+            selectdirection="h",
             clickmode='event+select'
         )
 
         # Display the chart and capture selection
-        selected_data = st.plotly_chart(fig, use_container_width=True, key="waveform_chart")
+        selected_data = st.plotly_chart(fig, width='stretch', key="waveform_chart")
         
         # For now, return None as selection handling needs more complex implementation
         return None

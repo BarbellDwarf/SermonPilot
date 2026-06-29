@@ -28,55 +28,12 @@ except ImportError as e:
 
 
 def show_config_management_page():
-    """Configuration management interface."""
+    """Configuration management interface - redirects to Settings."""
+    from ui.pages import settings as settings_page
     st.title("⚙️ Configuration Management")
-    
-    if not SQL_CONFIG_AVAILABLE:
-        st.error("❌ SQL Configuration system is not available. Please check installation.")
-        return
-    
-    # Configuration for database path
-    db_path = st.sidebar.text_input(
-        "Database Path", 
-        value="sermon_config.db",
-        help="Path to the configuration database file"
-    )
-    
-    # Check if database exists
-    db_exists = Path(db_path).exists()
-    
-    if not db_exists:
-        st.warning(f"⚠️ Configuration database not found: {db_path}")
-        show_database_setup(db_path)
-        return
-    
-    # Tabs for different operations
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📝 Edit Configuration", 
-        "📥 Import/Export", 
-        "📊 Configuration History", 
-        "🔧 Templates",
-        "💾 Backup & Restore",
-        "🛠️ Database Management"
-    ])
-    
-    with tab1:
-        show_config_editor(db_path)
-    
-    with tab2:
-        show_import_export(db_path)
-    
-    with tab3:
-        show_config_history(db_path)
-    
-    with tab4:
-        show_config_templates(db_path)
-    
-    with tab5:
-        show_backup_restore(db_path)
-    
-    with tab6:
-        show_database_management(db_path)
+    st.info("Configuration management has been moved to the **Settings** page.")
+    if st.button("📋 Go to Settings", type="primary"):
+        st.switch_page(settings_page)
 
 
 def show_database_setup(db_path: str):
@@ -281,7 +238,7 @@ def show_category_editor(config_manager: SQLConfigManager, category: str, keys: 
         # Form submission
         col1, col2 = st.columns([3, 1])
         with col2:
-            submitted = st.form_submit_button("💾 Save Changes", use_container_width=True)
+            submitted = st.form_submit_button("💾 Save Changes", width='stretch')
         
         with col1:
             change_reason = st.text_input("Change Reason (optional)", placeholder="Describe why you made these changes")
@@ -417,7 +374,7 @@ def show_config_history(db_path: str):
                     'changed_at': 'Changed At'
                 })
                 
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(df, width='stretch')
             else:
                 st.info("No configuration changes recorded yet.")
     

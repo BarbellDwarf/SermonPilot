@@ -18,14 +18,8 @@ sys.path.insert(0, str(src_dir))
 
 logger = logging.getLogger(__name__)
 
-# Default fallback lists if API calls fail
-DEFAULT_PASTORS = [
-    "Pastor John Smith",
-    "Pastor Mary Johnson",
-    "Pastor David Wilson",
-    "Pastor Sarah Brown",
-    "Pastor Michael Davis"
-]
+# Default empty fallback when API is unavailable
+DEFAULT_PASTORS = []
 
 DEFAULT_EVENT_TYPES = [
     "Sunday Service",
@@ -276,17 +270,21 @@ def create_pastor_selectbox(label: str = "Speaker Name", key: str = "speaker_nam
     """
     pastors = get_pastors()
 
-    # Add option for custom pastor
-    options = ["[Select Pastor]"] + pastors + ["[Add New Pastor]"]
+    if not pastors:
+        return st.text_input(
+            label,
+            key=f"{key}_custom",
+            placeholder="Enter pastor name"
+        ) or None
 
+    options = ["[Select Pastor]"] + pastors + ["[Add New Pastor]"]
     selected = st.selectbox(label, options, key=f"{key}_select", **kwargs)
 
     if selected == "[Add New Pastor]":
-        # Show text input for custom pastor
         custom_pastor = st.text_input(
             "Enter pastor name:",
             key=f"{key}_custom",
-            placeholder="Pastor John Smith"
+            placeholder="Enter pastor name"
         )
         return custom_pastor if custom_pastor else None
     elif selected == "[Select Pastor]":

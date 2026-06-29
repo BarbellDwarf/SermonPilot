@@ -266,7 +266,7 @@ class SQLConfigManager:
                 else:
                     # Escape special characters for shell
                     if isinstance(value, str) and (' ' in value or '"' in value):
-                        escaped_value = f'"{value.replace('"', '\\"')}"'
+                        escaped_value = f'"{value.replace(chr(34), chr(92) + chr(34))}"'
                     else:
                         escaped_value = str(value)
                     env_lines.append(f"{full_path}={escaped_value}")

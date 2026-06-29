@@ -31,7 +31,7 @@ def test_imports():
         project_root / "config.example.yaml",
         ui_dir / "streamlit_app.py",
         ui_dir / "pages" / "dashboard.py",
-        ui_dir / "pages" / "new_sermon.py",
+        ui_dir / "pages" / "new_sermon_enhanced.py",
         ui_dir / "pages" / "settings.py",
         ui_dir / "pages" / "batch_update.py",
         ui_dir / "pages" / "analytics.py",

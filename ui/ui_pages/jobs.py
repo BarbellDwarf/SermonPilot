@@ -50,78 +50,28 @@ def show_jobs():
         return
 
     try:
-        # Initialize job queue
         job_queue = get_job_queue()
 
-        # Auto-refresh setup with more frequent updates for running jobs
-        if 'last_refresh' not in st.session_state:
-            st.session_state.last_refresh = time.time()
-
-        # Auto-refresh every 2 seconds for active jobs, 10 seconds otherwise
-        active_jobs = job_queue.get_all_jobs(JobStatus.RUNNING)
-        refresh_interval = 2 if active_jobs else 10
-        
-        if time.time() - st.session_state.last_refresh > refresh_interval:
-            st.session_state.last_refresh = time.time()
-            st.rerun()
-
-        # Create sidebar for controls and overview
         with st.sidebar:
             st.markdown("### 🎛️ Controls")
             
-            if st.button("🔄 Refresh", type="primary", use_container_width=True):
+            if st.button("🔄 Refresh", type="primary", width='stretch'):
                 st.rerun()
 
-            if st.button("🧹 Clear Completed", type="secondary", use_container_width=True):
+            if st.button("🧹 Clear Completed", type="secondary", width='stretch'):
                 cleared = job_queue.clear_completed_jobs()
                 st.success(f"Cleared {cleared} completed jobs")
                 st.rerun()
 
-            if st.button("➕ Test Job", type="secondary", use_container_width=True):
+            if st.button("➕ Test Job", type="secondary", width='stretch'):
                 add_test_job(job_queue)
                 st.rerun()
 
-            st.markdown("---")
-            
-            # Quick overview in sidebar
-            st.markdown("### 📊 Quick Stats")
-            all_jobs = job_queue.get_all_jobs()
-            running_count = len([j for j in all_jobs if j.status == JobStatus.RUNNING])
-            queued_count = len([j for j in all_jobs if j.status == JobStatus.QUEUED])
-            completed_count = len([j for j in all_jobs if j.status == JobStatus.COMPLETED])
-            failed_count = len([j for j in all_jobs if j.status == JobStatus.FAILED])
-            
-            # Compact metrics in sidebar
-            st.metric("🔄 Running", running_count)
-            st.metric("⏳ Queued", queued_count)
-            st.metric("✅ Completed", completed_count)
-            st.metric("❌ Failed", failed_count)
-            
-            # Auto-refresh indicator with more information
-            if active_jobs:
-                st.info(f"🔄 Auto-refresh: every 2s\\n📊 {len(active_jobs)} job(s) running")
-            else:
-                st.info("⏸️ Auto-refresh: every 10s\\n😴 No active jobs")
+        _render_job_list(job_queue)
 
-        # Main content area with compact tabs
-        tab1, tab2, tab3, tab4 = st.tabs([
-            f"🔄 Active ({running_count + queued_count})",
-            f"✅ Completed ({completed_count})",
-            f"❌ Failed ({failed_count})",
-            "📊 Stats"
-        ])
-
-        with tab1:
-            show_active_jobs_compact(job_queue)
-
-        with tab2:
-            show_completed_jobs_compact(job_queue)
-
-        with tab3:
-            show_failed_jobs_compact(job_queue)
-
-        with tab4:
-            show_queue_statistics_compact(job_queue)
+        if job_queue.get_all_jobs(JobStatus.RUNNING) or job_queue.get_all_jobs(JobStatus.QUEUED):
+            time.sleep(2)
+            st.rerun()
 
     except ImportError as e:
         st.error(f"❌ Job queue system not available: {e}")
@@ -129,6 +79,40 @@ def show_jobs():
     except Exception as e:
         st.error(f"❌ Error loading jobs interface: {e}")
         st.info("Please check the job queue system and try again.")
+
+
+@st.fragment
+def _render_job_list(job_queue):
+    """Job list display"""
+    all_jobs = job_queue.get_all_jobs()
+    running_count = len([j for j in all_jobs if j.status == JobStatus.RUNNING])
+    queued_count = len([j for j in all_jobs if j.status == JobStatus.QUEUED])
+    completed_count = len([j for j in all_jobs if j.status == JobStatus.COMPLETED])
+    failed_count = len([j for j in all_jobs if j.status == JobStatus.FAILED])
+    cancelled_count = len([j for j in all_jobs if j.status == JobStatus.CANCELLED])
+
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        f"🔄 Active ({running_count + queued_count})",
+        f"✅ Completed ({completed_count})",
+        f"❌ Failed ({failed_count})",
+        f"🚫 Cancelled ({cancelled_count})",
+        "📊 Stats"
+    ])
+
+    with tab1:
+        show_active_jobs_compact(job_queue)
+
+    with tab2:
+        show_completed_jobs_compact(job_queue)
+
+    with tab3:
+        show_failed_jobs_compact(job_queue)
+
+    with tab4:
+        show_cancelled_jobs_compact(job_queue)
+
+    with tab5:
+        show_queue_statistics_compact(job_queue)
 
 
 def show_active_jobs_compact(job_queue):
@@ -166,7 +150,7 @@ def show_completed_jobs_compact(job_queue):
     completed_jobs.sort(key=lambda j: j.completed_at or j.created_at, reverse=True)
 
     for job in completed_jobs[:10]:  # Show last 10 completed jobs
-        show_job_card_compact(job, job_queue, show_actions=False)
+        show_job_card_compact(job, job_queue, show_actions=True)
 
 
 def show_failed_jobs_compact(job_queue):
@@ -182,6 +166,20 @@ def show_failed_jobs_compact(job_queue):
 
     for job in failed_jobs:
         show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=True)
+
+
+def show_cancelled_jobs_compact(job_queue):
+    """Show cancelled jobs in compact format"""
+    cancelled_jobs = job_queue.get_all_jobs(JobStatus.CANCELLED)
+
+    if not cancelled_jobs:
+        st.success("No cancelled jobs.")
+        return
+
+    cancelled_jobs.sort(key=lambda j: j.completed_at or j.created_at, reverse=True)
+
+    for job in cancelled_jobs:
+        show_job_card_compact(job, job_queue, show_actions=True)
 
 
 def show_queue_statistics_compact(job_queue):
@@ -308,7 +306,7 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                                 st.rerun()
                 
                 with action_col2:
-                    if job.can_retry and job.status == JobStatus.FAILED:
+                    if job.can_retry and job.status in [JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.COMPLETED]:
                         if st.button("🔄", key=f"retry_{job.id}", help="Retry Job"):
                             if job_queue.retry_job(job.id):
                                 st.success("Retrying")
@@ -323,11 +321,10 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                 detail_col1, detail_col2 = st.columns(2)
                 
                 with detail_col1:
-                    # Key parameters
                     if job.parameters:
                         st.markdown("**Key Parameters:**")
-                        # Show most relevant parameters
-                        relevant_params = ['sermon_ids', 'actions', 'enhance_audio', 'generate_description']
+                        relevant_params = ['sermon_ids', 'actions', 'enhance_audio', 'generate_description',
+                                           'skip_audio', 'skip_transcription', 'whisper_model', 'dry_run']
                         for param in relevant_params:
                             if param in job.parameters:
                                 value = job.parameters[param]
@@ -339,7 +336,6 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                                     st.text(f"{param.replace('_', ' ').title()}: {value}")
                 
                 with detail_col2:
-                    # Recent activity or result
                     if job.result and not job.result.success:
                         st.error(f"❌ {job.result.message}")
                         if job.result.error:
@@ -349,380 +345,73 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                             st.code(error_text, language="text")
                     
                     if job.logs:
-                        recent_logs = job.logs[-3:]  # Show last 3 logs in compact view
-                        st.text_area("Recent Activity", "\\n".join(f"• {log}" for log in recent_logs), height=80, disabled=True)
+                        recent_logs = job.logs[-3:]
+                        st.text_area("Recent Activity", "\n".join(f"• {log}" for log in recent_logs), height=80, disabled=True)
 
-        st.markdown("---")  # Simple separator instead of styled box
+                if job.status in [JobStatus.FAILED, JobStatus.CANCELLED] and job.type == JobType.SERMON_PROCESSING:
+                    st.markdown("---")
+                    st.markdown("**🔄 Retry with Modified Settings**")
+                    params = job.parameters or {}
+                    form_data = params.get('form_data', {})
 
+                    retry_col1, retry_col2, retry_col3 = st.columns(3)
+                    with retry_col1:
+                        new_skip_audio = st.checkbox(
+                            "Skip Audio Enhancement",
+                            value=bool(form_data.get('skip_audio', False)),
+                            key=f"retry_skip_audio_{job.id}"
+                        )
+                        new_skip_transcription = st.checkbox(
+                            "Skip Transcription",
+                            value=bool(form_data.get('skip_transcription', False)),
+                            key=f"retry_skip_transcription_{job.id}"
+                        )
+                    with retry_col2:
+                        new_skip_ai = not st.checkbox(
+                            "Generate Metadata (AI)",
+                            value=not form_data.get('skip_ai_generation', False),
+                            key=f"retry_ai_{job.id}"
+                        )
+                        new_dry_run = st.checkbox(
+                            "Dry Run",
+                            value=bool(form_data.get('dry_run', False)),
+                            key=f"retry_dry_run_{job.id}"
+                        )
+                    with retry_col3:
+                        _whisper_options = ["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo"]
+                        _current_wm = form_data.get('whisper_model', 'base')
+                        _wm_index = _whisper_options.index(_current_wm) if _current_wm in _whisper_options else 2
+                        new_whisper_model = st.selectbox(
+                            "Whisper Model",
+                            options=_whisper_options,
+                            index=_wm_index,
+                            key=f"retry_whisper_{job.id}",
+                            help="Larger model = better accuracy but slower. .en models are English-only (faster)."
+                        )
 
-def show_active_jobs(job_queue):
-    """Show currently running and queued jobs"""
-    st.markdown("### 🔄 Active Jobs")
-
-    # Get running and queued jobs
-    running_jobs = job_queue.get_all_jobs(JobStatus.RUNNING)
-    queued_jobs = job_queue.get_all_jobs(JobStatus.QUEUED)
-
-    if not running_jobs and not queued_jobs:
-        st.info("No active jobs. All background processes are idle.")
-        return
-
-    # Show running jobs first
-    if running_jobs:
-        st.markdown("#### 🟡 Currently Running")
-        for job in running_jobs:
-            show_job_card(job, job_queue, show_actions=True)
-
-    # Show queued jobs
-    if queued_jobs:
-        st.markdown("#### ⏳ Queued Jobs")
-        for job in queued_jobs:
-            show_job_card(job, job_queue, show_actions=True)
-
-
-def show_completed_jobs(job_queue):
-    """Show completed jobs"""
-    st.markdown("### ✅ Completed Jobs")
-
-    completed_jobs = job_queue.get_all_jobs(JobStatus.COMPLETED)
-
-    if not completed_jobs:
-        st.info("No completed jobs found.")
-        return
-
-    # Show most recent first
-    completed_jobs.sort(key=lambda j: j.completed_at or j.created_at, reverse=True)
-
-    for job in completed_jobs[:20]:  # Show last 20 completed jobs
-        show_job_card(job, job_queue, show_actions=False)
-
-
-def show_failed_jobs(job_queue):
-    """Show failed jobs with retry options"""
-    st.markdown("### ❌ Failed Jobs")
-
-    failed_jobs = job_queue.get_all_jobs(JobStatus.FAILED)
-
-    if not failed_jobs:
-        st.success("No failed jobs! 🎉")
-        return
-
-    # Show most recent first
-    failed_jobs.sort(key=lambda j: j.completed_at or j.created_at, reverse=True)
-
-    for job in failed_jobs:
-        show_job_card(job, job_queue, show_actions=True, highlight_errors=True)
-
-
-def show_job_card(job, job_queue, show_actions=True, highlight_errors=False):
-    """Show a job card with details and actions"""
-    # Status icon mapping
-    status_icons = {
-        JobStatus.QUEUED: "⏳",
-        JobStatus.RUNNING: "🔄",
-        JobStatus.COMPLETED: "✅",
-        JobStatus.FAILED: "❌",
-        JobStatus.CANCELLED: "🚫",
-        JobStatus.PAUSED: "⏸️"
-    }
-
-    # Job type icons - use basic mapping
-    type_icons = {
-        "VALIDATION": "✅",
-        "SERMON_PROCESSING": "🎵", 
-        "BATCH_PROCESSING": "📦",
-        "SERMON_IMPORT": "📥",
-        "AUDIO_ENHANCEMENT": "🔊",
-        "TRANSCRIPT_GENERATION": "📝",
-        "METADATA_UPDATE": "📋"
-    }
-
-    status_icon = status_icons.get(job.status, "❓")
-    job_type_str = str(job.type) if hasattr(job.type, 'value') else str(job.type)
-    type_icon = type_icons.get(job_type_str.upper(), "⚙️")
-
-    # Card styling based on status
-    if highlight_errors and job.status == JobStatus.FAILED:
-        border_color = "#ff6b6b"
-    elif job.status == JobStatus.RUNNING:
-        border_color = "#4ecdc4"
-    elif job.status == JobStatus.COMPLETED:
-        border_color = "#51cf66"
-    else:
-        border_color = "#e9ecef"
-
-    with st.container():
-        st.markdown(f"""
-        <div style="border-left: 4px solid {border_color}; padding: 10px; margin: 10px 0; background-color: rgba(0,0,0,0.05);">
-        """, unsafe_allow_html=True)
-
-        # Job header
-        col1, col2, col3 = st.columns([3, 1, 1])
-
-        with col1:
-            st.markdown(f"**{type_icon} {job.title}**")
-            status_display = str(job.status) if hasattr(job.status, 'value') else str(job.status)
-            st.caption(f"{status_icon} {status_display.title()} • {job.description}")
-
-        with col2:
-            # Progress bar for running jobs
-            if job.status == JobStatus.RUNNING:
-                st.progress(job.progress / 100.0)
-                st.caption(f"{job.progress:.1f}%")
-            else:
-                st.caption(f"Priority: {job.priority}")
-
-        with col3:
-            # Timing information
-            if job.completed_at:
-                duration = job.completed_at - (job.started_at or job.created_at)
-                st.caption(f"Duration: {format_duration(duration)}")
-            elif job.started_at:
-                duration = datetime.now() - job.started_at
-                st.caption(f"Running: {format_duration(duration)}")
-            else:
-                st.caption(f"Created: {format_time_ago(job.created_at)}")
-
-        # Expandable details
-        with st.expander(f"Details - {job.id[:8]}", expanded=False):
-            # Enhanced job details with better formatting
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.markdown("### 📋 Job Information")
-                
-                # Basic job info with better formatting
-                info_data = {
-                    "ID": job.id,
-                    "Type": job_type_str.replace('_', ' ').title(),
-                    "Status": status_display.title(),
-                    "Priority": f"{job.priority}/10",
-                    "Progress": f"{job.progress:.1f}%" if job.status == JobStatus.RUNNING else "N/A"
-                }
-                
-                for label, value in info_data.items():
-                    st.text(f"{label}: {value}")
-                
-                st.markdown("### ⏰ Timing")
-                timing_data = {
-                    "Created": job.created_at.strftime('%Y-%m-%d %H:%M:%S') if job.created_at else 'Unknown',
-                }
-                
-                if job.started_at:
-                    timing_data["Started"] = job.started_at.strftime('%Y-%m-%d %H:%M:%S')
-                    
-                if job.completed_at:
-                    timing_data["Completed"] = job.completed_at.strftime('%Y-%m-%d %H:%M:%S')
-                    if job.started_at:
-                        duration = job.completed_at - job.started_at
-                        timing_data["Duration"] = format_duration(duration)
-                elif job.started_at:
-                    duration = datetime.now() - job.started_at
-                    timing_data["Running for"] = format_duration(duration)
-                
-                for label, value in timing_data.items():
-                    st.text(f"{label}: {value}")
-
-                # Enhanced Parameters display
-                if job.parameters:
-                    st.markdown("### ⚙️ Parameters")
-                    
-                    # Special handling for different parameter types
-                    for key, value in job.parameters.items():
-                        if key == 'sermon_ids' and isinstance(value, list):
-                            st.text(f"Sermons: {len(value)} items")
-                            if len(value) <= 5:
-                                for i, sermon_id in enumerate(value, 1):
-                                    st.text(f"  {i}. {sermon_id}")
-                            else:
-                                st.text(f"  First 3: {', '.join(value[:3])}")
-                                st.text(f"  ... and {len(value) - 3} more")
-                                
-                        elif key == 'actions' and isinstance(value, list):
-                            st.text(f"Actions: {', '.join(value)}")
-                            
-                        elif key in ['enhance_audio', 'generate_description', 'generate_hashtags', 'validate_content']:
-                            st.text(f"{key.replace('_', ' ').title()}: {'Yes' if value else 'No'}")
-                            
-                        elif isinstance(value, dict):
-                            st.text(f"{key.replace('_', ' ').title()}:")
-                            for subkey, subvalue in value.items():
-                                st.text(f"  {subkey}: {subvalue}")
-                                
-                        elif isinstance(value, list) and len(value) > 10:
-                            st.text(f"{key.replace('_', ' ').title()}: {len(value)} items")
-                        else:
-                            display_value = str(value)
-                            if len(display_value) > 100:
-                                display_value = display_value[:97] + "..."
-                            st.text(f"{key.replace('_', ' ').title()}: {display_value}")
-
-            with col2:
-                # Enhanced Result and Progress Information
-                if job.status == JobStatus.RUNNING:
-                    st.markdown("### 🔄 Current Progress")
-                    
-                    # Progress bar with percentage
-                    progress_col1, progress_col2 = st.columns([3, 1])
-                    with progress_col1:
-                        st.progress(job.progress / 100.0)
-                    with progress_col2:
-                        st.metric("Progress", f"{job.progress:.1f}%")
-                    
-                    # Current step from logs
-                    if job.logs:
-                        latest_log = job.logs[-1] if job.logs else "Starting..."
-                        st.text_area("Current Step", latest_log, height=60, disabled=True)
-                
-                # Result information with better formatting
-                if job.result:
-                    st.markdown("### 📊 Result")
-                    if job.result.success:
-                        st.success(f"✅ {job.result.message}")
-                    else:
-                        st.error(f"❌ {job.result.message}")
-                        if job.result.error:
-                            st.markdown("**Error Details:**")
-                            st.code(job.result.error, language="text")
-
-                    if job.result.data:
-                        st.markdown("**Result Data:**")
-                        # Better formatting for result data
-                        if isinstance(job.result.data, dict):
-                            for key, value in job.result.data.items():
-                                if isinstance(value, (int, float)):
-                                    st.metric(key.replace('_', ' ').title(), value)
-                                else:
-                                    st.text(f"{key.replace('_', ' ').title()}: {value}")
-                        else:
-                            st.json(job.result.data)
-
-                # Enhanced Job logs
-                if job.logs:
-                    st.markdown("### 📝 Activity Log")
-                    
-                    # Show number of log entries
-                    st.caption(f"Showing last {min(15, len(job.logs))} of {len(job.logs)} log entries")
-                    
-                    # Format logs with timestamps if available
-                    recent_logs = job.logs[-15:]  # Show last 15 logs
-                    formatted_logs = []
-                    
-                    for log_entry in recent_logs:
-                        # Try to extract timestamp if present
-                        if log_entry.startswith('[') and ']' in log_entry:
-                            # Log already has timestamp
-                            formatted_logs.append(log_entry)
-                        else:
-                            # Add simple formatting
-                            formatted_logs.append(f"• {log_entry}")
-                    
-                    log_text = "\\n".join(formatted_logs)
-                    st.text_area("Recent Activity", log_text, height=200, disabled=True)
-                    
-                    # Download logs button for completed jobs
-                    if job.status in [JobStatus.COMPLETED, JobStatus.FAILED] and len(job.logs) > 15:
-                        if st.button("📥 Download Full Log", key=f"download_log_{job.id}"):
-                            full_log = "\\n".join(job.logs)
-                            st.download_button(
-                                label="Download Log File",
-                                data=full_log,
-                                file_name=f"job_{job.id[:8]}_log.txt",
-                                mime="text/plain",
-                                key=f"download_log_file_{job.id}"
-                            )
-
-        # Action buttons
-        if show_actions:
-            col1, col2, col3, col4 = st.columns(4)
-
-            with col1:
-                if job.can_cancel and job.status in [JobStatus.QUEUED, JobStatus.RUNNING]:
-                    if st.button("🚫 Cancel", key=f"cancel_{job.id}"):
-                        if job_queue.cancel_job(job.id):
-                            st.success("Job cancelled")
-                            st.rerun()
-                        else:
-                            st.error("Failed to cancel job")
-
-            with col2:
-                if job.can_retry and job.status == JobStatus.FAILED:
-                    if st.button("🔄 Retry", key=f"retry_{job.id}"):
-                        if job_queue.retry_job(job.id):
-                            st.success("Job queued for retry")
-                            st.rerun()
-                        else:
-                            st.error("Failed to retry job")
-
-            with col3:
-                if job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
-                    if st.button("🗑️ Remove", key=f"remove_{job.id}"):
-                        # Remove single job (you'd need to add this method to job_queue)
-                        st.success("Job removed")
+                    if st.button("🔄 Retry with These Settings", type="primary", key=f"retry_modified_{job.id}"):
+                        new_params = dict(params)
+                        new_form_data = dict(form_data)
+                        new_form_data['skip_audio'] = new_skip_audio
+                        new_form_data['skip_transcription'] = new_skip_transcription
+                        new_form_data['skip_ai_generation'] = new_skip_ai
+                        new_form_data['dry_run'] = new_dry_run
+                        new_form_data['whisper_model'] = new_whisper_model
+                        new_params['form_data'] = new_form_data
+                        new_job_id = job_queue.add_job(
+                            job_type=job.type,
+                            title=f"(Retry) {job.title}",
+                            description=job.description,
+                            parameters=new_params,
+                            priority=job.priority,
+                        )
+                        st.success(f"Retry job created: {new_job_id[:8]}")
                         st.rerun()
 
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("---")
 
 
-def show_queue_statistics(job_queue):
-    """Show detailed queue statistics and health metrics"""
-    st.markdown("### 📊 Queue Statistics")
 
-    all_jobs = job_queue.get_all_jobs()
-
-    if not all_jobs:
-        st.info("No job statistics available.")
-        return
-
-    # Job type distribution
-    st.markdown("#### Job Type Distribution")
-    type_counts = {}
-    for job in all_jobs:
-        type_counts[job.type.value] = type_counts.get(job.type.value, 0) + 1
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        for job_type, count in type_counts.items():
-            st.metric(f"{job_type.replace('_', ' ').title()}", count)
-
-    with col2:
-        # Recent activity (last 24 hours)
-        recent_jobs = [
-            job for job in all_jobs
-            if job.created_at and job.created_at > datetime.now() - timedelta(days=1)
-        ]
-        st.metric("Jobs (Last 24h)", len(recent_jobs))
-
-        # Average completion time
-        completed_jobs = [job for job in all_jobs if job.status == JobStatus.COMPLETED and job.started_at and job.completed_at]
-        if completed_jobs:
-            avg_duration = sum(
-                (job.completed_at - job.started_at).total_seconds()
-                for job in completed_jobs
-            ) / len(completed_jobs)
-            st.metric("Avg Completion Time", f"{avg_duration:.1f}s")
-
-    # Success rate
-    st.markdown("#### Success Rate")
-    finished_jobs = [job for job in all_jobs if job.status in [JobStatus.COMPLETED, JobStatus.FAILED]]
-    if finished_jobs:
-        success_rate = len([job for job in finished_jobs if job.status == JobStatus.COMPLETED]) / len(finished_jobs) * 100
-        st.metric("Success Rate", f"{success_rate:.1f}%")
-
-        # Show success rate by job type - use actual job types from data
-        job_types_found = set()
-        for job in finished_jobs:
-            job_type_str = str(job.type) if hasattr(job.type, 'value') else str(job.type)
-            job_types_found.add(job_type_str)
-            
-        for job_type_str in job_types_found:
-            type_finished = [job for job in finished_jobs if str(job.type) == job_type_str]
-            if type_finished:
-                type_success = len([job for job in type_finished if job.status == JobStatus.COMPLETED])
-                type_rate = type_success / len(type_finished) * 100
-                display_name = job_type_str.replace('_', ' ').title()
-                st.write(f"**{display_name}:** {type_rate:.1f}% ({type_success}/{len(type_finished)})")
 
 
 def add_test_job(job_queue):

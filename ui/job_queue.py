@@ -267,13 +267,13 @@ class JobQueue:
         return False
 
     def retry_job(self, job_id: str) -> bool:
-        """Retry a failed job"""
+        """Retry a failed, cancelled, or completed job"""
         with self._queue_lock:
             job = self._jobs.get(job_id)
             if not job or not job.can_retry:
                 return False
 
-            if job.status == JobStatus.FAILED:
+            if job.status in [JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.COMPLETED]:
                 job.status = JobStatus.QUEUED
                 job.progress = 0.0
                 job.started_at = None

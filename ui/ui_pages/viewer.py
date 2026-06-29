@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import streamlit as st
+from ui.pages import library
 
 # Add src and ui directories to path
 ui_dir = Path(__file__).parent.parent
@@ -62,8 +63,7 @@ def show_viewer():
         if st.button("⬅️ Back to Library"):
             if 'selected_sermon' in st.session_state:
                 del st.session_state.selected_sermon
-            st.session_state.current_page = 'library'
-            st.rerun()
+            st.switch_page(library)
 
     with col2:
         if st.button("🔄 Refresh"):

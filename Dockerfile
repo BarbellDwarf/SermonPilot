@@ -2,7 +2,7 @@
 # Multi-stage build for optimized container size
 
 # Stage 1: Base dependencies
-FROM nvidia/cuda:12.1-devel-ubuntu22.04 AS base
+FROM nvidia/cuda:12.9.1-devel-ubuntu22.04 AS base
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -62,8 +62,8 @@ RUN mkdir -p /app/processed_sermons \
 
 # Set proper permissions
 RUN chown -R sermonapp:sermonapp /app && \
-    chmod +x /app/start_server.sh && \
-    chmod +x /app/docker/start_production.sh 2>/dev/null || true
+    chmod +x /app/docker/start_production.sh && \
+    chmod +x /app/docker/wait_for_services.py 2>/dev/null || true
 
 # Switch to application user
 USER sermonapp
@@ -80,4 +80,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8501/ || exit 1
 
 # Default command
-CMD ["/app/start_server.sh"]
+CMD ["/app/docker/start_production.sh"]

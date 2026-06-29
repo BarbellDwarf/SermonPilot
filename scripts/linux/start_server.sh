@@ -12,8 +12,8 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-# Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get the directory where this script is run from, needs to be the root folder or the current working directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$SCRIPT_DIR"
 
 echo -e "${BLUE}🚀 SermonAudio AI Audio Processor - Server Startup${NC}"
@@ -115,4 +115,5 @@ streamlit run streamlit_app.py \
     --browser.gatherUsageStats false \
     --server.headless true \
     --server.fileWatcherType none \
+    --server.maxUploadSize 2000 \
     --theme.base light
