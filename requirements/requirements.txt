@@ -14,7 +14,7 @@ python-dotenv>=0.19.0
 
 # Audio processing core
 pydub>=0.25.1
-numpy>=1.26.2
+numpy>=1.26.2,<2.0.0
 scipy>=1.11.4
 soundfile>=0.12.1
 librosa>=0.10.1
@@ -27,6 +27,10 @@ torchvision>=0.16.1
 
 # AI Enhancement models (core)
 deepfilternet>=0.5.6
+
+# Transcription
+openai-whisper>=20231117
+faster-whisper>=1.0.0
 
 # Note: resemble-enhance has deepspeed dependency that may cause build issues
 # Install separately if needed:

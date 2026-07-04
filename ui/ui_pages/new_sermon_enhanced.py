@@ -257,8 +257,16 @@ def show_processing_configuration():
             )
 
         with col2:
+            transcription_backend = st.radio(
+                "Transcription Backend",
+                key="transcription_backend",
+                options=["whisper_local", "whisper_openai"],
+                index=0,
+                horizontal=True,
+                help="Local Whisper (runs on your machine) or OpenAI API (requires OPENAI_API_KEY)"
+            )
             whisper_model = st.selectbox(
-                "Whisper Model (if transcribing)",
+                "Whisper Model (if transcribing locally)",
                 key="whisper_model",
                 options=["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo"],
                 index=8,
@@ -502,6 +510,7 @@ def start_enhanced_processing():
             'skip_transcription': bool(st.session_state.get('skip_transcription', False)),
             'skip_ai_generation': not bool(st.session_state.get('generate_description', True)),
             'whisper_model': st.session_state.get('whisper_model', 'large'),
+            'transcription_backend': st.session_state.get('transcription_backend', 'whisper_local'),
             'enhancement_method': st.session_state.get('enhancement_method', 'deepfilternet'),
             'dry_run': bool(st.session_state.get('dry_run', False)),
             'generate_short_title': bool(st.session_state.get('generate_short_title', False)),

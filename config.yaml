@@ -1,0 +1,82 @@
+api_key: ${SERMONAUDIO_API_KEY}
+audio_amplify: true
+audio_enhancement_method: deepfilternet
+audio_gain_db: 0.5
+audio_noise_reduction: true
+audio_normalize: true
+audio_target_level_db: -22.0
+broadcaster_id: ${SERMONAUDIO_BROADCASTER_ID}
+debug: false
+dry_run: false
+embeddings:
+  fallback:
+  - model: all-MiniLM-L6-v2
+    provider: sentence_transformers
+  - openai:
+      api_key: ${OPENAI_API_KEY}
+      model: text-embedding-3-small
+    provider: openai
+  - provider: xai
+    xai:
+      api_key: ${XAI_API_KEY}
+      model: text-embedding-3-small
+  - anthropic:
+      api_key: ${ANTHROPIC_API_KEY}
+      model: claude-3-haiku-20240307
+    provider: anthropic
+  primary:
+    ollama:
+      auto_download: true
+      host: ${OLLAMA_HOST:-http://localhost:11434}
+      model: mxbai-embed-large:latest
+    provider: ollama
+hashtag_verification: true
+llm:
+  fallback:
+    enabled: true
+    ollama:
+      host: ${OLLAMA_HOST:-http://localhost:11434}
+      model: qwen3.5:cloud
+    openai:
+      api_key: ${OPENAI_API_KEY}
+      model: gpt-3.5-turbo
+    provider: ollama
+    xai:
+      api_key: ${XAI_API_KEY}
+      base_url: https://api.x.ai/v1
+      model: grok-3-mini
+  primary:
+    ollama:
+      host: ${OLLAMA_HOST:-http://localhost:11434}
+      model: deepseek-v4-flash:cloud
+    provider: ollama
+  validator:
+    enabled: true
+    ollama:
+      host: ${OLLAMA_HOST:-http://localhost:11434}
+      model: deepseek-v4-flash:cloud
+    provider: ollama
+output_directory: processed_sermons
+save_original_audio: true
+save_transcript: true
+transcription:
+  backend: whisper_openai
+  faster_whisper_local:
+    compute_type: float16
+    device: auto
+    language: en
+    model: base
+  whisper_local:
+    compute_type: float16
+    device: auto
+    language: en
+    model: base
+  whisper_openai:
+    api_key: ${OPENAI_API_KEY}
+    base_url: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+    model: whisper-1
+  whisper_openrouter:
+    api_key: ${OPENROUTER_API_KEY}
+    base_url: https://openrouter.ai/api/v1
+    model: openai/whisper-large-v3
+use_audacity: false
