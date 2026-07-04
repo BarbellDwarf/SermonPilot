@@ -21,6 +21,7 @@ import numpy as np
 import psutil
 import soundfile as sf
 import torch
+import torchaudio
 from pydub import AudioSegment
 
 # Import Q&A normalizer
@@ -290,8 +291,10 @@ class AudioProcessor:
         """
         logger.info(f"Saving audio to: {output_path}")
 
-        # Ensure audio is in the correct range
-        audio_data = np.clip(audio_data, -1.0, 1.0)
+        # Peak normalise to prevent any overshoot
+        peak = np.abs(audio_data).max()
+        if peak > 1.0:
+            audio_data = audio_data / peak
 
         # Save using soundfile
         sf.write(output_path, audio_data, sample_rate)
@@ -478,8 +481,9 @@ class AudioProcessor:
         """
         Process large audio files in chunks using the selected enhancement method.
 
-        Uses overlap-add between chunks to prevent boundary artifacts from
-        DeepFilterNet's recurrent state resets.
+        Uses overlap-add between chunks with cross-fade to prevent boundary artifacts.
+        Each chunk resets the DeepFilterNet hidden state so state/position
+        misalignment cannot accumulate.
 
         Args:
             audio_data: Input audio data
@@ -508,13 +512,12 @@ class AudioProcessor:
         overlap_samples = int(chunk_size * 0.1)  # 10% overlap for cross-fade
         hop_size = chunk_size - overlap_samples
 
-        # Warmup/cooldown samples to stabilize DeepFilterNet's recurrent state
-        warmup_samples = int(3.0 * sample_rate)  # 3 seconds of context
-
         # Calculate number of chunks
         num_chunks = (len(audio_data) + hop_size - 1) // hop_size
 
         # Process each chunk with overlap-add
+        # Each chunk resets DeepFilterNet hidden state for clean processing,
+        # then results are stitched with cross-fade overlap-add.
         output_audio = np.zeros(len(audio_data), dtype=np.float64)
         window_sum = np.zeros(len(audio_data), dtype=np.float64)
 
@@ -527,24 +530,17 @@ class AudioProcessor:
             end = min(start + chunk_size, len(audio_data))
             chunk = audio_data[start:end]
 
-            # Add warmup context from previous chunk to stabilize recurrent state
-            warmup_start = max(0, start - warmup_samples)
-            chunk_with_warmup = audio_data[warmup_start:end]
-            warmup_len = start - warmup_start
-
+            orig_len = end - start
             individual_chunk_start = time.time()
             logger.info(f"Processing chunk {i+1}/{num_chunks} with {self.enhancement_method}")
 
             try:
                 if self.enhancement_method == "deepfilternet":
-                    processed_with_warmup = self._process_chunk_deepfilternet(chunk_with_warmup)
+                    processed_chunk = self._process_chunk_deepfilternet(chunk)
                 elif self.enhancement_method == "resemble_enhance":
-                    processed_with_warmup = self._process_chunk_resemble_enhance(chunk_with_warmup, sample_rate)
+                    processed_chunk = self._process_chunk_resemble_enhance(chunk, sample_rate)
                 else:
-                    processed_with_warmup = chunk_with_warmup if chunk_with_warmup.ndim == 1 else chunk_with_warmup[0]
-
-                # Strip warmup from output, keeping only the actual chunk
-                processed_chunk = processed_with_warmup[warmup_len:]
+                    processed_chunk = chunk if chunk.ndim == 1 else chunk[0]
 
                 individual_chunk_end = time.time()
                 chunk_duration = (end - start) / sample_rate
@@ -556,7 +552,6 @@ class AudioProcessor:
                 )
 
                 # Ensure output length matches input chunk
-                orig_len = end - start
                 proc_len = len(processed_chunk)
                 if proc_len < orig_len:
                     logger.warning(f"Processed chunk shorter than input: input {orig_len}, output {proc_len}. Padding with zeros.")
@@ -567,7 +562,10 @@ class AudioProcessor:
                     logger.warning(f"Processed chunk longer than input: input {orig_len}, output {proc_len}. Trimming.")
                     processed_chunk = processed_chunk[:orig_len]
 
-                processed_chunk = np.clip(processed_chunk, -1.0, 1.0)
+                # Peak normalisation per chunk instead of hard clip
+                peak = np.abs(processed_chunk).max()
+                if peak > 1.0:
+                    processed_chunk = processed_chunk / peak
 
                 # Apply cross-fade in overlap region
                 chunk_window = np.ones(orig_len)
@@ -592,7 +590,10 @@ class AudioProcessor:
         # Normalize by window sum to avoid amplitude modulation
         window_sum = np.maximum(window_sum, 1e-10)
         output_audio = output_audio / window_sum
-        output_audio = np.clip(output_audio, -1.0, 1.0).astype(np.float32)
+        peak = np.abs(output_audio).max()
+        if peak > 1.0:
+            output_audio = output_audio / peak
+        output_audio = output_audio.astype(np.float32)
 
         # Monitor memory after chunking
         if torch.cuda.is_available():
@@ -619,11 +620,24 @@ class AudioProcessor:
         return output_audio
 
     def _process_chunk_deepfilternet(self, chunk: np.ndarray) -> np.ndarray:
-        """Process a single chunk with DeepFilterNet."""
+        """Process a single 48 kHz chunk with DeepFilterNet.
+
+        Assumes audio is already at 48 kHz. Resets model hidden state per chunk
+        and applies peak normalisation instead of hard-clipping.
+        """
         if chunk.dtype != np.float32:
             chunk = chunk.astype(np.float32)
         if chunk.ndim == 1:
             chunk = chunk[np.newaxis, :]
+
+        # Reset model hidden state so each chunk starts fresh
+        device = next(self.df_model.parameters()).device
+        bs = 1
+        if hasattr(self.df_model, "reset_h0"):
+            self.df_model.reset_h0(batch_size=bs, device=device)
+        elif hasattr(self.df_model, "df") and hasattr(self.df_model.df, "reset_h0"):
+            self.df_model.df.reset_h0(batch_size=bs, device=device)
+
         chunk_tensor = torch.from_numpy(chunk).contiguous()
         processed_tensor = enhance(self.df_model, self.df_state, chunk_tensor)
         if isinstance(processed_tensor, torch.Tensor):
@@ -632,6 +646,12 @@ class AudioProcessor:
             processed_chunk = processed_tensor
         if processed_chunk.ndim == 2 and processed_chunk.shape[0] == 1:
             processed_chunk = processed_chunk[0]
+
+        # Peak normalisation instead of hard clipping
+        peak = np.abs(processed_chunk).max()
+        if peak > 1.0:
+            processed_chunk = processed_chunk / peak
+
         return processed_chunk
 
     def _process_chunk_resemble_enhance(self, chunk: np.ndarray, sample_rate: int) -> np.ndarray:
@@ -961,11 +981,61 @@ class AudioProcessor:
             logger.warning("Falling back to custom noise reduction")
             return self.custom_noise_reduction(audio_data, sample_rate, noise_reduction_amount=0.7)
 
-    def _apply_deepfilternet(self, audio_data: np.ndarray, sample_rate: int, size_threshold: int = None) -> np.ndarray:
-        """Apply DeepFilterNet noise reduction"""
-        start_time = time.time()
+    def _pre_process_audio(self, audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
+        """Pre-process audio before DeepFilterNet: noise gate, gentle limiter.
 
-        logger.info(f"Processing audio with DeepFilterNet (length: {len(audio_data)} samples)")
+        Mirrors the Audacity "Sermon Edit" macro pattern minimally — reduces
+        low-level noise and tames hard peaks without boosting overall level.
+        DeepFilterNet handles noise suppression; over-boosting here causes staticky
+        peaks.
+        """
+        data = audio_data.astype(np.float64)
+
+        rms = np.sqrt(np.mean(data ** 2))
+        if rms == 0:
+            return audio_data
+
+        # 1 — Noise gate: reduce quiet sections by 12 dB
+        gate_threshold = rms * 0.08
+        gate_mask = np.abs(data) < gate_threshold
+        data[gate_mask] *= 0.25
+
+        # 2 — Gentle peak reduction: only clamp extreme outliers above -3 dBFS
+        limit = 10 ** (-3.0 / 20.0)
+        peak = np.abs(data).max()
+        if peak > limit:
+            data = data * (limit / peak)
+
+        return data.astype(np.float32)
+
+    def _apply_deepfilternet(self, audio_data: np.ndarray, sample_rate: int, size_threshold: int = None) -> np.ndarray:
+        """Apply DeepFilterNet noise reduction.
+
+        Resamples the entire audio to 48 kHz upfront (DeepFilterNet's native
+        rate), processes at that rate, then resamples back — matching the
+        clean-audio.py approach.
+        """
+        start_time = time.time()
+        original_sample_rate = sample_rate
+
+        logger.info(f"Processing audio with DeepFilterNet (length: {len(audio_data)} samples, sr={sample_rate} Hz)")
+
+        # Pre-process: noise gate, gentle limiting
+        logger.info("Pre-processing audio before DeepFilterNet (noise gate, limiting)")
+        audio_data = self._pre_process_audio(audio_data, sample_rate)
+
+        # Resample entire audio to 48 kHz — DeepFilterNet's native rate
+        if sample_rate != 48000:
+            logger.info(f"Resampling from {sample_rate} Hz to 48000 Hz for DeepFilterNet")
+            audio_t = torch.from_numpy(audio_data.astype(np.float32)).contiguous()
+            if audio_t.ndim == 1:
+                audio_t = audio_t.unsqueeze(0)
+            audio_t = torchaudio.functional.resample(audio_t, sample_rate, 48000)
+            audio_data = audio_t.squeeze(0).numpy() if audio_t.shape[0] == 1 else audio_t.numpy()
+            if audio_data.ndim == 1 and audio_data.shape[0] == 1:
+                audio_data = audio_data[0]
+            sample_rate = 48000
+            logger.info(f"Resampled to {sample_rate} Hz, length: {len(audio_data)} samples")
 
         try:
             # Use dynamic chunk size based on available memory
@@ -984,55 +1054,65 @@ class AudioProcessor:
                 total_time = chunk_end_time - start_time
                 chunk_time = chunk_end_time - chunk_start_time
                 logger.info(f"⏱️  CHUNKED PROCESSING: Total time {total_time:.1f}s, Chunking overhead: {total_time - chunk_time:.1f}s")
-                return result
-            # Process normally for smaller files
-            logger.info("Using DeepFilterNet for noise reduction")
-            single_start_time = time.time()
-
-            was_1d = audio_data.ndim == 1
-            if was_1d:
-                audio_data_2d = audio_data[np.newaxis, :]
             else:
-                audio_data_2d = audio_data
-            audio_tensor = torch.from_numpy(audio_data_2d).contiguous()
-            processed_tensor = enhance(self.df_model, self.df_state, audio_tensor)
-
-            if isinstance(processed_tensor, torch.Tensor):
-                reduced_noise = processed_tensor.cpu().numpy()
-            else:
-                reduced_noise = processed_tensor
-            if reduced_noise.ndim == 2 and reduced_noise.shape[0] == 1:
-                reduced_noise = reduced_noise[0]
-
-            single_end_time = time.time()
-            total_time = single_end_time - start_time
-            processing_time = single_end_time - single_start_time
-            logger.info(f"⏱️  SINGLE PROCESSING: Total time {total_time:.1f}s, Pure processing: {processing_time:.1f}s")
-            # Ensure output length matches input
-            input_len = audio_data.shape[-1]
-            if reduced_noise.shape[0] != input_len:
-                logger.warning(f"DeepFilterNet output length {reduced_noise.shape[0]} does not match input {input_len}. Padding or trimming as needed.")
-                if reduced_noise.shape[0] < input_len:
-                    padded = np.zeros(input_len, dtype=reduced_noise.dtype)
-                    padded[:reduced_noise.shape[0]] = reduced_noise
-                    reduced_noise = padded
+                # Process normally for smaller files
+                logger.info("Using DeepFilterNet for noise reduction")
+                was_1d = audio_data.ndim == 1
+                if was_1d:
+                    audio_data_2d = audio_data[np.newaxis, :]
                 else:
-                    reduced_noise = reduced_noise[:input_len]
+                    audio_data_2d = audio_data
+                # Reset h0 for single-pass processing
+                device = next(self.df_model.parameters()).device
+                if hasattr(self.df_model, "reset_h0"):
+                    self.df_model.reset_h0(batch_size=1, device=device)
+                elif hasattr(self.df_model, "df") and hasattr(self.df_model.df, "reset_h0"):
+                    self.df_model.df.reset_h0(batch_size=1, device=device)
+                audio_tensor = torch.from_numpy(audio_data_2d).contiguous()
+                processed_tensor = enhance(self.df_model, self.df_state, audio_tensor)
+                if isinstance(processed_tensor, torch.Tensor):
+                    result = processed_tensor.cpu().numpy()
+                else:
+                    result = processed_tensor
+                if result.ndim == 2 and result.shape[0] == 1:
+                    result = result[0]
+
+            # Resample result back to original sample rate
+            if original_sample_rate != 48000:
+                logger.info(f"Resampling result from 48000 Hz back to {original_sample_rate} Hz")
+                res_t = torch.from_numpy(result.astype(np.float32)).contiguous()
+                if res_t.ndim == 1:
+                    res_t = res_t.unsqueeze(0)
+                res_t = torchaudio.functional.resample(res_t, 48000, original_sample_rate)
+                result = res_t.squeeze(0).numpy() if res_t.shape[0] == 1 else res_t.numpy()
+                if result.ndim == 1 and result.shape[0] == 1:
+                    result = result[0]
+
+            # Peak normalisation
+            peak = np.abs(result).max()
+            if peak > 1.0:
+                result = result / peak
             logger.info("DeepFilterNet noise reduction completed successfully")
-            return reduced_noise
+            return result
         except Exception as e:
             logger.error(f"DeepFilterNet processing failed: {e}")
-            # Retry with chunking if it failed (e.g., OOM on full audio)
+            audio_for_fallback = audio_data
+            if sample_rate != original_sample_rate:
+                res_t = torch.from_numpy(audio_data.astype(np.float32)).contiguous()
+                if res_t.ndim == 1:
+                    res_t = res_t.unsqueeze(0)
+                res_t = torchaudio.functional.resample(res_t, 48000, original_sample_rate)
+                audio_for_fallback = res_t.squeeze(0).numpy() if res_t.shape[0] == 1 else res_t.numpy()
             try:
                 logger.info("Retrying DeepFilterNet with chunked processing")
                 chunk_seconds = 30
                 return self.process_large_audio_in_chunks(
-                    audio_data, sample_rate, chunk_size_seconds=chunk_seconds
+                    audio_for_fallback, original_sample_rate, chunk_size_seconds=chunk_seconds
                 )
             except Exception as e2:
                 logger.error(f"DeepFilterNet chunked processing also failed: {e2}")
                 logger.warning("Falling back to custom noise reduction")
-                return self.custom_noise_reduction(audio_data if audio_data.ndim == 1 else audio_data[0], sample_rate, noise_reduction_amount=0.7)
+                return self.custom_noise_reduction(audio_for_fallback if audio_for_fallback.ndim == 1 else audio_for_fallback[0], original_sample_rate, noise_reduction_amount=0.7)
 
     def amplify_audio(self, audio_data: np.ndarray, gain_db: float = 3.0) -> np.ndarray:
         """
@@ -1053,8 +1133,10 @@ class AudioProcessor:
         # Apply gain
         amplified = audio_data * gain_linear
 
-        # Prevent clipping
-        amplified = np.clip(amplified, -1.0, 1.0)
+        # Peak normalise instead of hard clip
+        peak = np.abs(amplified).max()
+        if peak > 1.0:
+            amplified = amplified / peak
 
         return amplified
 
@@ -1175,20 +1257,19 @@ class AudioProcessor:
             # Step 2: Apply noise reduction if requested
             if noise_reduction:
                 audio_data = self.apply_noise_reduction(audio_data, sample_rate)
-            # Clip after noise reduction
-            audio_data = np.clip(audio_data, -1.0, 1.0)
+            # Peak normalise instead of hard clip after noise reduction
+            peak = np.abs(audio_data).max()
+            if peak > 1.0:
+                audio_data = audio_data / peak
 
             # Step 3: Apply amplification or normalization, not both
             if normalize:
                 audio_data = self.normalize_audio(audio_data, target_level_db)
             elif amplify:
                 audio_data = self.amplify_audio(audio_data, gain_db)
-            # Clip after gain/normalization
-            audio_data = np.clip(audio_data, -1.0, 1.0)
 
-            # Step 4: Final peak normalization and hard limiter before saving
+            # Step 4: Final peak normalization before saving
             audio_data = peak_normalize(audio_data, peak_db=-1.0)
-            audio_data = np.clip(audio_data, -0.98, 0.98)
 
             # Step 5: Save processed audio
             self.save_audio(audio_data, sample_rate, output_path)

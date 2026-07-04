@@ -172,10 +172,12 @@ def _transcribe_openrouter(audio_path: str, api_key: str, base_url: str, model: 
         files["file"].close()
 
 
-def _transcribe_openai(audio_path: str, api_key: str, base_url: str, model: str) -> str:
+def _transcribe_openai(audio_path: str, api_key: str, base_url: str, model: str,
+                       progress_callback=None) -> str:
     """Transcribe using OpenAI's Whisper endpoint.
 
     If base_url is not provided, defaults to OpenAI's official endpoint.
+    Supports SSE streaming for progress reporting when the endpoint supports it.
     """
     if not api_key:
         logger.error("OpenAI API key missing for transcription")
@@ -187,9 +189,31 @@ def _transcribe_openai(audio_path: str, api_key: str, base_url: str, model: str)
     data = {"model": model}
     try:
         logger.info("Calling OpenAI Whisper at %s", url)
-        resp = requests.post(url, headers=headers, data=data, files=files, timeout=120)
+        resp = requests.post(url, headers=headers, data=data, files=files, stream=True, timeout=600)
         resp.raise_for_status()
-        transcript = resp.json().get("text", "").strip()
+        content_type = resp.headers.get("content-type", "")
+        if "text/event-stream" in content_type:
+            transcript_parts = []
+            for line in resp.iter_lines(decode_unicode=True):
+                if not line or not line.startswith("data: "):
+                    continue
+                payload = line[6:]
+                if payload == "[DONE]":
+                    break
+                try:
+                    import json
+                    chunk = json.loads(payload)
+                    text = chunk.get("text", "")
+                    if text:
+                        transcript_parts.append(text)
+                    if progress_callback:
+                        total_len = sum(len(p) for p in transcript_parts)
+                        progress_callback(min(total_len / 50000, 0.95), f"Transcribing... ({total_len} chars)")
+                except json.JSONDecodeError:
+                    continue
+            transcript = "".join(transcript_parts).strip()
+        else:
+            transcript = resp.json().get("text", "").strip()
         logger.info("OpenAI transcription succeeded (%d characters)", len(transcript))
         return transcript
     except Exception as e:
@@ -200,7 +224,7 @@ def _transcribe_openai(audio_path: str, api_key: str, base_url: str, model: str)
 
 
 def transcribe(audio_path: str, model_size: str = "base", config: dict[str, Any] = None,
-                backend_override: str | None = None) -> str:
+                backend_override: str | None = None, progress_callback=None) -> str:
     """High‑level transcription dispatcher.
 
     Args:
@@ -238,7 +262,7 @@ def transcribe(audio_path: str, model_size: str = "base", config: dict[str, Any]
         api_key = os.getenv("OPENAI_API_KEY", oi_cfg.get("api_key", ""))
         base_url = oi_cfg.get("base_url", "https://api.openai.com/v1")
         model = oi_cfg.get("model", "whisper-1")
-        return _transcribe_openai(audio_path, api_key, base_url, model)
+        return _transcribe_openai(audio_path, api_key, base_url, model, progress_callback=progress_callback)
     else:
         logger.warning("Unknown transcription backend '%s', skipping transcription", backend)
         return ""

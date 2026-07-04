@@ -116,8 +116,8 @@ def _get_transcript(sermon):
     return transcript
 
 
-def generate_ai_content(sermon):
-    """Generate AI description and hashtags from sermon transcript"""
+def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
+    """Generate AI description and/or hashtags from sermon transcript"""
     sermon_id = sermon.get('id') or sermon.get('sermon_id')
     transcript = ''
 
@@ -153,6 +153,10 @@ def generate_ai_content(sermon):
                 st.error("⚠️ No transcript available locally or on SermonAudio. Use the New Sermon page to process this sermon with transcription.")
                 return
 
+    if not gen_description and not gen_hashtags:
+        st.warning("Select at least one item to generate.")
+        return
+
     if len(transcript) < 50:
         st.error(f"⚠️ Transcript too short ({len(transcript)} chars). Need at least 50 characters to generate meaningful content.")
         return
@@ -171,82 +175,98 @@ def generate_ai_content(sermon):
 
         llm = st.session_state.llm_manager
 
-        with st.spinner("🤖 Generating description..."):
-            event_type = sermon.get('event_type', '')
-            speaker_name = sermon.get('speaker', '')
+        description = None
+        hashtags = None
 
-            # Build description prompt (mirrors sermon_updater.generate_summary)
-            is_class = any(c.lower() in (event_type or '').lower() for c in [
-                'Sunday School', 'Midweek Service', 'Bible Study', 'Teaching', 'Class',
-                'Devotional', 'Conference', 'Camp Meeting', 'Children', 'Youth', 'Question & Answer'
-            ])
-            role_desc = 'Bible class summarization assistant' if is_class else 'sermon summarization assistant'
-            body_desc = 'Sunday School, Midweek, or class/lecture event' if is_class else 'sermon'
+        if gen_description:
+            with st.spinner("🤖 Generating description..."):
+                event_type = sermon.get('event_type', '')
+                speaker_name = sermon.get('speaker', '')
 
-            speaker_instruction = (
-                f"- The speaker's name is {speaker_name}\n"
-                if speaker_name
-                else "- Identify the primary speaker from the transcript\n"
-            )
+                # Build description prompt (mirrors sermon_updater.generate_summary)
+                is_class = any(c.lower() in (event_type or '').lower() for c in [
+                    'Sunday School', 'Midweek Service', 'Bible Study', 'Teaching', 'Class',
+                    'Devotional', 'Conference', 'Camp Meeting', 'Children', 'Youth', 'Question & Answer'
+                ])
+                role_desc = 'Bible class summarization assistant' if is_class else 'sermon summarization assistant'
+                body_desc = 'Sunday School, Midweek, or class/lecture event' if is_class else 'sermon'
 
-            desc_prompt = (
-                f"You are a {role_desc}. Read the following {body_desc} transcript and write a single, "
-                f"concise description of the main message and application. Focus on what "
-                f"the speaker wanted the audience to understand, believe, or do. Avoid generic statements; "
-                f"emphasize unique focus.\n\nTranscript:\n{transcript}\n\nGuidelines:\n"
-                f"- Maximum 1600 characters (STRICT LIMIT - API will reject longer text)\n"
-                f"- One paragraph format\n"
-                + speaker_instruction +
-                "- No intro/closing words\n- No markdown or bullets\n"
-                "- Do not prefix with 'Summary:'\n- If incomplete, infer likely main message\n"
-                "- Keep under 1600 characters or the upload will fail\n"
-                "- Use the actual speaker name, not placeholder text\n"
-                "- IMPORTANT: Return ONLY the final summary paragraph. Do not include any reasoning, "
-                "thinking process, explanations, or commentary. Start directly with the summary content."
-            )
+                speaker_instruction = (
+                    f"- The speaker's name is {speaker_name}\n"
+                    if speaker_name
+                    else "- Identify the primary speaker from the transcript\n"
+                )
 
-            description = llm.chat([{'role': 'user', 'content': desc_prompt}])
+                desc_prompt = (
+                    f"You are a {role_desc}. Read the following {body_desc} transcript and write a single, "
+                    f"concise description of the main message and application. Focus on what "
+                    f"the speaker wanted the audience to understand, believe, or do. Avoid generic statements; "
+                    f"emphasize unique focus.\n\nTranscript:\n{transcript}\n\nGuidelines:\n"
+                    f"- Maximum 1600 characters (STRICT LIMIT - API will reject longer text)\n"
+                    f"- One paragraph format\n"
+                    + speaker_instruction +
+                    "- No intro/closing words\n- No markdown or bullets\n"
+                    "- Do not prefix with 'Summary:'\n- If incomplete, infer likely main message\n"
+                    "- Keep under 1600 characters or the upload will fail\n"
+                    "- Use the actual speaker name, not placeholder text\n"
+                    "- IMPORTANT: Return ONLY the final summary paragraph. Do not include any reasoning, "
+                    "thinking process, explanations, or commentary. Start directly with the summary content."
+                )
 
-            description = re.sub(r'^(Okay|Alright|Let me|I\'ll|I need to|Here[^:]*:|Sure[^:]*:).*?\n', '', description, flags=re.IGNORECASE | re.MULTILINE)
-            description = description.strip()
+                description = llm.chat([{'role': 'user', 'content': desc_prompt}])
 
-            if len(description) > 1600:
-                truncated = description[:1600]
-                last_space = truncated.rfind(' ')
-                description = truncated[:last_space] if last_space > 1500 else truncated
+                description = re.sub(r'^(Okay|Alright|Let me|I\'ll|I need to|Here[^:]*:|Sure[^:]*:).*?\n', '', description, flags=re.IGNORECASE | re.MULTILINE)
+                description = description.strip()
 
-        with st.spinner("🏷️ Generating hashtags..."):
-            hashtag_prompt = (
-                "Generate 5-10 highly relevant, search-friendly hashtags (<=150 chars total) for this "
-                "sermon. Combine multi-word phrases (#ChristianLiving). Avoid duplicates & generic "
-                "(#sermon #church) unless uniquely relevant. Output ONLY space-delimited hashtags.\n\n"
-                f"Text:\n{transcript[:3000]}\n\nHashtags:"
-            )
-            hashtags_raw = llm.chat([{'role': 'user', 'content': hashtag_prompt}])
-            hashtags = ' '.join(hashtags_raw.replace(',', ' ').split())[:150]
+                if len(description) > 1600:
+                    truncated = description[:1600]
+                    last_space = truncated.rfind(' ')
+                    description = truncated[:last_space] if last_space > 1500 else truncated
+
+        if gen_hashtags:
+            with st.spinner("🏷️ Generating hashtags..."):
+                hashtag_prompt = (
+                    "Generate 5-10 highly relevant, search-friendly hashtags (<=150 chars total) for this "
+                    "sermon. Combine multi-word phrases (#ChristianLiving). Avoid duplicates & generic "
+                    "(#sermon #church) unless uniquely relevant. Output ONLY space-delimited hashtags.\n\n"
+                    f"Text:\n{transcript[:3000]}\n\nHashtags:"
+                )
+                hashtags_raw = llm.chat([{'role': 'user', 'content': hashtag_prompt}])
+                hashtags = ' '.join(hashtags_raw.replace(',', ' ').split())[:150]
 
         # Save to database
         with st.spinner("💾 Saving to database..."):
             from database import SermonRepository, get_db
             repo = SermonRepository()
 
-            # Update sermon description via existing method
-            repo.update_sermon_metadata(sermon_id, {
-                'description': description,
-            })
+            update_data = {}
+            if description:
+                update_data['description'] = description
+            if hashtags:
+                update_data['hashtags'] = hashtags
+            if update_data:
+                repo.update_sermon_metadata(sermon_id, update_data)
 
-            # Update sermon_content table for hashtags and transcript
+            # Update sermon_content table
             db = get_db()
             with db.get_connection() as conn:
+                existing = conn.execute(
+                    "SELECT transcript_text, description, hashtags FROM sermon_content WHERE sermon_id = ?",
+                    (sermon_id,)
+                ).fetchone()
+                cur_transcript = existing['transcript_text'] if existing else transcript
+                cur_description = description if description else (existing['description'] if existing else '')
+                cur_hashtags = hashtags if hashtags else (existing['hashtags'] if existing else '')
+
                 conn.execute("""
                     INSERT OR REPLACE INTO sermon_content
                     (sermon_id, transcript_text, description, hashtags, updated_at)
                     VALUES (?, ?, ?, ?, ?)
                 """, (
                     sermon_id,
-                    transcript,
-                    description,
-                    hashtags,
+                    cur_transcript,
+                    cur_description,
+                    cur_hashtags,
                     str(datetime.now()),
                 ))
                 # Update FTS index
@@ -257,10 +277,15 @@ def generate_ai_content(sermon):
                     INSERT INTO sermon_search
                     (sermon_id, title, speaker, transcript_text, description, hashtags)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (sermon_id, title, speaker, transcript, description, hashtags))
+                """, (sermon_id, title, speaker, cur_transcript, cur_description, cur_hashtags))
                 conn.commit()
 
-            st.success("✅ AI description and hashtags generated and saved!")
+            parts = []
+            if description:
+                parts.append("description")
+            if hashtags:
+                parts.append("hashtags")
+            st.success(f"✅ AI {' and '.join(parts)} generated and saved!")
             # Refresh session state with updated data
             st.session_state.selected_sermon = repo.get_sermon(sermon_id)
 
@@ -761,11 +786,20 @@ def display_sermon_details(sermon):
             st.session_state.editing_sermon = True
             st.rerun()
     with col4:
+        gen_key = f"gen_show_{sermon['id']}"
         if st.button("🤖 Generate", key=f"generate_{sermon['id']}",
-                    help="Generate AI description and hashtags from transcript",
+                    help="Generate AI description and/or hashtags from transcript",
                     width='stretch'):
-            generate_ai_content(sermon)
+            st.session_state[gen_key] = True
             st.rerun()
+        if st.session_state.get(gen_key):
+            with st.popover("Select what to generate"):
+                gen_desc = st.checkbox("Description", value=True, key=f"gen_desc_{sermon['id']}")
+                gen_tags = st.checkbox("Hashtags", value=True, key=f"gen_tags_{sermon['id']}")
+                if st.button("Generate", type="primary", key=f"gen_go_{sermon['id']}"):
+                    generate_ai_content(sermon, gen_description=gen_desc, gen_hashtags=gen_tags)
+                    st.session_state[gen_key] = False
+                    st.rerun()
     with col5:
         push_help = "Publish dry run to SermonAudio" if sermon.get('status') == 'draft' else "Update metadata on SermonAudio"
         if st.button("📤 Push", key=f"push_{sermon['id']}",
@@ -1015,24 +1049,45 @@ def display_sermon_details(sermon):
             rp_transcript = st.checkbox("Transcription", value=True, key=f"rp_trans_{sermon['id']}")
             rp_ai = st.checkbox("AI description & hashtags", value=True, key=f"rp_ai_{sermon['id']}")
             rp_dry_run = st.checkbox("Dry run (no upload)", value=False, key=f"rp_dry_{sermon['id']}")
+            rp_backend = st.selectbox(
+                "Transcription Backend",
+                options=["whisper_local", "whisper_openai", "whisper_openrouter"],
+                index=1,
+                key=f"rp_backend_{sermon['id']}",
+                help="Local Whisper (runs on your machine) or OpenAI/OpenRouter API"
+            )
             rp_col1, rp_col2 = st.columns(2)
             with rp_col1:
                 if st.button("▶️ Start Re-processing", type="primary", key=f"rp_start_{sermon['id']}"):
                     try:
                         from job_queue import JobType, get_job_queue
+                        from database import SermonRepository
                         job_queue = get_job_queue()
+                        repo = SermonRepository()
+                        full_sermon = repo.get_sermon(sermon['id'])
+                        file_paths = (full_sermon or {}).get('file_paths', {})
+                        audio_path = (
+                            file_paths.get('original_audio')
+                            or file_paths.get('enhanced_audio')
+                            or file_paths.get('audio')
+                            or ''
+                        )
                         job_id = job_queue.add_job(
-                            job_type=JobType.SERMON_PROCESSING,
+                            job_type=JobType.BATCH_PROCESSING,
                             title=f"Re-process: {sermon.get('title', sermon['id'])}",
                             description=f"Re-processing sermon {sermon['id']}",
                             parameters={
                                 'sermon_ids': [sermon['id']],
                                 'config': st.session_state.get('config', {}),
+                                'actions': {
+                                    'enhance_audio': rp_audio,
+                                    'generate_description': rp_ai,
+                                    'generate_hashtags': rp_ai,
+                                },
                                 'form_data': {
-                                    'skip_audio': not rp_audio,
-                                    'skip_transcription': not rp_transcript,
-                                    'skip_ai_generation': not rp_ai,
                                     'dry_run': rp_dry_run,
+                                    'transcription_backend': rp_backend,
+                                    'uploaded_file_path': audio_path,
                                 }
                             },
                             priority=5
