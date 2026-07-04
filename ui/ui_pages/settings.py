@@ -30,15 +30,14 @@ def show_settings():
     """Main settings management interface"""
     st.markdown('<div class="main-header">⚙️ Settings</div>', unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "🔧 General",
         "🤖 LLM Providers",
         "🧠 Embeddings",
         "🎵 Audio Processing",
+        "📝 Transcription",
         "✅ Validation",
-        "📥 Import Sermons",
-        "💾 Backup & Restore",
-        "🗄️ Config Management"
+        "🗄️ Advanced"
     ])
 
     with tab1:
@@ -54,16 +53,13 @@ def show_settings():
         show_audio_settings()
 
     with tab5:
-        show_validation_settings()
+        show_transcription_settings()
 
     with tab6:
-        show_import_sermons()
+        show_validation_settings()
 
     with tab7:
-        show_backup_restore()
-
-    with tab8:
-        show_config_management_settings()
+        show_advanced_settings()
 
 def show_general_settings():
     """General configuration settings"""
@@ -1163,6 +1159,157 @@ def show_audio_settings():
         save_audio_settings(enhancement_method, use_audacity, audio_noise_reduction,
                           audio_amplify, audio_normalize, audio_gain_db, target_level_db)
 
+def show_transcription_settings():
+    """Transcription configuration"""
+    st.markdown("### 📝 Transcription Configuration")
+
+    config = st.session_state.get('config') or {}
+    transcription_cfg = config.get('transcription', {})
+
+    st.markdown("#### 🔧 Backend")
+    backend = st.selectbox(
+        "Transcription Backend",
+        options=["whisper_local", "faster_whisper_local", "whisper_openai", "whisper_openrouter"],
+        index=["whisper_local", "faster_whisper_local", "whisper_openai", "whisper_openrouter"].index(
+            transcription_cfg.get('backend', 'faster_whisper_local')
+        ),
+        help="Local Whisper (runs on your machine) or API-based transcription"
+    )
+
+    if backend in ("whisper_local", "faster_whisper_local"):
+        local_cfg = transcription_cfg.get(backend, {})
+
+        st.markdown("#### 💻 Local Whisper Settings")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            local_model = st.selectbox(
+                "Model",
+                options=["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo"],
+                index=["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo"].index(
+                    local_cfg.get('model', 'base')
+                ) if local_cfg.get('model', 'base') in ["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo"] else 2,
+                help="Model size. Larger = better accuracy but slower"
+            )
+            device = st.selectbox(
+                "Device",
+                options=["auto", "cpu", "cuda"],
+                index=["auto", "cpu", "cuda"].index(local_cfg.get('device', 'auto')),
+                help="Compute device"
+            )
+
+        with col2:
+            compute_type = st.selectbox(
+                "Compute Type",
+                options=["float16", "float32", "int8_float16", "int8"],
+                index=["float16", "float32", "int8_float16", "int8"].index(local_cfg.get('compute_type', 'float16')),
+                help="Floating point precision for the model"
+            )
+            language = st.text_input(
+                "Language",
+                value=local_cfg.get('language', 'en'),
+                help="Language code (e.g. 'en' for English)"
+            )
+
+        if st.button("💾 Save Local Transcription Settings", type="primary"):
+            save_transcription_settings(backend, local_model, device, compute_type, language, None, None, None)
+
+    elif backend == "whisper_openai":
+        openai_cfg = transcription_cfg.get('whisper_openai', {})
+
+        st.markdown("#### ☁️ OpenAI API Settings")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            api_key = st.text_input(
+                "API Key",
+                value=openai_cfg.get('api_key', ''),
+                type="password",
+                help="OpenAI API key (or set OPENAI_API_KEY env var)"
+            )
+            base_url = st.text_input(
+                "Base URL",
+                value=openai_cfg.get('base_url', 'https://api.openai.com/v1'),
+                help="OpenAI-compatible API endpoint"
+            )
+
+        with col2:
+            model = st.text_input(
+                "Model",
+                value=openai_cfg.get('model', 'whisper-1'),
+                help="API model name (e.g. whisper-1)"
+            )
+
+        if st.button("💾 Save OpenAI Transcription Settings", type="primary"):
+            save_transcription_settings(backend, None, None, None, None, api_key, base_url, model)
+
+    elif backend == "whisper_openrouter":
+        or_cfg = transcription_cfg.get('whisper_openrouter', {})
+
+        st.markdown("#### 🌐 OpenRouter API Settings")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            api_key = st.text_input(
+                "API Key",
+                value=or_cfg.get('api_key', ''),
+                type="password",
+                help="OpenRouter API key (or set OPENROUTER_API_KEY env var)"
+            )
+            base_url = st.text_input(
+                "Base URL",
+                value=or_cfg.get('base_url', 'https://openrouter.ai/api/v1'),
+                help="OpenRouter API endpoint"
+            )
+
+        with col2:
+            model = st.text_input(
+                "Model",
+                value=or_cfg.get('model', 'openai/whisper-large-v3'),
+                help="API model name"
+            )
+
+        if st.button("💾 Save OpenRouter Transcription Settings", type="primary"):
+            save_transcription_settings(backend, None, None, None, None, api_key, base_url, model)
+
+def save_transcription_settings(backend, local_model, device, compute_type, language, api_key, base_url, model):
+    """Save transcription settings to configuration"""
+    if not st.session_state.get('config'):
+        st.session_state.config = {}
+    config = st.session_state.config
+    if 'transcription' not in config:
+        config['transcription'] = {}
+
+    config['transcription']['backend'] = backend
+
+    if backend in ("whisper_local", "faster_whisper_local"):
+        if backend not in config['transcription']:
+            config['transcription'][backend] = {}
+        config['transcription'][backend]['model'] = local_model
+        config['transcription'][backend]['device'] = device
+        config['transcription'][backend]['compute_type'] = compute_type
+        config['transcription'][backend]['language'] = language
+
+    elif backend == "whisper_openai":
+        if 'whisper_openai' not in config['transcription']:
+            config['transcription']['whisper_openai'] = {}
+        if api_key:
+            config['transcription']['whisper_openai']['api_key'] = api_key
+        config['transcription']['whisper_openai']['base_url'] = base_url
+        config['transcription']['whisper_openai']['model'] = model
+
+    elif backend == "whisper_openrouter":
+        if 'whisper_openrouter' not in config['transcription']:
+            config['transcription']['whisper_openrouter'] = {}
+        if api_key:
+            config['transcription']['whisper_openrouter']['api_key'] = api_key
+        config['transcription']['whisper_openrouter']['base_url'] = base_url
+        config['transcription']['whisper_openrouter']['model'] = model
+
+    from config_utils import save_config_to_file as _save_config
+    if _save_config(config):
+        st.success("✅ Transcription settings saved and configuration reloaded!")
+
 def show_validation_settings():
     """Validation criteria configuration"""
     st.markdown("### ✅ Validation Configuration")
@@ -1259,246 +1406,37 @@ def show_validation_settings():
     if st.button("💾 Save Validation Settings", type="primary"):
         save_validation_settings()
 
-def show_import_sermons():
-    """Import sermons from processed_sermons folder into database"""
-    st.markdown("### 📥 Import Existing Sermons")
-    st.markdown("Scan the processed_sermons folder and import any missing sermons into the database.")
-
-    try:
-        # Import the sermon importer
-        sys.path.insert(0, str(Path(__file__).parent))
-        from sermon_importer import get_import_status, import_missing_sermons, import_single_sermon
-
-        # Get current import status
-        status = get_import_status()
-
-        # Display status
-        st.markdown("#### 📊 Current Status")
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.metric("Sermons in Folder", status['total_in_folder'])
-
-        with col2:
-            st.metric("In Database", status['in_database'])
-
-        with col3:
-            st.metric("Missing from Database", status['missing_from_database'])
-
-        st.markdown(f"**Folder Path:** `{status['folder_path']}`")
-
-        # Show missing sermons if any
-        if status['missing_sermon_ids']:
-            st.markdown("#### 🔍 Missing Sermons (Preview)")
-
-            missing_count = status['missing_from_database']
-            preview_sermons = status['missing_sermon_ids']
-
-            if missing_count > 10:
-                st.info(f"Showing first 10 of {missing_count} missing sermons:")
-
-            for sermon_id in preview_sermons:
-                col1, col2 = st.columns([3, 1])
-
-                with col1:
-                    st.write(f"📄 Sermon ID: `{sermon_id}`")
-
-                with col2:
-                    if st.button("Import", key=f"import_single_{sermon_id}"):
-                        with st.spinner(f"Importing sermon {sermon_id}..."):
-                            success = import_single_sermon(sermon_id)
-                            if success:
-                                st.success(f"✅ Successfully imported sermon {sermon_id}")
-                                st.rerun()
-                            else:
-                                st.error(f"❌ Failed to import sermon {sermon_id}")
-
-            st.divider()
-
-            # Bulk import options
-            st.markdown("#### 🚀 Bulk Import")
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                # Regular import for missing sermons
-                if st.button("📥 Import All Missing Sermons", type="primary"):
-                    if status['missing_from_database'] > 0:
-                        # Use job queue for background import
-                        try:
-                            from job_queue import JobType, get_job_queue
-
-                            job_queue = get_job_queue()
-                            config = st.session_state.get('config', {})
-                            processed_sermons_dir = config.get('output_directory', 'processed_sermons')
-
-                            job_id = job_queue.add_job(
-                                job_type=JobType.SERMON_IMPORT,
-                                title="Bulk Sermon Import",
-                                description=f"Importing {status['missing_from_database']} missing sermons from processed_sermons folder",
-                                parameters={
-                                    'processed_sermons_dir': processed_sermons_dir,
-                                    'force_reimport': False
-                                },
-                                priority=6  # Medium-high priority
-                            )
-
-                            st.success(f"✅ Import job started! Job ID: {job_id[:8]}")
-                            st.info(f"📥 Importing {status['missing_from_database']} sermons in the background. Monitor progress on the Jobs page.")
-
-                            # Add button to go to jobs page
-                            if st.button("📊 View Job Progress", type="secondary"):
-                                st.switch_page(jobs)
-
-                        except Exception as e:
-                            st.error(f"❌ Failed to start import job: {e}")
-                            # Fallback to old method
-                            with st.spinner(f"Importing {status['missing_from_database']} sermons..."):
-                                successful, failed, failed_ids = import_missing_sermons()
-
-                                if successful > 0:
-                                    st.success(f"✅ Successfully imported {successful} sermons!")
-
-                                if failed > 0:
-                                    st.error(f"❌ Failed to import {failed} sermons")
-                                    if failed_ids:
-                                        st.write("Failed sermon IDs:")
-                                        for failed_id in failed_ids[:5]:  # Show first 5
-                                            st.write(f"• {failed_id}")
-                                        if len(failed_ids) > 5:
-                                            st.write(f"• ... and {len(failed_ids) - 5} more")
-
-                                st.rerun()
-                    else:
-                        st.info("No missing sermons to import")
-
-            with col2:
-                # Force re-import option
-                st.markdown("**🔄 Force Re-import Options**")
-                force_refresh_api = st.checkbox("Refresh API metadata", value=False, help="Re-fetch sermon metadata from SermonAudio API")
-
-                if st.button("🔄 Force Re-import All Sermons", type="secondary"):
-                    # Confirm before proceeding
-                    if st.session_state.get('confirm_reimport', False):
-                        try:
-                            from job_queue import JobType, get_job_queue
-
-                            job_queue = get_job_queue()
-                            config = st.session_state.get('config', {})
-                            processed_sermons_dir = config.get('output_directory', 'processed_sermons')
-
-                            job_id = job_queue.add_job(
-                                job_type=JobType.SERMON_IMPORT,
-                                title="Force Re-import All Sermons",
-                                description=f"Re-importing all {status['total_in_folder']} sermons with fresh API data",
-                                parameters={
-                                    'processed_sermons_dir': processed_sermons_dir,
-                                    'force_reimport': True,
-                                    'refresh_api_data': force_refresh_api
-                                },
-                                priority=5  # Medium priority
-                            )
-
-                            st.success(f"✅ Force re-import job started! Job ID: {job_id[:8]}")
-                            st.info(f"🔄 Re-importing all {status['total_in_folder']} sermons in the background. Monitor progress on the Jobs page.")
-                            st.session_state.confirm_reimport = False  # Reset confirmation
-
-                        except Exception as e:
-                            st.error(f"❌ Failed to start re-import job: {e}")
-                    else:
-                        st.warning("⚠️ This will re-import ALL sermons and may take a long time. Click again to confirm.")
-                        st.session_state.confirm_reimport = True
-
-        else:
-            # No missing sermons
-            st.success("✅ All sermons in the processed_sermons folder are already in the database!")
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                if st.button("🔄 Refresh Status"):
-                    st.rerun()
-
-            with col2:
-                if st.button("📊 Go to Library"):
-                    st.switch_page(library)
-
-        # Help section
-        st.markdown("#### ℹ️ How It Works")
-
-        with st.expander("📚 Import Process Details"):
-            st.markdown("""
-            **The import process will:**
-            
-            1. **Scan the processed_sermons folder** for directories with numeric names (sermon IDs)
-            2. **Check each sermon ID** against the database to see if it already exists
-            3. **Extract metadata** from files in each sermon directory:
-               - `{id}_description.txt` - Sermon description and title
-               - `{id}_hashtags.txt` - Hashtags
-               - `{id}_transcript.txt` - Full transcript (if available)
-               - `processed_{id}.mp3` - Enhanced audio file
-               - `{id}_ai_upscaled.wav` - AI enhanced audio (if available)
-               - `{id}_processing_info.json` - Processing metadata (if available)
-               - `{id}_qa_segments.json` - Q&A segment data (if available)
-            
-            4. **Create database records** with extracted metadata and file paths
-            5. **Preserve all existing data** - only adds missing sermons, never overwrites
-            
-            **File Structure Expected:**
-            ```
-            processed_sermons/
-            ├── 12345678/
-            │   ├── 12345678_description.txt
-            │   ├── 12345678_hashtags.txt
-            │   ├── processed_12345678.mp3
-            │   └── 12345678_ai_upscaled.wav
-            └── 87654321/
-                ├── 87654321_description.txt
-                └── processed_87654321.mp3
-            ```
-            
-            **Safe Operation:**
-            - Only imports sermons that don't exist in the database
-            - Does not modify or overwrite existing database entries
-            - Gracefully handles missing files or incomplete data
-            - Logs all actions for troubleshooting
-            """)
-
-    except ImportError as e:
-        st.error(f"❌ Could not load sermon importer: {e}")
-        st.info("Please ensure the sermon_importer module is available.")
-    except Exception as e:
-        st.error(f"❌ Error checking import status: {e}")
-        st.info("Please check that the processed_sermons directory exists and is accessible.")
 
 
-def show_backup_restore():
-    """Configuration backup and restore"""
-    st.markdown("### 💾 Backup & Restore")
 
-    # Current config display
-    st.markdown("#### 📄 Current Configuration")
+def show_advanced_settings():
+    """Backup, restore, and config management"""
+    sub_tab1, sub_tab2 = st.tabs(["💾 YAML Backup & Restore", "🗄️ SQL Config Manager"])
+
+    with sub_tab1:
+        show_yaml_backup_restore()
+
+    with sub_tab2:
+        show_sql_config_management()
+
+def show_yaml_backup_restore():
+    """Simple YAML-based backup and restore"""
+    st.markdown("### 💾 YAML Backup & Restore")
 
     config = st.session_state.get('config') or {}
 
     if config:
-        # Show config as YAML
         config_yaml = yaml.dump(config, default_flow_style=False, sort_keys=True)
-        st.code(config_yaml, language='yaml')
-
-        # Download config
-        if st.download_button(
+        with st.expander("📄 Current Configuration", expanded=True):
+            st.code(config_yaml, language='yaml')
+        st.download_button(
             "📥 Download Config",
             data=config_yaml,
             file_name="config_backup.yaml",
             mime="text/yaml"
-        ):
-            st.success("Configuration downloaded!")
+        )
 
-    # Upload/restore config
     st.markdown("#### 📤 Restore Configuration")
-
     uploaded_config = st.file_uploader(
         "Upload Configuration File",
         type=['yaml', 'yml'],
@@ -1509,25 +1447,19 @@ def show_backup_restore():
         try:
             config_content = uploaded_config.read().decode('utf-8')
             new_config = yaml.safe_load(config_content)
-
             st.success("✅ Configuration file loaded successfully!")
             st.code(config_content, language='yaml')
-
             if st.button("🔄 Apply Configuration", type="primary"):
                 st.session_state.config = new_config
                 from config_utils import save_config_to_file
                 if save_config_to_file(new_config):
                     st.success("Configuration applied and saved!")
                     st.rerun()
-
         except Exception as e:
             st.error(f"❌ Failed to load configuration: {e}")
 
-    # Reset to defaults
     st.markdown("#### 🔄 Reset to Defaults")
-
     st.warning("⚠️ This will reset all settings to default values")
-
     if st.button("🔄 Reset to Defaults", type="secondary"):
         if st.session_state.get('confirm_reset'):
             reset_to_defaults()
@@ -1537,19 +1469,74 @@ def show_backup_restore():
             st.session_state.confirm_reset = True
             st.warning("Click again to confirm reset")
 
+def show_sql_config_management():
+    """SQL-based config management editor, import/export, history"""
+    from ui.ui_pages.config_management import (
+        show_config_editor, show_import_export, show_config_history,
+        show_database_management,
+        SQL_CONFIG_AVAILABLE
+    )
+
+    if not SQL_CONFIG_AVAILABLE:
+        st.error("❌ SQL Configuration system is not available.")
+        return
+
+    db_path = "sermon_config.db"
+    import os
+    db_exists = os.path.exists(db_path)
+
+    if not db_exists:
+        st.info("Configuration database not found. Create one below.")
+        from ui.ui_pages.config_management import show_database_setup
+        show_database_setup(db_path)
+        return
+
+    cm_tab1, cm_tab2, cm_tab3 = st.tabs([
+        "📝 Edit Config",
+        "📥 Import/Export",
+        "📊 History"
+    ])
+
+    with cm_tab1:
+        show_config_editor(db_path)
+
+    with cm_tab2:
+        show_import_export(db_path)
+
+    with cm_tab3:
+        show_config_history(db_path)
+
 def test_api_connection(api_key, broadcaster_id):
     """Test SermonAudio API connection"""
     try:
-        # This would test the actual API connection
-        st.success("✅ API connection successful!")
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+        from sermonaudio_api import SermonAudioAPI
+
+        api = SermonAudioAPI(api_key=api_key, broadcaster_id=broadcaster_id)
+        result = api.test_connection()
+        if result:
+            st.success("✅ API connection successful!")
+        else:
+            st.error("❌ API connection failed")
     except Exception as e:
         st.error(f"❌ API connection failed: {e}")
 
 def test_llm_provider(provider, config):
     """Test LLM provider connection"""
     try:
-        # This would test the actual LLM provider
-        st.success(f"✅ {provider.title()} provider connection successful!")
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+        from llm_manager import LLMManager
+
+        llm_manager = LLMManager(st.session_state.get('config', {}))
+        test_response = llm_manager.chat([{"role": "user", "content": "Reply with just: OK"}])
+        if test_response and 'OK' in str(test_response).upper():
+            st.success(f"✅ {provider.title()} provider connection successful!")
+        else:
+            st.warning(f"⚠️ {provider.title()} responded but unexpected: {str(test_response)[:100]}")
     except Exception as e:
         st.error(f"❌ {provider.title()} provider connection failed: {e}")
 
@@ -1683,7 +1670,43 @@ def save_audio_settings(enhancement_method, use_audacity, audio_noise_reduction,
 
 def save_validation_settings():
     """Save validation settings to configuration"""
-    # This would collect validation settings and save them
+    if not st.session_state.get('config'):
+        st.session_state.config = {}
+
+    config = st.session_state.config
+    if 'metadata_processing' not in config:
+        config['metadata_processing'] = {}
+
+    mp = config['metadata_processing']
+
+    criteria = []
+    i = 0
+    while f"criteria_{i}" in st.session_state:
+        val = st.session_state[f"criteria_{i}"]
+        if val.strip():
+            criteria.append(val.strip())
+        i += 1
+    new_val = st.session_state.get('new_criterion', '')
+    if new_val.strip():
+        criteria.append(new_val.strip())
+
+    if 'description' not in mp:
+        mp['description'] = {}
+    mp['description']['validation'] = {
+        'enabled': st.session_state.get('validation_enabled', True),
+        'criteria': criteria,
+    }
+    mp['description']['update_if_missing'] = st.session_state.get('desc_update_missing', True)
+    mp['description']['update_if_minimal'] = st.session_state.get('desc_update_minimal', True)
+    mp['description']['min_length_threshold'] = st.session_state.get('desc_min_length', 50)
+
+    if 'hashtags' not in mp:
+        mp['hashtags'] = {}
+    mp['hashtags']['update_if_missing'] = st.session_state.get('hash_update_missing', True)
+    mp['hashtags']['update_if_minimal'] = st.session_state.get('hash_update_minimal', True)
+    mp['hashtags']['min_length_threshold'] = st.session_state.get('hash_min_length', 10)
+
+    save_config_to_file(config)
     st.success("✅ Validation settings saved!")
 
 def save_config_to_file(config):
@@ -1707,48 +1730,6 @@ def reset_to_defaults():
 
     except Exception as e:
         st.error(f"Failed to reset to defaults: {e}")
-
-def show_config_management_settings():
-    """Embedded configuration management within the Settings tab"""
-    from ui.ui_pages.config_management import (
-        show_config_editor, show_import_export, show_config_history,
-        show_backup_restore as show_cm_backup_restore, show_database_management,
-        SQL_CONFIG_AVAILABLE
-    )
-
-    if not SQL_CONFIG_AVAILABLE:
-        st.error("❌ SQL Configuration system is not available.")
-        return
-
-    db_path = "sermon_config.db"
-
-    import os
-    db_exists = os.path.exists(db_path)
-
-    if not db_exists:
-        st.info("Configuration database not found. Create one below.")
-        from ui.ui_pages.config_management import show_database_setup
-        show_database_setup(db_path)
-        return
-
-    cm_tab1, cm_tab2, cm_tab3, cm_tab4 = st.tabs([
-        "📝 Edit Config",
-        "📥 Import/Export",
-        "📊 History",
-        "💾 Backup & Restore"
-    ])
-
-    with cm_tab1:
-        show_config_editor(db_path)
-
-    with cm_tab2:
-        show_import_export(db_path)
-
-    with cm_tab3:
-        show_config_history(db_path)
-
-    with cm_tab4:
-        show_cm_backup_restore(db_path)
 
 if __name__ == "__main__":
     show_settings()
