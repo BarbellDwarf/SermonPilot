@@ -21,8 +21,8 @@ coverage.xml
 *.cover
 .hypothesis/
 
-# Sensitive config
-config.yaml
+# Sensitive config (config.yaml is now safe - uses env var references)
+# config.yaml
 *.key
 *.secret
 
