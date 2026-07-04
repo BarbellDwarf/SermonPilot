@@ -456,15 +456,18 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                 if actions.get('generate_description') or actions.get('generate_hashtags'):
                     try:
                         job.add_log(f"Processing metadata for sermon {sermon_id}")
+                        form_data = job.parameters.get('form_data', {})
                         # Use the existing sermon processing function with appropriate flags
                         sermon_updater.process_single_sermon(
                             sermon_id,
-                            no_upload=False,
+                            no_upload=bool(form_data.get('dry_run', False)),
                             verbose=False,
                             skip_audio=not actions.get('enhance_audio', False),
                             force_description=actions.get('generate_description', False),
                             force_hashtags=actions.get('generate_hashtags', False),
-                            no_metadata=False
+                            no_metadata=False,
+                            transcription_backend=form_data.get('transcription_backend'),
+                            audio_file=form_data.get('uploaded_file_path'),
                         )
 
                         if actions.get('generate_description'):

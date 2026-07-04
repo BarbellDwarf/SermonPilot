@@ -1,9 +1,3 @@
-# docker-compose.yml
-# Usage:
-#   NVIDIA: docker compose up -d
-#   AMD:    GPU_BACKEND=rocm docker compose up -d
-#   CPU:    GPU_BACKEND=cpu docker compose up -d
-
 services:
   sermon-processor:
     build:
@@ -23,6 +17,7 @@ services:
       - SERMONAUDIO_BROADCASTER_ID=${SERMONAUDIO_BROADCASTER_ID}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - XAI_API_KEY=${XAI_API_KEY}
       - DEBUG=${DEBUG:-false}
     volumes:
       - sermon_data:/data
@@ -33,16 +28,6 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: ${MEMORY_LIMIT:-8g}
-        reservations:
-          memory: ${MEMORY_RESERVE:-2g}
-          devices:
-            - driver: ${GPU_DRIVER:-nvidia}
-              count: 1
-              capabilities: [gpu]
     networks:
       - sermon_network
     healthcheck:
@@ -62,16 +47,6 @@ services:
       - OLLAMA_HOST=0.0.0.0
     volumes:
       - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        limits:
-          memory: ${OLLAMA_MEMORY_LIMIT:-16g}
-        reservations:
-          memory: ${OLLAMA_MEMORY_RESERVE:-4g}
-          devices:
-            - driver: ${GPU_DRIVER:-nvidia}
-              count: 1
-              capabilities: [gpu]
     networks:
       - sermon_network
     healthcheck:

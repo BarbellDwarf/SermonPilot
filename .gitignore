@@ -111,6 +111,7 @@ logs/
 .coverage
 htmlcov/
 sermon_processor.db
+sermon_config.db
 *.bin
 /analytics_*/*
 *.sqlite3
