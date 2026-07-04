@@ -1541,11 +1541,13 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             _report(35, f"Starting transcription ({whisper_model} model)...")
             try:
                 transcript = transcribe(str(enhanced_audio_path), model_size=whisper_model, config=config,
-                                        backend_override=transcription_backend)
+                                        backend_override=transcription_backend,
+                                        progress_callback=_report)
                 if not transcript:
                     _report(45, "First transcription attempt produced no result, retrying with original audio...")
                     transcript = transcribe(str(audio_path), model_size=whisper_model, config=config,
-                                            backend_override=transcription_backend)
+                                            backend_override=transcription_backend,
+                                            progress_callback=_report)
             except Exception as e:
                 logger.warning("Transcription failed: %s", e)
                 transcript = ""
@@ -1680,14 +1682,17 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             if input_is_video and upload_type == "original-video":
                 final_output_path = output_dir / f"sermon_{sermon_id}{original_input_path.suffix}"
                 if final_upload_path.exists():
-                    shutil.copy2(final_upload_path, final_output_path)
+                    if final_upload_path.resolve() != final_output_path.resolve():
+                        shutil.copy2(final_upload_path, final_output_path)
                 else:
                     final_output_path = output_dir / f"sermon_{sermon_id}.mp3"
-                    shutil.copy2(enhanced_audio_path, final_output_path)
+                    if enhanced_audio_path.resolve() != final_output_path.resolve():
+                        shutil.copy2(enhanced_audio_path, final_output_path)
             else:
                 final_output_path = output_dir / f"sermon_{sermon_id}.mp3"
                 source = enhanced_audio_path if enhanced_audio_path != audio_path else audio_path
-                shutil.copy2(source, final_output_path)
+                if source.resolve() != final_output_path.resolve():
+                    shutil.copy2(source, final_output_path)
 
             # Save metadata
             metadata = {
@@ -2558,7 +2563,9 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                          skip_audio: bool = False, force_description: bool = False,
                          force_hashtags: bool = False, no_metadata: bool = False,
                          output_dir: str = None, save_original_audio: bool = None,
-                         save_transcript: bool = None):
+                         save_transcript: bool = None,
+                         transcription_backend: str = None,
+                         audio_file: str = None):
     logger.debug(f"Processing sermon_id={sermon_id}")
     details = Node.get_sermon(sermon_id)
     speaker_name = None
@@ -2640,7 +2647,12 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
     if needs_transcript:
         if not verbose:
             print("   📄 Retrieving transcript...")
-        transcript = get_sermon_transcript(sermon_id)
+        if audio_file and transcription_backend:
+            from src.transcription import transcribe
+            transcript = transcribe(audio_file, model_size="base", config=config,
+                                    backend_override=transcription_backend)
+        else:
+            transcript = get_sermon_transcript(sermon_id)
         if not transcript:
             logger.warning("No transcript available for sermon %s", sermon_id)
         else:
@@ -2780,6 +2792,31 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
 
     if DRY_RUN or no_upload:
         logger.info("Dry-run / no-upload: skipping remote updates")
+        # Save to database even in dry-run so results are visible in UI
+        if database_available and (summary or hashtags or transcript):
+            try:
+                repo = SermonRepository()
+                repo.update_sermon_metadata(sermon_id, {
+                    'description': summary,
+                    'hashtags': hashtags,
+                })
+                db = repo.db
+                with db.get_connection() as conn:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO sermon_content
+                        (sermon_id, transcript_text, description, hashtags, updated_at)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (sermon_id, transcript or '', summary or '', hashtags or '', str(dt.datetime.now())))
+                    conn.execute("DELETE FROM sermon_search WHERE sermon_id = ?", (sermon_id,))
+                    conn.execute("""
+                        INSERT INTO sermon_search
+                        (sermon_id, title, speaker, transcript_text, description, hashtags)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (sermon_id, sermon_name or '', speaker_name or '', transcript or '', summary or '', hashtags or ''))
+                    conn.commit()
+                logger.debug("Dry-run: saved generated content to database")
+            except Exception as e:
+                logger.warning(f"Dry-run database save failed: {e}")
         return
 
     # Update metadata if we generated any
@@ -3380,6 +3417,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     new_sermon.add_argument('--whisper-model', default='base',
                           choices=['tiny', 'base', 'small', 'medium', 'large'],
                           help='Whisper model size for transcription (default: base)')
+    new_sermon.add_argument('--transcription-backend', default='whisper_local',
+                          choices=['whisper_local', 'whisper_openai'],
+                          help='Transcription backend: local Whisper or OpenAI API (default: whisper_local)')
 
     # SERMON UPDATE subcommand
     update_sermon = subparsers.add_parser(

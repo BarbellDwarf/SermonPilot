@@ -46,7 +46,7 @@ sys.path.insert(0, str(project_root / "src"))
 sys.path.insert(0, str(ui_dir))
 
 from ui.pages import (dashboard, new_sermon, batch_update, validation,
-                       jobs, library, analytics, config_management, settings)
+                       jobs, sermon_import, library, analytics, settings)
 from ui.shared_navigation import render_sidebar_extras
 
 # Configure Streamlit page
@@ -198,7 +198,8 @@ def main():
     pg = st.navigation({
         "Main": [dashboard, new_sermon, batch_update, validation, jobs],
         "Data & Analytics": [library, analytics],
-        "Configuration": [config_management, settings],
+        "Tools": [sermon_import],
+        "Configuration": [settings],
     })
     current_page = pg.run()
 
