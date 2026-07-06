@@ -1328,6 +1328,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       clean_audio_script: str = "~/Documents/Repositories/deepfilternet/clean-audio.py",
                       clean_audio_device: str = "auto",
                       generate_short_title: bool = False,
+                      enhancement_method: str | None = None,
+                      custom_repo: str | None = None,
+                      custom_file: str | None = None,
                       progress_callback=None) -> dict:
     """Process a new sermon from audio file with automatic metadata generation.
 
@@ -1478,8 +1481,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         _report(14, "Audio extraction failed, using original file")
 
                 processor = AudioProcessor(
-                    enhancement_method=config.get('audio_enhancement_method', 'deepfilternet')
+                    enhancement_method=enhancement_method or config.get('audio_enhancement_method', 'deepfilternet')
                 )
+                if enhancement_method == "custom" and custom_repo and custom_file:
+                    processor.config['clear_custom_repo'] = custom_repo
+                    processor.config['clear_custom_file'] = custom_file
                 enhanced_audio_path = temp_dir / "enhanced_audio.wav"
                 _report(15, f"Running audio enhancement ({processor.enhancement_method})...")
                 success, proc_result = processor.process_sermon_audio(
