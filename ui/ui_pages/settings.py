@@ -1097,12 +1097,15 @@ def show_audio_settings():
     # Enhancement Method
     st.markdown("#### 🔧 Enhancement Method")
 
+    methods = ["deepfilternet", "clear-natural", "clear-studio", "none"]
+    current = config.get('audio_enhancement_method', 'deepfilternet')
+    index = methods.index(current) if current in methods else 0
+
     enhancement_method = st.selectbox(
         "Audio Enhancement Method",
-        options=["clear", "deepfilternet", "none"],
-        index=0 if config.get('audio_enhancement_method') == 'clear' else
-              1 if config.get('audio_enhancement_method') == 'deepfilternet' else 2,
-        help="Choose AI enhancement method for audio quality improvement"
+        options=methods,
+        index=index,
+        help="DeepFilterNet: standard (best for speech). Clear-Natural: gentler noise suppression. Clear-Studio: aggressive, podcast-ready."
     )
 
     # Enhancement options
