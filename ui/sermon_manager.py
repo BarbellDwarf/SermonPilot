@@ -34,6 +34,7 @@ except ImportError:
 
 import yaml
 from database import SermonRepository
+from src.sermon_paths import discover_sermons, read_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -165,14 +166,10 @@ class SermonManager:
         """Scan local directory for processed sermon files"""
         local_sermons = {}
 
-        if not self.output_directory.exists():
-            return local_sermons
-
-        for sermon_dir in self.output_directory.iterdir():
-            if not sermon_dir.is_dir():
-                continue
-
-            sermon_id = sermon_dir.name
+        sermon_dirs = discover_sermons(self.output_directory)
+        for sermon_dir in sermon_dirs:
+            meta = read_metadata(sermon_dir)
+            sermon_id = meta.get("sermon_id", sermon_dir.name) if meta else sermon_dir.name
 
             # Get basic file information
             audio_files = AudioFiles()
@@ -185,7 +182,6 @@ class SermonManager:
                 elif "enhanced" in audio_file.name.lower() or "processed" in audio_file.name.lower():
                     audio_files.processed = str(audio_file)
                 else:
-                    # Default to processed if no specific naming
                     audio_files.processed = str(audio_file)
 
             # Check for transcript
@@ -200,7 +196,6 @@ class SermonManager:
             db_sermon = self.repo.get_sermon(sermon_id)
 
             if db_sermon:
-                # Create SermonData from database
                 sermon_data = SermonData(
                     id=sermon_id,
                     title=db_sermon.get('title', f'Sermon {sermon_id}'),
@@ -209,7 +204,7 @@ class SermonManager:
                     description=db_sermon.get('description', ''),
                     hashtags=db_sermon.get('hashtags', []),
                     local_available=True,
-                    remote_available=False,  # Will be updated during merge
+                    remote_available=False,
                     audio_files=audio_files,
                     transcript=transcript_content,
                     event_type=db_sermon.get('event_type'),
@@ -219,12 +214,19 @@ class SermonManager:
                     qa_segments=db_sermon.get('qa_segments', [])
                 )
             else:
-                # Create minimal SermonData for unknown local files
+                title = meta.get("title", f"Local Sermon {sermon_id}") if meta else f"Local Sermon {sermon_id}"
+                speaker = meta.get("speaker", "Unknown") if meta else "Unknown"
+                date_str = meta.get("recorded_date", "1900-01-01") if meta else "1900-01-01"
+                try:
+                    date = datetime.fromisoformat(date_str)
+                except (ValueError, TypeError):
+                    date = datetime.fromtimestamp(sermon_dir.stat().st_mtime)
+
                 sermon_data = SermonData(
                     id=sermon_id,
-                    title=f'Local Sermon {sermon_id}',
-                    date=datetime.fromtimestamp(sermon_dir.stat().st_mtime),
-                    speaker='Unknown',
+                    title=title,
+                    date=date,
+                    speaker=speaker,
                     description='',
                     hashtags=[],
                     local_available=True,

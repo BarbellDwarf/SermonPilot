@@ -408,7 +408,8 @@ class SystemStatusManager:
                 }
 
             # Count local sermons
-            sermon_dirs = [d for d in output_dir.iterdir() if d.is_dir()]
+            from src.sermon_paths import discover_sermons
+            sermon_dirs = discover_sermons(output_dir)
             local_count = len(sermon_dirs)
 
             # Calculate total size
