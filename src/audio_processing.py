@@ -73,6 +73,17 @@ def _ensure_torchaudio_backend_compat():
 _ensure_torchaudio_backend_compat()
 
 try:
+    from .clear_enhancer import ClearEnhancer
+    clear_enhancer_available = True
+except ImportError:
+    try:
+        from clear_enhancer import ClearEnhancer
+        clear_enhancer_available = True
+    except ImportError:
+        clear_enhancer_available = False
+        ClearEnhancer = None
+
+try:
     print(f"PyTorch version: {torch.__version__}")
     is_rocm = getattr(torch.version, "hip", None) is not None or \
               "rocm" in (getattr(torch.version, "cuda", "") or "").lower()
@@ -150,6 +161,7 @@ class AudioProcessor:
         self.df_model = None
         self.df_state = None
         self.resemble_model = None
+        self.clear_enhancer = None
         self._models_initialized = False
 
         # Q&A normalization support
@@ -162,12 +174,12 @@ class AudioProcessor:
             self.qa_processing_enabled = False
 
         # Validate enhancement method but don't initialize models yet
-        if self.enhancement_method not in ["deepfilternet", "resemble_enhance", "none"]:
+        if self.enhancement_method not in ["deepfilternet", "resemble_enhance", "clear", "none"]:
             logger.warning(
                 f"Unknown enhancement method: {enhancement_method}, "
-                f"falling back to DeepFilterNet"
+                f"falling back to clear"
             )
-            self.enhancement_method = "deepfilternet"
+            self.enhancement_method = "clear"
 
         logger.info(f"AudioProcessor initialized with {self.enhancement_method} method (models will load on first use)")
 
@@ -182,6 +194,8 @@ class AudioProcessor:
             self._init_deepfilternet()
         elif self.enhancement_method == "resemble_enhance":
             self._init_resemble_enhance()
+        elif self.enhancement_method == "clear":
+            self._init_clear()
         elif self.enhancement_method == "none":
             logger.info("No AI enhancement method selected")
 
@@ -226,6 +240,20 @@ class AudioProcessor:
             logger.error("Resemble Enhance not available, falling back to DeepFilterNet")
             self.enhancement_method = "deepfilternet"
             self._init_deepfilternet()
+
+    def _init_clear(self):
+        """Initialize Clear (desert-ant-labs) enhancer."""
+        if clear_enhancer_available:
+            try:
+                logger.info("Initializing Clear enhancer")
+                self.clear_enhancer = ClearEnhancer(device=self.device)
+                logger.info("Clear enhancer initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize Clear enhancer: {e}")
+                self._fallback_to_basic()
+        else:
+            logger.error("Clear enhancer not available")
+            self._fallback_to_basic()
 
     def _fallback_to_basic(self):
         """Fallback to basic processing without AI enhancement."""
@@ -867,6 +895,8 @@ class AudioProcessor:
         if audio_data.dtype != np.float32:
             audio_data = audio_data.astype(np.float32)
 
+        self._ensure_models_initialized()
+
         logger.info(f"Processing audio with {self.enhancement_method} (length: {len(audio_data)} samples)")
 
         # Route based on enhancement method
@@ -874,6 +904,8 @@ class AudioProcessor:
             return self._apply_resemble_enhance(audio_data, sample_rate, size_threshold)
         elif self.enhancement_method == "deepfilternet":
             return self._apply_deepfilternet(audio_data, sample_rate, size_threshold)
+        elif self.enhancement_method == "clear":
+            return self._apply_clear(audio_data, sample_rate)
         elif self.enhancement_method == "none":
             logger.info("No enhancement requested, returning original audio")
             return audio_data
@@ -1113,6 +1145,15 @@ class AudioProcessor:
                 logger.error(f"DeepFilterNet chunked processing also failed: {e2}")
                 logger.warning("Falling back to custom noise reduction")
                 return self.custom_noise_reduction(audio_for_fallback if audio_for_fallback.ndim == 1 else audio_for_fallback[0], original_sample_rate, noise_reduction_amount=0.7)
+
+    def _apply_clear(self, audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
+        """Apply Clear (desert-ant-labs) noise suppression."""
+        start_time = time.time()
+        logger.info("Processing audio with Clear enhancer")
+        result = self.clear_enhancer.enhance(audio_data, sample_rate)
+        elapsed = time.time() - start_time
+        logger.info("Clear enhancement completed in %.1fs", elapsed)
+        return result
 
     def amplify_audio(self, audio_data: np.ndarray, gain_db: float = 3.0) -> np.ndarray:
         """

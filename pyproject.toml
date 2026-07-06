@@ -1,6 +1,6 @@
 [project]
 name = "sermon-audio-updater"
-version = "1.1.1"
+version = "1.2.0"
 description = "Automated sermon processing tool for SermonAudio"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -14,17 +14,19 @@ dependencies = [
     "python-dotenv>=1.2.2",
     # Audio processing core
     "pydub>=0.25.1",
-    "numpy>=1.26.2", # Updated for resemble-enhance compatibility
-    "scipy>=1.11.4", # Updated for resemble-enhance compatibility
+    "numpy>=1.26.2",
+    "scipy>=1.11.4",
     "soundfile>=0.12.1",
-    "librosa>=0.10.1", # Updated for resemble-enhance compatibility
+    "librosa>=0.10.1",
     "noisereduce>=2.0.0",
-    # PyTorch ecosystem (compatible with resemble-enhance requirements)
-    "torch==2.1.1",
-    "torchaudio==2.1.1",
-    "torchvision==0.16.1",
-    # AI Enhancement models (core)
-    "deepfilternet>=0.5.6",
+    # PyTorch ecosystem (no longer pinned — Clear uses ONNX)
+    "torch>=2.6.0",
+    "torchaudio>=2.6.0",
+    "torchvision>=0.20.0",
+    # AI Enhancement models
+    "deepfilternet>=0.5.6", # Kept for STFT/ERB DSP feature computation
+    "onnxruntime>=1.15.0", # Clear model inference
+    "huggingface-hub>=0.20.0", # Download Clear model
     # Note: resemble-enhance has deepspeed dependency that causes build issues
     # Install manually: pip install resemble-enhance
     # Resemble-enhance dependencies (for manual installation)
@@ -67,6 +69,9 @@ dependencies = [
     "openai-whisper>=20231117",
     "faster-whisper>=1.0.0",
     "streamlit>=1.28.0",
+    "speechbrain>=1.1.0",
+    "onnxruntime>=1.22.1",
+    "torchcodec>=0.14.0",
 ]
 
 [project.optional-dependencies]
