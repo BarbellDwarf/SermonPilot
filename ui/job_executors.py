@@ -453,9 +453,14 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                 }
 
                 # Perform selected actions
-                if actions.get('generate_description') or actions.get('generate_hashtags'):
+                should_reprocess = (
+                    actions.get('enhance_audio')
+                    or actions.get('generate_description')
+                    or actions.get('generate_hashtags')
+                )
+                if should_reprocess:
                     try:
-                        job.add_log(f"Processing metadata for sermon {sermon_id}")
+                        job.add_log(f"Processing sermon {sermon_id}")
                         form_data = job.parameters.get('form_data', {})
                         # Use the existing sermon processing function with appropriate flags
                         sermon_updater.process_single_sermon(
