@@ -54,7 +54,8 @@ def fetch_sermon_metadata(sermon_id: str) -> dict | None:
             speaker = (s.get("full_name") or s.get("display_name") or
                        s.get("displayName") or str(s))
 
-        series = data.get("seriesTitle") or data.get("series_title") or ""
+        series = (data.get("seriesTitle") or data.get("series_title") or
+                  (data.get("series") or {}).get("title") or "")
 
         title = (data.get("display_title") or data.get("displayTitle") or
                  data.get("title") or sermon_id)
