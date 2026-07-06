@@ -16,4 +16,3 @@
 
 # For AI models on Windows, also install:
 # -r requirements-models-deepfilternet.txt
-# -r requirements-models-resemble.txt  # (manual installation recommended)

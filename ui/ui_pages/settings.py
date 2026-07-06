@@ -1099,9 +1099,9 @@ def show_audio_settings():
 
     enhancement_method = st.selectbox(
         "Audio Enhancement Method",
-        options=["deepfilternet", "resemble_enhance", "none"],
-        index=0 if config.get('audio_enhancement_method') == 'deepfilternet' else
-              1 if config.get('audio_enhancement_method') == 'resemble_enhance' else 2,
+        options=["clear", "deepfilternet", "none"],
+        index=0 if config.get('audio_enhancement_method') == 'clear' else
+              1 if config.get('audio_enhancement_method') == 'deepfilternet' else 2,
         help="Choose AI enhancement method for audio quality improvement"
     )
 

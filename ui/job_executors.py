@@ -21,6 +21,29 @@ from job_queue import Job, JobResult, JobStatus, JobType
 logger = logging.getLogger(__name__)
 
 
+def _inject_sermon_updater_config(config: dict) -> None:
+    """Inject config into the sermon_updater module so its module-level
+    constants (api_key, broadcaster_id, LLM manager, etc.) are correct
+    for the current job, and propagate the API key to the sermonaudio
+    library so Node.get_sermon() and similar calls work.
+    """
+    try:
+        import sermon_updater
+        from sermon_updater import ConfigManager, LLMManager
+        sermon_updater.config = config
+        sermon_updater.config_manager = ConfigManager()
+        sermon_updater.llm_manager = LLMManager(config)
+        sermon_updater.SERMON_AUDIO_API_KEY = config.get('api_key')
+        sermon_updater.SERMON_AUDIO_BROADCASTER_ID = config.get('broadcaster_id')
+        try:
+            import sermonaudio
+            sermonaudio.set_api_key(sermon_updater.SERMON_AUDIO_API_KEY)
+        except Exception as e:
+            logger.warning("Failed to set sermonaudio API key: %s", e)
+    except Exception as e:
+        logger.warning("Failed to inject config into sermon_updater: %s", e)
+
+
 def execute_validation_job(job: Job) -> JobResult:
     """Execute a validation job"""
     try:
@@ -306,25 +329,10 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
 
         # Inject the config into the sermon_updater module so that its
         # module-level constants (api_key, broadcaster_id, LLM manager, etc.)
-        # are correct for this job.
-        try:
-            import sermon_updater
-            from sermon_updater import ConfigManager, LLMManager
-            sermon_updater.config = config
-            sermon_updater.config_manager = ConfigManager()
-            sermon_updater.llm_manager = LLMManager(config)
-            sermon_updater.SERMON_AUDIO_API_KEY = config.get('api_key')
-            sermon_updater.SERMON_AUDIO_BROADCASTER_ID = config.get('broadcaster_id')
-            # Reload the sermonaudio library key
-            try:
-                import sermonaudio
-                sermonaudio.set_api_key(sermon_updater.SERMON_AUDIO_API_KEY)
-            except Exception:
-                pass
-            job.add_log("Config injected for this job")
-        except Exception as e:
-            job.add_log(f"⚠️ Failed to inject config (may still work): {e}")
-            logger.warning(f"Config injection warning: {e}")
+        # are correct for this job, and the sermonaudio library gets the
+        # API key so Node.get_sermon() and similar calls work.
+        _inject_sermon_updater_config(config)
+        job.add_log("Config injected for this job")
 
         # Progress callback that updates the job
         def progress_cb(pct, msg):
@@ -431,8 +439,9 @@ def execute_batch_processing_job(job: Job) -> JobResult:
         import sermon_updater
         from sermon_updater import DescriptionValidator
 
-        # Set the global config in sermon_updater module
-        sermon_updater.config = config
+        # Inject the full config so sermon_updater module-level constants
+        # are correct and sermonaudio library gets the API key
+        _inject_sermon_updater_config(config)
 
         # Process each sermon
         for i, sermon_id in enumerate(sermon_ids):
@@ -565,7 +574,7 @@ def execute_metadata_update_job(job: Job) -> JobResult:
         import sermon_updater
         from sermon_updater import DescriptionValidator
 
-        sermon_updater.config = config
+        _inject_sermon_updater_config(config)
 
         results = {
             'total': len(sermon_ids),

@@ -109,7 +109,7 @@ python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')"
 
 ### Audio Processing Integration Points
 
-- **Enhancement methods**: `"deepfilternet"`, `"resemble_enhance"`, `"none"`
+- **Enhancement methods**: `"clear"`, `"deepfilternet"`, `"none"`
 - **Device detection**: Auto GPU/CPU selection in `AudioProcessor.__init__()`
 - **Chunking strategy**: Dynamic based on available memory and audio duration
 - **Upscaling pipeline**: AI enhancement → traditional resampling → fallback

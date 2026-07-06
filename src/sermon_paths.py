@@ -32,6 +32,8 @@ FILENAMES = {
     "api_data": "api_data.json",
     "processing_info": "processing_info.json",
     "qa_segments": "qa_segments.json",
+    "temp_video": "video_source.mp4",
+    "enhanced_video": "video_enhanced.mp4",
 }
 
 

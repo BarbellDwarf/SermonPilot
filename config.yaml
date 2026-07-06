@@ -60,7 +60,7 @@ output_directory: processed_sermons
 save_original_audio: true
 save_transcript: true
 transcription:
-  backend: whisper_openai
+  backend: whisper_local
   faster_whisper_local:
     compute_type: float16
     device: auto
