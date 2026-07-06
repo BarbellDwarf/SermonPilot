@@ -13,6 +13,7 @@ import json
 import streamlit as st
 
 from ui.pages import jobs
+from src.sermon_paths import discover_sermons, read_metadata
 
 
 def show_validation():
@@ -411,8 +412,9 @@ def start_background_validation(scope: str, options: dict):
                 processed_dir = Path(output_dir)
 
                 if processed_dir.exists():
-                    sermon_dirs = [d.name for d in processed_dir.iterdir() if d.is_dir()]
-                    sermon_ids = sermon_dirs
+                    from src.sermon_paths import discover_sermons
+                    sermon_dirs = [d.name for d in discover_sermons(output_dir)]
+                    sermon_ids = [read_metadata(d).get("sermon_id", d.name) for d in discover_sermons(output_dir)]
 
                     if not sermon_ids:
                         st.info("✅ No processed sermons found in local directory!")

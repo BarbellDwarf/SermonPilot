@@ -35,6 +35,7 @@ from typing import Any
 import yaml
 
 from llm_manager import LLMManager, migrate_legacy_config
+from src.sermon_paths import discover_sermons, find_sermon_dir, read_metadata, get_file_path
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -288,73 +289,60 @@ Consider:
     def validate_single_sermon(self, sermon_id: str) -> ValidationResult | None:
         """
         Validate a single sermon by ID, either from local files or API.
-        
-        Args:
-            sermon_id: Sermon ID to validate
-            
-        Returns:
-            ValidationResult object or None if sermon not found
         """
         try:
-            # First try to validate from local files
-            processed_dir = Path(self.output_dir)
-            sermon_dir = processed_dir / sermon_id
-
-            if sermon_dir.exists():
+            sermon_dir = find_sermon_dir(self.output_dir, sermon_id)
+            if sermon_dir:
                 return self._validate_local_sermon(sermon_dir)
 
-            # If not found locally, we could implement API validation here
-            # For now, return None
-            logger.warning(f"Sermon {sermon_id} not found in local processed directory")
+            logger.warning("Sermon %s not found in local processed directory", sermon_id)
             return None
 
         except Exception as e:
-            logger.error(f"Error validating sermon {sermon_id}: {e}")
+            logger.error("Error validating sermon %s: %s", sermon_id, e)
             return None
 
     def validate_local_sermons(self, sermon_ids: list[str] | None = None) -> list[ValidationResult]:
         """Validate descriptions from local processed sermon directories."""
         results = []
-        processed_dir = Path(self.output_dir)
-
-        if not processed_dir.exists():
-            logger.warning(f"Processed sermons directory not found: {processed_dir}")
-            return results
-
-        sermon_dirs = [d for d in processed_dir.iterdir() if d.is_dir()]
 
         if sermon_ids:
-            sermon_dirs = [d for d in sermon_dirs if d.name in sermon_ids]
-
-        logger.info(f"Validating {len(sermon_dirs)} local sermons...")
-
-        for sermon_dir in sermon_dirs:
-            try:
-                result = self._validate_local_sermon(sermon_dir)
-                if result:
-                    results.append(result)
-            except Exception as e:
-                logger.error(f"Error validating sermon {sermon_dir.name}: {e}")
+            for sid in sermon_ids:
+                sermon_dir = find_sermon_dir(self.output_dir, sid)
+                if sermon_dir:
+                    result = self._validate_local_sermon(sermon_dir)
+                    if result:
+                        results.append(result)
+                else:
+                    logger.warning("Sermon %s not found in local directories", sid)
+        else:
+            sermon_dirs = discover_sermons(self.output_dir)
+            logger.info("Validating %d local sermons...", len(sermon_dirs))
+            for sermon_dir in sermon_dirs:
+                try:
+                    result = self._validate_local_sermon(sermon_dir)
+                    if result:
+                        results.append(result)
+                except Exception as e:
+                    logger.error("Error validating sermon %s: %s", sermon_dir.name, e)
 
         return results
 
     def _validate_local_sermon(self, sermon_dir: Path) -> ValidationResult | None:
         """Validate a single local sermon directory."""
-        sermon_id = sermon_dir.name
-        description_file = sermon_dir / f"{sermon_id}_description.txt"
+        meta = read_metadata(sermon_dir)
+        sermon_id = meta.get("sermon_id", sermon_dir.name) if meta else sermon_dir.name
+        description_file = get_file_path(sermon_dir, "description")
 
         if not description_file.exists():
-            logger.debug(f"No description file found for sermon {sermon_id}")
+            logger.debug("No description file found for sermon %s", sermon_id)
             return None
 
         try:
             description = description_file.read_text(encoding='utf-8').strip()
-
-            # Try to get additional context from API or files
             context = {'sermon_id': sermon_id}
 
-            # Look for hashtags file to get title/speaker info
-            hashtags_file = sermon_dir / f"{sermon_id}_hashtags.txt"
+            hashtags_file = get_file_path(sermon_dir, "hashtags")
             if hashtags_file.exists():
                 hashtags = hashtags_file.read_text(encoding='utf-8').strip()
                 # Hashtags sometimes contain title info, but let's keep it simple for now

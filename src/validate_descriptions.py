@@ -156,11 +156,14 @@ def validate_and_regenerate_descriptions(
                       f"({len(new_description)} chars, score: {score:.2f})")
 
                 # Save the new description locally
-                sermon_dir = Path(validator.output_dir) / sermon_id
-                description_file = sermon_dir / f"{sermon_id}_description.txt"
+                from src.sermon_paths import find_sermon_dir, get_file_path
+                sermon_dir = find_sermon_dir(validator.output_dir, sermon_id)
+                if not sermon_dir:
+                    print(f"      ❌ Could not find sermon directory for {sermon_id}")
+                    continue
+                description_file = get_file_path(sermon_dir, "description")
 
                 if description_file.exists():
-                    # Backup old description
                     backup_file = sermon_dir / f"{sermon_id}_description_backup.txt"
                     description_file.rename(backup_file)
                     print(f"      💾 Backed up original to {backup_file.name}")

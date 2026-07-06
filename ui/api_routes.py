@@ -476,8 +476,8 @@ def _check_local_storage() -> dict[str, Any]:
         if not output_dir.exists():
             return {'status': 'warning', 'message': 'Output directory does not exist'}
 
-        # Count local sermons
-        local_count = len([d for d in output_dir.iterdir() if d.is_dir()])
+        from src.sermon_paths import discover_sermons
+        local_count = len(discover_sermons(output_dir))
         return {'status': 'ok', 'message': f"{local_count} local sermons"}
     except Exception as e:
         return {'status': 'error', 'message': str(e)}

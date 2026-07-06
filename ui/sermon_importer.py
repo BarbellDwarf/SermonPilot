@@ -20,6 +20,7 @@ sys.path.insert(0, str(ui_dir))
 sys.path.insert(0, str(src_dir))
 
 from database import SermonRepository
+from src.sermon_paths import discover_sermons, read_metadata, get_file_path, FILENAMES
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +40,10 @@ class SermonImporter:
             return []
 
         sermon_ids = []
-        for item in self.processed_sermons_dir.iterdir():
-            if item.is_dir() and item.name.isdigit():
-                sermon_ids.append(item.name)
+        for sermon_dir in discover_sermons(self.processed_sermons_dir):
+            meta = read_metadata(sermon_dir)
+            if meta and meta.get("sermon_id"):
+                sermon_ids.append(meta["sermon_id"])
 
         logger.info(f"Found {len(sermon_ids)} sermon directories")
         return sermon_ids
@@ -61,16 +63,17 @@ class SermonImporter:
 
     def extract_sermon_metadata(self, sermon_id: str, refresh_api_data: bool = False) -> dict[str, Any]:
         """Extract metadata from sermon files in the processed folder"""
-        sermon_dir = self.processed_sermons_dir / sermon_id
+        from src.sermon_paths import find_sermon_dir
+        sermon_dir = find_sermon_dir(self.processed_sermons_dir, sermon_id)
 
-        if not sermon_dir.exists():
-            raise FileNotFoundError(f"Sermon directory not found: {sermon_dir}")
+        if not sermon_dir or not sermon_dir.exists():
+            raise FileNotFoundError(f"Sermon directory not found for ID {sermon_id}")
 
         metadata = {
             'id': sermon_id,
-            'title': f"Sermon {sermon_id}",  # Default title
-            'speaker': "Unknown",  # Default speaker
-            'recorded_date': datetime.now().strftime('%Y-%m-%d'),  # Default date
+            'title': f"Sermon {sermon_id}",
+            'speaker': "Unknown",
+            'recorded_date': datetime.now().strftime('%Y-%m-%d'),
             'event_type': None,
             'bible_text': None,
             'duration': None,
@@ -83,6 +86,17 @@ class SermonImporter:
                 'enhancement_method': 'unknown'
             }
         }
+
+        # Read metadata.json first for rich data
+        meta = read_metadata(sermon_dir)
+        if meta:
+            metadata['title'] = meta.get('title', metadata['title'])
+            metadata['speaker'] = meta.get('speaker', metadata['speaker'])
+            metadata['recorded_date'] = meta.get('recorded_date', metadata['recorded_date'])
+            metadata['event_type'] = meta.get('event_type')
+            metadata['bible_text'] = meta.get('bible_text')
+            metadata['content']['description'] = meta.get('description', '')
+            metadata['content']['hashtags'] = meta.get('hashtags', '')
 
         # Find and process files in the sermon directory
         for file_path in sermon_dir.iterdir():
@@ -100,24 +114,21 @@ class SermonImporter:
         sermon_id = metadata['id']
 
         # Description file
-        if file_name == f"{sermon_id}_description.txt":
+        if file_name == FILENAMES["description"]:
             try:
                 with open(file_path, encoding='utf-8') as f:
                     description = f.read().strip()
                     metadata['content']['description'] = description
-
-                    # Try to extract title from first line of description
                     lines = description.split('\n')
-                    if lines and len(lines[0]) < 100:  # Likely a title
+                    if lines and len(lines[0]) < 100:
                         metadata['title'] = lines[0].strip()
                         if len(lines) > 1:
                             metadata['content']['description'] = '\n'.join(lines[1:]).strip()
-
             except Exception as e:
                 logger.warning(f"Could not read description file {file_path}: {e}")
 
         # Hashtags file
-        elif file_name == f"{sermon_id}_hashtags.txt":
+        elif file_name == FILENAMES["hashtags"]:
             try:
                 with open(file_path, encoding='utf-8') as f:
                     hashtags = f.read().strip()
@@ -126,7 +137,7 @@ class SermonImporter:
                 logger.warning(f"Could not read hashtags file {file_path}: {e}")
 
         # Transcript file
-        elif file_name == f"{sermon_id}_transcript.txt":
+        elif file_name == FILENAMES["transcript"]:
             try:
                 with open(file_path, encoding='utf-8') as f:
                     transcript = f.read().strip()
@@ -136,15 +147,13 @@ class SermonImporter:
 
         # Audio files
         elif file_name.endswith('.mp3'):
-            if file_name.startswith('processed_'):
-                metadata['file_paths']['processed_audio'] = str(file_path)
-            elif file_name.startswith('original_'):
+            if file_name == FILENAMES["original"]:
                 metadata['file_paths']['original_audio'] = str(file_path)
-            elif file_name.startswith(sermon_id):
-                # Handle cases where original audio is named with just sermon_id
+            elif file_name == FILENAMES["enhanced"] or file_name == FILENAMES["audio"]:
+                metadata['file_paths']['processed_audio'] = str(file_path)
+            else:
                 metadata['file_paths']['original_audio'] = str(file_path)
 
-            # Try to get audio duration
             try:
                 metadata['duration'] = self._get_audio_duration(file_path)
             except Exception as e:
@@ -156,7 +165,7 @@ class SermonImporter:
                 metadata['processing_info']['enhancement_method'] = 'ai_upscaling'
 
         # Processing info files
-        elif file_name == f"{sermon_id}_processing_info.json":
+        elif file_name == FILENAMES["processing_info"]:
             try:
                 with open(file_path, encoding='utf-8') as f:
                     processing_data = json.load(f)
@@ -165,7 +174,7 @@ class SermonImporter:
                 logger.warning(f"Could not read processing info {file_path}: {e}")
 
         # Q&A segments file
-        elif file_name == f"{sermon_id}_qa_segments.json":
+        elif file_name == FILENAMES["qa_segments"]:
             try:
                 with open(file_path, encoding='utf-8') as f:
                     qa_segments = json.load(f)
@@ -178,11 +187,14 @@ class SermonImporter:
     def _extract_api_metadata(self, sermon_id: str, metadata: dict[str, Any], refresh_api_data: bool = False):
         """Try to extract metadata from SermonAudio API data if available"""
         try:
-            # First check if there's a cached API response
-            api_cache_file = self.processed_sermons_dir / sermon_id / f"{sermon_id}_api_data.json"
+            from src.sermon_paths import find_sermon_dir
+            sermon_dir = find_sermon_dir(self.processed_sermons_dir, sermon_id)
+            if not sermon_dir:
+                return
+
+            api_cache_file = sermon_dir / FILENAMES["api_data"]
             api_data = None
 
-            # Clear cache if refresh requested
             if refresh_api_data and api_cache_file.exists():
                 api_cache_file.unlink()
                 logger.info(f"Cleared cached API data for sermon {sermon_id}")
@@ -192,7 +204,6 @@ class SermonImporter:
                     api_data = json.load(f)
                     logger.info(f"Using cached API data for sermon {sermon_id}")
             else:
-                # Try to fetch live data from SermonAudio API
                 logger.info(f"Fetching live API data for sermon {sermon_id}")
                 from sermonaudio_api import SermonAudioAPI
                 api_client = SermonAudioAPI()
