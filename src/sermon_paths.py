@@ -24,6 +24,8 @@ FILENAMES = {
     "audio": "audio.mp3",
     "enhanced": "enhanced.mp3",
     "original": "original.mp3",
+    "original_audio": "original.mp3",
+    "original_video": "original.mp4",
     "temp": "temp.mp3",
     "transcript": "transcript.txt",
     "description": "description.txt",
