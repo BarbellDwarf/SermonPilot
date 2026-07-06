@@ -19,8 +19,13 @@ logger = logging.getLogger(__name__)
 class SermonDatabase:
     """SQLite database for sermon metadata and processing status"""
 
-    def __init__(self, db_path: str = "sermon_processor.db"):
+    def __init__(self, db_path: str | None = None):
         """Initialize database connection"""
+        if db_path is None:
+            db_path = os.environ.get("DATABASE_URL", "sermon_processor.db")
+            # Strip sqlite:/// prefix if present (from docker-compose env)
+            if db_path.startswith("sqlite:///"):
+                db_path = db_path[len("sqlite:///"):]
         self.db_path = Path(db_path)
         self.init_database()
 
