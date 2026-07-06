@@ -5,7 +5,8 @@ the directory structure can be changed in one place.
 
 Current structure:
   processed_sermons/{speaker}/{series}/{title} - {series} - {speaker}/
-    audio.mp3, enhanced.mp3, original.mp3, temp.mp3
+    {Title} - {Series} - {Speaker} - {Date} - Original.mp3
+    {Title} - {Series} - {Speaker} - {Date} - Processed.mp3
     transcript.txt, description.txt, hashtags.txt
     metadata.json, api_data.json, processing_info.json, qa_segments.json
 """
@@ -19,7 +20,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# File names used inside sermon directories (no longer prefixed with sermon_id)
+# Internal file names (temp files, metadata, etc.)
 FILENAMES = {
     "audio": "audio.mp3",
     "enhanced": "enhanced.mp3",
@@ -47,6 +48,30 @@ def sanitize(name: str) -> str:
     name = re.sub(r"\s+", " ", name).strip()
     name = name[:200]
     return name or "Unknown"
+
+
+def build_output_filename(
+    title: str | None,
+    series: str | None,
+    speaker: str | None,
+    date: str | None,
+    kind: str,
+    ext: str,
+) -> str:
+    """Build a descriptive output filename.
+
+    Format: {Title} - {Series} - {Speaker} - {Date} - {Kind}.{ext}
+
+    kind is e.g. "Original" or "Processed".
+    """
+    parts = [
+        sanitize(title or "Unknown"),
+        sanitize(series or "No Series"),
+        sanitize(speaker or "Unknown"),
+        sanitize(date or "Unknown"),
+        kind,
+    ]
+    return f"{' - '.join(parts)}.{ext.lstrip('.')}"
 
 
 def get_sermon_dir(
