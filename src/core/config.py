@@ -277,7 +277,7 @@ class ConfigManager:
     def get_audio_settings(self) -> dict[str, Any]:
         """Get audio processing settings with defaults."""
         return {
-            'enhancement_method': self.get('audio_enhancement_method', 'deepfilternet'),
+            'enhancement_method': self.get('audio_enhancement_method', 'clear'),
             'noise_reduction': self.get('audio_noise_reduction', True),
             'amplify': self.get('audio_amplify', True),
             'normalize': self.get('audio_normalize', True),
