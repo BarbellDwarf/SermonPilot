@@ -44,9 +44,12 @@ CLEAR_MODEL_VARIANTS = {
 
 
 class ClearEnhancer:
-    def __init__(self, device: str = "cpu", model_variant: str = "natural"):
+    def __init__(self, device: str = "cpu", model_variant: str = "natural",
+                 custom_repo: str | None = None, custom_file: str | None = None):
         self.device = device
         self.model_variant = model_variant
+        self.custom_repo = custom_repo
+        self.custom_file = custom_file
         self._session = None
         self._df_model = None
         self._df_state = None
@@ -70,9 +73,14 @@ class ClearEnhancer:
 
         from huggingface_hub import hf_hub_download
 
-        model_file = CLEAR_MODEL_VARIANTS.get(self.model_variant, CLEAR_MODEL_FILE)
-        model_path = hf_hub_download(CLEAR_MODEL_REPO, model_file)
-        logger.info("Clear ONNX model downloaded: %s (%s)", model_file, model_path)
+        if self.custom_repo and self.custom_file:
+            model_file = self.custom_file
+            model_path = hf_hub_download(self.custom_repo, model_file)
+            logger.info("Custom ONNX model: %s/%s (%s)", self.custom_repo, model_file, model_path)
+        else:
+            model_file = CLEAR_MODEL_VARIANTS.get(self.model_variant, CLEAR_MODEL_FILE)
+            model_path = hf_hub_download(CLEAR_MODEL_REPO, model_file)
+            logger.info("Clear ONNX model downloaded: %s (%s)", model_file, model_path)
 
         requested = self._get_ort_providers()
         available = ort.get_available_providers()

@@ -250,11 +250,20 @@ def show_processing_configuration():
             enhancement_method = st.selectbox(
                 "Enhancement Method",
                 key="enhancement_method",
-                options=["deepfilternet", "clear-natural", "clear-studio", "none"],
-                index=0 if not is_skip_audio else 3,
+                options=["deepfilternet", "clear-natural", "clear-studio", "custom", "none"],
+                index=0 if not is_skip_audio else 4,
                 disabled=is_skip_audio,
-                help="DeepFilterNet: standard (best for speech). Clear-Natural: gentler noise suppression. Clear-Studio: aggressive, podcast-ready."
+                help="DeepFilterNet: standard (best for speech). Clear-Natural: gentler noise suppression. Clear-Studio: aggressive, podcast-ready. Custom: point to any ONNX model on HuggingFace."
             )
+
+            if enhancement_method == "custom":
+                st.caption("Configure a custom ONNX model from HuggingFace:")
+                custom_repo = st.text_input("HF Repo (e.g. tonythethompson/DeepFilterNet3-ONNX)", key="custom_repo")
+                custom_file = st.text_input("ONNX filename (e.g. model.onnx)", key="custom_file")
+                if custom_repo and custom_file:
+                    st.info(f"Will use: **{custom_repo}/{custom_file}**")
+                else:
+                    st.warning("Enter both a HuggingFace repo and ONNX filename.")
 
         with col2:
             transcription_backend = st.radio(
