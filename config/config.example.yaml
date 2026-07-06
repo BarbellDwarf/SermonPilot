@@ -77,7 +77,7 @@ llm:
 
 # Audio Processing Settings
 use_audacity: false  # Set to true if Audacity with mod-script-pipe is available
-audio_enhancement_method: "clear"  # Options: "clear", "deepfilternet", "none"
+audio_enhancement_method: "deepfilternet"  # Options: "deepfilternet", "clear", "none"
 audio_noise_reduction: true
 audio_amplify: true
 audio_normalize: true
