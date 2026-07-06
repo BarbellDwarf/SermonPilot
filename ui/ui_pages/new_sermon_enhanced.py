@@ -250,10 +250,10 @@ def show_processing_configuration():
             enhancement_method = st.selectbox(
                 "Enhancement Method",
                 key="enhancement_method",
-                options=["clear", "deepfilternet", "none"],
-                index=0 if not is_skip_audio else 2,
+                options=["deepfilternet", "clear-natural", "clear-studio", "none"],
+                index=0 if not is_skip_audio else 3,
                 disabled=is_skip_audio,
-                help="Choose AI enhancement method for audio quality improvement"
+                help="DeepFilterNet: standard (best for speech). Clear-Natural: gentler noise suppression. Clear-Studio: aggressive, podcast-ready."
             )
 
         with col2:
