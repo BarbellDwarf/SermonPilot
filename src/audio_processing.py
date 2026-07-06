@@ -208,8 +208,9 @@ class AudioProcessor:
             try:
                 logger.info("Initializing Clear enhancer")
                 clear_device = "rocm" if self.is_rocm else self.device
-                self.clear_enhancer = ClearEnhancer(device=clear_device)
-                logger.info("Clear enhancer initialized successfully")
+                clear_variant = self.config.get('clear_model_variant', 'natural')
+                self.clear_enhancer = ClearEnhancer(device=clear_device, model_variant=clear_variant)
+                logger.info("Clear enhancer initialized successfully (variant=%s)", clear_variant)
             except Exception as e:
                 logger.error(f"Failed to initialize Clear enhancer: {e}")
                 self._fallback_to_basic()
