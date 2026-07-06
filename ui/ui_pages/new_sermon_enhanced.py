@@ -647,7 +647,8 @@ def _show_enhanced_processing_results(job):
     if results.get('transcript_file') or results.get('output_dir'):
         transcript_path = results.get('transcript_file')
         if not transcript_path and results.get('output_dir'):
-            transcript_path = f"{results['output_dir']}/{results.get('sermon_id', '')}_transcript.txt"
+            from src.sermon_paths import get_file_path
+            transcript_path = str(get_file_path(results['output_dir'], "transcript"))
         st.markdown(f"**Transcript File:** `{transcript_path or '(not saved)'}`")
     if results.get('enhanced_audio') or results.get('enhanced_audio_path'):
         audio_path = results.get('enhanced_audio') or results.get('enhanced_audio_path')

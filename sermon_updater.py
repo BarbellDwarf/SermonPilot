@@ -52,6 +52,16 @@ import sermonaudio
 from dotenv import load_dotenv
 from sermonaudio.node.requests import Node
 
+from src.sermon_paths import (
+    FILENAMES,
+    discover_sermons,
+    find_sermon_dir,
+    get_file_path,
+    get_sermon_dir,
+    read_metadata,
+    sanitize,
+)
+
 print("   🤖 Loading AI components...")
 # Suppress ML library import noise
 with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_warnings():
@@ -569,50 +579,49 @@ Guidelines:
     def validate_local_sermons(self, sermon_ids: list[str] = None) -> list[ValidationResult]:
         """Validate descriptions from local processed sermon directories."""
         results = []
-        processed_dir = Path(self.output_dir)
-
-        if not processed_dir.exists():
-            logger.warning(f"Processed sermons directory not found: {processed_dir}")
-            return results
-
-        sermon_dirs = [d for d in processed_dir.iterdir() if d.is_dir()]
 
         if sermon_ids:
-            sermon_dirs = [d for d in sermon_dirs if d.name in sermon_ids]
-
-        logger.info(f"Validating {len(sermon_dirs)} local sermons...")
-
-        for sermon_dir in sermon_dirs:
-            try:
-                result = self._validate_local_sermon(sermon_dir)
-                if result:
-                    results.append(result)
-            except Exception as e:
-                logger.error(f"Error validating sermon {sermon_dir.name}: {e}")
+            for sid in sermon_ids:
+                sermon_dir = find_sermon_dir(self.output_dir, sid)
+                if sermon_dir:
+                    result = self._validate_local_sermon(sermon_dir)
+                    if result:
+                        results.append(result)
+                else:
+                    logger.warning("Sermon %s not found in local directories", sid)
+        else:
+            sermon_dirs = discover_sermons(self.output_dir)
+            logger.info("Validating %d local sermons...", len(sermon_dirs))
+            for sermon_dir in sermon_dirs:
+                try:
+                    result = self._validate_local_sermon(sermon_dir)
+                    if result:
+                        results.append(result)
+                except Exception as e:
+                    logger.error("Error validating sermon %s: %s", sermon_dir.name, e)
 
         return results
 
     def _validate_local_sermon(self, sermon_dir: Path) -> ValidationResult | None:
         """Validate a single local sermon directory."""
-        sermon_id = sermon_dir.name
-        description_file = sermon_dir / f"{sermon_id}_description.txt"
+        meta = read_metadata(sermon_dir)
+        sermon_id = meta.get("sermon_id", sermon_dir.name) if meta else sermon_dir.name
+        description_file = get_file_path(sermon_dir, "description")
 
         if not description_file.exists():
-            logger.debug(f"No description file found for sermon {sermon_id}")
+            logger.debug("No description file found for sermon %s", sermon_id)
             return None
 
         try:
             description = description_file.read_text(encoding='utf-8').strip()
-
-            # Try to get additional context from API or files
             context = {'sermon_id': sermon_id}
 
             is_valid, reason, score, criteria_met, criteria_failed = self.validate_description(description, context)
 
             return ValidationResult(
                 sermon_id=sermon_id,
-                title=f"Sermon {sermon_id}",  # Could enhance this with API call
-                speaker="Unknown",  # Could enhance this with API call
+                title=meta.get("title", f"Sermon {sermon_id}") if meta else f"Sermon {sermon_id}",
+                speaker=meta.get("speaker", "Unknown") if meta else "Unknown",
                 description=description,
                 description_length=len(description),
                 is_valid=is_valid,
@@ -632,28 +641,17 @@ Guidelines:
     def validate_single_sermon(self, sermon_id: str) -> ValidationResult | None:
         """
         Validate a single sermon by ID, either from local files or API.
-        
-        Args:
-            sermon_id: Sermon ID to validate
-            
-        Returns:
-            ValidationResult object or None if sermon not found
         """
         try:
-            # First try to validate from local files
-            processed_dir = Path(self.output_dir)
-            sermon_dir = processed_dir / sermon_id
-
-            if sermon_dir.exists():
+            sermon_dir = find_sermon_dir(self.output_dir, sermon_id)
+            if sermon_dir:
                 return self._validate_local_sermon(sermon_dir)
 
-            # If not found locally, we could implement API validation here
-            # For now, return None
-            logger.warning(f"Sermon {sermon_id} not found in local processed directory")
+            logger.warning("Sermon %s not found in local processed directory", sermon_id)
             return None
 
         except Exception as e:
-            logger.error(f"Error validating sermon {sermon_id}: {e}")
+            logger.error("Error validating sermon %s: %s", sermon_id, e)
             return None
 
     def generate_summary(self, results: list[ValidationResult]) -> ValidationSummary:
@@ -1673,23 +1671,23 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             output_root = Path(config.get('output_directory', 'processed_sermons'))
             if not output_root.is_absolute():
                 output_root = Path(__file__).parent / output_root
-            output_dir = output_root / sermon_id
+            output_dir = get_sermon_dir(output_root, speaker_name, series_title, title, sermon_id)
             output_dir.mkdir(parents=True, exist_ok=True)
             result['output_dir'] = str(output_dir)
 
             # Copy processed file to output directory
             import shutil
             if input_is_video and upload_type == "original-video":
-                final_output_path = output_dir / f"sermon_{sermon_id}{original_input_path.suffix}"
+                final_output_path = output_dir / FILENAMES["audio"]
                 if final_upload_path.exists():
                     if final_upload_path.resolve() != final_output_path.resolve():
                         shutil.copy2(final_upload_path, final_output_path)
                 else:
-                    final_output_path = output_dir / f"sermon_{sermon_id}.mp3"
+                    final_output_path = output_dir / FILENAMES["audio"]
                     if enhanced_audio_path.resolve() != final_output_path.resolve():
                         shutil.copy2(enhanced_audio_path, final_output_path)
             else:
-                final_output_path = output_dir / f"sermon_{sermon_id}.mp3"
+                final_output_path = output_dir / FILENAMES["audio"]
                 source = enhanced_audio_path if enhanced_audio_path != audio_path else audio_path
                 if source.resolve() != final_output_path.resolve():
                     shutil.copy2(source, final_output_path)
@@ -1714,11 +1712,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'dry_run': True,
             }
             import json
-            with open(output_dir / "metadata.json", 'w') as f:
+            with open(get_file_path(output_dir, "metadata"), 'w') as f:
                 json.dump(metadata, f, indent=2)
 
             if transcript:
-                with open(output_dir / f"{sermon_id}_transcript.txt", 'w', encoding='utf-8') as f:
+                with open(get_file_path(output_dir, "transcript"), 'w', encoding='utf-8') as f:
                     f.write(transcript)
 
             # Save to local database for UI visibility
@@ -1749,7 +1747,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     'status': 'draft',
                     'file_paths': {
                         'audio': str(final_output_path),
-                        'metadata': str(output_dir / "metadata.json"),
+                        'metadata': str(get_file_path(output_dir, "metadata")),
                     },
                     'content': {
                         'transcript_text': transcript or '',
@@ -1827,22 +1825,21 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             output_root = Path(config.get('output_directory', 'processed_sermons'))
             if not output_root.is_absolute():
                 output_root = Path(__file__).parent / output_root
-            output_dir = output_root / sermon_id
+            output_dir = get_sermon_dir(output_root, speaker_name, series_title, title, sermon_id)
             output_dir.mkdir(parents=True, exist_ok=True)
             result['output_dir'] = str(output_dir)
 
             # Copy processed file to output directory
+            import shutil
             if input_is_video and upload_type == "original-video":
-                final_output_path = output_dir / f"sermon_{sermon_id}{original_input_path.suffix}"
-                import shutil
+                final_output_path = output_dir / FILENAMES["audio"]
                 if final_upload_path.exists():
                     shutil.copy2(final_upload_path, final_output_path)
                 else:
-                    final_output_path = output_dir / f"sermon_{sermon_id}.mp3"
+                    final_output_path = output_dir / FILENAMES["audio"]
                     shutil.copy2(enhanced_audio_path, final_output_path)
             else:
-                final_output_path = output_dir / f"sermon_{sermon_id}.mp3"
-                import shutil
+                final_output_path = output_dir / FILENAMES["audio"]
                 source = enhanced_audio_path if enhanced_audio_path != audio_path else audio_path
                 shutil.copy2(source, final_output_path)
 
@@ -1866,12 +1863,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             }
 
             import json
-            with open(output_dir / "metadata.json", 'w') as f:
+            with open(get_file_path(output_dir, "metadata"), 'w') as f:
                 json.dump(metadata, f, indent=2)
 
             # Save transcript if available
             if transcript:
-                with open(output_dir / f"{sermon_id}_transcript.txt", 'w', encoding='utf-8') as f:
+                with open(get_file_path(output_dir, "transcript"), 'w', encoding='utf-8') as f:
                     f.write(transcript)
                 console_print(f"📝 Transcript saved ({len(transcript)} characters)")
 
@@ -1903,7 +1900,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     'status': 'processed',
                     'file_paths': {
                         'audio': str(final_output_path),
-                        'metadata': str(output_dir / 'metadata.json'),
+                        'metadata': str(get_file_path(output_dir, "metadata")),
                     },
                     'content': {
                         'transcript_text': transcript or '',
@@ -2005,12 +2002,12 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
         file_paths = sermon_data.get('file_paths', {}) or {}
         audio_path_str = file_paths.get('audio', '') or ''
         if not audio_path_str or not Path(audio_path_str).exists():
-            # Fall back to looking in processed_sermons/{id}/ directory
+            # Fall back to looking in processed_sermons/{speaker}/{series}/{title}/ directory
             output_root = Path(config.get('output_directory', 'processed_sermons'))
             if not output_root.is_absolute():
                 output_root = Path(__file__).parent / output_root
-            fallback_dir = output_root / dry_run_id
-            if fallback_dir.exists():
+            fallback_dir = find_sermon_dir(output_root, dry_run_id)
+            if fallback_dir:
                 for f in fallback_dir.iterdir():
                     if f.suffix.lower() in ('.mp3', '.wav', '.mp4', '.m4a', '.ogg', '.flac', '.mov', '.mkv', '.webm'):
                         audio_path_str = str(f)
@@ -2128,12 +2125,13 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
         output_root = Path(config.get('output_directory', 'processed_sermons'))
         if not output_root.is_absolute():
             output_root = Path(__file__).parent / output_root
-        old_output_dir = output_root / dry_run_id
-        new_output_dir = output_root / new_sermon_id
-        if old_output_dir.exists():
-            import shutil
-            shutil.copytree(str(old_output_dir), str(new_output_dir), dirs_exist_ok=True)
-            shutil.rmtree(str(old_output_dir))
+        old_output_dir = find_sermon_dir(output_root, dry_run_id)
+        if old_output_dir and old_output_dir.exists():
+            new_output_dir = get_sermon_dir(output_root, speaker_name, series_title, title, new_sermon_id)
+            if old_output_dir != new_output_dir:
+                import shutil
+                shutil.copytree(str(old_output_dir), str(new_output_dir), dirs_exist_ok=True)
+                shutil.rmtree(str(old_output_dir))
 
         # Delete old dry run database entry
         repo.delete_sermon(dry_run_id)
@@ -2653,7 +2651,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
         processed_root = output_root
 
     os.makedirs(processed_root, exist_ok=True)
-    sermon_dir = os.path.join(processed_root, sermon_id)
+    sermon_dir = get_sermon_dir(processed_root, speaker_name, None, sermon_name, sermon_id)
     os.makedirs(sermon_dir, exist_ok=True)
 
     # Initialize variables for metadata processing
@@ -2706,8 +2704,8 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
     if needs_audio:
         if not verbose:
             print("   🎵 Downloading audio...")
-        input_audio = os.path.join(sermon_dir, f"temp_{sermon_id}.mp3")
-        output_audio = os.path.join(sermon_dir, f"processed_{sermon_id}.mp3")
+        input_audio = os.path.join(sermon_dir, FILENAMES["temp"])
+        output_audio = os.path.join(sermon_dir, FILENAMES["enhanced"])
 
         # Gather potential audio URLs
         audio_url = None
@@ -2740,7 +2738,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
 
             # Save original audio if requested
             if should_save_original:
-                original_audio_path = os.path.join(sermon_dir, f"original_{sermon_id}.mp3")
+                original_audio_path = os.path.join(sermon_dir, FILENAMES["original"])
                 try:
                     import shutil
                     shutil.copy2(input_audio, original_audio_path)
@@ -2779,7 +2777,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
     if summary is not None:
         try:
             with open(
-                os.path.join(sermon_dir, f"{sermon_id}_description.txt"),
+                get_file_path(sermon_dir, "description"),
                 'w',
                 encoding='utf-8',
             ) as fh:
@@ -2790,7 +2788,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
     if hashtags is not None:
         try:
             with open(
-                os.path.join(sermon_dir, f"{sermon_id}_hashtags.txt"),
+                get_file_path(sermon_dir, "hashtags"),
                 'w',
                 encoding='utf-8',
             ) as fh:
@@ -2808,13 +2806,13 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
         if should_save_transcript:
             try:
                 with open(
-                    os.path.join(sermon_dir, f"{sermon_id}_transcript.txt"),
+                    get_file_path(sermon_dir, "transcript"),
                     'w',
                     encoding='utf-8',
                 ) as fh:
                     fh.write(transcript)
                 logger.debug("Saved transcript to: %s",
-                           os.path.join(sermon_dir, f"{sermon_id}_transcript.txt"))
+                           get_file_path(sermon_dir, "transcript"))
             except Exception as e:  # pragma: no cover
                 logger.error("Failed writing transcript file: %s", e)
 
@@ -2882,7 +2880,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
 
     # Cleanup temp audio file
     try:
-        input_audio = os.path.join(sermon_dir, f"temp_{sermon_id}.mp3")
+        input_audio = os.path.join(sermon_dir, FILENAMES["temp"])
         if os.path.exists(input_audio):
             os.remove(input_audio)
     except Exception:  # pragma: no cover
@@ -2908,9 +2906,9 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                 'file_paths': {
                     'processed_audio': output_audio if output_audio and os.path.exists(output_audio) else None,
                     'original_audio': original_audio_path if 'original_audio_path' in locals() and original_audio_path and os.path.exists(original_audio_path) else None,
-                    'transcript': os.path.join(sermon_dir, f"{sermon_id}_transcript.txt") if transcript else None,
-                    'description': os.path.join(sermon_dir, f"{sermon_id}_description.txt") if summary else None,
-                    'hashtags': os.path.join(sermon_dir, f"{sermon_id}_hashtags.txt") if hashtags else None
+                    'transcript': str(get_file_path(sermon_dir, "transcript")) if transcript else None,
+                    'description': str(get_file_path(sermon_dir, "description")) if summary else None,
+                    'hashtags': str(get_file_path(sermon_dir, "hashtags")) if hashtags else None
                 },
                 'processing_info': {
                     'enhancement_method': AUDIO_PARAMS.get('enhancement_method', 'unknown'),
