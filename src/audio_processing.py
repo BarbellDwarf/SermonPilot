@@ -109,7 +109,7 @@ logger = logging.getLogger(__name__)
 class AudioProcessor:
     """Advanced audio processor for sermon audio enhancement with multiple AI models."""
 
-    def __init__(self, enhancement_method: str = "clear", config: dict[str, Any] | None = None):
+    def __init__(self, enhancement_method: str = "deepfilternet", config: dict[str, Any] | None = None):
         """Initialize the audio processor with specified enhancement method.
         
         Note: Models are loaded lazily when first needed to avoid unnecessary 
@@ -156,9 +156,9 @@ class AudioProcessor:
         if self.enhancement_method not in ["deepfilternet", "clear", "none"]:
             logger.warning(
                 f"Unknown enhancement method: {enhancement_method}, "
-                f"falling back to clear"
+                f"falling back to deepfilternet"
             )
-            self.enhancement_method = "clear"
+            self.enhancement_method = "deepfilternet"
 
         logger.info(f"AudioProcessor initialized with {self.enhancement_method} method (models will load on first use)")
 
@@ -1051,7 +1051,7 @@ class AudacityProcessor:
 
 # Convenience function
 def process_sermon_audio(input_path: str, output_path: str, use_audacity: bool = False,
-                       skip_on_error: bool = True, enhancement_method: str = "clear",
+                       skip_on_error: bool = True, enhancement_method: str = "deepfilternet",
                        verbose: bool = False, config: dict[str, Any] | None = None, **kwargs) -> tuple[bool, dict[str, Any] | None]:
     """
     Process sermon audio with selected enhancement method.
@@ -1060,7 +1060,7 @@ def process_sermon_audio(input_path: str, output_path: str, use_audacity: bool =
         input_path: Input audio file
         output_path: Output audio file
         use_audacity: Use Audacity if True, else use native Python processing
-        enhancement_method: AI enhancement method to use ("clear", "deepfilternet", "none")
+        enhancement_method: AI enhancement method to use ("deepfilternet", "clear", "none")
         verbose: Show detailed processing information
         config: Configuration dictionary for Q&A normalization and other settings
         **kwargs: Additional arguments for processing

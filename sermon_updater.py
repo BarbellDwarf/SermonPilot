@@ -183,7 +183,7 @@ AUDIO_PARAMS = {
     'gain_db': config.get('audio_gain_db', 1.0),
     'target_level_db': config.get('audio_target_level_db', -22.0),
     'use_audacity': config.get('use_audacity', False),
-    'enhancement_method': config.get('audio_enhancement_method', 'clear'),
+    'enhancement_method': config.get('audio_enhancement_method', 'deepfilternet'),
     'config': config  # Pass full config for Q&A normalization
 }
 
