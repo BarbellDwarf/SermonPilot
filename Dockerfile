@@ -1,4 +1,4 @@
-ARG GPU_BACKEND=cuda
+ARG GPU_BACKEND=cpu
 
 FROM ubuntu:22.04 AS base-cpu
 
@@ -39,16 +39,8 @@ COPY pyproject.toml ./
 
 RUN pip install --no-cache-dir -r requirements/requirements.txt && \
     if [ "$GPU_BACKEND" = "cuda" ]; then \
-        pip install --no-cache-dir --force-reinstall torch==2.1.1+cu121 torchaudio==2.1.1+cu121 torchvision==0.16.1+cu121 \
-            --extra-index-url https://download.pytorch.org/whl/cu121; \
-    elif [ "$GPU_BACKEND" = "rocm" ]; then \
-        pip install --no-cache-dir --force-reinstall torch==2.1.1+rocm6.2 torchaudio==2.1.1+rocm6.2 torchvision==0.16.1+rocm6.2 \
-            --extra-index-url https://download.pytorch.org/whl/rocm6.2; \
-    else \
-        pip install --no-cache-dir --force-reinstall torch==2.1.1 torchaudio==2.1.1 torchvision==0.16.1 \
-            --extra-index-url https://download.pytorch.org/whl/cpu; \
-    fi && \
-    pip install --no-cache-dir 'numpy>=1.26.2,<2.0.0'
+        pip install --no-cache-dir onnxruntime-gpu; \
+    fi
 
 COPY --chown=sermonapp:sermonapp . /app/
 
