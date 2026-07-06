@@ -33,14 +33,20 @@ except ModuleNotFoundError:
 logger = logging.getLogger(__name__)
 
 CLEAR_MODEL_REPO = "desert-ant-labs/clear"
-CLEAR_MODEL_FILE = "clear-studio.onnx"
+CLEAR_MODEL_FILE = "clear-natural.onnx"
 CLEAR_SAMPLE_RATE = 48000
 CHUNK_FRAMES = 200
 
+CLEAR_MODEL_VARIANTS = {
+    "natural": "clear-natural.onnx",
+    "studio": "clear-studio.onnx",
+}
+
 
 class ClearEnhancer:
-    def __init__(self, device: str = "cpu"):
+    def __init__(self, device: str = "cpu", model_variant: str = "natural"):
         self.device = device
+        self.model_variant = model_variant
         self._session = None
         self._df_model = None
         self._df_state = None
@@ -64,8 +70,9 @@ class ClearEnhancer:
 
         from huggingface_hub import hf_hub_download
 
-        model_path = hf_hub_download(CLEAR_MODEL_REPO, CLEAR_MODEL_FILE)
-        logger.info("Clear ONNX model downloaded to %s", model_path)
+        model_file = CLEAR_MODEL_VARIANTS.get(self.model_variant, CLEAR_MODEL_FILE)
+        model_path = hf_hub_download(CLEAR_MODEL_REPO, model_file)
+        logger.info("Clear ONNX model downloaded: %s (%s)", model_file, model_path)
 
         requested = self._get_ort_providers()
         available = ort.get_available_providers()
