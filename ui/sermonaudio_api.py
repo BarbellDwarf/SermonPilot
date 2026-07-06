@@ -70,27 +70,54 @@ class SermonAudioAPI:
             return False
 
     def _load_from_cache(self, cache_key: str) -> dict[str, Any] | None:
-        """Load data from cache if valid"""
+        """Load data from cache if valid (filesystem + database fallback)."""
+        # Try filesystem cache first (fastest)
         cache_file = self._get_cache_file(cache_key)
         if self._is_cache_valid(cache_file):
             try:
                 with open(cache_file, encoding='utf-8') as f:
                     data = json.load(f)
-                    logger.debug(f"Loaded {cache_key} from cache")
+                    logger.debug(f"Loaded {cache_key} from filesystem cache")
                     return data
             except Exception as e:
                 logger.warning(f"Error reading cache file {cache_file}: {e}")
+
+        # Fall back to database cache
+        try:
+            from database import SermonDatabase
+            db = SermonDatabase()
+            data = db.get_cached_api_response(cache_key)
+            if data:
+                logger.debug(f"Loaded {cache_key} from database cache")
+                # Restore filesystem cache from DB for next fast hit
+                try:
+                    with open(cache_file, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=2, default=str)
+                except Exception:
+                    pass
+                return data
+        except Exception as e:
+            logger.debug(f"Database cache miss for {cache_key}: {e}")
+
         return None
 
     def _save_to_cache(self, cache_key: str, data: dict[str, Any]):
-        """Save data to cache"""
+        """Save data to cache (filesystem + database)."""
         cache_file = self._get_cache_file(cache_key)
         try:
             with open(cache_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, default=str)
-            logger.debug(f"Saved {cache_key} to cache")
+            logger.debug(f"Saved {cache_key} to filesystem cache")
         except Exception as e:
             logger.warning(f"Error saving to cache file {cache_file}: {e}")
+
+        # Also save to database for persistence across container restarts
+        try:
+            from database import SermonDatabase
+            db = SermonDatabase()
+            db.cache_api_response(cache_key, data, expires_hours=24)
+        except Exception as e:
+            logger.debug(f"Database cache save failed for {cache_key}: {e}")
 
     def get_speakers(self, force_refresh: bool = False) -> list[dict[str, Any]]:
         """Get list of speakers from API with caching"""
@@ -213,13 +240,21 @@ class SermonAudioAPI:
         return None
 
     def clear_cache(self):
-        """Clear all cached API data"""
+        """Clear all cached API data (filesystem + database)."""
         try:
             for cache_file in self.cache_dir.glob("*.json"):
                 cache_file.unlink()
-            logger.info("Cleared all API cache")
+            logger.info("Cleared filesystem API cache")
         except Exception as e:
-            logger.error(f"Error clearing cache: {e}")
+            logger.error(f"Error clearing filesystem cache: {e}")
+
+        try:
+            from database import SermonDatabase
+            db = SermonDatabase()
+            db.clear_api_cache()
+            logger.info("Cleared database API cache")
+        except Exception as e:
+            logger.debug(f"Error clearing database cache: {e}")
 
     def is_configured(self) -> bool:
         """Check if API is properly configured"""
