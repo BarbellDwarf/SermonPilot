@@ -1684,12 +1684,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             # Copy processed file to output directory
             import shutil
             if input_is_video and upload_type == "original-video":
-                final_output_path = output_dir / FILENAMES["audio"]
+                final_output_path = output_dir / FILENAMES["enhanced_video"]
                 if final_upload_path.exists():
                     if final_upload_path.resolve() != final_output_path.resolve():
                         shutil.copy2(final_upload_path, final_output_path)
                 else:
-                    final_output_path = output_dir / FILENAMES["audio"]
+                    final_output_path = output_dir / FILENAMES["enhanced_video"]
                     if enhanced_audio_path.resolve() != final_output_path.resolve():
                         shutil.copy2(enhanced_audio_path, final_output_path)
             else:
