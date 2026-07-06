@@ -369,6 +369,9 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
                                             '~/Documents/Repositories/deepfilternet/clean-audio.py'),
             clean_audio_device=form_data.get('clean_audio_device', 'auto'),
             generate_short_title=bool(form_data.get('generate_short_title', False)),
+            enhancement_method=form_data.get('enhancement_method'),
+            custom_repo=form_data.get('custom_repo'),
+            custom_file=form_data.get('custom_file'),
             progress_callback=progress_cb,
         )
 
