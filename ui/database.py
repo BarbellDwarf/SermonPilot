@@ -27,6 +27,25 @@ class SermonDatabase:
     def init_database(self):
         """Initialize database tables"""
         with self.get_connection() as conn:
+            # Config cache table (survives reboots, no expiration)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS config_cache (
+                    key TEXT PRIMARY KEY,
+                    data TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # API cache table (replaces filesystem api_cache/*.json)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS api_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    data TEXT NOT NULL,
+                    cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP
+                )
+            """)
+
             # Metadata cache table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS metadata_cache (
@@ -283,6 +302,53 @@ class SermonDatabase:
             if row:
                 return json.loads(row['data'])
             return None
+
+    def save_config(self, config: dict) -> None:
+        """Save full config dict to database (survives reboots)."""
+        with self.get_connection() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO config_cache (key, data, updated_at)
+                VALUES (?, ?, ?)
+            """, ("app_config", json.dumps(config), datetime.datetime.now()))
+            conn.commit()
+
+    def load_config(self) -> dict | None:
+        """Load config dict from database, or None if never saved."""
+        with self.get_connection() as conn:
+            row = conn.execute("""
+                SELECT data FROM config_cache WHERE key = ?
+            """, ("app_config",)).fetchone()
+            if row:
+                return json.loads(row['data'])
+            return None
+
+    def cache_api_response(self, cache_key: str, data: dict, expires_hours: int = 24) -> None:
+        """Cache an API response in the database."""
+        expires_at = datetime.datetime.now() + datetime.timedelta(hours=expires_hours)
+        with self.get_connection() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO api_cache (cache_key, data, cached_at, expires_at)
+                VALUES (?, ?, ?, ?)
+            """, (cache_key, json.dumps(data), datetime.datetime.now(), expires_at))
+            conn.commit()
+
+    def get_cached_api_response(self, cache_key: str) -> dict | None:
+        """Get cached API response if not expired."""
+        with self.get_connection() as conn:
+            row = conn.execute("""
+                SELECT data FROM api_cache
+                WHERE cache_key = ? AND (expires_at IS NULL OR expires_at > ?)
+            """, (cache_key, datetime.datetime.now())).fetchone()
+            if row:
+                return json.loads(row['data'])
+            return None
+
+    def clear_api_cache(self) -> None:
+        """Clear all expired API cache entries."""
+        with self.get_connection() as conn:
+            conn.execute("DELETE FROM api_cache WHERE expires_at < ?",
+                        (datetime.datetime.now(),))
+            conn.commit()
 
     def update_processing_status(self, sermon_id: str, operation: str,
                                status: str, progress: float = 0.0,
