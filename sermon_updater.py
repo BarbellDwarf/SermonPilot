@@ -1799,6 +1799,20 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         result['sermon_id'] = sermon_id
         _report(90, f"Created sermon: {sermon_id}")
 
+        # The API ignores seriesTitle during creation, so PATCH it after
+        if series_title:
+            try:
+                patch_url = BASE_URL + f'node/sermons/{sermon_id}'
+                patch_headers = get_api_headers()
+                patch_resp = requests.patch(patch_url, headers=patch_headers,
+                                            json={'seriesTitle': series_title[:100]}, timeout=30)
+                if patch_resp.status_code in (200, 204):
+                    logger.info("Series set via PATCH: %s", series_title[:100])
+                else:
+                    logger.warning("Failed to PATCH series: %d", patch_resp.status_code)
+            except Exception as e:
+                logger.warning("Error PATCHing series: %s", e)
+
         # Step 5: Upload the media (audio or video)
         media_label = "video" if upload_type == "original-video" else "audio"
         console_print(f"📤 Uploading {media_label} for sermon {sermon_id}...")
@@ -2031,6 +2045,20 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
             return result
 
         console_print(f"✅ Sermon created with ID: {new_sermon_id}")
+
+        # The API ignores seriesTitle during creation, so PATCH it after
+        if series_title:
+            try:
+                patch_url = BASE_URL + f'node/sermons/{new_sermon_id}'
+                patch_headers = get_api_headers()
+                patch_resp = requests.patch(patch_url, headers=patch_headers,
+                                            json={'seriesTitle': series_title[:100]}, timeout=30)
+                if patch_resp.status_code in (200, 204):
+                    logger.info("Series set via PATCH: %s", series_title[:100])
+                else:
+                    logger.warning("Failed to PATCH series: %d", patch_resp.status_code)
+            except Exception as e:
+                logger.warning("Error PATCHing series: %s", e)
 
         # Determine upload type from metadata.json (stored during dry run)
         upload_type = "original-audio"
@@ -2869,17 +2897,17 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
 
             # Build comprehensive sermon record
             sermon_data = {
-                'id': sermon_id,
-                'title': sermon_name,
-                'speaker': speaker_name,
-                'recorded_date': getattr(details, 'preachDate', ''),
-                'event_type': event_type,
-                'bible_text': getattr(details, 'bibleText', ''),
-                'duration': getattr(details, 'durationSeconds', 0),
+                'id': str(sermon_id) if sermon_id else '',
+                'title': str(sermon_name) if sermon_name else '',
+                'speaker': str(speaker_name) if speaker_name else '',
+                'recorded_date': str(getattr(details, 'preachDate', '') or ''),
+                'event_type': str(event_type) if event_type else '',
+                'bible_text': str(getattr(details, 'bibleText', '') or ''),
+                'duration': int(getattr(details, 'durationSeconds', 0) or 0),
                 'status': 'processed' if not DRY_RUN else 'pending',
                 'file_paths': {
-                    'processed_audio': output_audio if os.path.exists(output_audio) else None,
-                    'original_audio': original_audio_path if 'original_audio_path' in locals() and os.path.exists(original_audio_path) else None,
+                    'processed_audio': output_audio if output_audio and os.path.exists(output_audio) else None,
+                    'original_audio': original_audio_path if 'original_audio_path' in locals() and original_audio_path and os.path.exists(original_audio_path) else None,
                     'transcript': os.path.join(sermon_dir, f"{sermon_id}_transcript.txt") if transcript else None,
                     'description': os.path.join(sermon_dir, f"{sermon_id}_description.txt") if summary else None,
                     'hashtags': os.path.join(sermon_dir, f"{sermon_id}_hashtags.txt") if hashtags else None
@@ -2903,7 +2931,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                     'summary': summary  # Using description as summary for now
                 },
                 'upload_info': {
-                    'sermonaudio_id': sermon_id,
+                    'sermonaudio_id': str(sermon_id) if sermon_id else '',
                     'upload_date': dt.datetime.now(),
                     'upload_status': 'completed' if not DRY_RUN else 'pending',
                     'upload_message': 'Processing completed successfully'
