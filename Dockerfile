@@ -4,7 +4,7 @@ FROM ubuntu:22.04 AS base-cpu
 
 FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04 AS base-cuda
 
-FROM rocm/dev-ubuntu-22.04:6.2 AS base-rocm
+FROM rocm/dev-ubuntu-22.04:7.1 AS base-rocm
 
 FROM base-${GPU_BACKEND} AS base
 
@@ -37,9 +37,17 @@ WORKDIR /app
 COPY requirements/ requirements/
 COPY pyproject.toml ./
 
-RUN pip install --no-cache-dir -r requirements/requirements.txt && \
-    if [ "$GPU_BACKEND" = "cuda" ]; then \
-        pip install --no-cache-dir onnxruntime-gpu; \
+# Install uv for fast dependency resolution
+RUN pip install --no-cache-dir uv
+
+# Install core + GPU-specific dependencies
+RUN if [ "$GPU_BACKEND" = "cuda" ]; then \
+        uv pip install --system --no-cache-dir -r requirements/requirements.txt && \
+        uv pip install --system --no-cache-dir onnxruntime-gpu; \
+    elif [ "$GPU_BACKEND" = "rocm" ]; then \
+        uv pip install --system --no-cache-dir -r requirements/requirements-rocm.txt; \
+    else \
+        uv pip install --system --no-cache-dir -r requirements/requirements.txt; \
     fi
 
 COPY --chown=sermonapp:sermonapp . /app/
