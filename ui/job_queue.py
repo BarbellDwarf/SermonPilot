@@ -178,6 +178,9 @@ class JobQueue:
         # Load existing jobs from database
         self._load_jobs_from_db()
 
+        # Recover orphaned jobs left in RUNNING state from a previous crash/restart
+        self._recover_orphaned_jobs()
+
         # Start worker threads
         for i in range(self.max_workers):
             worker = threading.Thread(
@@ -189,6 +192,35 @@ class JobQueue:
             self._workers.append(worker)
 
         logger.info(f"Job queue started with {self.max_workers} workers")
+
+    def _recover_orphaned_jobs(self):
+        """Reset jobs stuck in RUNNING state from a previous crash/restart.
+
+        Worker threads are daemon threads and die when the process dies.
+        Jobs left in RUNNING state after a crash would never be picked up
+        because _get_next_job() only looks for QUEUED status. Mark them
+        as FAILED so the user can review and retry from the Jobs page.
+        """
+        recovered = 0
+        with self._queue_lock:
+            for job in self._jobs.values():
+                if job.status == JobStatus.RUNNING:
+                    job.status = JobStatus.FAILED
+                    job.completed_at = datetime.now()
+                    job.add_log("Job interrupted: service restarted during processing")
+                    job.result = JobResult(
+                        success=False,
+                        message="Service restarted during processing",
+                        error="Job was interrupted by a service restart. Please retry.",
+                    )
+                    self._save_job_to_db(job)
+                    recovered += 1
+
+        if recovered:
+            logger.warning(
+                f"Recovered {recovered} orphaned job(s) left in RUNNING state "
+                f"from a previous restart. Marked as FAILED — retry from the Jobs page."
+            )
 
     def stop(self):
         """Stop the job queue"""

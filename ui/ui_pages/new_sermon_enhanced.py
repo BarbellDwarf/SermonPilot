@@ -304,7 +304,6 @@ def show_processing_configuration():
         generate_description = st.checkbox(
             "Generate Description",
             key="generate_description",
-            value=not is_skip_ai,
             disabled=is_skip_ai,
             help="Use AI to generate detailed description from transcript"
         )
@@ -313,7 +312,6 @@ def show_processing_configuration():
         generate_hashtags = st.checkbox(
             "Generate Hashtags",
             key="generate_hashtags",
-            value=not is_skip_ai,
             disabled=is_skip_ai,
             help="Use AI to generate relevant hashtags from content"
         )
