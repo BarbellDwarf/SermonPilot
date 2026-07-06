@@ -1683,23 +1683,31 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             # Copy processed file to output directory
             import shutil
+            from src.sermon_paths import build_output_filename
+
+            ext = Path(audio_path).suffix
             if input_is_video and upload_type == "original-video":
-                final_output_path = output_dir / FILENAMES["enhanced_video"]
+                final_output_path = output_dir / build_output_filename(
+                    title, series_title, speaker_name, recorded_date, "Processed", ext
+                )
                 if final_upload_path.exists():
                     if final_upload_path.resolve() != final_output_path.resolve():
                         shutil.copy2(final_upload_path, final_output_path)
                 else:
-                    final_output_path = output_dir / FILENAMES["enhanced_video"]
                     if enhanced_audio_path.resolve() != final_output_path.resolve():
                         shutil.copy2(enhanced_audio_path, final_output_path)
             else:
-                final_output_path = output_dir / FILENAMES["audio"]
+                final_output_path = output_dir / build_output_filename(
+                    title, series_title, speaker_name, recorded_date, "Processed", ext
+                )
                 source = enhanced_audio_path if enhanced_audio_path != audio_path else audio_path
                 if source.resolve() != final_output_path.resolve():
                     shutil.copy2(source, final_output_path)
 
             # Save original file for future reprocessing
-            original_save_path = output_dir / FILENAMES["original_video" if input_is_video else "original_audio"]
+            original_save_path = output_dir / build_output_filename(
+                title, series_title, speaker_name, recorded_date, "Original", ext
+            )
             if not original_save_path.exists():
                 shutil.copy2(audio_path, original_save_path)
                 logger.info("Saved original file to %s", original_save_path)
@@ -1844,17 +1852,31 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             # Copy processed file to output directory
             import shutil
+            from src.sermon_paths import build_output_filename
+
+            ext = Path(audio_path).suffix
             if input_is_video and upload_type == "original-video":
-                final_output_path = output_dir / FILENAMES["audio"]
+                final_output_path = output_dir / build_output_filename(
+                    title, series_title, speaker_name, recorded_date, "Processed", ext
+                )
                 if final_upload_path.exists():
                     shutil.copy2(final_upload_path, final_output_path)
                 else:
-                    final_output_path = output_dir / FILENAMES["audio"]
                     shutil.copy2(enhanced_audio_path, final_output_path)
             else:
-                final_output_path = output_dir / FILENAMES["audio"]
+                final_output_path = output_dir / build_output_filename(
+                    title, series_title, speaker_name, recorded_date, "Processed", ext
+                )
                 source = enhanced_audio_path if enhanced_audio_path != audio_path else audio_path
                 shutil.copy2(source, final_output_path)
+
+            # Save original file for future reprocessing
+            original_save_path = output_dir / build_output_filename(
+                title, series_title, speaker_name, recorded_date, "Original", ext
+            )
+            if not original_save_path.exists():
+                shutil.copy2(audio_path, original_save_path)
+                logger.info("Saved original file to %s", original_save_path)
 
             # Save metadata
             metadata = {
