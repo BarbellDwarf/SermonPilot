@@ -15,12 +15,10 @@ requirements/
 ├── requirements-dev.txt               # Development tools (all platforms)
 ├── linux/                             # Linux-specific files
 │   ├── requirements-linux.txt         # Linux base requirements
-│   ├── requirements-models-deepfilternet.txt  # DeepFilterNet (Linux)
-│   └── requirements-models-resemble.txt       # Resemble Enhance (Linux)
+│   └── requirements-models-deepfilternet.txt  # DeepFilterNet (Linux)
 └── windows/                           # Windows-specific files
     ├── requirements-windows.txt       # Windows base requirements
-    ├── requirements-models-deepfilternet.txt  # DeepFilterNet (Windows)
-    └── requirements-models-resemble.txt       # Resemble Enhance (Windows)
+    └── requirements-models-deepfilternet.txt  # DeepFilterNet (Windows)
 ```
 
 ## Core Requirements
@@ -48,7 +46,6 @@ uv pip install -r requirements/linux/requirements-linux.txt --index-strategy uns
 #### Model Files (Linux)
 
 - **`requirements-models-deepfilternet.txt`**: DeepFilterNet audio enhancement
-- **`requirements-models-resemble.txt`**: Resemble Enhance audio enhancement
 
 ### Windows (`windows/`)
 
@@ -63,7 +60,6 @@ uv pip install -r requirements/windows/requirements-windows.txt --index-strategy
 #### Model Files (Windows)
 
 - **`requirements-models-deepfilternet.txt`**: DeepFilterNet audio enhancement
-- **`requirements-models-resemble.txt`**: Resemble Enhance audio enhancement
 
 ## GPU Acceleration Levels
 
@@ -205,9 +201,6 @@ uv pip install -r requirements/linux/requirements-models-deepfilternet.txt  # or
 Some AI models have complex dependencies and may need manual installation:
 
 ```bash
-# Resemble Enhance (if automatic installation fails)
-pip install resemble-enhance
-
 # VoiceFixer
 pip install voicefixer
 

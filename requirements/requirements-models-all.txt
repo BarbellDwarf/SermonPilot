@@ -5,9 +5,6 @@
 # Include DeepFilterNet
 -r requirements-models-deepfilternet.txt
 
-# Include Resemble Enhance (commented out due to potential conflicts)
-# -r requirements-models-resemble.txt
-
 # Additional AI models (optional - may require manual installation)
 # voicefixer>=0.1.2
 # speechbrain>=0.5.0

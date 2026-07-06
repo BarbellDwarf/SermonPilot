@@ -67,7 +67,26 @@ class ClearEnhancer:
         model_path = hf_hub_download(CLEAR_MODEL_REPO, CLEAR_MODEL_FILE)
         logger.info("Clear ONNX model downloaded to %s", model_path)
 
-        providers = self._get_ort_providers()
+        requested = self._get_ort_providers()
+        available = ort.get_available_providers()
+        providers = [p for p in requested if p in available]
+        if providers != requested:
+            skipped = [p for p in requested if p not in available]
+            # When on ROCm, the ROCM provider not being available is expected
+            # (the only pip wheel is built against ROCm 6.4.2 ABI, incompatible
+            # with ROCm 7.x systems). Demote to info to avoid log noise.
+            if self.device == "rocm" and "ROCMExecutionProvider" in skipped:
+                logger.info(
+                    "Clear: ROCM provider unavailable on this system "
+                    "(onnxruntime-rocm pip wheel is built for ROCm 6.4.2 ABI). "
+                    "Falling back to CPU ORT — still ~80x realtime."
+                )
+            else:
+                logger.warning(
+                    "Clear: requested ORT providers %s but only %s are available; "
+                    "falling back. Missing: %s",
+                    requested, available, skipped
+                )
         self._session = ort.InferenceSession(model_path, providers=providers)
         logger.info("Clear ONNX session created with providers=%s", providers)
 
@@ -80,22 +99,26 @@ class ClearEnhancer:
 
     def _init_df_dsp(self):
         from df.enhance import init_df, df_features
-        from df.utils import get_device
 
         self._df_model, self._df_state, *_ = init_df()
         self._df_features_fn = df_features
-        self._device = get_device()
+        # Force CPU for DF DSP — we only need STFT/ERB feature extraction
+        # (small tensors), and the ORT session is what does the heavy lifting
+        # on the GPU. Avoiding CUDA tensors here sidesteps a torch<->numpy
+        # round-trip issue in df.enhance.df_features.
+        self._device = "cpu"
         self._n_fft = self._df_state.fft_size()
         self._hop = self._df_state.hop_size()
         self._nb_df = getattr(
             self._df_model, "nb_df",
             getattr(self._df_model, "df_bins", 32)
         )
-        logger.info("DF DSP initialized: n_fft=%d, hop=%d", self._n_fft, self._hop)
+        logger.info("DF DSP initialized: n_fft=%d, hop=%d, device=%s", self._n_fft, self._hop, self._device)
 
     def enhance(self, audio: np.ndarray, sr: int) -> np.ndarray:
         self._ensure_initialized()
 
+        original_sr = sr
         if sr != CLEAR_SAMPLE_RATE:
             audio_t = torch.from_numpy(audio.astype(np.float32))
             if audio_t.ndim == 1:
@@ -103,7 +126,8 @@ class ClearEnhancer:
             audio_t = torchaudio.functional.resample(audio_t, sr, CLEAR_SAMPLE_RATE)
             audio = audio_t.squeeze(0).numpy()
             sr = CLEAR_SAMPLE_RATE
-
+            logger.info("Clear: resampled %d Hz -> %d Hz (%d -> %d samples)",
+                        original_sr, sr, len(audio), len(audio))
         was_1d = audio.ndim == 1
         if was_1d:
             audio = audio[np.newaxis, :]
@@ -151,6 +175,18 @@ class ClearEnhancer:
         result = audio_out.cpu().numpy()
         if was_1d:
             result = result[0]
+
+        # Resample back to the original sample rate to keep duration unchanged
+        if original_sr != CLEAR_SAMPLE_RATE:
+            result_t = torch.from_numpy(result.astype(np.float32))
+            if result_t.ndim == 1:
+                result_t = result_t.unsqueeze(0)
+            result_t = torchaudio.functional.resample(result_t, CLEAR_SAMPLE_RATE, original_sr)
+            result = result_t.squeeze(0).numpy()
+            if result.ndim == 1 and result.shape[0] == 1:
+                result = result[0]
+            logger.info("Clear: resampled back %d Hz -> %d Hz (%d samples, %.2fs)",
+                        CLEAR_SAMPLE_RATE, original_sr, len(result), len(result) / original_sr)
 
         peak = np.abs(result).max()
         if peak > 1.0:
