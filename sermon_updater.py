@@ -1698,6 +1698,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 if source.resolve() != final_output_path.resolve():
                     shutil.copy2(source, final_output_path)
 
+            # Save original file for future reprocessing
+            original_save_path = output_dir / FILENAMES["original_video" if input_is_video else "original_audio"]
+            if not original_save_path.exists():
+                shutil.copy2(audio_path, original_save_path)
+                logger.info("Saved original file to %s", original_save_path)
+
             # Save metadata
             metadata = {
                 'sermonID': sermon_id,
