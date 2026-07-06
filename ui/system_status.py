@@ -361,6 +361,24 @@ class SystemStatusManager:
                         'timestamp': datetime.now()
                     }
 
+            elif method in ('clear-studio', 'clear-natural'):
+                try:
+                    import onnxruntime
+                    from huggingface_hub import hf_hub_download
+                    return {
+                        'status': 'ok',
+                        'message': f'Clear ({method}) ready',
+                        'details': 'ONNX Runtime + Clear model available',
+                        'timestamp': datetime.now()
+                    }
+                except ImportError as e:
+                    return {
+                        'status': 'error',
+                        'message': f'Clear ({method}) not available',
+                        'details': f'Missing dependency: {e}',
+                        'timestamp': datetime.now()
+                    }
+
             else:
                 return {
                     'status': 'warning',

@@ -153,7 +153,8 @@ class AudioProcessor:
             self.qa_processing_enabled = False
 
         # Validate enhancement method but don't initialize models yet
-        if self.enhancement_method not in ["deepfilternet", "clear", "none"]:
+        valid_methods = {"deepfilternet", "clear-studio", "clear-natural", "none"}
+        if self.enhancement_method not in valid_methods:
             logger.warning(
                 f"Unknown enhancement method: {enhancement_method}, "
                 f"falling back to deepfilternet"
@@ -171,7 +172,7 @@ class AudioProcessor:
 
         if self.enhancement_method == "deepfilternet":
             self._init_deepfilternet()
-        elif self.enhancement_method == "clear":
+        elif self.enhancement_method in ("clear-studio", "clear-natural"):
             self._init_clear()
         elif self.enhancement_method == "none":
             logger.info("No AI enhancement method selected")
@@ -208,7 +209,8 @@ class AudioProcessor:
             try:
                 logger.info("Initializing Clear enhancer")
                 clear_device = "rocm" if self.is_rocm else self.device
-                clear_variant = self.config.get('clear_model_variant', 'natural')
+                # Map method name to variant: clear-studio -> studio, clear-natural -> natural
+                clear_variant = self.enhancement_method.replace("clear-", "")
                 self.clear_enhancer = ClearEnhancer(device=clear_device, model_variant=clear_variant)
                 logger.info("Clear enhancer initialized successfully (variant=%s)", clear_variant)
             except Exception as e:
@@ -657,7 +659,7 @@ class AudioProcessor:
         # Route based on enhancement method
         if self.enhancement_method == "deepfilternet":
             return self._apply_deepfilternet(audio_data, sample_rate, size_threshold)
-        elif self.enhancement_method == "clear":
+        elif self.enhancement_method in ("clear-studio", "clear-natural"):
             return self._apply_clear(audio_data, sample_rate)
         elif self.enhancement_method == "none":
             logger.info("No enhancement requested, returning original audio")
