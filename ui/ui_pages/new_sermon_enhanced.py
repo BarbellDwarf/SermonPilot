@@ -519,6 +519,8 @@ def start_enhanced_processing():
             'whisper_model': st.session_state.get('whisper_model', 'large'),
             'transcription_backend': st.session_state.get('transcription_backend', 'whisper_local'),
             'enhancement_method': st.session_state.get('enhancement_method', 'deepfilternet'),
+            'custom_repo': st.session_state.get('custom_repo', ''),
+            'custom_file': st.session_state.get('custom_file', ''),
             'dry_run': bool(st.session_state.get('dry_run', False)),
             'generate_short_title': bool(st.session_state.get('generate_short_title', False)),
         }
