@@ -274,13 +274,60 @@ def show_processing_configuration():
                 horizontal=True,
                 help="Local Whisper (runs on your machine) or OpenAI API (requires OPENAI_API_KEY)"
             )
-            whisper_model = st.selectbox(
-                "Whisper Model (if transcribing locally)",
-                key="whisper_model",
-                options=["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo"],
-                index=8,
-                help="Balance between speed and quality. .en models are English-only (faster). large-v3-turbo ≈ large quality with ~2x speed."
-            )
+
+            if transcription_backend == "whisper_openai":
+                config = st.session_state.get('config', {})
+                openai_cfg = config.get('transcription', {}).get('whisper_openai', {})
+                api_key = openai_cfg.get('api_key', '') or os.environ.get('OPENAI_API_KEY', '')
+                base_url = openai_cfg.get('base_url', '') or os.environ.get('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+
+                if api_key:
+                    if st.button("🔄 Load Available Models", key="load_whisper_models"):
+                        try:
+                            from openai import OpenAI
+                            client = OpenAI(api_key=api_key, base_url=base_url)
+                            models = client.models.list()
+                            whisper_models = sorted([m.id for m in models.data if 'whisper' in m.id.lower()])
+                            if whisper_models:
+                                st.session_state['openai_whisper_models'] = whisper_models
+                                st.success(f"Found {len(whisper_models)} whisper models")
+                            else:
+                                st.warning("No whisper models found on this server")
+                        except Exception as e:
+                            st.error(f"Failed to load models: {e}")
+
+                    openai_models = st.session_state.get('openai_whisper_models', [])
+                    if openai_models:
+                        whisper_model = st.selectbox(
+                            "OpenAI Whisper Model",
+                            key="whisper_model",
+                            options=openai_models,
+                            index=0,
+                            help="Select a whisper model from the server"
+                        )
+                    else:
+                        whisper_model = st.text_input(
+                            "OpenAI Whisper Model",
+                            key="whisper_model",
+                            value=openai_cfg.get('model', 'whisper-1'),
+                            help="Model name (e.g. whisper-1, openai/whisper-large-v3)"
+                        )
+                else:
+                    st.warning("OpenAI API key not configured. Set OPENAI_API_KEY in .env or config.")
+                    whisper_model = st.text_input(
+                        "OpenAI Whisper Model",
+                        key="whisper_model",
+                        value="whisper-1",
+                        help="Model name (e.g. whisper-1, openai/whisper-large-v3)"
+                    )
+            else:
+                whisper_model = st.selectbox(
+                    "Whisper Model (if transcribing locally)",
+                    key="whisper_model",
+                    options=["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo"],
+                    index=8,
+                    help="Balance between speed and quality. .en models are English-only (faster). large-v3-turbo ≈ large quality with ~2x speed."
+                )
 
         col1, col2 = st.columns(2)
         with col1:
