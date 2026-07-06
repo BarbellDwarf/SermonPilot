@@ -361,23 +361,6 @@ class SystemStatusManager:
                         'timestamp': datetime.now()
                     }
 
-            elif method == 'resemble_enhance':
-                try:
-                    import resemble_enhance
-                    return {
-                        'status': 'ok',
-                        'message': 'Resemble Enhance ready',
-                        'details': 'Resemble Enhance package available',
-                        'timestamp': datetime.now()
-                    }
-                except ImportError:
-                    return {
-                        'status': 'error',
-                        'message': 'Resemble Enhance not installed',
-                        'details': 'Install Resemble Enhance package',
-                        'timestamp': datetime.now()
-                    }
-
             else:
                 return {
                     'status': 'warning',

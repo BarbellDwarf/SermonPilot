@@ -34,16 +34,9 @@ huggingface-hub>=0.20.0
 openai-whisper>=20231117
 faster-whisper>=1.0.0
 
-# Note: resemble-enhance has deepspeed dependency that may cause build issues
-# Install separately if needed:
-# pip install resemble-enhance
-
-# Resemble-enhance dependencies
-celluloid>=0.2.0
+# Utilities
 matplotlib>=3.8.1
-omegaconf>=2.3.0
 pandas>=2.1.3
-ptflops>=0.7.1.2
 rich>=13.7.0
 resampy>=0.4.2
 tabulate>=0.8.10
