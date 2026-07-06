@@ -1,16 +1,24 @@
 # ROCm-enabled requirements for SermonAudio AI Audio Processor
-# Install with: pip install -r requirements/requirements-rocm.txt
+# Install with: uv pip install -r requirements/requirements-rocm.txt --index-strategy unsafe-best-match
 
-# Use PyTorch ROCm index
---extra-index-url https://download.pytorch.org/whl/rocm6.2
+# Use PyTorch ROCm index (matches system ROCm 7.x; works on 7.0+)
+--extra-index-url https://download.pytorch.org/whl/rocm7.1
 
 # Core dependencies
 -r requirements.txt
 
-# ROCm-specific PyTorch overrides
-torch==2.1.1+rocm6.2
-torchaudio==2.1.1+rocm6.2
-torchvision==0.16.1+rocm6.2
+# ROCm-specific PyTorch overrides (torch/torchaudio/torchvision are released independently)
+torch==2.12.1+rocm7.1
+torchaudio==2.11.0+rocm7.1
+torchvision==0.27.1+rocm7.1
 
-# DeepFilterNet with ROCm support
+# DeepFilterNet DSP (Clear uses df.enhance + init_df for STFT/ERB features)
 deepfilternet>=0.5.6
+
+# Note: onnxruntime-rocm pip wheels are built against ROCm 6.4.2 ABI
+# (libhipblas.so.2, libamdhip64.so.6, symbol hipblasGemmStridedBatchedEx_v2)
+# and are INCOMPATIBLE with ROCm 7.x systems. Clear's ONNX inference
+# therefore runs on CPU, which is fast enough for sermon-length audio
+# (~10x realtime). PyTorch operations (DeepFilterNet DSP) DO use the GPU.
+# To enable ORT GPU on ROCm, install ROCm 6.4.2 alongside and rebuild
+# onnxruntime from source.

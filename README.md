@@ -41,7 +41,7 @@ OLLAMA_HOST=http://localhost:11434
 ```
 
 Key `config.yaml` settings:
-- `audio_enhancement_method`: `clear` (default, recommended), `deepfilternet`, `resemble_enhance`, or `none`
+- `audio_enhancement_method`: `clear` (default, recommended), `deepfilternet`, or `none`
 - `transcription.backend`: `whisper_local`, `whisper_openai`, or `whisper_openrouter`
 
 ## Usage

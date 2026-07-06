@@ -102,28 +102,6 @@ except ImportError as e:
     enhance = None
     init_df = None
 
-try:
-    from resemble_enhance.enhancer.inference import denoise
-    print("Resemble Enhance Python API successfully imported")
-    resemble_enhance_available = True
-    resemble_enhance_mode = "python_api"
-except ImportError as e:
-    print(f"Resemble Enhance Python API not available: {e}")
-    try:
-        resemble_enhance_cmd = shutil.which("resemble-enhance")
-        if resemble_enhance_cmd:
-            print("Resemble Enhance command line tool found")
-            resemble_enhance_available = True
-            resemble_enhance_mode = "command_line"
-        else:
-            print("Resemble Enhance command line tool not found")
-            resemble_enhance_available = False
-            resemble_enhance_mode = None
-    except Exception as e2:
-        print(f"Error checking for Resemble Enhance: {e2}")
-        resemble_enhance_available = False
-        resemble_enhance_mode = None
-
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
 
@@ -131,7 +109,7 @@ logger = logging.getLogger(__name__)
 class AudioProcessor:
     """Advanced audio processor for sermon audio enhancement with multiple AI models."""
 
-    def __init__(self, enhancement_method: str = "resemble_enhance", config: dict[str, Any] | None = None):
+    def __init__(self, enhancement_method: str = "clear", config: dict[str, Any] | None = None):
         """Initialize the audio processor with specified enhancement method.
         
         Note: Models are loaded lazily when first needed to avoid unnecessary 
@@ -146,10 +124,12 @@ class AudioProcessor:
         self.config = config or {}
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.is_rocm = (
+            getattr(torch.version, "hip", None) is not None
+            or "rocm" in (getattr(torch.version, "cuda", "") or "").lower()
+        )
         if self.device == "cuda":
-            is_rocm = getattr(torch.version, "hip", None) is not None or \
-                      "rocm" in (getattr(torch.version, "cuda", "") or "").lower()
-            if is_rocm:
+            if self.is_rocm:
                 logger.info("Using AMD GPU (ROCm) for processing")
             else:
                 gpu_name = torch.cuda.get_device_name(0)
@@ -160,7 +140,6 @@ class AudioProcessor:
 
         self.df_model = None
         self.df_state = None
-        self.resemble_model = None
         self.clear_enhancer = None
         self._models_initialized = False
 
@@ -174,7 +153,7 @@ class AudioProcessor:
             self.qa_processing_enabled = False
 
         # Validate enhancement method but don't initialize models yet
-        if self.enhancement_method not in ["deepfilternet", "resemble_enhance", "clear", "none"]:
+        if self.enhancement_method not in ["deepfilternet", "clear", "none"]:
             logger.warning(
                 f"Unknown enhancement method: {enhancement_method}, "
                 f"falling back to clear"
@@ -192,8 +171,6 @@ class AudioProcessor:
 
         if self.enhancement_method == "deepfilternet":
             self._init_deepfilternet()
-        elif self.enhancement_method == "resemble_enhance":
-            self._init_resemble_enhance()
         elif self.enhancement_method == "clear":
             self._init_clear()
         elif self.enhancement_method == "none":
@@ -225,28 +202,13 @@ class AudioProcessor:
             logger.error("DeepFilterNet not available")
             self._fallback_to_basic()
 
-    def _init_resemble_enhance(self):
-        """Initialize Resemble Enhance model."""
-        if resemble_enhance_available:
-            try:
-                logger.info("Initializing Resemble Enhance")
-                logger.info("Resemble Enhance ready")
-            except Exception as e:
-                logger.error(f"Failed to initialize Resemble Enhance: {e}")
-                logger.info("Falling back to DeepFilterNet")
-                self.enhancement_method = "deepfilternet"
-                self._init_deepfilternet()
-        else:
-            logger.error("Resemble Enhance not available, falling back to DeepFilterNet")
-            self.enhancement_method = "deepfilternet"
-            self._init_deepfilternet()
-
     def _init_clear(self):
         """Initialize Clear (desert-ant-labs) enhancer."""
         if clear_enhancer_available:
             try:
                 logger.info("Initializing Clear enhancer")
-                self.clear_enhancer = ClearEnhancer(device=self.device)
+                clear_device = "rocm" if self.is_rocm else self.device
+                self.clear_enhancer = ClearEnhancer(device=clear_device)
                 logger.info("Clear enhancer initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize Clear enhancer: {e}")
@@ -439,12 +401,9 @@ class AudioProcessor:
 
         # Realistic VRAM-only memory usage estimates
         # When staying within VRAM, memory usage is much more efficient
-        base_memory_gb = 0.8  # Model + PyTorch + DeepFilterNet overhead
+        base_memory_gb = 0.8
 
-        if self.enhancement_method == "resemble_enhance":
-            memory_per_minute_gb = 0.25  # More memory intensive, increased estimate
-        else:  # DeepFilterNet or others
-            memory_per_minute_gb = 0.35  # ~350MB/min — DeepFilterNet needs ~5GB+ intermediate buffers for full audio
+        memory_per_minute_gb = 0.35
 
         # Calculate total VRAM needed
         audio_duration_minutes = audio_length / sample_rate / 60
@@ -464,28 +423,15 @@ class AudioProcessor:
                 )
             else:
                 # Use large but stable chunks for longer audio
-                if self.enhancement_method == "resemble_enhance":
-                    max_chunk_seconds = 300  # 5-minute chunks for Resemble Enhance stability
-                    logger.info(
-                        f"Audio fits in VRAM but using 5-min chunks for "
-                        f"Resemble Enhance stability (audio: {audio_duration_seconds/60:.0f} min)."
-                    )
-                else:
-                    max_chunk_seconds = 300  # 5-minute chunks for DeepFilterNet stability
-                    logger.info(f"Audio fits in VRAM but using {max_chunk_seconds}-sec chunks for DeepFilterNet stability (audio: {audio_duration_seconds/60:.0f} min).")
+                max_chunk_seconds = 300  # 5-minute chunks for stability
+                logger.info(f"Audio fits in VRAM but using {max_chunk_seconds}-sec chunks for stability (audio: {audio_duration_seconds/60:.0f} min).")
         else:
             # Calculate optimal chunk size that fits in VRAM
             available_for_audio = effective_memory_gb - base_memory_gb
             max_chunk_minutes = available_for_audio / memory_per_minute_gb
 
             # Cap chunks at reasonable sizes for stability
-            if self.enhancement_method == "resemble_enhance":
-                if effective_memory_gb >= 6:  # High-end GPU
-                    max_chunk_seconds = min(max_chunk_minutes * 60, 300)  # Max 5 minutes
-                else:  # Lower-end GPU
-                    max_chunk_seconds = min(max_chunk_minutes * 60, 180)  # Max 3 minutes
-            else:
-                max_chunk_seconds = min(max_chunk_minutes * 60, 300)  # Max 5 minutes for DeepFilterNet stability
+            max_chunk_seconds = min(max_chunk_minutes * 60, 300)  # Max 5 minutes for stability
 
             logger.info(f"Using VRAM-optimized chunks: {max_chunk_seconds/60:.1f} minutes per chunk.")
 
@@ -565,8 +511,6 @@ class AudioProcessor:
             try:
                 if self.enhancement_method == "deepfilternet":
                     processed_chunk = self._process_chunk_deepfilternet(chunk)
-                elif self.enhancement_method == "resemble_enhance":
-                    processed_chunk = self._process_chunk_resemble_enhance(chunk, sample_rate)
                 else:
                     processed_chunk = chunk if chunk.ndim == 1 else chunk[0]
 
@@ -682,196 +626,6 @@ class AudioProcessor:
 
         return processed_chunk
 
-    def _process_chunk_resemble_enhance(self, chunk: np.ndarray, sample_rate: int) -> np.ndarray:
-        """Process a single chunk with Resemble Enhance with GPU/CPU fallback."""
-
-        # Ensure chunk is in the right format
-        if chunk.ndim == 2:
-            chunk = chunk[0]  # Take first channel if stereo
-        chunk = chunk.astype(np.float32)
-
-        try:
-            # Process with Resemble Enhance
-            if resemble_enhance_available:
-                if resemble_enhance_mode == "python_api":
-                    # Try GPU first, then CPU fallback
-                    return self._try_resemble_enhance_with_fallback(chunk, sample_rate)
-                elif resemble_enhance_mode == "command_line":
-                    # Use command line tool - requires file-based processing
-                    return self._process_chunk_resemble_enhance_file_based(chunk, sample_rate)
-            else:
-                # Fallback: return original chunk
-                return chunk
-
-        except Exception as e:
-            logger.warning(f"Resemble Enhance chunk processing failed: {e}, returning original chunk")
-            return chunk
-
-    def _try_resemble_enhance_with_fallback(self, chunk: np.ndarray, sample_rate: int) -> np.ndarray:
-        """Try GPU processing first, fall back to CPU if needed."""
-        import torch
-
-        # Try GPU first
-        if torch.cuda.is_available():
-            try:
-                return self._process_chunk_resemble_enhance_device(chunk, sample_rate, "cuda")
-            except (RuntimeError, torch.cuda.OutOfMemoryError) as e:
-                logger.warning(f"GPU processing failed ({e}), trying CPU fallback")
-                # Clear GPU memory
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-
-        # Fallback to CPU
-        try:
-            return self._process_chunk_resemble_enhance_device(chunk, sample_rate, "cpu")
-        except Exception as e:
-            logger.warning(f"CPU fallback also failed ({e}), returning original chunk")
-            return chunk
-
-    def _process_chunk_resemble_enhance_device(self, chunk: np.ndarray, sample_rate: int, device_name: str) -> np.ndarray:
-        """Process chunk on specific device with proper error handling."""
-        import torch
-
-        device = torch.device(device_name)
-
-        # Clear cache if using GPU
-        if device_name == "cuda" and torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-        # For GPU processing, try to ensure the model is properly loaded on GPU
-        if device_name == "cuda":
-            try:
-                # Force resemble enhance model to GPU if not already there
-                # This is a workaround for the device conflict issue
-                import gc
-                gc.collect()
-                torch.cuda.empty_cache()
-            except Exception:
-                pass
-
-        # Ensure the audio tensor is properly formatted and on the right device
-        if not isinstance(chunk, torch.Tensor):
-            audio_tensor = torch.from_numpy(chunk).float()
-        else:
-            audio_tensor = chunk.float()
-
-        # Make sure tensor is on the correct device
-        audio_tensor = audio_tensor.to(device)
-
-        logger.debug(f"Calling denoise with audio tensor shape: {audio_tensor.shape}, sr: {sample_rate}, device: {device}")
-
-        try:
-            # Call denoise with correct parameters (audio tensor, sample rate, device)
-            enhanced_tensor = denoise(audio_tensor, sample_rate, device)
-
-            # Handle different return types from denoise function
-            if isinstance(enhanced_tensor, torch.Tensor):
-                enhanced_chunk = enhanced_tensor.detach().cpu().numpy()
-            elif isinstance(enhanced_tensor, tuple):
-                # Some models return (output, sr) tuple, take the first element
-                enhanced_chunk = enhanced_tensor[0]
-                if isinstance(enhanced_chunk, torch.Tensor):
-                    enhanced_chunk = enhanced_chunk.detach().cpu().numpy()
-                elif isinstance(enhanced_chunk, np.ndarray):
-                    pass  # Already numpy
-                else:
-                    enhanced_chunk = np.array(enhanced_chunk)
-            elif isinstance(enhanced_tensor, np.ndarray):
-                enhanced_chunk = enhanced_tensor
-            else:
-                # Fallback: convert to numpy if possible
-                enhanced_chunk = np.array(enhanced_tensor)
-
-            # Clear tensors from memory
-            del audio_tensor
-            if isinstance(enhanced_tensor, torch.Tensor):
-                del enhanced_tensor
-            if device_name == "cuda" and torch.cuda.is_available():
-                torch.cuda.empty_cache()
-
-            return enhanced_chunk.astype(np.float32)
-
-        except Exception as e:
-            # Clean up tensors even on error
-            try:
-                if 'audio_tensor' in locals():
-                    del locals()['audio_tensor']
-                if 'enhanced_tensor' in locals():
-                    if isinstance(enhanced_tensor, torch.Tensor):
-                        del enhanced_tensor
-                    elif isinstance(enhanced_tensor, tuple):
-                        for item in enhanced_tensor:
-                            if isinstance(item, torch.Tensor):
-                                del item
-                if device_name == "cuda" and torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            except Exception:
-                pass
-            raise e
-
-    def _process_chunk_resemble_enhance_file_based(self, chunk: np.ndarray, sample_rate: int) -> np.ndarray:
-        """Process chunk using file-based approach (for command line tool)."""
-
-        # Create temporary files with delete=False to avoid Windows issues
-        temp_input = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-        temp_output = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-
-        try:
-            # Save chunk to temporary file with proper format
-            # Ensure proper mono format for Resemble Enhance
-            sf.write(temp_input.name, chunk, int(sample_rate), format='WAV', subtype='PCM_16')
-            temp_input.flush()  # Force write to disk
-            temp_input.close()
-
-            # Verify the file was written correctly
-            if not os.path.exists(temp_input.name) or os.path.getsize(temp_input.name) == 0:
-                logger.warning("Failed to write temporary input file")
-                return chunk
-
-            # Process with command line tool
-            import subprocess
-            result = subprocess.run([
-                "resemble-enhance",
-                temp_input.name,
-                temp_output.name,
-                "--denoise_only"
-            ], capture_output=True, text=True, timeout=60)
-
-            if result.returncode != 0:
-                logger.warning(f"Resemble Enhance command failed: {result.stderr}")
-                # Fallback: just copy
-                import shutil
-                shutil.copy2(temp_input.name, temp_output.name)
-
-            # Load processed audio
-            processed_chunk, _ = sf.read(temp_output.name)
-            # Ensure mono output for consistency
-            if processed_chunk.ndim == 2:
-                processed_chunk = processed_chunk[:, 0]
-            return processed_chunk.astype(np.float32)
-
-        except Exception as e:
-            logger.warning(f"File-based Resemble Enhance processing failed: {e}, returning original chunk")
-            return chunk
-
-        finally:
-            # Clean up temp files - Windows-safe approach
-            for temp_file in [temp_input.name, temp_output.name]:
-                if os.path.exists(temp_file):
-                    try:
-                        # Try multiple times with small delays (Windows file lock issue)
-                        for attempt in range(3):
-                            try:
-                                os.unlink(temp_file)
-                                break
-                            except PermissionError:
-                                if attempt < 2:
-                                    time.sleep(0.1)  # Small delay
-                                else:
-                                    logger.warning(f"Could not delete {temp_file} after 3 attempts")
-                    except Exception as cleanup_e:
-                        logger.warning(f"Failed to clean up {temp_file}: {cleanup_e}")
-
     def apply_noise_reduction(self, audio_data: np.ndarray, sample_rate: int,
                             stationary: bool = True, prop_decrease: float = 1.0,
                             skip_large_files: bool = False,
@@ -900,9 +654,7 @@ class AudioProcessor:
         logger.info(f"Processing audio with {self.enhancement_method} (length: {len(audio_data)} samples)")
 
         # Route based on enhancement method
-        if self.enhancement_method == "resemble_enhance":
-            return self._apply_resemble_enhance(audio_data, sample_rate, size_threshold)
-        elif self.enhancement_method == "deepfilternet":
+        if self.enhancement_method == "deepfilternet":
             return self._apply_deepfilternet(audio_data, sample_rate, size_threshold)
         elif self.enhancement_method == "clear":
             return self._apply_clear(audio_data, sample_rate)
@@ -912,106 +664,6 @@ class AudioProcessor:
         else:
             logger.warning(f"Unknown enhancement method: {self.enhancement_method}, falling back to no enhancement")
             return audio_data
-
-    def _apply_resemble_enhance(self, audio_data: np.ndarray, sample_rate: int, size_threshold: int = None) -> np.ndarray:
-        """Apply Resemble Enhance noise reduction"""
-        try:
-            # Use dynamic chunk size based on available memory
-            optimal_chunk_samples = self.get_optimal_chunk_size(len(audio_data), sample_rate)
-            optimal_chunk_seconds = optimal_chunk_samples / sample_rate
-
-            if size_threshold is None or size_threshold > optimal_chunk_samples:
-                size_threshold = optimal_chunk_samples
-                logger.info(f"Set Resemble Enhance chunking threshold to {size_threshold} samples (dynamic {optimal_chunk_seconds:.1f}s chunks)")
-
-            # Process in chunks if file is large
-            if len(audio_data) > size_threshold:
-                logger.info("Large audio file detected, processing in chunks")
-                return self.process_large_audio_in_chunks(audio_data, sample_rate, chunk_size_seconds=optimal_chunk_seconds)
-
-            # Process normally for smaller files
-            logger.info("Using Resemble Enhance for noise reduction")
-
-            # Use the same approach as _process_chunk_resemble_enhance
-            import os
-            import tempfile
-
-            # Resemble Enhance works with files, so we need to save/load temporarily
-            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_input:
-                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_output:
-                    try:
-                        # Save audio to temporary file
-                        sf.write(temp_input.name, audio_data, sample_rate)
-                        temp_input.close()
-
-                        # Process with Resemble Enhance
-                        if resemble_enhance_available:
-                            if resemble_enhance_mode == "python_api":
-                                # Use Python API (preferred)
-                                try:
-                                    # Import torch to get device
-                                    import torch
-                                    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-                                    denoise(temp_input.name, temp_output.name, device=device)
-                                except Exception as e:
-                                    logger.warning(f"Resemble Enhance Python API failed: {e}, trying command line fallback")
-                                    # Try command line as fallback
-                                    try:
-                                        import subprocess
-                                        subprocess.run([
-                                            "resemble-enhance",
-                                            temp_input.name,
-                                            temp_output.name,
-                                            "--device", "cuda" if torch.cuda.is_available() else "cpu"
-                                        ], check=True, capture_output=True, text=True)
-                                        logger.info("Resemble Enhance command line succeeded")
-                                    except subprocess.CalledProcessError as e:
-                                        logger.error(f"Resemble Enhance command line failed: {e}")
-                                        raise e
-                            else:
-                                # Use command line only
-                                import subprocess
-                                subprocess.run([
-                                    "resemble-enhance",
-                                    temp_input.name,
-                                    temp_output.name,
-                                    "--device", "cuda" if torch.cuda.is_available() else "cpu"
-                                ], check=True, capture_output=True, text=True)
-                                logger.info("Resemble Enhance command line succeeded")
-                        else:
-                            raise RuntimeError("Resemble Enhance not available")
-
-                        # Load processed audio
-                        temp_output.close()
-                        processed_audio, _ = sf.read(temp_output.name)
-
-                        # Ensure output length matches input
-                        if len(processed_audio) != len(audio_data):
-                            logger.warning(f"Resemble Enhance output length {len(processed_audio)} does not match input {len(audio_data)}. Padding or trimming as needed.")
-                            if len(processed_audio) < len(audio_data):
-                                padded = np.zeros(len(audio_data), dtype=processed_audio.dtype)
-                                padded[:len(processed_audio)] = processed_audio
-                                processed_audio = padded
-                            else:
-                                processed_audio = processed_audio[:len(audio_data)]
-
-                        logger.info("Resemble Enhance noise reduction completed successfully")
-                        return processed_audio.astype(np.float32)
-
-                    finally:
-                        # Clean up temporary files
-                        try:
-                            if os.path.exists(temp_input.name):
-                                os.unlink(temp_input.name)
-                            if os.path.exists(temp_output.name):
-                                os.unlink(temp_output.name)
-                        except Exception:
-                            pass
-
-        except Exception as e:
-            logger.error(f"Resemble Enhance processing failed: {e}")
-            logger.warning("Falling back to custom noise reduction")
-            return self.custom_noise_reduction(audio_data, sample_rate, noise_reduction_amount=0.7)
 
     def _pre_process_audio(self, audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
         """Pre-process audio before DeepFilterNet: noise gate, gentle limiter.
@@ -1398,7 +1050,7 @@ class AudacityProcessor:
 
 # Convenience function
 def process_sermon_audio(input_path: str, output_path: str, use_audacity: bool = False,
-                       skip_on_error: bool = True, enhancement_method: str = "resemble_enhance",
+                       skip_on_error: bool = True, enhancement_method: str = "clear",
                        verbose: bool = False, config: dict[str, Any] | None = None, **kwargs) -> tuple[bool, dict[str, Any] | None]:
     """
     Process sermon audio with selected enhancement method.
@@ -1407,7 +1059,7 @@ def process_sermon_audio(input_path: str, output_path: str, use_audacity: bool =
         input_path: Input audio file
         output_path: Output audio file
         use_audacity: Use Audacity if True, else use native Python processing
-        enhancement_method: AI enhancement method to use ("resemble_enhance", "deepfilternet", "none")
+        enhancement_method: AI enhancement method to use ("clear", "deepfilternet", "none")
         verbose: Show detailed processing information
         config: Configuration dictionary for Q&A normalization and other settings
         **kwargs: Additional arguments for processing

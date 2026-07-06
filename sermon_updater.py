@@ -141,7 +141,7 @@ def setup_logging(verbose: bool = False):
         for logger_name in [
             'requests', 'urllib3', 'audio_processing', 'llm_manager',
             'transformers', 'torch', 'torchaudio', 'deepspeed', 'df',
-            'resemble_enhance', 'deepfilternet', 'DeepFilterNet'
+            'deepfilternet', 'DeepFilterNet'
         ]:
             logging.getLogger(logger_name).setLevel(logging.ERROR)
 
@@ -183,7 +183,7 @@ AUDIO_PARAMS = {
     'gain_db': config.get('audio_gain_db', 1.0),
     'target_level_db': config.get('audio_target_level_db', -22.0),
     'use_audacity': config.get('use_audacity', False),
-    'enhancement_method': config.get('audio_enhancement_method', 'resemble_enhance'),
+    'enhancement_method': config.get('audio_enhancement_method', 'clear'),
     'config': config  # Pass full config for Q&A normalization
 }
 
@@ -2880,6 +2880,78 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
         except Exception as e:  # pragma: no cover
             logger.error("Audio upload error: %s", e)
 
+    # If the sermon has video on SermonAudio, download it, mux the enhanced
+    # audio into it, and re-upload so audio + video stay in sync.
+    if (needs_audio and output_audio and os.path.exists(output_audio)
+            and hasattr(details, 'media') and details.media
+            and getattr(details.media, 'video', None)):
+        if not verbose:
+            print("   🎬 Updating video with enhanced audio...")
+        try:
+            import subprocess as mux_proc
+            # Pick the highest-bitrate MP4 (h264 "high" preferred; fall back
+            # to any video with a stream_url if h264 is missing)
+            video_choice = None
+            for v in details.media.video:
+                if getattr(v, 'video_codec', None) == 'h264' and getattr(v, 'stream_url', None):
+                    video_choice = v
+                    break
+            if video_choice is None:
+                for v in details.media.video:
+                    if getattr(v, 'stream_url', None):
+                        video_choice = v
+                        break
+            if video_choice is None or not getattr(video_choice, 'stream_url', None):
+                logger.info("Video entries have no stream_url; skipping video update")
+            else:
+                video_hls_url = video_choice.stream_url
+                logger.info("Downloading sermon video from HLS: %s", video_hls_url[:120])
+                downloaded_video = os.path.join(sermon_dir, FILENAMES.get("temp_video", "video_source.mp4"))
+                # ffmpeg pulls the MP4 from the HLS playlist
+                dl_cmd = [
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-i", video_hls_url,
+                    "-c", "copy",
+                    downloaded_video,
+                ]
+                mux_proc.run(dl_cmd, check=True, timeout=1800)
+                logger.info("Video downloaded to %s (%d MB)",
+                            downloaded_video,
+                            os.path.getsize(downloaded_video) // (1024 * 1024))
+
+                muxed_video = os.path.join(sermon_dir, FILENAMES.get("enhanced_video", "video_enhanced.mp4"))
+                mux_cmd = [
+                    "ffmpeg", "-y", "-loglevel", "error",
+                    "-i", downloaded_video,
+                    "-i", output_audio,
+                    "-c:v", "copy",
+                    "-c:a", "aac",
+                    "-map", "0:v:0",
+                    "-map", "1:a:0",
+                    "-shortest",
+                    muxed_video,
+                ]
+                logger.info("Muxing enhanced audio into video...")
+                mux_proc.run(mux_cmd, check=True, timeout=600)
+                logger.info("Muxed video saved to %s", muxed_video)
+
+                if upload_media_file(sermon_id, muxed_video, "original-video"):
+                    logger.debug("Video uploaded successfully")
+                    if not verbose:
+                        print("   ✅ Video updated with enhanced audio")
+                else:
+                    logger.error("Video upload failed")
+
+                # Cleanup downloaded source video (keep muxed for reference)
+                try:
+                    os.remove(downloaded_video)
+                except OSError:
+                    pass
+        except Exception as e:  # pragma: no cover
+            logger.error("Video update error: %s", e)
+            if not verbose:
+                print(f"   ⚠️  Video update failed: {e}")
+
     # Cleanup temp audio file
     try:
         input_audio = os.path.join(sermon_dir, FILENAMES["temp"])
@@ -3619,11 +3691,11 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
     # Dispatch to appropriate handler based on subcommand
     if args.command == 'new-sermon':
         handle_new_sermon(args)
-    elif args.command == 'sermon-update':
+    elif args.command == 'sermon-update' or args.command == 'process':
         handle_sermon_update(args)
     elif args.command == 'metadata-update':
         handle_metadata_update(args)
-    elif args.command == 'validation':
+    elif args.command == 'validation' or args.command == 'validate':
         handle_validation(args)
     elif args.command == 'list':
         handle_list_sermons(args)
