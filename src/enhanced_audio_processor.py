@@ -42,7 +42,7 @@ class EnhancedAudioProcessor:
 
         # Initialize underlying audio processor
         audio_config = config.get('audio_processing', {})
-        enhancement_method = audio_config.get('enhancement_method', 'deepfilternet')
+        enhancement_method = audio_config.get('enhancement_method', 'clear')
         self.audio_processor = AudioProcessor(enhancement_method=enhancement_method, config=config)
 
         logger.info(f"Enhanced AudioProcessor initialized with Q&A normalization: {self.qa_normalizer is not None}")

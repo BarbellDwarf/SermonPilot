@@ -1480,7 +1480,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         _report(14, "Audio extraction failed, using original file")
 
                 processor = AudioProcessor(
-                    enhancement_method=config.get('audio_enhancement_method', 'deepfilternet')
+                    enhancement_method=config.get('audio_enhancement_method', 'clear')
                 )
                 enhanced_audio_path = temp_dir / "enhanced_audio.wav"
                 _report(15, f"Running audio enhancement ({processor.enhancement_method})...")

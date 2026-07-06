@@ -1,6 +1,6 @@
 api_key: ${SERMONAUDIO_API_KEY}
 audio_amplify: true
-audio_enhancement_method: deepfilternet
+audio_enhancement_method: clear
 audio_gain_db: 0.5
 audio_noise_reduction: true
 audio_normalize: true
