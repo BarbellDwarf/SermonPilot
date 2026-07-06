@@ -1097,7 +1097,7 @@ def show_audio_settings():
     # Enhancement Method
     st.markdown("#### 🔧 Enhancement Method")
 
-    methods = ["deepfilternet", "clear-natural", "clear-studio", "none"]
+    methods = ["deepfilternet", "clear-natural", "clear-studio", "custom", "none"]
     current = config.get('audio_enhancement_method', 'deepfilternet')
     index = methods.index(current) if current in methods else 0
 
@@ -1105,8 +1105,21 @@ def show_audio_settings():
         "Audio Enhancement Method",
         options=methods,
         index=index,
-        help="DeepFilterNet: standard (best for speech). Clear-Natural: gentler noise suppression. Clear-Studio: aggressive, podcast-ready."
+        help="DeepFilterNet: standard (best for speech). Clear-Natural: gentler noise suppression. Clear-Studio: aggressive, podcast-ready. Custom: point to any ONNX model on HuggingFace."
     )
+
+    if enhancement_method == "custom":
+        st.caption("Configure a custom ONNX model from HuggingFace:")
+        custom_repo = st.text_input("HF Repo (e.g. tonythethompson/DeepFilterNet3-ONNX)",
+                                     value=config.get('clear_custom_repo', ''),
+                                     key="settings_custom_repo")
+        custom_file = st.text_input("ONNX filename (e.g. model.onnx)",
+                                    value=config.get('clear_custom_file', ''),
+                                    key="settings_custom_file")
+        if custom_repo and custom_file:
+            st.info(f"Will use: **{custom_repo}/{custom_file}**")
+        else:
+            st.warning("Enter both a HuggingFace repo and ONNX filename.")
 
     # Enhancement options
     st.markdown("#### ⚙️ Processing Options")
