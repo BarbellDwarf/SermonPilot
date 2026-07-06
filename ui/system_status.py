@@ -361,7 +361,7 @@ class SystemStatusManager:
                         'timestamp': datetime.now()
                     }
 
-            elif method in ('clear-studio', 'clear-natural'):
+            elif method in ('clear-studio', 'clear-natural', 'custom'):
                 try:
                     import onnxruntime
                     from huggingface_hub import hf_hub_download
