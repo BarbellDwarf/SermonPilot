@@ -13,6 +13,8 @@ Automated sermon processing tool that enhances audio (Clear/DeepFilterNet), tran
 
 ## Quick Start
 
+### Local Installation
+
 ```bash
 git clone <repository-url>
 cd SermonPilot
@@ -28,6 +30,28 @@ uv sync
 # Configure
 cp .env.example .env
 # Edit .env with your SermonAudio API key and broadcaster ID
+```
+
+### Docker (Pre-built Images)
+
+Pre-built images are available on GitHub Container Registry. Choose your GPU backend:
+
+```bash
+# Pull and run with CPU
+docker compose up -d
+
+# Or pin a specific version
+SERMONPILOT_TAG=v1.5.0 docker compose up -d
+```
+
+Images are tagged as `ghcr.io/barbelldwarf/sermonpilot:TAG-BACKEND` (e.g. `v1.5.0-cuda`, `v1.5.0-rocm`, `v1.5.0-cpu`). The `latest` tag points to the latest CUDA build.
+
+### Build Locally
+
+```bash
+docker build -t sermonpilot:latest .
+# Or with GPU support:
+docker build --build-arg GPU_BACKEND=cuda -t sermonpilot:latest .
 ```
 
 ## Configuration
