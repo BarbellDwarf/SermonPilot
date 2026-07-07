@@ -28,12 +28,14 @@ logger = logging.getLogger(__name__)
 class SermonAudioAPI:
     """SermonAudio API client with caching"""
 
-    def __init__(self):
+    def __init__(self, api_key: str | None = None, broadcaster_id: str | None = None):
         """Initialize API client"""
-        self.api_key = None
+        self.api_key = api_key
+        self.broadcaster_id = broadcaster_id
         self.cache_dir = Path("api_cache")
         self.cache_dir.mkdir(exist_ok=True)
-        self._load_config()
+        if not api_key:
+            self._load_config()
 
     def _load_config(self):
         """Load API configuration"""
