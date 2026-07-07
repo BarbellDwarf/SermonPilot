@@ -54,6 +54,10 @@ docker build -t sermonpilot:latest .
 docker build --build-arg GPU_BACKEND=cuda -t sermonpilot:latest .
 ```
 
+> **Ollama**: If using Ollama for local LLM inference, run it separately:
+> `docker run -d --name ollama -p 11434:11434 ollama/ollama`
+> Then set `OLLAMA_HOST=http://host.docker.internal:11434` in your `.env`.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and fill in your values:
