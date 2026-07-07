@@ -55,10 +55,10 @@ Validate your setup:
 python src/secure_config.py
 
 # Run security scan
-python tools/security_scanner.py
+# tools/ directory no longer exists
 
 # Validate overall security compliance
-python tools/validate_security.py
+# tools/ directory no longer exists
 ```
 
 ## Detailed Setup Instructions
@@ -159,10 +159,10 @@ Run security checks manually:
 python src/secure_config.py
 
 # Scan for hardcoded credentials
-python tools/security_scanner.py
+# tools/ directory no longer exists
 
 # Run comprehensive security tests
-python tools/validate_security.py
+# tools/ directory no longer exists
 ```
 
 ### Troubleshooting
@@ -181,7 +181,7 @@ echo "SERMONAUDIO_API_KEY=your-key-here" >> .env
 **"Hardcoded credentials detected"**
 ```bash
 # Find the specific violations
-python tools/security_scanner.py --verbose
+# tools/ directory no longer exists --verbose
 
 # Replace hardcoded values with environment variables
 # Example: api_key: "sk-abc123" → api_key: "${OPENAI_API_KEY}"
@@ -248,9 +248,9 @@ After setup, verify:
 
 - [ ] `.env` file exists with your credentials
 - [ ] `config.yaml` uses environment variables (`${VAR_NAME}` syntax)
-- [ ] Security validation passes: `python tools/validate_security.py`
+- [ ] Security validation passes: `# tools/ directory no longer exists`
 - [ ] Configuration loads successfully: `python src/secure_config.py`
-- [ ] No hardcoded credentials detected: `python tools/security_scanner.py`
+- [ ] No hardcoded credentials detected: `# tools/ directory no longer exists`
 - [ ] Pre-commit hook installed and working
 - [ ] LLM provider connectivity verified
 - [ ] SermonAudio API connectivity verified
@@ -267,8 +267,8 @@ Once security is configured:
 ## Support
 
 For security-related issues:
-- Review the security scanner output: `python tools/security_scanner.py`
+- Review the security scanner output: `# tools/ directory no longer exists`
 - Check configuration validation: `python src/secure_config.py`
-- Run security compliance tests: `python tools/validate_security.py`
+- Run security compliance tests: `# tools/ directory no longer exists`
 
 For general setup issues, see the main README.md and documentation in the `docs/` directory.
