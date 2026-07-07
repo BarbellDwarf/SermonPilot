@@ -30,14 +30,15 @@ def show_settings():
     """Main settings management interface"""
     st.markdown('<div class="main-header">⚙️ Settings</div>', unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "🔧 General",
         "🤖 LLM Providers",
         "🧠 Embeddings",
         "🎵 Audio Processing",
         "📝 Transcription",
         "✅ Validation",
-        "🗄️ Advanced"
+        "🗄️ Advanced",
+        "📝 Prompt Templates"
     ])
 
     with tab1:
@@ -60,6 +61,9 @@ def show_settings():
 
     with tab7:
         show_advanced_settings()
+
+    with tab8:
+        show_prompt_templates()
 
 def show_general_settings():
     """General configuration settings"""
@@ -1430,6 +1434,86 @@ def show_validation_settings():
         save_validation_settings()
 
 
+
+
+def show_prompt_templates():
+    """Prompt template editor for LLM generation tasks."""
+    st.markdown("### 📝 Prompt Templates")
+    st.caption("Customize the instructions sent to the LLM for each generation task. "
+               "Changes take effect immediately on save.")
+
+    config = st.session_state.get('config') or {}
+    templates = config.get('prompt_templates', {})
+
+    template_names = {
+        "title": "Title Generation",
+        "short_title": "Short Title Generation",
+        "description": "Description Generation",
+        "hashtags": "Hashtag Generation",
+        "hashtag_verification": "Hashtag Verification",
+        "description_validation": "Description Validation",
+    }
+
+    for key, label in template_names.items():
+        tmpl = templates.get(key, {})
+        with st.expander(f"{'✅' if tmpl.get('enabled', True) else '⏸️'} {label}", expanded=False):
+            enabled = st.checkbox("Enabled", value=tmpl.get('enabled', True), key=f"pt_{key}_enabled")
+            system_prompt = st.text_area(
+                "System Prompt",
+                value=tmpl.get('system', ''),
+                height=60,
+                key=f"pt_{key}_system",
+                help="System-level instruction for the LLM. Leave empty to omit."
+            )
+            user_prompt = st.text_area(
+                "User Prompt",
+                value=tmpl.get('user', ''),
+                height=200,
+                key=f"pt_{key}_user",
+                help="User message template. Use {variable} placeholders for dynamic content."
+            )
+            st.caption(f"Available variables: {_get_template_vars(key)}")
+
+    if st.button("💾 Save Prompt Templates", type="primary"):
+        save_prompt_templates()
+        st.success("✅ Prompt templates saved!")
+
+
+def _get_template_vars(template_key: str) -> str:
+    vars_map = {
+        "title": "{context}, {transcript}",
+        "short_title": "{full_title}",
+        "description": "{role_desc}, {body_desc}, {transcript}, {speaker_instruction}",
+        "hashtags": "{text}",
+        "hashtag_verification": "{initial_hashtags}, {original_text}",
+        "description_validation": "{context_info}, {criteria_text}, {description}",
+    }
+    return vars_map.get(template_key, "{}")
+
+
+def save_prompt_templates():
+    """Save prompt templates from session state to config."""
+    config = st.session_state.get('config', {})
+    if 'prompt_templates' not in config:
+        config['prompt_templates'] = {}
+
+    template_keys = [
+        "title", "short_title", "description", "hashtags",
+        "hashtag_verification", "description_validation",
+    ]
+
+    for key in template_keys:
+        enabled = st.session_state.get(f"pt_{key}_enabled", True)
+        system_val = st.session_state.get(f"pt_{key}_system", "")
+        user_val = st.session_state.get(f"pt_{key}_user", "")
+        config['prompt_templates'][key] = {
+            'enabled': enabled,
+            'system': system_val,
+            'user': user_val,
+        }
+
+    from config_utils import save_config_to_file as _save_config
+    _save_config(config)
 
 
 def show_advanced_settings():
