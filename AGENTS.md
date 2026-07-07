@@ -77,3 +77,31 @@ Key tables: `sermons` (id TEXT PK, title, speaker, recorded_date, status TEXT DE
 - **Auto-refresh in Jobs:** `ui/ui_pages/jobs.py:72` uses `time.sleep(2)` + `st.rerun()` when running/queued jobs exist (replaced broken `components.html` JS that only reloaded an iframe)
 - **Transcript fallback:** `generate_ai_content()` in `library.py:87` tries local transcript first, falls back to `sermon_updater.get_sermon_transcript()` (fetches from SermonAudio API via `transcript.downloadURL`)
 - **Transcription backends:** `transcription.py` now includes faster-whisper (CTranslate2) backend as default with fallback to standard whisper; supports both AMD ROCm and NVIDIA CUDA via device detection
+
+## Versioning & Release Process
+
+### Version Scheme
+- **MAJOR.MINOR.PATCH** (e.g. 1.5.1)
+- Bump PATCH for bug fixes (Docker, config, small fixes)
+- Bump MINOR for new features (new models, UI changes, major additions)
+- Bump MAJOR for breaking changes
+
+### Release Steps (in order)
+
+1. **Update `pyproject.toml`** — change `version = "X.Y.Z"` to the new version
+2. **Create a release branch** — `git checkout -b release/vX.Y.Z`
+3. **Commit the version bump** — `git add pyproject.toml && git commit -m "Bump version X.Y.Z -> X.Y.Z+1"`
+4. **Push the branch** — `git push origin release/vX.Y.Z`
+5. **Merge to master** — create a PR or push directly: `git checkout master && git merge release/vX.Y.Z && git push origin master`
+6. **Tag the release** — `git tag -a vX.Y.Z -m "vX.Y.Z: short description" && git push origin vX.Y.Z`
+7. **Delete the release branch** (optional) — `git branch -d release/vX.Y.Z && git push origin --delete release/vX.Y.Z`
+
+### Tag Naming
+- Tags must start with `v` followed by the version: `v1.5.1`, `v1.6.0`, etc.
+- The tag message should be a one-line summary of changes
+- Tags trigger the CI workflow to build and push Docker images to GHCR
+
+### Branch Naming
+- Release branches: `release/vX.Y.Z`
+- Feature branches: `feature/description-of-feature`
+- Fix branches: `fix/description-of-fix`
