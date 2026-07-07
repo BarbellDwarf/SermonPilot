@@ -261,3 +261,18 @@ class SermonAudioAPI:
     def is_configured(self) -> bool:
         """Check if API is properly configured"""
         return bool(self.api_key)
+
+    def test_connection(self) -> bool:
+        """Test the API connection by fetching the broadcaster's speaker list."""
+        if not self.api_key:
+            logger.warning("No API key configured for connection test")
+            return False
+        try:
+            import sermonaudio
+            sermonaudio.set_api_key(self.api_key)
+            from sermonaudio.node.requests import Node
+            result = Node.get_sermons(broadcaster_id=self.broadcaster_id or 'test', page=1, page_size=1)
+            return result is not None
+        except Exception as e:
+            logger.error("API connection test failed: %s", e)
+            return False
