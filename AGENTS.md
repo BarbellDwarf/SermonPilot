@@ -86,15 +86,26 @@ Key tables: `sermons` (id TEXT PK, title, speaker, recorded_date, status TEXT DE
 - Bump MINOR for new features (new models, UI changes, major additions)
 - Bump MAJOR for breaking changes
 
+### General Workflow (all changes)
+
+Direct commits to `master` are **not allowed**. Every change must go through a branch + PR:
+
+1. **Create a feature/fix branch** — `git checkout -b fix/description` or `feature/description`
+2. **Make your changes and commit** — `git add -A && git commit -m "description"`
+3. **Push the branch** — `git push origin fix/description`
+4. **Create a PR** — `gh pr create --base master --head fix/description --title "Title" --body "Description"`
+5. **Wait for CI/approval** — the PR must be merged by the user or via the GitHub UI
+6. **Delete the branch** — `git branch -d fix/description && git push origin --delete fix/description`
+
 ### Release Steps (in order)
 
 1. **Update `pyproject.toml`** — change `version = "X.Y.Z"` to the new version
 2. **Create a release branch** — `git checkout -b release/vX.Y.Z`
 3. **Commit the version bump** — `git add pyproject.toml && git commit -m "Bump version X.Y.Z -> X.Y.Z+1"`
 4. **Push the branch** — `git push origin release/vX.Y.Z`
-5. **Merge to master** — create a PR or push directly: `git checkout master && git merge release/vX.Y.Z && git push origin master`
-6. **Tag the release** — `git tag -a vX.Y.Z -m "vX.Y.Z: short description" && git push origin vX.Y.Z`
-7. **Delete the release branch** (optional) — `git branch -d release/vX.Y.Z && git push origin --delete release/vX.Y.Z`
+5. **Create a PR** — `gh pr create --base master --head release/vX.Y.Z --title "Release vX.Y.Z" --body "Version bump and changelog"`
+6. **After PR is merged, tag the release** — `git checkout master && git pull && git tag -a vX.Y.Z -m "vX.Y.Z: short description" && git push origin vX.Y.Z`
+7. **Delete the release branch** — `git branch -d release/vX.Y.Z && git push origin --delete release/vX.Y.Z`
 
 ### Tag Naming
 - Tags must start with `v` followed by the version: `v1.5.1`, `v1.6.0`, etc.
