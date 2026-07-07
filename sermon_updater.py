@@ -190,6 +190,25 @@ AUDIO_PARAMS = {
 BASE_URL = 'https://api.sermonaudio.com/v2/'
 
 
+def _get_prompt_template(template_name: str, **kwargs) -> tuple[str, str] | None:
+    """Read a prompt template from config and format it with the given kwargs.
+
+    Returns (system_prompt, user_prompt) or None if the template is disabled
+    or not found in config.
+    """
+    templates = config.get('prompt_templates', {})
+    tmpl = templates.get(template_name)
+    if not tmpl or not tmpl.get('enabled', True):
+        return None
+    system_text = tmpl.get('system', '')
+    user_text = tmpl.get('user', '')
+    try:
+        user_text = user_text.format(**kwargs)
+    except KeyError as e:
+        logger.warning("Prompt template '%s' missing key: %s", template_name, e)
+    return (system_text, user_text)
+
+
 def console_print(message: str, level: str = "info"):
     """Print messages to console with appropriate formatting.
     
@@ -1032,7 +1051,12 @@ def generate_title(transcript: str, speaker_name: str = None, event_type: str = 
 
     context = "\n".join(context_parts) if context_parts else ""
 
-    prompt = f"""You are a sermon title generator. Create a compelling, descriptive title for this sermon.
+    tmpl = _get_prompt_template("title", context=context, transcript=transcript[:1000])
+    if tmpl:
+        system_prompt, user_prompt = tmpl
+        messages = [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}]
+    else:
+        prompt = f"""You are a sermon title generator. Create a compelling, descriptive title for this sermon.
 
 {context}
 
@@ -1050,13 +1074,14 @@ Sermon content (first 1000 characters):
 {transcript[:1000]}...
 
 Generate a compelling sermon title:"""
+        messages = [{'role': 'user', 'content': prompt}]
 
     try:
         provider_info = llm_manager.get_provider_info()
         primary_provider = provider_info.get('primary', {}).get('type', 'unknown')
         logger.debug("Generating title using %s LLM...", primary_provider)
 
-        response = llm_manager.chat([{'role': 'user', 'content': prompt}])
+        response = llm_manager.chat(messages)
 
         # Clean up the response
         title = response.strip().strip('"').strip("'")
@@ -1096,15 +1121,21 @@ def generate_short_display_title(full_title: str) -> str:
     if len(full_title) <= 30:
         return full_title
 
-    prompt = f"""Shorten this sermon title to a concise version (maximum 30 characters, STRICT LIMIT).
+    tmpl = _get_prompt_template("short_title", full_title=full_title)
+    if tmpl:
+        system_prompt, user_prompt = tmpl
+        messages = [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}]
+    else:
+        prompt = f"""Shorten this sermon title to a concise version (maximum 30 characters, STRICT LIMIT).
 Keep the core meaning but make it brief. No quotes, no explanation, just the shortened title.
 
 Original title: {full_title}
 
 Shortened title (max 30 chars):"""
+        messages = [{'role': 'user', 'content': prompt}]
 
     try:
-        response = llm_manager.chat([{'role': 'user', 'content': prompt}])
+        response = llm_manager.chat(messages)
         short_title = response.strip().strip('"').strip("'")
         if len(short_title) > 30:
             short_title = short_title[:27] + "..."
@@ -2383,29 +2414,38 @@ def generate_summary(
         else "- Identify the primary speaker from the transcript and refer to them as 'Pastor [Name]'. You MUST begin the description with 'Pastor [Name] teaches on...'.\n"
     )
 
-    prompt = (
-        f"You are a {role_desc}. Read the following {body_desc} transcript and write a single, "
-        f"concise description of the main message and application. Focus on what "
-        f"the speaker wanted the audience to understand, believe, or do. Avoid generic statements; "
-        f"emphasize unique focus.\n\nTranscript:\n{transcript}\n\nGuidelines:\n"
-        f"- Maximum 1600 characters (STRICT LIMIT - API will reject longer text)\n"
-        f"- One paragraph format\n"
-        + speaker_instruction +
-        "- No intro/closing words\n- No markdown or bullets\n"
-        "- Do not prefix with 'Summary:'\n- If incomplete, infer likely main message\n"
-        "- Keep under 1600 characters or the upload will fail\n"
-        "- Use the actual speaker name, not placeholder text\n"
-        "- Include specific scripture references, source material, and concrete examples from the transcript\n"
-        "- Mention the specific doctrines, rules, or texts the speaker expounded\n"
-        "- Describe the practical application the speaker gave\n"
-        "- IMPORTANT: Return ONLY the final summary paragraph. Do not include any reasoning, "
-        "thinking process, explanations, or commentary. Start directly with the summary content."
-    )
+    tmpl = _get_prompt_template("description",
+                                role_desc=role_desc, body_desc=body_desc,
+                                transcript=transcript,
+                                speaker_instruction=speaker_instruction)
+    if tmpl:
+        system_prompt, user_prompt = tmpl
+        messages = [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}]
+    else:
+        prompt = (
+            f"You are a {role_desc}. Read the following {body_desc} transcript and write a single, "
+            f"concise description of the main message and application. Focus on what "
+            f"the speaker wanted the audience to understand, believe, or do. Avoid generic statements; "
+            f"emphasize unique focus.\n\nTranscript:\n{transcript}\n\nGuidelines:\n"
+            f"- Maximum 1600 characters (STRICT LIMIT - API will reject longer text)\n"
+            f"- One paragraph format\n"
+            + speaker_instruction +
+            "- No intro/closing words\n- No markdown or bullets\n"
+            "- Do not prefix with 'Summary:'\n- If incomplete, infer likely main message\n"
+            "- Keep under 1600 characters or the upload will fail\n"
+            "- Use the actual speaker name, not placeholder text\n"
+            "- Include specific scripture references, source material, and concrete examples from the transcript\n"
+            "- Mention the specific doctrines, rules, or texts the speaker expounded\n"
+            "- Describe the practical application the speaker gave\n"
+            "- IMPORTANT: Return ONLY the final summary paragraph. Do not include any reasoning, "
+            "thinking process, explanations, or commentary. Start directly with the summary content."
+        )
+        messages = [{'role': 'user', 'content': prompt}]
     try:
         provider_info = llm_manager.get_provider_info()
         primary_provider = provider_info.get('primary', {}).get('type', 'unknown')
         logger.debug("Generating summary using %s LLM...", primary_provider)
-        response = llm_manager.chat([{'role': 'user', 'content': prompt}])
+        response = llm_manager.chat(messages)
 
         # Clean up responses that include thinking/reasoning (common with some models)
         response = _clean_llm_thinking_response(response)
@@ -2435,25 +2475,33 @@ def verify_hashtags(initial_hashtags: str, original_text: str) -> str:
     Verify and clean hashtags through a second LLM pass.
     This ensures the output strictly follows hashtag format and removes any comments.
     """
-    verification_prompt = (
-        "You are a hashtag validator. Your job is to extract ONLY valid hashtags from the input below. "
-        "Rules:\n"
-        "1. Output ONLY hashtags (words starting with #)\n"
-        "2. Remove any comments, explanations, or non-hashtag text\n"
-        "3. Keep hashtags space-separated\n"
-        "4. Maximum 150 characters total\n"
-        "5. If you see obvious formatting issues, fix them\n"
-        "6. If no valid hashtags found, generate 3-5 relevant ones for the sermon topic\n\n"
-        f"Original sermon topic context: {original_text[:200]}...\n\n"
-        f"Hashtag input to verify:\n{initial_hashtags}\n\n"
-        "Valid hashtags only:"
-    )
+    tmpl = _get_prompt_template("hashtag_verification",
+                                initial_hashtags=initial_hashtags,
+                                original_text=original_text[:200])
+    if tmpl:
+        system_prompt, user_prompt = tmpl
+        messages = [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}]
+    else:
+        verification_prompt = (
+            "You are a hashtag validator. Your job is to extract ONLY valid hashtags from the input below. "
+            "Rules:\n"
+            "1. Output ONLY hashtags (words starting with #)\n"
+            "2. Remove any comments, explanations, or non-hashtag text\n"
+            "3. Keep hashtags space-separated\n"
+            "4. Maximum 150 characters total\n"
+            "5. If you see obvious formatting issues, fix them\n"
+            "6. If no valid hashtags found, generate 3-5 relevant ones for the sermon topic\n\n"
+            f"Original sermon topic context: {original_text[:200]}...\n\n"
+            f"Hashtag input to verify:\n{initial_hashtags}\n\n"
+            "Valid hashtags only:"
+        )
+        messages = [{'role': 'user', 'content': verification_prompt}]
 
     try:
         provider_info = llm_manager.get_provider_info()
         primary_provider = provider_info.get('primary', {}).get('type', 'unknown')
         logger.debug("Verifying hashtags using %s LLM...", primary_provider)
-        response = llm_manager.chat([{'role': 'user', 'content': verification_prompt}])
+        response = llm_manager.chat(messages)
 
         # Extract only hashtags from the response
         import re
@@ -2491,19 +2539,24 @@ def verify_hashtags(initial_hashtags: str, original_text: str) -> str:
 
 
 def generate_hashtags(text: str) -> str:
-    prompt = (
-        "Generate 5-10 highly relevant, search-friendly hashtags (<=150 chars total) for this "
-        "sermon. Combine multi-word phrases (#ChristianLiving). Avoid duplicates & generic "
-        "(#sermon #church) unless uniquely relevant. Output ONLY space-delimited hashtags.\n\n"
-        f"Text:\n{text}\n\nHashtags:"
-    )
+    tmpl = _get_prompt_template("hashtags", text=text)
+    if tmpl:
+        system_prompt, user_prompt = tmpl
+        messages = [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}]
+    else:
+        prompt = (
+            "Generate 5-10 highly relevant, search-friendly hashtags (<=150 chars total) for this "
+            "sermon. Combine multi-word phrases (#ChristianLiving). Avoid duplicates & generic "
+            "(#sermon #church) unless uniquely relevant. Output ONLY space-delimited hashtags.\n\n"
+            f"Text:\n{text}\n\nHashtags:"
+        )
+        messages = [{'role': 'user', 'content': prompt}]
     try:
         provider_info = llm_manager.get_provider_info()
         primary_provider = provider_info.get('primary', {}).get('type', 'unknown')
         logger.debug("Generating hashtags using %s LLM...", primary_provider)
 
-        # First pass: Generate hashtags
-        response = llm_manager.chat([{'role': 'user', 'content': prompt}])
+        response = llm_manager.chat(messages)
         logger.debug("Initial hashtag response: %s", response)
 
         # Second pass: Verify and clean hashtags (if enabled in config)
