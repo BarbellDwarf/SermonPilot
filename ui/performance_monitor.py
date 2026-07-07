@@ -1,5 +1,5 @@
 """
-Real-time Performance Monitor for SermonAudio Processor
+Real-time Performance Monitor for SermonPilot
 
 Provides actual system metrics, processing performance tracking,
 and dynamic optimization recommendations.

@@ -1,5 +1,5 @@
 """
-Background Job Queue System for SermonAudio Processor
+Background Job Queue System for SermonPilot
 
 Provides asynchronous job execution with progress tracking, allowing users
 to navigate away from pages while jobs continue running in the background.

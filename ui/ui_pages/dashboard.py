@@ -1,5 +1,5 @@
 """
-Dashboard Page for SermonAudio Processor
+Dashboard Page for SermonPilot
 
 Displays recent activity, quick stats, system status, and provides quick access
 to common tasks like new sermon processing and validation.
@@ -169,7 +169,7 @@ def show_processing_queue():
 
 def show_setup_guide():
     """Show setup guide when configuration is missing"""
-    st.markdown("### 🚀 Welcome to SermonAudio Processor!")
+    st.markdown("### 🚀 Welcome to SermonPilot!")
 
     st.markdown("""
     To get started, please complete the setup:

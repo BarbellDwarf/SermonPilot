@@ -1,4 +1,4 @@
-"""Processing modules for SermonAudio Processor."""
+"""Processing modules for SermonPilot."""
 
 from .orchestrator import (
     ProcessingOptions,

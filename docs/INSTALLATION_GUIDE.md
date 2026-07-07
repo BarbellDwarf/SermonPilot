@@ -99,8 +99,8 @@ pip install -r requirements/requirements-linux.txt
 ### Standard Installation
 ```bash
 # Clone repository
-git clone https://github.com/SpirusNox/sermon-ai-audio-processor.git
-cd sermon-ai-audio-processor
+git clone https://github.com/SpirusNox/SermonPilot.git
+cd SermonPilot
 
 # Create virtual environment
 python -m venv .venv

@@ -1,4 +1,4 @@
-# SermonAudio Processor
+# SermonPilot
 
 Automated sermon processing tool that enhances audio (Clear/DeepFilterNet), transcribes (Whisper), generates AI metadata (title/description/hashtags via Ollama/OpenAI), and uploads to SermonAudio API. Provides a Streamlit web UI and CLI.
 
@@ -15,7 +15,7 @@ Automated sermon processing tool that enhances audio (Clear/DeepFilterNet), tran
 
 ```bash
 git clone <repository-url>
-cd sermon-ai-audio-processor
+cd SermonPilot
 
 # Install UV (fast package manager)
 curl -LsSf https://astral.sh/uv/install.sh | sh

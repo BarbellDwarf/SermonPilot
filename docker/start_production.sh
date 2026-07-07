@@ -2,7 +2,7 @@
 # docker/start_production.sh
 set -e
 
-echo "🚀 Starting SermonAudio Processor"
+echo "🚀 Starting SermonPilot"
 
 # Graceful shutdown handler
 cleanup() {

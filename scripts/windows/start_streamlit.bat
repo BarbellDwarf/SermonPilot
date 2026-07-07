@@ -1,5 +1,5 @@
 @echo off
-cd /d "d:\Repositories\sermon-ai-audio-processor"
+cd /d "d:\Repositories\SermonPilot"
 echo Activating virtual environment...
 call ".venv\Scripts\activate.bat"
 echo Starting Streamlit server...
