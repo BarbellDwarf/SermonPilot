@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SermonAudio AI Audio Processor - Advanced Linux Server Manager
+# SermonPilot - Advanced Linux Server Manager
 # This script provides start/stop/status/restart functionality
 
 set -e
@@ -23,7 +23,7 @@ cd "$SCRIPT_DIR"
 
 # Function to show usage
 show_usage() {
-    echo -e "${BLUE}SermonAudio AI Audio Processor - Server Manager${NC}"
+    echo -e "${BLUE}SermonPilot - Server Manager${NC}"
     echo ""
     echo "Usage: $0 {start|stop|restart|status|logs}"
     echo ""
@@ -70,7 +70,7 @@ get_status() {
 
 # Function to start the server
 start_server() {
-    echo -e "${BLUE}🚀 Starting SermonAudio AI Audio Processor Server${NC}"
+    echo -e "${BLUE}🚀 Starting SermonPilot Server${NC}"
     echo -e "${BLUE}================================================${NC}"
 
     if is_running; then

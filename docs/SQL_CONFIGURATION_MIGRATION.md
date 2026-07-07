@@ -29,7 +29,7 @@ The SQL configuration system uses SQLite with the following tables:
 ### File Structure
 
 ```
-sermon-ai-audio-processor/
+SermonPilot/
 ├── sql/
 │   └── create_config_schema.sql          # Database schema
 ├── src/

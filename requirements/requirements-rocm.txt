@@ -1,4 +1,4 @@
-# ROCm-enabled requirements for SermonAudio AI Audio Processor
+# ROCm-enabled requirements for SermonPilot
 # Install with: uv pip install -r requirements/requirements-rocm.txt --index-strategy unsafe-best-match
 
 # Use PyTorch ROCm index (matches system ROCm 7.x; works on 7.0+)

@@ -1,5 +1,5 @@
 """
-Batch Processing Page for SermonAudio Processor
+Batch Processing Page for SermonPilot
 
 Handles filtering sermons, selecting batches, configuring processing options,
 and managing bulk operations with progress tracking.

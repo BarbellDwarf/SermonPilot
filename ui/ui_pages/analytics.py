@@ -1,5 +1,5 @@
 """
-Analytics Page for SermonAudio Processor
+Analytics Page for SermonPilot
 
 Displays processing metrics, success rates, content analysis, cost tracking,
 performance charts with interactive visualizations, and SermonAudio analytics.

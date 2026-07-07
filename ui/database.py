@@ -1,5 +1,5 @@
 """
-Database utilities for SermonAudio Processor UI
+Database utilities for SermonPilot UI
 
 Provides SQLite-based persistent storage for metadata caching,
 processing status, and progress tracking to improve UI performance

@@ -1,4 +1,4 @@
-# Minimal GPU-enabled requirements for SermonAudio AI Audio Processor
+# Minimal GPU-enabled requirements for SermonPilot
 # This file installs essential GPU acceleration with minimal overhead
 # Install with: uv pip install -r requirements/requirements-gpu-minimal.txt
 

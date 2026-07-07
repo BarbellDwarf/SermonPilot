@@ -1,4 +1,4 @@
-# Linux-specific requirements for SermonAudio AI Audio Processor
+# Linux-specific requirements for SermonPilot
 # Install with: uv pip install -r requirements/requirements-linux.txt --index-strategy unsafe-best-match
 
 # Use PyTorch CUDA index for GPU support on Linux

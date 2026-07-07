@@ -2,7 +2,7 @@
 
 ## Overview
 
-The SermonAudio Processor implements a sophisticated RAG system that enables natural language queries over sermon analytics data. The system combines ChromaDB for vector storage, sentence transformers for embeddings, and LLM integration for generating responses.
+The SermonPilot implements a sophisticated RAG system that enables natural language queries over sermon analytics data. The system combines ChromaDB for vector storage, sentence transformers for embeddings, and LLM integration for generating responses.
 
 ## Architecture
 

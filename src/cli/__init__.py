@@ -1,4 +1,4 @@
-"""CLI module for SermonAudio Processor."""
+"""CLI module for SermonPilot."""
 
 from .parser import CLIParser, confirm, parse_years
 

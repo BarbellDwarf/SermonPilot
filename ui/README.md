@@ -1,4 +1,4 @@
-# SermonAudio Processor Web UI
+# SermonPilot Web UI
 
 A modern Streamlit web interface for the SermonAudio AI audio processing pipeline.
 

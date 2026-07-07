@@ -1,5 +1,5 @@
 """
-Settings Page for SermonAudio Processor
+Settings Page for SermonPilot
 
 Handles configuration management, LLM provider setup, audio settings,
 and validation criteria with web-based editing interface.

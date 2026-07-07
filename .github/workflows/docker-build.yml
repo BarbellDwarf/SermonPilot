@@ -69,7 +69,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.gpu }}
           labels: |
             org.opencontainers.image.version=${{ steps.version.outputs.tag }}
-            org.opencontainers.image.description=SermonAudio Processor (${{ matrix.gpu }})
+            org.opencontainers.image.description=SermonPilot (${{ matrix.gpu }})
           build-args: |
             GPU_BACKEND=${{ matrix.gpu }}
           cache-from: type=gha

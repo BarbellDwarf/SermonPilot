@@ -1,6 +1,6 @@
 # transcription.py
 """
-Transcription abstraction layer for SermonAudio Processor.
+Transcription abstraction layer for SermonPilot.
 Supports multiple backends:
 - whisper_local: Uses OpenAI Whisper via the `whisper` Python package.
 - whisper_openrouter: Calls OpenRouter's Whisper endpoint (compatible with OpenAI API).

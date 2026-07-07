@@ -1,6 +1,6 @@
 # Configuration Directory
 
-This directory contains configuration templates and examples for the SermonAudio Processor.
+This directory contains configuration templates and examples for the SermonPilot.
 
 ## Files
 

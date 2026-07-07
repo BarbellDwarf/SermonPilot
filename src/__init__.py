@@ -1,4 +1,4 @@
-# SermonAudio Processor Source Code Package
+# SermonPilot Source Code Package
 """
 This package contains the core components of the SermonAudio processor:
 

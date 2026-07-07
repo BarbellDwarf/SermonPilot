@@ -1,5 +1,5 @@
 """
-Sidebar extras for SermonAudio Processor
+Sidebar extras for SermonPilot
 
 Renders system status and quick actions below the st.navigation() menu.
 """

@@ -1,6 +1,6 @@
 # Docker Usage Guide
 
-This document explains how to use Docker with the SermonAudio Processor.
+This document explains how to use Docker with the SermonPilot.
 
 ## Quick Start
 

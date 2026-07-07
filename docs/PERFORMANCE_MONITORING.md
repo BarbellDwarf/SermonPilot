@@ -2,7 +2,7 @@
 
 ## Overview
 
-The SermonAudio Processor includes a comprehensive performance monitoring system that provides real-time insights into system resource usage, processing performance, and optimization opportunities. The monitoring system helps identify bottlenecks, optimize resource allocation, and ensure optimal processing performance.
+The SermonPilot includes a comprehensive performance monitoring system that provides real-time insights into system resource usage, processing performance, and optimization opportunities. The monitoring system helps identify bottlenecks, optimize resource allocation, and ensure optimal processing performance.
 
 ## Features
 

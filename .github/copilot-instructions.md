@@ -1,4 +1,4 @@
-# AI Coding Agent Instructions for SermonAudio Processor
+# AI Coding Agent Instructions for SermonPilot
 
 ## Architecture Overview
 

@@ -1,5 +1,5 @@
 """
-Streamlit Web UI for SermonAudio Processor
+Streamlit Web UI for SermonPilot
 
 A modern web interface for the SermonAudio AI audio processing pipeline.
 Provides intuitive access to sermon processing, batch operations, validation,
@@ -51,14 +51,14 @@ from ui.shared_navigation import render_sidebar_extras
 
 # Configure Streamlit page
 st.set_page_config(
-    page_title="SermonAudio Processor",
+    page_title="SermonPilot",
     page_icon="🎵",
     layout="wide",
     initial_sidebar_state="expanded",
     menu_items={
-        'Get Help': 'https://github.com/SpirusNox/sermon-ai-audio-processor',
-        'Report a bug': 'https://github.com/SpirusNox/sermon-ai-audio-processor/issues',
-        'About': 'SermonAudio AI Audio Processor - Enhance sermons with AI'
+        'Get Help': 'https://github.com/SpirusNox/SermonPilot',
+        'Report a bug': 'https://github.com/SpirusNox/SermonPilot/issues',
+        'About': 'SermonPilot - Enhance sermons with AI'
     }
 )
 

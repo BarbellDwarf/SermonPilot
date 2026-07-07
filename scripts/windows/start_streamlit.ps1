@@ -1,5 +1,5 @@
 # PowerShell script to start Streamlit server
-Set-Location "d:\Repositories\sermon-ai-audio-processor"
+Set-Location "d:\Repositories\SermonPilot"
 Write-Host "Activating virtual environment..." -ForegroundColor Green
 & ".\.venv\Scripts\Activate.ps1"
 Write-Host "Starting Streamlit server..." -ForegroundColor Green

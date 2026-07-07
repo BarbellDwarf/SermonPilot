@@ -1,5 +1,5 @@
 """
-Validation Page for SermonAudio Processor
+Validation Page for SermonPilot
 
 Handles description validation, quality metrics, failed descriptions management,
 and batch validation with detailed reporting.
