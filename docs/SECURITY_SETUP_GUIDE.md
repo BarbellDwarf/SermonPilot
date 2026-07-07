@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide helps you set up the SermonAudio Processor with proper security configurations, including environment variables, credential management, and security validation tools.
+This guide helps you set up the SermonPilot with proper security configurations, including environment variables, credential management, and security validation tools.
 
 ## Quick Setup
 

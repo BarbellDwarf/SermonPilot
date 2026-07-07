@@ -44,7 +44,7 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
-print("🔄 Initializing SermonAudio Processor...")
+print("🔄 Initializing SermonPilot...")
 print("   📦 Loading dependencies...")
 
 import requests
@@ -3563,7 +3563,7 @@ def fetch_sermons(params: dict[str, Any], max_results: int | None = None) -> lis
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description=(
-            "SermonAudio Processor - Process, create, and manage sermons with AI-powered enhancement. "
+            "SermonPilot - Process, create, and manage sermons with AI-powered enhancement. "
             "Use subcommands for different operations."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

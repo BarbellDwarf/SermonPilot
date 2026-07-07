@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SermonAudio AI Audio Processor - Linux Server Startup Script
+# SermonPilot - Linux Server Startup Script
 # This script starts the Streamlit server with proper environment setup
 
 set -e  # Exit on any error
@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$SCRIPT_DIR"
 
-echo -e "${BLUE}🚀 SermonAudio AI Audio Processor - Server Startup${NC}"
+echo -e "${BLUE}🚀 SermonPilot - Server Startup${NC}"
 echo -e "${BLUE}=================================================${NC}"
 
 # Check if virtual environment exists

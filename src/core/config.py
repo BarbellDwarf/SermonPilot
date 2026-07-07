@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConfigManager:
-    """Manages configuration loading and validation for SermonAudio Processor."""
+    """Manages configuration loading and validation for SermonPilot."""
 
     def __init__(self, config_path: str | None = None):
         self.config_path = config_path or self._find_config_file()

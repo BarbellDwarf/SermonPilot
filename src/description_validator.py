@@ -1,5 +1,5 @@
 """
-Description Validation Tool for SermonAudio Processor
+Description Validation Tool for SermonPilot
 
 This tool validates existing sermon descriptions against predefined criteria to ensure
 they meet quality standards. It can be used to audit existing descriptions and 

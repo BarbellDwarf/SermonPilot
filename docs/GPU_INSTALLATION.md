@@ -6,7 +6,7 @@
 | `requirements/requirements-gpu.txt` | Full GPU acceleration | 6GB+ | ~4GB | Recommended GPU setup |
 | `requirements/requirements-gpu-full.txt` | Maximum acceleration | 8GB+ | ~8GB | Research/production use |ation Guide
 
-This guide helps you choose the right requirements file for your system and explains how to install GPU acceleration for the SermonAudio AI Audio Processor.
+This guide helps you choose the right requirements file for your system and explains how to install GPU acceleration for the SermonPilot.
 
 ## 📋 Requirements Files Overview
 

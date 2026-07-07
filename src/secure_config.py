@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Secure Configuration Loader
-Handles environment variable substitution and security validation for the SermonAudio Processor
+Handles environment variable substitution and security validation for the SermonPilot
 """
 
 import os
@@ -251,7 +251,7 @@ if __name__ == "__main__":
     """Command-line interface for configuration validation."""
     import sys
     
-    print("🔍 SermonAudio Processor - Configuration Security Validator")
+    print("🔍 SermonPilot - Configuration Security Validator")
     print("=" * 60)
     
     try:
