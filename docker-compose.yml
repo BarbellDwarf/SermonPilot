@@ -1,11 +1,7 @@
 services:
-  sermon-processor:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        GPU_BACKEND: ${GPU_BACKEND:-cuda}
-    container_name: sermon-processor
+  sermon-pilot:
+    image: ghcr.io/barbelldwarf/sermonpilot:${SERMONPILOT_TAG:-latest}
+    container_name: sermon-pilot
     restart: unless-stopped
     ports:
       - "8501:8501"
@@ -39,7 +35,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
-    container_name: sermon-ollama
+    container_name: sermonpilot-ollama
     restart: unless-stopped
     ports:
       - "11434:11434"
