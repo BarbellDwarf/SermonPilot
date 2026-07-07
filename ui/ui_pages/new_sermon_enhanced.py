@@ -142,10 +142,11 @@ def _show_processing_section():
         if transcribe:
             transcription_backend = st.radio(
                 "Backend", key="transcription_backend",
-                options=["whisper_local", "whisper_openai"],
+                options=["Faster Whisper (Local)", "OpenAI Whisper API"],
                 index=0, horizontal=True,
-                help="Local Whisper (runs on your machine) or OpenAI API"
+                help="Faster Whisper (local, CTranslate2) or OpenAI API"
             )
+            transcription_backend = "faster_whisper_local" if transcription_backend == "Faster Whisper (Local)" else "whisper_openai"
             if transcription_backend == "whisper_openai":
                 _show_openai_whisper_ui()
             else:
