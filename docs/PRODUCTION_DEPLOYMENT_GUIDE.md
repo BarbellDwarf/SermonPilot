@@ -22,11 +22,6 @@ All placeholder values in configuration files must be replaced with real credent
 - Database credentials (if applicable)
 
 #### 2. Remove Demo/Test Files
-Files in `examples/` directory contain demo code and should not be deployed to production:
-- `examples/demo_metadata_api.py`
-- `examples/demo_enhanced_providers.py`
-
-**Action**: Exclude `examples/` directory from production deployment.
 
 #### 3. Secure Environment Variables
 Replace hardcoded credentials with environment variables:
@@ -155,13 +150,6 @@ server {
 ### 1. Run Comprehensive Test Suite
 ```bash
 # Test all components
-python Tests/master_plan_runner.py --local
-
-# Verify environment setup
-python Tests/local-tests/environment-check.py
-
-# Test configuration
-python Tests/cloud-tests/config-validation.py
 ```
 
 ### 2. Performance Testing
@@ -214,7 +202,6 @@ python Tests/cloud-tests/config-validation.py
 4. **Performance Issues**: Monitor resource usage and logs
 
 ### Getting Help
-- Check the comprehensive test results in `Tests/archives/`
 - Review documentation in `docs/` directory
 - Run environment diagnostics with local test suite
 
