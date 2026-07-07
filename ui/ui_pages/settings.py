@@ -1183,17 +1183,24 @@ def show_transcription_settings():
     transcription_cfg = config.get('transcription', {})
 
     st.markdown("#### 🔧 Backend")
-    backend = st.selectbox(
+    backend_options = ["faster_whisper_local", "whisper_openai", "whisper_openrouter"]
+    display_names = {
+        "faster_whisper_local": "Faster Whisper (Local)",
+        "whisper_openai": "OpenAI Whisper API",
+        "whisper_openrouter": "OpenRouter Whisper API",
+    }
+    current_backend = transcription_cfg.get('backend', 'faster_whisper_local')
+    current_index = backend_options.index(current_backend) if current_backend in backend_options else 0
+    backend_key = st.selectbox(
         "Transcription Backend",
-        options=["whisper_local", "faster_whisper_local", "whisper_openai", "whisper_openrouter"],
-        index=["whisper_local", "faster_whisper_local", "whisper_openai", "whisper_openrouter"].index(
-            transcription_cfg.get('backend', 'faster_whisper_local')
-        ),
+        options=backend_options,
+        format_func=lambda x: display_names.get(x, x),
+        index=current_index,
         help="Local Whisper (runs on your machine) or API-based transcription"
     )
 
-    if backend in ("whisper_local", "faster_whisper_local"):
-        local_cfg = transcription_cfg.get(backend, {})
+    if backend_key == "faster_whisper_local":
+        local_cfg = transcription_cfg.get('faster_whisper_local', {})
 
         st.markdown("#### 💻 Local Whisper Settings")
         col1, col2 = st.columns(2)
@@ -1228,9 +1235,9 @@ def show_transcription_settings():
             )
 
         if st.button("💾 Save Local Transcription Settings", type="primary"):
-            save_transcription_settings(backend, local_model, device, compute_type, language, None, None, None)
+            save_transcription_settings(backend_key, local_model, device, compute_type, language, None, None, None)
 
-    elif backend == "whisper_openai":
+    elif backend_key == "whisper_openai":
         openai_cfg = transcription_cfg.get('whisper_openai', {})
 
         st.markdown("#### ☁️ OpenAI API Settings")
@@ -1257,9 +1264,9 @@ def show_transcription_settings():
             )
 
         if st.button("💾 Save OpenAI Transcription Settings", type="primary"):
-            save_transcription_settings(backend, None, None, None, None, api_key, base_url, model)
+            save_transcription_settings(backend_key, None, None, None, None, api_key, base_url, model)
 
-    elif backend == "whisper_openrouter":
+    elif backend_key == "whisper_openrouter":
         or_cfg = transcription_cfg.get('whisper_openrouter', {})
 
         st.markdown("#### 🌐 OpenRouter API Settings")
@@ -1286,7 +1293,7 @@ def show_transcription_settings():
             )
 
         if st.button("💾 Save OpenRouter Transcription Settings", type="primary"):
-            save_transcription_settings(backend, None, None, None, None, api_key, base_url, model)
+            save_transcription_settings(backend_key, None, None, None, None, api_key, base_url, model)
 
 def save_transcription_settings(backend, local_model, device, compute_type, language, api_key, base_url, model):
     """Save transcription settings to configuration"""
