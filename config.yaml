@@ -83,3 +83,113 @@ transcription:
     base_url: https://openrouter.ai/api/v1
     model: openai/whisper-large-v3
 use_audacity: false
+
+prompt_templates:
+  title:
+    enabled: true
+    system: "You are a sermon title generator. Create a compelling, descriptive title for this sermon."
+    user: |
+      {context}
+
+      Guidelines for the title:
+      - Maximum 85 characters (STRICT LIMIT for API)
+      - Capture the main theme or message
+      - Be specific and engaging, not generic
+      - Avoid cliché Christian phrases
+      - Focus on the practical application or key insight
+      - If a Bible reference is given, you may include it briefly
+      - Do not use quotation marks around the title
+      - Return ONLY the title, no explanation or commentary
+
+      Sermon content (first 1000 characters):
+      {transcript}...
+
+      Generate a compelling sermon title:
+  short_title:
+    enabled: true
+    system: "You are a title shortener. Shorten sermon titles to concise versions."
+    user: |
+      Shorten this sermon title to a concise version (maximum 30 characters, STRICT LIMIT).
+      Keep the core meaning but make it brief. No quotes, no explanation, just the shortened title.
+
+      Original title: {full_title}
+
+      Shortened title (max 30 chars):
+  description:
+    enabled: true
+    system: "You are a {role_desc}. Read the following {body_desc} transcript and write a single, concise description of the main message and application."
+    user: |
+      Transcript:
+      {transcript}
+
+      Guidelines:
+      - Maximum 1600 characters (STRICT LIMIT - API will reject longer text)
+      - One paragraph format
+      {speaker_instruction}
+      - No intro/closing words
+      - No markdown or bullets
+      - Do not prefix with 'Summary:'
+      - If incomplete, infer likely main message
+      - Keep under 1600 characters or the upload will fail
+      - Use the actual speaker name, not placeholder text
+      - Include specific scripture references, source material, and concrete examples from the transcript
+      - Mention the specific doctrines, rules, or texts the speaker expounded
+      - Describe the practical application the speaker gave
+      - IMPORTANT: Return ONLY the final summary paragraph. Do not include any reasoning, thinking process, explanations, or commentary. Start directly with the summary content.
+  hashtags:
+    enabled: true
+    system: "You are a hashtag generator for sermon content."
+    user: |
+      Generate 5-10 highly relevant, search-friendly hashtags (<=150 chars total) for this sermon.
+      Combine multi-word phrases (#ChristianLiving). Avoid duplicates & generic (#sermon #church) unless uniquely relevant.
+      Output ONLY space-delimited hashtags.
+
+      Text:
+      {text}
+
+      Hashtags:
+  hashtag_verification:
+    enabled: true
+    system: "You are a hashtag validator."
+    user: |
+      Your job is to extract ONLY valid hashtags from the input below.
+      Rules:
+      1. Output ONLY hashtags (words starting with #)
+      2. Remove any comments, explanations, or non-hashtag text
+      3. Keep hashtags space-separated
+      4. Maximum 150 characters total
+      5. If you see obvious formatting issues, fix them
+      6. If no valid hashtags found, generate 3-5 relevant ones for the sermon topic
+
+      Original sermon topic context: {original_text}...
+
+      Hashtag input to verify:
+      {initial_hashtags}
+
+      Valid hashtags only:
+  description_validation:
+    enabled: true
+    system: "You are a sermon description quality validator."
+    user: |
+      Evaluate the following description against specific criteria and provide a detailed assessment.
+
+      {context_info}
+      Validation Criteria:
+      {criteria_text}
+
+      Description to validate:
+      {description}
+
+      Please provide your assessment in this exact format:
+      SCORE: [0.0-1.0]
+      STATUS: [APPROVED/REJECTED]
+      REASON: [brief explanation]
+      CRITERIA_MET: [comma-separated list of criterion numbers that are met, e.g., "1,3,5"]
+      CRITERIA_FAILED: [comma-separated list of criterion numbers that failed, e.g., "2,4"]
+
+      Guidelines:
+      - Score 0.8+ = APPROVED (high quality)
+      - Score 0.6-0.79 = APPROVED but could be improved
+      - Score <0.6 = REJECTED (needs regeneration)
+      - Consider theological depth, specificity, professional tone, and practical application
+      - Be specific about which criteria are met or failed
