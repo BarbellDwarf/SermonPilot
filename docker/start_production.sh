@@ -16,8 +16,8 @@ cleanup() {
 }
 trap cleanup SIGTERM SIGINT
 
-# Wait for external dependencies (Ollama, Redis if configured)
-if [ -n "$OLLAMA_HOST" ] || [ -n "$REDIS_HOST" ]; then
+# Wait for external dependencies (database if configured)
+if [ -n "$DATABASE_HOST" ]; then
     echo "⏳ Waiting for external services..."
     python /app/docker/wait_for_services.py
 fi
