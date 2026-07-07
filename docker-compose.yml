@@ -7,7 +7,7 @@ services:
       - "8501:8501"
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
       - DATABASE_URL=${DATABASE_URL:-sqlite:///data/sermon_processor.db}
       - SERMONAUDIO_API_KEY=${SERMONAUDIO_API_KEY}
       - SERMONAUDIO_BROADCASTER_ID=${SERMONAUDIO_BROADCASTER_ID}
@@ -21,9 +21,6 @@ services:
       - sermon_logs:/app/logs
     env_file:
       - .env
-    depends_on:
-      ollama:
-        condition: service_healthy
     networks:
       - sermon_network
     healthcheck:
@@ -33,29 +30,10 @@ services:
       retries: 3
       start_period: 120s
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: sermonpilot-ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    environment:
-      - OLLAMA_HOST=0.0.0.0
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - sermon_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
 volumes:
   sermon_data:
   sermon_models:
   sermon_logs:
-  ollama_data:
 
 networks:
   sermon_network:
