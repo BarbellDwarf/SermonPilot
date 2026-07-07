@@ -2,14 +2,14 @@
 CLI Argument Parser Module
 
 Extracted from sermon_updater.py to reduce complexity.
-Handles command line argument parsing for the SermonAudio Processor.
+Handles command line argument parsing for the SermonPilot.
 """
 
 import argparse
 
 
 class CLIParser:
-    """Handles command line argument parsing for SermonAudio Processor."""
+    """Handles command line argument parsing for SermonPilot."""
 
     def __init__(self, config_path: str = "config.yaml"):
         self.config_path = config_path
@@ -18,7 +18,7 @@ class CLIParser:
         """Build and configure the main argument parser."""
         p = argparse.ArgumentParser(
             description=(
-                "SermonAudio Processor - Process, create, and manage sermons with AI-powered enhancement. "
+                "SermonPilot - Process, create, and manage sermons with AI-powered enhancement. "
                 "Use subcommands for different operations."
             ),
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,

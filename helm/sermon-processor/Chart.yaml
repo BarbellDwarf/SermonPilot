@@ -1,7 +1,7 @@
 # helm/sermon-processor/Chart.yaml
 apiVersion: v2
 name: sermon-processor
-description: A Helm chart for SermonAudio Processor
+description: A Helm chart for SermonPilot
 type: application
 version: 1.0.0
 appVersion: "1.0.0"

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The SermonAudio Processor includes comprehensive analytics capabilities that provide insights into sermon processing performance, content analysis, and SermonAudio engagement metrics. The analytics system includes both traditional dashboard views and an AI-powered chat interface for natural language queries.
+The SermonPilot includes comprehensive analytics capabilities that provide insights into sermon processing performance, content analysis, and SermonAudio engagement metrics. The analytics system includes both traditional dashboard views and an AI-powered chat interface for natural language queries.
 
 ## Features
 

@@ -1,4 +1,4 @@
-# SermonAudio AI Audio Processor Requirements
+# SermonPilot Requirements
 # This file provides a comprehensive dependency list for all platforms
 
 # Platform-specific PyTorch installation

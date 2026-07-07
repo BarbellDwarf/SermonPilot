@@ -1,4 +1,4 @@
-# SermonAudio Processor — AI Agent Context
+# SermonPilot — AI Agent Context
 
 ## Project Overview
 Automated sermon processing tool that enhances audio (DeepFilterNet/Resemble), transcribes (Whisper), generates AI metadata (title/description/hashtags via Ollama/OpenAI), and uploads to SermonAudio API. Provides a Streamlit web UI and CLI.

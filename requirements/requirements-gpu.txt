@@ -1,4 +1,4 @@
-# GPU-enabled requirements for SermonAudio AI Audio Processor
+# GPU-enabled requirements for SermonPilot
 # This file installs GPU-accelerated versions of PyTorch and related packages
 # Install with: pip install -r requirements/requirements-gpu.txt
 

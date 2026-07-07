@@ -1,6 +1,6 @@
 # Startup Scripts
 
-This directory contains platform-specific startup scripts for the SermonAudio Processor.
+This directory contains platform-specific startup scripts for the SermonPilot.
 
 ## Linux Scripts (`linux/`)
 

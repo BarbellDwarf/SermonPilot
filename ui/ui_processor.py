@@ -1,5 +1,5 @@
 """
-UI Processing Interface for SermonAudio Processor
+UI Processing Interface for SermonPilot
 
 Provides real validation and processing functionality with progress tracking
 for the Streamlit UI, connecting the interface to the actual sermon processing pipeline.

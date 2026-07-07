@@ -113,7 +113,7 @@ Create systemd service for production deployment:
 
 ```ini
 [Unit]
-Description=SermonAudio Processor
+Description=SermonPilot
 After=network.target
 
 [Service]

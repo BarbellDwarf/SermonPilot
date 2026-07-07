@@ -2,7 +2,7 @@
 Jobs Page - Monitor and manage background jobs
 
 Provides a comprehensive interface for viewing, managing, and monitoring
-all background jobs in the SermonAudio Processor system.
+all background jobs in the SermonPilot system.
 
 Features:
 - Real-time job status monitoring
