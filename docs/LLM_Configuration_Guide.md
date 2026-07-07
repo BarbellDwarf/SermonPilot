@@ -2,7 +2,7 @@
 
 ## Overview
 
-The SermonAudio Updater now supports flexible LLM configuration with both primary and fallback providers. You can easily switch between **6 major LLM providers** with dedicated provider types: OpenAI, Anthropic (Claude), xAI (Grok), Google (Gemini), Groq, and Ollama for local models. Each provider type comes with sensible defaults and simplified configuration.
+SermonPilot now supports flexible LLM configuration with both primary and fallback providers. You can easily switch between **6 major LLM providers** with dedicated provider types: OpenAI, Anthropic (Claude), xAI (Grok), Google (Gemini), Groq, and Ollama for local models. Each provider type comes with sensible defaults and simplified configuration.
 
 ## New Configuration Structure
 
@@ -254,7 +254,7 @@ llm:
 
 ## Debug Mode
 
-The SermonAudio Updater includes a debug mode to help with troubleshooting. Set `debug: true` in your `config.yaml` to enable verbose output that shows:
+SermonPilot includes a debug mode to help with troubleshooting. Set `debug: true` in your `config.yaml` to enable verbose output that shows:
 
 - Detailed sermon processing steps
 - File paths and directory operations

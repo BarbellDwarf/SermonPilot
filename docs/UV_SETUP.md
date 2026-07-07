@@ -1,4 +1,4 @@
-# Using UV with SermonAudio Updater
+# Using UV with SermonPilot
 
 UV is a fast Python package and project manager that makes it easy to manage Python versions and dependencies.
 
