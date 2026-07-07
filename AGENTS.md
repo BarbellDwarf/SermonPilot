@@ -105,7 +105,8 @@ Direct commits to `master` are **not allowed**. Every change must go through a b
 4. **Push the branch** — `git push origin release/vX.Y.Z`
 5. **Create a PR** — `gh pr create --base master --head release/vX.Y.Z --title "Release vX.Y.Z" --body "Version bump and changelog"`
 6. **After PR is merged, tag the release** — `git checkout master && git pull && git tag -a vX.Y.Z -m "vX.Y.Z: short description" && git push origin vX.Y.Z`
-7. **Delete the release branch** — `git branch -d release/vX.Y.Z && git push origin --delete release/vX.Y.Z`
+7. **Create a GitHub Release with release notes** — `gh release create vX.Y.Z --title "vX.Y.Z" --notes "Summary of changes, new features, bug fixes, and upgrade notes."`
+8. **Delete the release branch** — `git branch -d release/vX.Y.Z && git push origin --delete release/vX.Y.Z`
 
 ### Tag Naming
 - Tags must start with `v` followed by the version: `v1.5.1`, `v1.6.0`, etc.
