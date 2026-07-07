@@ -131,3 +131,13 @@ docker-compose.override.yml
 /logs/
 /config_backups/
 
+
+# Accidentally re-created docs (removed from repo)
+docs/CODE_REFACTORING_IMPLEMENTATION.md
+docs/COMPREHENSIVE_SYSTEM_IMPLEMENTATION.md
+docs/ENHANCED_AUDIO_EDITING_GUIDE.md
+docs/ENHANCEMENT_MODEL_TESTING_RESULTS.md
+docs/IMPORT_RESOLUTION_GUIDE.md
+docs/NEW_SERMON_WORKFLOW.md
+docs/SQL_CONFIGURATION_MIGRATION.md
+docs/sermonaudio_api_v2_openapi.json
