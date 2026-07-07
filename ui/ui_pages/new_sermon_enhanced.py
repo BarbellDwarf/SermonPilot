@@ -1,11 +1,3 @@
-# ui/ui_pages/new_sermon_enhanced.py
-"""
-Enhanced New Sermon Processing Page with Audio Editing
-
-Integrates audio editing capabilities with the sermon upload workflow,
-providing a comprehensive interface for content creators.
-"""
-
 import datetime
 import json
 import subprocess
@@ -18,7 +10,6 @@ import time as _time
 
 import streamlit as st
 
-# Add parent directory to path for imports
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "ui"))
@@ -31,43 +22,29 @@ from ui.sermon_metadata import (
     show_metadata_refresh_section,
 )
 
-from ui.components.processing_modes import ProcessingModeSelector
-
 logger = logging.getLogger(__name__)
 
 
 def show_new_sermon_enhanced():
-    """Enhanced new sermon processing interface with audio editing."""
     st.markdown('<div class="main-header">🎵 New Sermon</div>', unsafe_allow_html=True)
-    
+
     if not st.session_state.config:
         st.error("❌ Configuration not loaded. Please check the Settings page first.")
         return
-    
-    # Simplified workflow tabs (no audio analysis/editing - too resource intensive)
-    tab1, tab2, tab3 = st.tabs([
-        "📁 Upload & Metadata",
-        "🎛️ Configure Processing",
-        "▶️ Process & Upload"
-    ])
 
-    with tab1:
-        show_upload_and_metadata()
-
-    with tab2:
-        show_processing_configuration()
-
-    with tab3:
-        show_process_and_upload()
+    st.markdown("---")
+    _show_upload_section()
+    st.markdown("---")
+    _show_metadata_section()
+    st.markdown("---")
+    _show_processing_section()
+    st.markdown("---")
+    _show_start_section()
 
 
-def show_upload_and_metadata():
-    """File upload and metadata form with enhanced features."""
-    st.markdown("### 📁 Audio File Upload")
+def _show_upload_section():
+    st.markdown("### 1️⃣ Upload Audio/Video File")
 
-    # File upload with additional instructions
-    st.info("💡 Upload your sermon audio/video file and fill in the metadata below.")
-    
     uploaded_file = st.file_uploader(
         "Select sermon audio or video file",
         type=['mp3', 'wav', 'm4a', 'flac', 'ogg', 'mp4', 'mov', 'webm', 'mkv'],
@@ -75,18 +52,16 @@ def show_upload_and_metadata():
     )
 
     if uploaded_file:
-        # Store file info in session state
         st.session_state.uploaded_file = uploaded_file
 
-        # Show enhanced file details
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("File Size", f"{uploaded_file.size / (1024*1024):.1f} MB")
         with col2:
             st.metric("File Type", uploaded_file.type)
         with col3:
-            file_name_display = uploaded_file.name[:15] + "..." if len(uploaded_file.name) > 15 else uploaded_file.name
-            st.metric("File Name", file_name_display)
+            name = uploaded_file.name[:20] + "..." if len(uploaded_file.name) > 20 else uploaded_file.name
+            st.metric("File Name", name)
         with col4:
             duration = _get_media_duration(uploaded_file)
             if duration:
@@ -94,8 +69,7 @@ def show_upload_and_metadata():
             else:
                 st.metric("Duration", "\u23F1\uFE0F")
 
-        # Audio/Video preview (skip for large files to avoid browser limits)
-        max_preview_size = 100 * 1024 * 1024  # 100 MB
+        max_preview_size = 100 * 1024 * 1024
         if uploaded_file.size <= max_preview_size:
             try:
                 video_exts = ('.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v')
@@ -108,76 +82,31 @@ def show_upload_and_metadata():
         else:
             st.info(f"ℹ️ Preview skipped for files over {max_preview_size // (1024*1024)} MB")
 
-        
 
-    st.markdown("### 📝 Sermon Metadata")
+def _show_metadata_section():
+    st.markdown("### 2️⃣ Sermon Metadata")
 
-    # Show metadata refresh section
     show_metadata_refresh_section()
 
-    # Required metadata with enhanced layout
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("#### Required Information")
-        speaker_name = create_pastor_selectbox(
-            "Speaker Name *",
-            key="speaker_name"
-        )
-
-        recorded_date = st.date_input(
-            "Recording Date *",
-            key="recorded_date",
-            value=datetime.date.today()
-        )
-
-        event_type = create_event_type_selectbox(
-            "Event Type *",
-            key="event_type"
-        )
+        speaker_name = create_pastor_selectbox("Speaker *", key="speaker_name")
+        recorded_date = st.date_input("Recording Date *", key="recorded_date", value=datetime.date.today())
+        event_type = create_event_type_selectbox("Event Type *", key="event_type")
 
     with col2:
-        st.markdown("#### Content Information")
-        bible_text = st.text_input(
-            "Bible Text/Scripture",
-            key="bible_text",
-            placeholder="John 3:16-17"
-        )
-
-        title = st.text_input(
-            "Sermon Title",
-            key="sermon_title",
-            placeholder="Leave blank for AI generation"
-        )
-
-        subtitle = st.text_input(
-            "Subtitle (optional)",
-            key="sermon_subtitle",
-            placeholder="Additional context or series info"
-        )
-
-    # Optional metadata in expander
-    with st.expander("Optional Fields", expanded=False):
-        series = create_series_selectbox(
-            "Series (optional)",
-            key="sermon_series"
-        )
+        bible_text = st.text_input("Bible Text", key="bible_text", placeholder="John 3:16-17")
+        title = st.text_input("Sermon Title", key="sermon_title", placeholder="Leave blank for AI generation")
+        subtitle = st.text_input("Subtitle", key="sermon_subtitle", placeholder="Additional context")
+        series = create_series_selectbox("Series", key="sermon_series")
         st.session_state.sermon_series = series
 
-        description = st.text_area(
-            "Description",
-            key="sermon_description",
-            placeholder="Leave blank for AI generation from transcript",
-            height=100
-        )
+    description = st.text_area("Description", key="sermon_description",
+                               placeholder="Leave blank for AI generation from transcript", height=80)
+    hashtags = st.text_input("Hashtags", key="sermon_hashtags",
+                             placeholder="Leave blank for AI generation (e.g., #faith #grace)")
 
-        hashtags = st.text_input(
-            "Hashtags",
-            key="sermon_hashtags",
-            placeholder="Leave blank for AI generation (e.g., #faith #grace #salvation)"
-        )
-
-    # Enhanced validation with visual feedback
     if speaker_name and recorded_date and event_type:
         st.success("✅ Required metadata complete")
         st.session_state.metadata_complete = True
@@ -186,259 +115,139 @@ def show_upload_and_metadata():
         st.session_state.metadata_complete = False
 
 
-
-
-
-def show_processing_configuration():
-    """Processing configuration with enhanced mode selection."""
-    st.markdown("### 🎛️ Processing Configuration")
-
-    processing_mode = st.radio(
-        "Processing Mode",
-        options=[
-            "Full (Enhance + Transcribe + AI Metadata)",
-            "Transcribe + AI Only (Skip Audio Enhancement)",
-            "Transcribe Only (No Audio, No AI Gen)",
-            "Upload Only (Just Upload, No Processing)",
-        ],
-        index=0,
-        key="processing_mode",
-        help="Select the type of processing to perform on this sermon",
-    )
-
-    is_upload_only = processing_mode.startswith("Upload Only")
-    is_transcribe_only = processing_mode.startswith("Transcribe Only")
-    is_transcribe_ai = processing_mode.startswith("Transcribe + AI")
-    is_skip_audio = is_transcribe_ai or is_transcribe_only or is_upload_only
-    is_skip_transcription = is_upload_only
-    is_skip_ai = is_upload_only or is_transcribe_only
-
-    st.session_state.skip_audio_enhancement = is_skip_audio
-    st.session_state.skip_transcription = is_skip_transcription
-    st.session_state.generate_description = not is_skip_ai
-    st.session_state.generate_hashtags = not is_skip_ai
-
-    mode_details = {
-        "Full (Enhance + Transcribe + AI Metadata)": "🎵 Audio enhancement → 🎙️ Transcription → 🤖 AI description & hashtags → 📤 Upload",
-        "Transcribe + AI Only (Skip Audio Enhancement)": "⏭️ Skip audio enhancement → 🎙️ Transcription → 🤖 AI description & hashtags → 📤 Upload",
-        "Transcribe Only (No Audio, No AI Gen)": "⏭️ Skip audio enhancement → 🎙️ Transcription → 📤 Upload (no AI generation)",
-        "Upload Only (Just Upload, No Processing)": "⏭️ Skip audio enhancement → ⏭️ Skip transcription → 📤 Upload as-is",
-    }
-    st.caption(mode_details[processing_mode])
-
-    # Initialize processing mode selector
-    if 'mode_selector' not in st.session_state:
-        st.session_state.mode_selector = ProcessingModeSelector()
-
-    mode_selector = st.session_state.mode_selector
-
-    # Render mode selector
-    mode_result = mode_selector.render_mode_selector()
-    
-    if mode_result:
-        # Store processing configuration
-        st.session_state.processing_config = mode_result['processing_config']
-        st.session_state.selected_mode = mode_result['mode']
-
-    # Legacy processing options for compatibility
-    st.markdown("### 🔧 Advanced Options")
-    
-    with st.expander("Additional Options", expanded=False):
-        col1, col2 = st.columns(2)
-
-        with col1:
-            enhancement_method = st.selectbox(
-                "Enhancement Method",
-                key="enhancement_method",
-                options=["deepfilternet", "clear-natural", "clear-studio", "custom", "none"],
-                index=0 if not is_skip_audio else 4,
-                disabled=is_skip_audio,
-                help="DeepFilterNet: standard (best for speech). Clear-Natural: gentler noise suppression. Clear-Studio: aggressive, podcast-ready. Custom: point to any ONNX model on HuggingFace."
-            )
-
-            if enhancement_method == "custom":
-                st.caption("Configure a custom ONNX model from HuggingFace:")
-                custom_repo = st.text_input("HF Repo (e.g. tonythethompson/DeepFilterNet3-ONNX)", key="custom_repo")
-                custom_file = st.text_input("ONNX filename (e.g. model.onnx)", key="custom_file")
-                if custom_repo and custom_file:
-                    st.info(f"Will use: **{custom_repo}/{custom_file}**")
-                else:
-                    st.warning("Enter both a HuggingFace repo and ONNX filename.")
-
-        with col2:
-            transcription_backend = st.radio(
-                "Transcription Backend",
-                key="transcription_backend",
-                options=["whisper_local", "whisper_openai"],
-                index=0,
-                horizontal=True,
-                help="Local Whisper (runs on your machine) or OpenAI API (requires OPENAI_API_KEY)"
-            )
-
-            if transcription_backend == "whisper_openai":
-                config = st.session_state.get('config', {})
-                openai_cfg = config.get('transcription', {}).get('whisper_openai', {})
-                api_key = openai_cfg.get('api_key', '') or os.environ.get('OPENAI_API_KEY', '')
-                base_url = openai_cfg.get('base_url', '') or os.environ.get('OPENAI_BASE_URL', 'https://api.openai.com/v1')
-
-                if api_key:
-                    if st.button("🔄 Load Available Models", key="load_whisper_models"):
-                        try:
-                            from openai import OpenAI
-                            client = OpenAI(api_key=api_key, base_url=base_url)
-                            models = client.models.list()
-                            whisper_models = sorted([m.id for m in models.data if 'whisper' in m.id.lower()])
-                            if whisper_models:
-                                st.session_state['openai_whisper_models'] = whisper_models
-                                st.success(f"Found {len(whisper_models)} whisper models")
-                            else:
-                                st.warning("No whisper models found on this server")
-                        except Exception as e:
-                            st.error(f"Failed to load models: {e}")
-
-                    openai_models = st.session_state.get('openai_whisper_models', [])
-                    if openai_models:
-                        whisper_model = st.selectbox(
-                            "OpenAI Whisper Model",
-                            key="whisper_model",
-                            options=openai_models,
-                            index=0,
-                            help="Select a whisper model from the server"
-                        )
-                    else:
-                        whisper_model = st.text_input(
-                            "OpenAI Whisper Model",
-                            key="whisper_model",
-                            value=openai_cfg.get('model', 'whisper-1'),
-                            help="Model name (e.g. whisper-1, openai/whisper-large-v3)"
-                        )
-                else:
-                    st.warning("OpenAI API key not configured. Set OPENAI_API_KEY in .env or config.")
-                    whisper_model = st.text_input(
-                        "OpenAI Whisper Model",
-                        key="whisper_model",
-                        value="whisper-1",
-                        help="Model name (e.g. whisper-1, openai/whisper-large-v3)"
-                    )
-            else:
-                whisper_model = st.selectbox(
-                    "Whisper Model (if transcribing locally)",
-                    key="whisper_model",
-                    options=["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo"],
-                    index=8,
-                    help="Balance between speed and quality. .en models are English-only (faster). large-v3-turbo ≈ large quality with ~2x speed."
-                )
-
-        col1, col2 = st.columns(2)
-        with col1:
-            dry_run = st.checkbox(
-                "Dry Run (Preview Only)",
-                key="dry_run",
-                help="Process locally but don't upload to SermonAudio"
-            )
-
-    # AI Metadata Generation
-    st.markdown("### 🤖 AI Metadata Generation")
+def _show_processing_section():
+    st.markdown("### 3️⃣ Processing Options")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        # Auto-adjust generate_title default when manual title presence changes
-        has_manual_title = bool(st.session_state.get('sermon_title', '').strip())
-        prev_title_state = st.session_state.get('_prev_has_title', None)
-        if prev_title_state is not None and prev_title_state != has_manual_title:
-            st.session_state.generate_title = not has_manual_title and not is_skip_ai
-        st.session_state._prev_has_title = has_manual_title
-
-        generate_title = st.checkbox(
-            "Generate Title",
-            key="generate_title",
-            disabled=is_skip_ai,
-            help="Use AI to generate sermon title from transcript. Unchecked by default when you type a title."
-        )
-
-        generate_description = st.checkbox(
-            "Generate Description",
-            key="generate_description",
-            disabled=is_skip_ai,
-            help="Use AI to generate detailed description from transcript"
-        )
+        st.markdown("**Audio Enhancement**")
+        enhance_audio = st.checkbox("Enhance Audio", key="enhance_audio", value=True,
+                                    help="Apply AI noise suppression to the audio")
+        if enhance_audio:
+            enhancement_method = st.selectbox(
+                "Method", key="enhancement_method",
+                options=["deepfilternet", "clear-natural", "clear-studio", "custom", "none"],
+                index=0,
+                help="DeepFilterNet: standard (best for speech). Clear-Natural: gentler. Clear-Studio: aggressive. Custom: any HF ONNX model."
+            )
+            if enhancement_method == "custom":
+                st.text_input("HF Repo (e.g. tonythethompson/DeepFilterNet3-ONNX)", key="custom_repo")
+                st.text_input("ONNX filename (e.g. model.onnx)", key="custom_file")
 
     with col2:
-        generate_hashtags = st.checkbox(
-            "Generate Hashtags",
-            key="generate_hashtags",
-            disabled=is_skip_ai,
-            help="Use AI to generate relevant hashtags from content"
-        )
+        st.markdown("**Transcription**")
+        transcribe = st.checkbox("Transcribe Audio", key="transcribe", value=True,
+                                 help="Generate transcript from the audio")
+        if transcribe:
+            transcription_backend = st.radio(
+                "Backend", key="transcription_backend",
+                options=["whisper_local", "whisper_openai"],
+                index=0, horizontal=True,
+                help="Local Whisper (runs on your machine) or OpenAI API"
+            )
+            if transcription_backend == "whisper_openai":
+                _show_openai_whisper_ui()
+            else:
+                st.selectbox(
+                    "Model", key="whisper_model",
+                    options=["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en",
+                             "large", "large-v2", "large-v3", "large-v3-turbo"],
+                    index=8,
+                    help="Balance between speed and quality. .en models are English-only (faster)."
+                )
 
-        validate_description = st.checkbox(
-            "Validate Description Quality",
-            key="validate_description",
-            value=not is_skip_ai,
-            disabled=is_skip_ai,
-            help="Use AI to validate and improve generated descriptions"
-        )
+    st.markdown("**AI Metadata Generation**")
+    gen_col1, gen_col2, gen_col3, gen_col4 = st.columns(4)
+    with gen_col1:
+        st.checkbox("Generate Title", key="generate_title", value=True,
+                    help="Use AI to generate sermon title from transcript")
+    with gen_col2:
+        st.checkbox("Generate Description", key="generate_description", value=True,
+                    help="Use AI to generate detailed description from transcript")
+    with gen_col3:
+        st.checkbox("Generate Hashtags", key="generate_hashtags", value=True,
+                    help="Use AI to generate relevant hashtags from content")
+    with gen_col4:
+        st.checkbox("Validate Quality", key="validate_description", value=True,
+                    help="Use AI to validate and improve generated descriptions")
 
-        generate_short_title = st.checkbox(
-            "Generate Short Display Title",
-            key="generate_short_title",
-            value=False,
-            disabled=is_skip_ai,
-            help="Use AI to create a short (≤30 chars) display title from the full sermon title"
-        )
+    st.checkbox("Generate Short Display Title", key="generate_short_title",
+                help="Create a short (≤30 chars) display title from the full sermon title")
+
+    st.checkbox("Dry Run (Preview Only)", key="dry_run",
+                help="Process locally but don't upload to SermonAudio")
 
 
-def show_process_and_upload():
-    """Final processing and upload with enhanced workflow."""
-    st.markdown("### ▶️ Process & Upload")
+def _show_openai_whisper_ui():
+    config = st.session_state.get('config', {})
+    openai_cfg = config.get('transcription', {}).get('whisper_openai', {})
+    api_key = openai_cfg.get('api_key', '') or os.environ.get('OPENAI_API_KEY', '')
+    base_url = openai_cfg.get('base_url', '') or os.environ.get('OPENAI_BASE_URL', 'https://api.openai.com/v1')
 
-    # Check prerequisites
+    if api_key:
+        if st.button("🔄 Load Available Models", key="load_whisper_models"):
+            try:
+                from openai import OpenAI
+                client = OpenAI(api_key=api_key, base_url=base_url)
+                models = client.models.list()
+                whisper_models = sorted([m.id for m in models.data if 'whisper' in m.id.lower()])
+                if whisper_models:
+                    st.session_state['openai_whisper_models'] = whisper_models
+                    st.success(f"Found {len(whisper_models)} whisper models")
+                else:
+                    st.warning("No whisper models found on this server")
+            except Exception as e:
+                st.error(f"Failed to load models: {e}")
+
+        openai_models = st.session_state.get('openai_whisper_models', [])
+        if openai_models:
+            st.selectbox("Model", key="whisper_model", options=openai_models, index=0,
+                         help="Select a whisper model from the server")
+        else:
+            st.text_input("Model", key="whisper_model", value=openai_cfg.get('model', 'whisper-1'),
+                          help="Model name (e.g. whisper-1, openai/whisper-large-v3)")
+    else:
+        st.warning("OpenAI API key not configured. Set OPENAI_API_KEY in .env or config.")
+        st.text_input("Model", key="whisper_model", value="whisper-1",
+                      help="Model name (e.g. whisper-1, openai/whisper-large-v3)")
+
+
+def _show_start_section():
+    st.markdown("### 4️⃣ Start Processing")
+
     has_file = _has_uploaded_file()
     has_metadata = st.session_state.get('metadata_complete', False)
 
     if not has_file:
-        st.warning("⚠️ Please upload an audio file in the first tab")
+        st.warning("⚠️ Please upload a file in section 1")
         return
-
     if not has_metadata:
-        st.warning("⚠️ Please complete required metadata in the first tab")
+        st.warning("⚠️ Please complete required metadata in section 2")
         return
-
-    # Enhanced processing summary
-    st.markdown("#### 📋 Processing Summary")
 
     col1, col2 = st.columns(2)
-
     with col1:
         st.markdown("**File & Content:**")
         st.write(f"• File: {st.session_state.uploaded_file.name}")
         st.write(f"• Size: {st.session_state.uploaded_file.size / (1024*1024):.1f} MB")
         st.write(f"• Speaker: {st.session_state.get('speaker_name', 'N/A')}")
         st.write(f"• Date: {st.session_state.get('recorded_date', 'N/A')}")
-
     with col2:
         st.markdown("**Processing Settings:**")
-        mode_name = st.session_state.get('processing_mode', 'Full')
-        st.write(f"• Mode: {mode_name}")
-        st.write(f"• Enhancement: {st.session_state.get('enhancement_method', 'deepfilternet')} {'(skipped)' if st.session_state.get('skip_audio_enhancement') else ''}")
-        st.write(f"• Transcription: {'Enabled' if not st.session_state.get('skip_transcription', False) else 'Disabled'}")
+        st.write(f"• Enhance Audio: {'Yes' if st.session_state.get('enhance_audio', True) else 'No'}")
+        st.write(f"• Transcribe: {'Yes' if st.session_state.get('transcribe', True) else 'No'}")
+        st.write(f"• AI Metadata: {'Yes' if st.session_state.get('generate_description', True) else 'No'}")
         st.write(f"• Dry Run: {'Yes' if st.session_state.get('dry_run', False) else 'No'}")
 
-    # Processing controls
-    st.markdown("#### 🚀 Processing Controls")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("▶️ Start Processing", type="primary", width='stretch'):
+    start_col, reset_col = st.columns(2)
+    with start_col:
+        if st.button("▶️ Start Processing", type="primary", use_container_width=True):
             start_enhanced_processing()
-
-    with col2:
-        if st.button("🔄 Reset All", width='stretch'):
+    with reset_col:
+        if st.button("🔄 Reset All", use_container_width=True):
             reset_enhanced_form()
 
-    # Show processing status based on job queue
     job_id = st.session_state.get('current_sermon_job_id')
     active_job = None
     if job_id:
@@ -463,10 +272,7 @@ def show_process_and_upload():
 
 
 def _get_media_duration(uploaded_file):
-    """Get media file duration using ffprobe (fast, metadata-only)."""
     try:
-        import subprocess
-        import json
         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp:
             tmp.write(uploaded_file.getvalue())
             tmp_path = tmp.name
@@ -488,26 +294,22 @@ def _get_media_duration(uploaded_file):
 
 
 def _has_uploaded_file():
-    """Check if user has uploaded a file."""
     return hasattr(st.session_state, 'uploaded_file') and st.session_state.uploaded_file is not None
 
 
 def start_enhanced_processing():
-    """Start sermon processing with audio editing support using job queue."""
     try:
         from job_queue import JobType, get_job_queue
 
         config = st.session_state.get('config', {})
         if not config:
             st.error("❌ No configuration loaded. Please check the Settings page first.")
-            st.info("💡 Try going to Settings → Configuration and saving your settings, then return to this page.")
             return
 
         required_fields = ['api_key', 'broadcaster_id']
         missing_fields = [field for field in required_fields if not config.get(field)]
         if missing_fields:
             st.error(f"❌ Configuration is missing required fields: {', '.join(missing_fields)}")
-            st.info("Please go to Settings → Configuration and ensure all required fields are filled out.")
             return
 
         if not st.session_state.get('metadata_complete', False):
@@ -516,7 +318,7 @@ def start_enhanced_processing():
 
         uploaded_file = st.session_state.get('uploaded_file')
         if uploaded_file is None:
-            st.error("❌ No file uploaded. Please upload an audio file in the first tab.")
+            st.error("❌ No file uploaded.")
             return
 
         upload_dir = Path(tempfile.gettempdir()) / "sermon_uploads"
@@ -526,7 +328,6 @@ def start_enhanced_processing():
         with open(saved_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
-        # Extract widget values from correct session state keys
         speaker_name = st.session_state.get('speaker_name_select')
         if not speaker_name or speaker_name == '[Select Pastor]':
             speaker_name = st.session_state.get('speaker_name_custom')
@@ -538,7 +339,6 @@ def start_enhanced_processing():
         if recorded_date is not None and hasattr(recorded_date, 'isoformat'):
             recorded_date = recorded_date.isoformat()
 
-        # Validate required form fields
         missing_form_fields = []
         if not speaker_name:
             missing_form_fields.append('Speaker Name')
@@ -550,19 +350,23 @@ def start_enhanced_processing():
             st.error(f"❌ Missing required fields: {', '.join(missing_form_fields)}")
             return
 
+        enhance_audio = st.session_state.get('enhance_audio', True)
+        transcribe = st.session_state.get('transcribe', True)
+        generate_ai = st.session_state.get('generate_description', True)
+
         form_data = {
             'speaker_name': speaker_name,
             'recorded_date': recorded_date,
             'event_type': event_type,
             'bible_text': st.session_state.get('bible_text'),
-            'title': None if st.session_state.get('generate_title', False) else (st.session_state.get('sermon_title') or None),
+            'title': None if st.session_state.get('generate_title', True) else (st.session_state.get('sermon_title') or None),
             'subtitle': st.session_state.get('sermon_subtitle') or None,
             'series_title': st.session_state.get('sermon_series') or None,
             'description': st.session_state.get('sermon_description') or None,
             'hashtags': st.session_state.get('sermon_hashtags') or None,
-            'skip_audio': bool(st.session_state.get('skip_audio_enhancement', False)),
-            'skip_transcription': bool(st.session_state.get('skip_transcription', False)),
-            'skip_ai_generation': not bool(st.session_state.get('generate_description', True)),
+            'skip_audio': not enhance_audio,
+            'skip_transcription': not transcribe,
+            'skip_ai_generation': not generate_ai,
             'whisper_model': st.session_state.get('whisper_model', 'large'),
             'transcription_backend': st.session_state.get('transcription_backend', 'whisper_local'),
             'enhancement_method': st.session_state.get('enhancement_method', 'deepfilternet'),
@@ -598,44 +402,34 @@ def start_enhanced_processing():
         logger.exception("Failed to start processing")
 
 
-
-
-
 def reset_enhanced_form():
-    """Reset the enhanced form to initial state."""
-    # Clear session state variables
     keys_to_clear = [
-        'uploaded_file', 'metadata_complete', 'mode_selector',
-        'processing_config', 'selected_mode',
+        'uploaded_file', 'metadata_complete',
         'speaker_name', 'recorded_date', 'event_type', 'bible_text',
-        'sermon_title', 'sermon_subtitle', 'sermon_description', 'sermon_hashtags'
+        'sermon_title', 'sermon_subtitle', 'sermon_description', 'sermon_hashtags',
+        'sermon_series', 'enhance_audio', 'transcribe', 'enhancement_method',
+        'transcription_backend', 'whisper_model', 'custom_repo', 'custom_file',
+        'generate_title', 'generate_description', 'generate_hashtags',
+        'validate_description', 'generate_short_title', 'dry_run',
     ]
-
     for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
 
-    st.success("✅ Enhanced form reset successfully!")
+    st.success("✅ Form reset successfully!")
     st.rerun()
 
 
 def _show_enhanced_processing_progress(job):
-    """Show real-time processing progress from job queue."""
     st.markdown("#### 🔄 Processing Progress")
-
     from job_queue import JobStatus
 
-    progress_bar = st.progress(job.progress / 100.0)
+    st.progress(job.progress / 100.0)
 
     status_colors = {
-        JobStatus.QUEUED: "🔵",
-        JobStatus.RUNNING: "🟡",
-        JobStatus.COMPLETED: "🟢",
-        JobStatus.FAILED: "🔴",
-        JobStatus.CANCELLED: "⚫",
-        JobStatus.PAUSED: "🟠"
+        JobStatus.QUEUED: "🔵", JobStatus.RUNNING: "🟡", JobStatus.COMPLETED: "🟢",
+        JobStatus.FAILED: "🔴", JobStatus.CANCELLED: "⚫", JobStatus.PAUSED: "🟠"
     }
-
     status_icon = status_colors.get(job.status, "❓")
     st.text(f"{status_icon} Status: {job.status.value.title()}")
     st.text(f"Progress: {job.progress:.1f}%")
@@ -655,7 +449,6 @@ def _show_enhanced_processing_progress(job):
 
 
 def _show_enhanced_processing_results(job):
-    """Show processing results from completed job."""
     if not job.result or not job.result.success:
         st.error("❌ Processing failed")
         if job.result and job.result.error:
@@ -671,7 +464,6 @@ def _show_enhanced_processing_results(job):
     st.success("✅ Processing completed successfully!")
 
     col1, col2 = st.columns(2)
-
     with col1:
         sermon_id = results.get('sermon_id') or 'Dry run (no upload)'
         st.metric("Sermon ID", sermon_id)
@@ -679,7 +471,6 @@ def _show_enhanced_processing_results(job):
             st.metric("Speaker", results.get('speaker'))
         if results.get('event_type'):
             st.metric("Event", results.get('event_type'))
-
     with col2:
         st.metric("Status", "Success" if results.get('success') else "Failed")
         if results.get('title'):
