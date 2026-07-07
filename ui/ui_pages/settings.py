@@ -1638,12 +1638,17 @@ def test_llm_provider(provider, config):
         sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
         from llm_manager import LLMManager
 
-        llm_manager = LLMManager(st.session_state.get('config', {}))
+        full_config = st.session_state.get('config', {})
+        llm_manager = LLMManager(full_config)
         test_response = llm_manager.chat([{"role": "user", "content": "Reply with just: OK"}])
-        if test_response and 'OK' in str(test_response).upper():
-            st.success(f"✅ {provider.title()} provider connection successful!")
+        if test_response:
+            cleaned = str(test_response).strip().strip('"').strip("'").strip()
+            if cleaned.upper() == 'OK' or 'OK' in cleaned.upper():
+                st.success(f"✅ {provider.title()} provider connection successful!")
+            else:
+                st.warning(f"⚠️ {provider.title()} responded but unexpected: {cleaned[:100]}")
         else:
-            st.warning(f"⚠️ {provider.title()} responded but unexpected: {str(test_response)[:100]}")
+            st.error(f"❌ {provider.title()} returned empty response")
     except Exception as e:
         st.error(f"❌ {provider.title()} provider connection failed: {e}")
 
