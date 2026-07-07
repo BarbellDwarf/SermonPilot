@@ -46,6 +46,44 @@ SERMONPILOT_TAG=v1.5.0 docker compose up -d
 
 Images are tagged as `ghcr.io/barbelldwarf/sermonpilot:TAG-BACKEND` (e.g. `v1.5.0-cuda`, `v1.5.0-rocm`, `v1.5.0-cpu`). The `latest` tag points to the latest CUDA build.
 
+### Hardware Acceleration
+
+To use GPU acceleration, you need to:
+
+1. **Pull the correct image tag** — set `SERMONPILOT_TAG` to a version with your backend (e.g. `v1.5.1-cuda`)
+
+2. **Add device access to docker-compose.yml** — uncomment or add the appropriate `deploy` section:
+
+   **NVIDIA CUDA:**
+   ```yaml
+   services:
+     sermon-pilot:
+       image: ghcr.io/barbelldwarf/sermonpilot:${SERMONPILOT_TAG:-latest}
+       # ... other config ...
+       deploy:
+         resources:
+           reservations:
+             devices:
+               - driver: nvidia
+                 count: all
+                 capabilities: [gpu]
+   ```
+
+   **AMD ROCm:**
+   ```yaml
+   services:
+     sermon-pilot:
+       image: ghcr.io/barbelldwarf/sermonpilot:${SERMONPILOT_TAG:-latest}
+       # ... other config ...
+       devices:
+         - /dev/kfd
+         - /dev/dri
+   ```
+
+3. **Install the container toolkit** if you haven't already:
+   - **NVIDIA**: [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+   - **AMD**: [rocm-docker](https://rocm.docs.amd.com/en/latest/deploy/docker.html)
+
 ### Build Locally
 
 ```bash
