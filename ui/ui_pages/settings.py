@@ -39,7 +39,7 @@ def show_settings():
         "✅ Validation",
         "🗄️ Advanced",
         "📝 Prompt Templates"
-    ])
+    ], key="settings_tabs")
 
     with tab1:
         show_general_settings()
