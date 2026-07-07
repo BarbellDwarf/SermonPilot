@@ -2297,14 +2297,12 @@ def _regex_cleanup_thinking(response: str) -> str:
     """
     # Try to find transition phrases and extract content after them
     transition_phrases = [
-        " Mark Hogan emphasizes",
-        " Mark Hogan stresses",
-        " Mark Hogan teaches",
-        " Mark Hogan explains",
         " The speaker emphasizes",
+        " The speaker stresses",
+        " The speaker teaches",
+        " The speaker explains",
+        " The pastor emphasizes",
         " This sermon",
-        " Hogan emphasizes",
-        " Hogan stresses",
     ]
 
     for phrase in transition_phrases:
@@ -2335,7 +2333,7 @@ def _regex_cleanup_thinking(response: str) -> str:
         # If we find a sentence that doesn't have thinking and is substantial
         if not has_thinking and len(sentence) > 30:
             # Check if it starts with speaker name or substantive content
-            if any(word in sentence for word in ["Mark Hogan", "emphasizes", "stresses", "teaches", "explains"]):
+            if any(word in sentence for word in ["emphasizes", "stresses", "teaches", "explains"]):
                 remaining_sentences = sentences[i:]
                 result = '. '.join(remaining_sentences)
                 if not result.endswith('.'):

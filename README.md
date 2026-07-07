@@ -80,19 +80,19 @@ python sermon_updater.py list --since-days 30
 
 ```
 processed_sermons/
-├── Mark Hogan/
-│   ├── Matthew/
-│   │   └── A Traitor's Remorse - Matthew - Mark Hogan/
+├── Speaker Name/
+│   ├── Series Name/
+│   │   └── Sermon Title - Series Name - Speaker Name/
 │   │       ├── audio.mp3
 │   │       ├── transcript.txt
 │   │       ├── description.txt
 │   │       ├── hashtags.txt
 │   │       └── metadata.json
-│   └── Duties of Christian Fellowship/
-│       └── Rule 22: Attending Congregational Meetings - .../
-└── Paul Takach/
-    └── Philippians/
-        └── To Live is Christ, To Die is Gain - Philippians - .../
+│   └── Another Series/
+│       └── Another Sermon - Another Series - Speaker Name/
+└── Another Speaker/
+    └── A Series/
+        └── A Sermon - A Series - Another Speaker/
 ```
 
 ## Security
