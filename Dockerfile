@@ -42,12 +42,12 @@ RUN pip install --no-cache-dir uv
 
 # Install core + GPU-specific dependencies
 RUN if [ "$GPU_BACKEND" = "cuda" ]; then \
-        uv pip install --system --no-cache-dir -r requirements/requirements.txt && \
-        uv pip install --system --no-cache-dir onnxruntime-gpu; \
+        uv pip install --no-cache-dir -r requirements/requirements.txt && \
+        uv pip install --no-cache-dir onnxruntime-gpu; \
     elif [ "$GPU_BACKEND" = "rocm" ]; then \
-        uv pip install --system --no-cache-dir -r requirements/requirements-rocm.txt; \
+        uv pip install --no-cache-dir -r requirements/requirements-rocm.txt; \
     else \
-        uv pip install --system --no-cache-dir -r requirements/requirements.txt; \
+        uv pip install --no-cache-dir -r requirements/requirements.txt; \
     fi
 
 COPY --chown=sermonapp:sermonapp . /app/
