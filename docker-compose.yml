@@ -18,6 +18,7 @@ services:
     volumes:
       - sermon_data:/data
       - sermon_models:/models
+      - sermon_api_cache:/app/api_cache
       - sermon_output:/app/processed_sermons
       - sermon_cache:/home/sermonapp/.cache
       - sermon_logs:/app/logs
@@ -35,6 +36,7 @@ services:
 volumes:
   sermon_data:
   sermon_models:
+  sermon_api_cache:
   sermon_output:
   sermon_cache:
   sermon_logs:
