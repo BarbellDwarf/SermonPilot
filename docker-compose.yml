@@ -18,6 +18,9 @@ services:
     volumes:
       - sermon_data:/data
       - sermon_models:/models
+      - sermon_config:/app/config.yaml
+      - sermon_output:/app/processed_sermons
+      - sermon_cache:/home/sermonapp/.cache
       - sermon_logs:/app/logs
     env_file:
       - .env
@@ -33,6 +36,9 @@ services:
 volumes:
   sermon_data:
   sermon_models:
+  sermon_config:
+  sermon_output:
+  sermon_cache:
   sermon_logs:
 
 networks:
