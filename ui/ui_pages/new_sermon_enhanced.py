@@ -147,6 +147,7 @@ def _show_processing_section():
                 help="Faster Whisper (local, CTranslate2) or OpenAI API"
             )
             transcription_backend = "faster_whisper_local" if transcription_backend == "Faster Whisper (Local)" else "whisper_openai"
+            st.session_state.transcription_backend = transcription_backend
             if transcription_backend == "whisper_openai":
                 _show_openai_whisper_ui()
             else:
