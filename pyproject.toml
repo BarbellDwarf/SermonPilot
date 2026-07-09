@@ -1,6 +1,6 @@
 [project]
 name = "sermon-audio-updater"
-version = "1.5.2"
+version = "1.5.3"
 description = "Automated sermon processing tool for SermonAudio"
 readme = "README.md"
 requires-python = ">=3.10"
