@@ -407,7 +407,12 @@ def needs_audio_processing(config: dict, skip_audio: bool = False) -> bool:
 
 
 def get_api_headers() -> dict[str, str]:
-    return {'X-Api-Key': SERMON_AUDIO_API_KEY, 'Content-Type': 'application/json'}
+    key = SERMON_AUDIO_API_KEY
+    if not key:
+        key = config_manager.get('api_key') if 'config_manager' in dir() else None
+    if not key:
+        key = os.environ.get('SERMONAUDIO_API_KEY', '')
+    return {'X-Api-Key': key, 'Content-Type': 'application/json'}
 
 
 # Validation Classes and Functions
@@ -3189,7 +3194,8 @@ def get_broadcaster_pastors(limit: int = 500) -> list[str]:
         params = {
             'page': 1,
             'pageSize': 50,
-            'lite': 'true'
+            'lite': 'true',
+            'broadcasterID': SERMON_AUDIO_BROADCASTER_ID,
         }
         headers = get_api_headers()
         url = f"{BASE_URL}node/sermons"
