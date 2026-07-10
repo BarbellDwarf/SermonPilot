@@ -140,14 +140,14 @@ def _show_processing_section():
         transcribe = st.checkbox("Transcribe Audio", key="transcribe", value=True,
                                  help="Generate transcript from the audio")
         if transcribe:
-            transcription_backend = st.radio(
-                "Backend", key="transcription_backend",
+            transcription_backend_label = st.radio(
+                "Backend", key="transcription_backend_radio",
                 options=["Faster Whisper (Local)", "OpenAI Whisper API"],
                 index=0, horizontal=True,
                 help="Faster Whisper (local, CTranslate2) or OpenAI API"
             )
-            transcription_backend = "faster_whisper_local" if transcription_backend == "Faster Whisper (Local)" else "whisper_openai"
-            st.session_state.transcription_backend = transcription_backend
+            transcription_backend = "faster_whisper_local" if transcription_backend_label == "Faster Whisper (Local)" else "whisper_openai"
+            st.session_state.selected_backend = transcription_backend
             if transcription_backend == "whisper_openai":
                 _show_openai_whisper_ui()
             else:
@@ -370,7 +370,7 @@ def start_enhanced_processing():
             'skip_transcription': not transcribe,
             'skip_ai_generation': not generate_ai,
             'whisper_model': st.session_state.get('whisper_model', 'large'),
-            'transcription_backend': st.session_state.get('transcription_backend', 'whisper_local'),
+            'transcription_backend': st.session_state.get('selected_backend', 'faster_whisper_local'),
             'enhancement_method': st.session_state.get('enhancement_method', 'deepfilternet'),
             'custom_repo': st.session_state.get('custom_repo', ''),
             'custom_file': st.session_state.get('custom_file', ''),
@@ -411,6 +411,7 @@ def reset_enhanced_form():
         'sermon_title', 'sermon_subtitle', 'sermon_description', 'sermon_hashtags',
         'sermon_series', 'enhance_audio', 'transcribe', 'enhancement_method',
         'transcription_backend', 'whisper_model', 'custom_repo', 'custom_file',
+        'selected_backend',
         'generate_title', 'generate_description', 'generate_hashtags',
         'validate_description', 'generate_short_title', 'dry_run',
     ]
