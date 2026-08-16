@@ -54,7 +54,7 @@ def push_sermon_metadata_to_api(sermon):
                         st.success("✅ Media re-uploaded successfully!")
                         from database import SermonRepository
                         repo = SermonRepository()
-                        repo.update_sermon_metadata(sermon_id, {'status': 'processed'})
+                        repo.update_sermon(sermon_id, {'status': 'processed'})
                     else:
                         st.error("❌ Media re-upload failed. Check your API credentials and try again.")
             else:
@@ -433,7 +433,10 @@ def show_library():
             st.session_state.library_sort_order = "Descending"
 
         # Get sermons
-        sermons = repo.get_all_sermons(limit=1000)
+        sermons = repo.get_all_sermons(limit=1001)
+        list_truncated = len(sermons) > 1000
+        if list_truncated:
+            sermons = sermons[:1000]
 
         if not sermons:
             st.info("No sermons found. Process some sermons first using the 'New Sermon' page.")
@@ -533,6 +536,8 @@ def show_library():
 
         with col_list:
             st.markdown("### Sermons")
+            if list_truncated:
+                st.info("Showing first 1000 sermons. Use search or filters to narrow results.")
             display_sermon_list(filtered_sermons, sermons)
 
         with col_detail:
@@ -596,11 +601,11 @@ def apply_filters(sermons, search_query, speaker_filter, date_filter, status_fil
         elif date_filter == "Last Year":
             cutoff_date -= timedelta(days=365)
 
-        filtered_sermons = [
-            s for s in filtered_sermons
-            if s.get('recorded_date') and
-            datetime.fromisoformat(s['recorded_date'].replace('Z', '+00:00')) >= cutoff_date
-        ]
+        def _within_cutoff(s):
+            parsed = _parse_date(s.get('recorded_date'))
+            return parsed is not None and parsed >= cutoff_date
+
+        filtered_sermons = [s for s in filtered_sermons if _within_cutoff(s)]
 
     # Status filter
     if status_filter != "All":
@@ -640,13 +645,21 @@ def apply_filters(sermons, search_query, speaker_filter, date_filter, status_fil
 
     return filtered_sermons
 
+def _parse_date(date_str):
+    """Parse a date string to datetime, returning None for invalid values"""
+    if not date_str:
+        return None
+    try:
+        return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 def _format_date(date_str):
     """Try to format a date string as YYYY-MM-DD"""
-    try:
-        if date_str:
-            return datetime.fromisoformat(date_str.replace('Z', '+00:00')).strftime('%Y-%m-%d')
-    except:
-        pass
+    parsed = _parse_date(date_str)
+    if parsed:
+        return parsed.strftime('%Y-%m-%d')
     return date_str or 'Unknown'
 
 def display_sermon_list(filtered_sermons, all_sermons):
@@ -1081,6 +1094,7 @@ def display_sermon_details(sermon):
                                 'config': st.session_state.get('config', {}),
                                 'actions': {
                                     'enhance_audio': rp_audio,
+                                    'transcribe': rp_transcript,
                                     'generate_description': rp_ai,
                                     'generate_hashtags': rp_ai,
                                 },
@@ -1106,13 +1120,10 @@ def display_sermon_details(sermon):
         transcript = sermon.get('transcript') or sermon.get('transcript_text', '')
         if sermon.get('content') and isinstance(sermon.get('content'), dict):
             transcript = transcript or sermon['content'].get('transcript_text', '')
-        edited_transcript = st.text_area(
-            "Edit transcript",
-            value=transcript,
-            height=200,
-            key=f"transcript_{sermon['id']}"
-        )
-        if edited_transcript != transcript and st.button("💾 Save Transcript", key=f"save_trans_{sermon['id']}"):
+        with st.form(f"transcript_form_{sermon['id']}"):
+            edited_transcript = st.text_area("Edit transcript", value=transcript, height=200)
+            save_transcript = st.form_submit_button("💾 Save Transcript", type="primary")
+        if save_transcript and edited_transcript != transcript:
             from database import SermonRepository
             repo = SermonRepository()
             repo.update_sermon(sermon['id'], {'transcript': edited_transcript})
@@ -1123,14 +1134,15 @@ def display_sermon_details(sermon):
     # Notes
     with st.expander("📋 Notes", expanded=False):
         current_notes = sermon.get('notes', '') or ''
-        new_notes = st.text_area(
-            "Sermon notes",
-            value=current_notes,
-            height=100,
-            key=f"notes_{sermon['id']}"
-        )
-        if new_notes != current_notes:
+        with st.form(f"notes_form_{sermon['id']}"):
+            new_notes = st.text_area("Sermon notes", value=current_notes, height=100)
+            save_notes = st.form_submit_button("💾 Save Notes", type="primary")
+        if save_notes and new_notes != current_notes:
             _save_notes(sermon['id'], new_notes)
+            st.success("✅ Notes saved")
+            from database import SermonRepository
+            st.session_state.selected_sermon = SermonRepository().get_sermon(sermon['id'])
+            st.rerun()
 
     if api_sermon_data:
         if st.button("🔄 Refresh from SermonAudio", help="Fetch the latest data from SermonAudio API"):
@@ -1209,8 +1221,11 @@ def display_sermon_editor(sermon, api_client, repo):
             else:
                 speaker = st.text_input("Speaker", value=sermon.get('speaker', ''))
 
-            recorded_date = st.date_input("Recorded Date",
-                                        value=datetime.fromisoformat(sermon.get('recorded_date', '2024-01-01').replace('Z', '+00:00')).date() if sermon.get('recorded_date') else datetime.now().date())
+            parsed_date = _parse_date(sermon.get('recorded_date'))
+            recorded_date = st.date_input(
+                "Recorded Date",
+                value=parsed_date.date() if parsed_date else datetime.now().date()
+            )
 
         with col2:
             # Series dropdown or text input
