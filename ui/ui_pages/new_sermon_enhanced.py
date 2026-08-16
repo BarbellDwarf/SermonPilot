@@ -142,17 +142,24 @@ def _show_processing_section():
         if transcribe:
             transcription_backend_label = st.radio(
                 "Backend", key="transcription_backend_radio",
-                options=["Faster Whisper (Local)", "OpenAI Whisper API"],
+                options=["Faster Whisper (Local)", "OpenAI Whisper API", "OpenRouter Whisper API"],
                 index=0, horizontal=True,
-                help="Faster Whisper (local, CTranslate2) or OpenAI API"
+                help="Faster Whisper (local, CTranslate2), OpenAI API, or OpenRouter API"
             )
-            transcription_backend = "faster_whisper_local" if transcription_backend_label == "Faster Whisper (Local)" else "whisper_openai"
+            if transcription_backend_label == "Faster Whisper (Local)":
+                transcription_backend = "faster_whisper_local"
+            elif transcription_backend_label == "OpenAI Whisper API":
+                transcription_backend = "whisper_openai"
+            else:
+                transcription_backend = "whisper_openrouter"
             st.session_state.selected_backend = transcription_backend
             if transcription_backend == "whisper_openai":
                 _show_openai_whisper_ui()
+            elif transcription_backend == "whisper_openrouter":
+                _show_openrouter_whisper_ui()
             else:
                 st.selectbox(
-                    "Model", key="whisper_model",
+                    "Model", key="whisper_model_local",
                     options=["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en",
                              "large", "large-v2", "large-v3", "large-v3-turbo"],
                     index=8,
@@ -204,15 +211,29 @@ def _show_openai_whisper_ui():
 
         openai_models = st.session_state.get('openai_whisper_models', [])
         if openai_models:
-            st.selectbox("Model", key="whisper_model", options=openai_models, index=0,
+            st.selectbox("Model", key="whisper_model_openai", options=openai_models, index=0,
                          help="Select a whisper model from the server")
         else:
-            st.text_input("Model", key="whisper_model", value=openai_cfg.get('model', 'whisper-1'),
-                          help="Model name (e.g. whisper-1, openai/whisper-large-v3)")
+            st.text_input(
+                "Model", key="whisper_model_openai",
+                value=openai_cfg.get('model', 'whisper-1'),
+                help="Model name (e.g. whisper-1, openai/whisper-large-v3)"
+            )
     else:
         st.warning("OpenAI API key not configured. Set OPENAI_API_KEY in .env or config.")
-        st.text_input("Model", key="whisper_model", value="whisper-1",
+        st.text_input("Model", key="whisper_model_openai", value="whisper-1",
                       help="Model name (e.g. whisper-1, openai/whisper-large-v3)")
+
+
+def _show_openrouter_whisper_ui():
+    config = st.session_state.get('config', {})
+    or_cfg = config.get('transcription', {}).get('whisper_openrouter', {})
+    api_key = or_cfg.get('api_key', '') or os.environ.get('OPENROUTER_API_KEY', '')
+    if not api_key:
+        st.warning("OpenRouter API key not configured. Set OPENROUTER_API_KEY in .env or config.")
+    st.text_input("Model", key="whisper_model_openrouter",
+                  value=or_cfg.get('model', 'openai/whisper-large-v3'),
+                  help="Model name (e.g. openai/whisper-large-v3)")
 
 
 def _show_start_section():
@@ -274,6 +295,9 @@ def _show_start_section():
 
 
 def _get_media_duration(uploaded_file):
+    cache_key = f"media_duration_{uploaded_file.name}_{uploaded_file.size}"
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp:
             tmp.write(uploaded_file.getvalue())
@@ -286,7 +310,9 @@ def _get_media_duration(uploaded_file):
         if result.returncode == 0:
             info = json.loads(result.stdout)
             duration_sec = float(info['format']['duration'])
-            return duration_sec / 60.0
+            duration = duration_sec / 60.0
+            st.session_state[cache_key] = duration
+            return duration
     except Exception:
         try:
             os.unlink(tmp_path)
@@ -323,7 +349,9 @@ def start_enhanced_processing():
             st.error("❌ No file uploaded.")
             return
 
-        upload_dir = Path(tempfile.gettempdir()) / "sermon_uploads"
+        # upload_dir config key overrides the TMPDIR-backed default so long
+        # jobs don't fill a small RAM disk.
+        upload_dir = Path(config.get('upload_dir') or (Path(tempfile.gettempdir()) / "sermon_uploads"))
         upload_dir.mkdir(parents=True, exist_ok=True)
         safe_name = Path(uploaded_file.name).name
         saved_path = upload_dir / f"{int(_time.time() * 1000)}_{safe_name}"
@@ -356,6 +384,14 @@ def start_enhanced_processing():
         transcribe = st.session_state.get('transcribe', True)
         generate_ai = st.session_state.get('generate_description', True)
 
+        backend = st.session_state.get('selected_backend', 'faster_whisper_local')
+        if backend == 'whisper_openai':
+            whisper_model = st.session_state.get('whisper_model_openai', 'whisper-1')
+        elif backend == 'whisper_openrouter':
+            whisper_model = st.session_state.get('whisper_model_openrouter', 'openai/whisper-large-v3')
+        else:
+            whisper_model = st.session_state.get('whisper_model_local', 'large')
+
         form_data = {
             'speaker_name': speaker_name,
             'recorded_date': recorded_date,
@@ -364,13 +400,14 @@ def start_enhanced_processing():
             'title': None if st.session_state.get('generate_title', True) else (st.session_state.get('sermon_title') or None),
             'subtitle': st.session_state.get('sermon_subtitle') or None,
             'series_title': st.session_state.get('sermon_series') or None,
+            'series_id': st.session_state.get('sermon_series_id'),
             'description': st.session_state.get('sermon_description') or None,
             'hashtags': st.session_state.get('sermon_hashtags') or None,
             'skip_audio': not enhance_audio,
             'skip_transcription': not transcribe,
             'skip_ai_generation': not generate_ai,
-            'whisper_model': st.session_state.get('whisper_model', 'large'),
-            'transcription_backend': st.session_state.get('selected_backend', 'faster_whisper_local'),
+            'whisper_model': whisper_model,
+            'transcription_backend': backend,
             'enhancement_method': st.session_state.get('enhancement_method', 'deepfilternet'),
             'custom_repo': st.session_state.get('custom_repo', ''),
             'custom_file': st.session_state.get('custom_file', ''),
@@ -385,7 +422,9 @@ def start_enhanced_processing():
         job_id = job_queue.add_job(
             job_type=JobType.SERMON_PROCESSING,
             title=f"New Sermon: {form_data.get('title') or 'Untitled'}",
-            description=f"Processing new sermon by {form_data.get('speaker_name', 'Unknown Speaker')}",
+            description=(
+                f"Processing new sermon by {form_data.get('speaker_name', 'Unknown Speaker')}"
+            ),
             parameters={
                 'form_data': form_data,
                 'config': config,
@@ -409,8 +448,9 @@ def reset_enhanced_form():
         'uploaded_file', 'metadata_complete',
         'speaker_name', 'recorded_date', 'event_type', 'bible_text',
         'sermon_title', 'sermon_subtitle', 'sermon_description', 'sermon_hashtags',
-        'sermon_series', 'enhance_audio', 'transcribe', 'enhancement_method',
-        'transcription_backend', 'whisper_model', 'custom_repo', 'custom_file',
+        'sermon_series', 'sermon_series_id', 'enhance_audio', 'transcribe', 'enhancement_method',
+        'transcription_backend', 'whisper_model_local', 'whisper_model_openai',
+        'whisper_model_openrouter', 'custom_repo', 'custom_file',
         'selected_backend',
         'generate_title', 'generate_description', 'generate_hashtags',
         'validate_description', 'generate_short_title', 'dry_run',

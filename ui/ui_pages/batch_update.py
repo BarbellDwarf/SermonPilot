@@ -15,7 +15,12 @@ from ui.pages import jobs
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
-from sermon_metadata import get_event_types, get_pastors, show_metadata_refresh_section
+from sermon_metadata import (
+    create_series_selectbox,
+    get_event_types,
+    get_pastors,
+    show_metadata_refresh_section,
+)
 
 
 def show_batch_update():
@@ -149,7 +154,8 @@ def show_filter_and_select():
             search_sermons()
 
     with col2:
-        max_results = st.number_input("Max Results", min_value=1, max_value=1000, value=100)
+        max_results = st.number_input("Max Results", min_value=1, max_value=1000, value=100,
+                                      key="batch_max_results")
 
     with col3:
         if st.button("📥 Export List", width='stretch'):
@@ -230,6 +236,14 @@ def show_batch_processing_options():
             help="Save backup copies of original metadata"
         )
 
+    # Series assignment
+    st.markdown("#### 📚 Series Assignment")
+    create_series_selectbox(
+        "Series (optional)",
+        key="batch_series",
+        help="Assign the selected sermons to a series"
+    )
+
     # Batch execution settings
     st.markdown("#### 🔄 Execution Settings")
 
@@ -286,7 +300,13 @@ def show_execute_batch():
         st.metric("Selected Sermons", len(selected_sermons))
 
     with col2:
-        estimated_time = len(selected_sermons) * 3.5  # Mock estimation
+        per_sermon_min = (
+            (2.0 if st.session_state.get('batch_process_audio', False) else 0.0)
+            + (1.0 if st.session_state.get('batch_update_descriptions', False) else 0.0)
+            + (1.0 if st.session_state.get('batch_update_hashtags', False) else 0.0)
+            + (0.5 if st.session_state.get('batch_validate_content', False) else 0.0)
+        )
+        estimated_time = len(selected_sermons) * max(per_sermon_min, 0.5)
         st.metric("Estimated Time", f"{estimated_time:.1f} min")
 
     with col3:
@@ -429,6 +449,11 @@ def search_sermons():
         speaker_filter_select = st.session_state.get('batch_speaker_filter_select', 'All')
         event_type_filter = st.session_state.get('batch_event_filter', 'All')
         content_requirement = st.session_state.get('batch_content_filter', 'Any')
+        max_results = st.session_state.get('batch_max_results', 100)
+        min_duration = st.session_state.get('batch_min_duration', 0)
+        max_duration = st.session_state.get('batch_max_duration', 0)
+        require_transcript = st.session_state.get('batch_require_transcript', False)
+        require_audio = st.session_state.get('batch_require_audio', False)
 
         # Determine speaker filter
         speaker_filter = None
@@ -442,46 +467,38 @@ def search_sermons():
             progress_bar = st.progress(0)
             progress_bar.progress(0.2)
 
-            # Use the existing date range function from sermon_updater
             if start_date and end_date:
                 start_str = start_date.strftime('%Y-%m-%d')
                 end_str = end_date.strftime('%Y-%m-%d')
-                sermons = sermon_updater.get_sermons_in_date_range(start_str, end_str)
             else:
                 # Default to last 30 days
                 end_date = datetime.date.today()
                 start_date = end_date - datetime.timedelta(days=30)
                 start_str = start_date.strftime('%Y-%m-%d')
                 end_str = end_date.strftime('%Y-%m-%d')
-                sermons = sermon_updater.get_sermons_in_date_range(start_str, end_str)
+
+            sermons = sermon_updater.search_broadcaster_sermons(
+                start_str,
+                end_str,
+                max_results=max_results,
+                speaker_filter=speaker_filter,
+                event_type_filter=None if event_type_filter == "All" else event_type_filter,
+            )
 
             progress_bar.progress(0.6)
 
-            # Filter results based on criteria
+            # Apply duration and media filters
             filtered_sermons = []
             for sermon in sermons:
-                # Apply speaker filter
-                if speaker_filter and sermon.get('speakerName'):
-                    if speaker_filter.lower() not in sermon['speakerName'].lower():
-                        continue
-
-                # Apply event type filter
-                if event_type_filter != "All" and sermon.get('eventType'):
-                    if event_type_filter != sermon['eventType']:
-                        continue
-
-                # Convert to UI format
-                filtered_sermons.append({
-                    'sermon_id': sermon.get('sermonID', ''),
-                    'title': sermon.get('displayTitle', 'Untitled'),
-                    'speaker': sermon.get('speakerName', 'Unknown'),
-                    'date': sermon.get('preachDate', ''),
-                    'event_type': sermon.get('eventType', ''),
-                    'has_description': False,  # TODO: Check actual metadata
-                    'has_hashtags': False,    # TODO: Check actual metadata
-                    'has_audio': True,        # Assume true from API
-                    'duration': 0             # Not available in lite API
-                })
+                if min_duration and sermon.get('duration', 0) < min_duration:
+                    continue
+                if max_duration and sermon.get('duration', 0) > max_duration:
+                    continue
+                if require_audio and not sermon.get('has_audio'):
+                    continue
+                if require_transcript and not sermon.get('has_transcript'):
+                    continue
+                filtered_sermons.append(sermon)
 
             # Apply content filters
             if content_requirement == "Missing Description":
@@ -525,6 +542,7 @@ def show_search_results():
             "has_description": st.column_config.CheckboxColumn("Has Description"),
             "has_hashtags": st.column_config.CheckboxColumn("Has Hashtags"),
             "has_audio": st.column_config.CheckboxColumn("Has Audio"),
+            "has_transcript": st.column_config.CheckboxColumn("Has Transcript"),
         },
         hide_index=True,
         width='stretch'
@@ -593,7 +611,10 @@ def start_batch_processing():
             parameters={
                 'sermon_ids': sermon_ids,
                 'actions': actions,
-                'config': config
+                'config': config,
+                'series_id': st.session_state.get('batch_series_id'),
+                'series_title': st.session_state.get('batch_series'),
+                'force_update': st.session_state.get('batch_force_update', False),
             },
             priority=6  # Medium-high priority for batch processing
         )
