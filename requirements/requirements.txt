@@ -66,8 +66,8 @@ sentence-transformers>=2.2.0
 # Database and Search
 sqlite-fts4>=1.0.3  # For full-text search capabilities
 
-# Development dependencies (uncomment for development)
-# pytest>=7.0.0
+# Development dependencies (full dev toolchain in requirements-dev.txt)
+pytest>=7.0.0
 # black>=22.0.0
 # pylint>=2.15.0
 # ruff>=0.1.0
