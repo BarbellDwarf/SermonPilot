@@ -16,6 +16,9 @@ cleanup() {
 }
 trap cleanup SIGTERM SIGINT
 
+# Ensure persistent data directories exist
+mkdir -p /data /app/processed_sermons /app/logs
+
 # Wait for external dependencies (database if configured)
 if [ -n "$DATABASE_HOST" ]; then
     echo "⏳ Waiting for external services..."
