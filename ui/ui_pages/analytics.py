@@ -1154,12 +1154,19 @@ def show_sermonaudio_data_view():
                         date_range=date_range,
                         fetch_all=fetch_all
                     )
-                    
+                    st.session_state.analytics_using_mock = analytics.using_mock_data
+
                     # Show success message with details
                     count = len(st.session_state.analytics_data)
                     date_info = f" from {start_date} to {end_date}" if use_date_range else ""
                     all_info = " (all available)" if fetch_all else ""
-                    st.success(f"✅ Data loaded successfully! {count} sermons{date_info}{all_info}")
+                    if analytics.using_mock_data:
+                        st.warning(
+                            "⚠️ Could not load live data from SermonAudio. "
+                            "Showing fallback data instead. Check your API credentials and network connection."
+                        )
+                    else:
+                        st.success(f"✅ Data loaded successfully! {count} sermons{date_info}{all_info}")
 
         with col2:
             if st.button("📥 Export Data", help="Export data to CSV"):
@@ -1181,7 +1188,13 @@ def show_sermonaudio_data_view():
         # Display data if available
         if st.session_state.get('analytics_data'):
             analytics_data = st.session_state.analytics_data
-            
+
+            if st.session_state.get('analytics_using_mock'):
+                st.warning(
+                    "⚠️ Showing fallback data: the SermonAudio API request failed. "
+                    "The metrics below are not live analytics."
+                )
+
             # Summary metrics
             st.markdown("#### 📈 Key Metrics")
             col1, col2, col3, col4 = st.columns(4)
