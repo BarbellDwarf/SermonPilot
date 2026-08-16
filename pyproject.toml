@@ -52,7 +52,6 @@ dependencies = [
     "pyasn1>=0.6.3",
     "filelock>=3.29.5",
     "fonttools>=4.63.0",
-    "pytest>=9.1.1",
     "brotli>=1.2.0",
     "pillow>=12.3.0",
     "urllib3>=2.7.0",
@@ -67,7 +66,6 @@ dependencies = [
     "onnxruntime>=1.22.1",
     "torchcodec>=0.14.0",
     "transformers>=5.3.0",
-    "black>=26.3.1",
 ]
 
 [project.optional-dependencies]
@@ -102,7 +100,6 @@ build-backend = "hatchling.build"
 packages = ["."]
 include = [
     "*.py",
-    "config.yaml",
     "requirements.txt",
 ]
 
@@ -137,3 +134,6 @@ select = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
+markers = [
+    "heavy: requires network, audio, or GPU resources; skipped by default (use --run-heavy)",
+]
