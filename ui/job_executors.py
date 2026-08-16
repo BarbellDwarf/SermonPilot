@@ -356,6 +356,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             title=form_data.get('title') or None,
             subtitle=form_data.get('subtitle') or None,
             series_title=form_data.get('series_title') or None,
+            series_id=form_data.get('series_id'),
             description=form_data.get('description') or None,
             hashtags=form_data.get('hashtags') or None,
             dry_run=bool(form_data.get('dry_run', False)),
@@ -372,6 +373,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             enhancement_method=form_data.get('enhancement_method'),
             custom_repo=form_data.get('custom_repo'),
             custom_file=form_data.get('custom_file'),
+            config=config,
             progress_callback=progress_cb,
         )
 
@@ -474,17 +476,20 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                     try:
                         job.add_log(f"Processing sermon {sermon_id}")
                         form_data = job.parameters.get('form_data', {})
+                        force_update = job.parameters.get('force_update', False)
                         # Use the existing sermon processing function with appropriate flags
                         sermon_updater.process_single_sermon(
                             sermon_id,
                             no_upload=bool(form_data.get('dry_run', False)),
                             verbose=False,
                             skip_audio=not actions.get('enhance_audio', False),
-                            force_description=actions.get('generate_description', False),
-                            force_hashtags=actions.get('generate_hashtags', False),
+                            force_description=actions.get('generate_description', False) or force_update,
+                            force_hashtags=actions.get('generate_hashtags', False) or force_update,
                             no_metadata=False,
                             transcription_backend=form_data.get('transcription_backend'),
                             audio_file=form_data.get('uploaded_file_path'),
+                            series_id=job.parameters.get('series_id'),
+                            config=config,
                         )
 
                         if actions.get('generate_description'):
@@ -598,7 +603,8 @@ def execute_metadata_update_job(job: Job) -> JobResult:
                     skip_audio=True,
                     force_description=actions.get('generate_description', False),
                     force_hashtags=actions.get('generate_hashtags', False),
-                    no_metadata=False
+                    no_metadata=False,
+                    config=config,
                 )
 
                 results['completed'] += 1
