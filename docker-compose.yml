@@ -4,9 +4,10 @@ services:
     container_name: sermon-pilot
     restart: unless-stopped
     ports:
-      - "8501:8501"
+      - "${HOST_BIND:-127.0.0.1}:8501:8501"
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
+      - APP_PASSWORD=${APP_PASSWORD}
       - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
       - DATABASE_URL=${DATABASE_URL:-sqlite:///data/sermon_processor.db}
       - SERMONAUDIO_API_KEY=${SERMONAUDIO_API_KEY}
