@@ -1,12 +1,12 @@
 # SermonPilot — AI Agent Context
 
 ## Project Overview
-Automated sermon processing tool that enhances audio (DeepFilterNet/Resemble), transcribes (Whisper), generates AI metadata (title/description/hashtags via Ollama/OpenAI), and uploads to SermonAudio API. Provides a Streamlit web UI and CLI.
+Automated sermon processing tool that enhances audio (DeepFilterNet/Clear), transcribes (Whisper), generates AI metadata (title/description/hashtags via Ollama/OpenAI), and uploads to SermonAudio API. Provides a Streamlit web UI and CLI.
 
 ## Architecture
 
 ```
-sermon_updater.py        — Core CLI processing engine (3871 lines)
+sermon_updater.py        — Core CLI processing engine (4481 lines)
 streamlit_app.py         — Streamlit UI entry point
 ui/
 ├── database.py          — SQLite models: SermonDatabase, SermonRepository
@@ -35,7 +35,7 @@ sermon_processor.db          — SQLite database (UI persistence)
 - **Python 3.10+**, uses `from __future__ import annotations` style
 - **Type hints** everywhere (`dict[str, Any]` not `dict`)
 - **Black** formatting (line-length=100), **Ruff** linting
-- **Pytest** for tests; conftest.py skips heavy tests by default
+- **Pytest** for tests (`testpaths = ['tests']` in pyproject.toml; the suite is being re-enabled as part of the v1.6.0 review)
 - **ffmpeg/ffprobe** for audio duration detection and video muxing
 
 ## Database (SQLite — `sermon_processor.db`)
@@ -46,7 +46,7 @@ Key tables: `sermons` (id TEXT PK, title, speaker, recorded_date, status TEXT DE
 
 ## Processing Pipeline (`process_new_sermon`)
 
-1. Clean audio (optional clean-audio.py) → 2. Enhance audio (DeepFilterNet/Resemble) → 3. Mux video (if input is video) → 4. Transcribe (Whisper/faster-whisper) → 5. Generate metadata (LLM: title, description, hashtags) → 6. **Dry run check** (early return if `dry_run=True`) → 7. Create on SermonAudio API → 8. Upload media → 9. Save to filesystem + database
+1. Clean audio (optional clean-audio.py) → 2. Enhance audio (DeepFilterNet/Clear) → 3. Mux video (if input is video) → 4. Transcribe (Whisper/faster-whisper) → 5. Generate metadata (LLM: title, description, hashtags) → 6. **Dry run check** (early return if `dry_run=True`) → 7. Create on SermonAudio API → 8. Upload media → 9. Save to filesystem + database
 
 **Dry run** currently saves to filesystem + DB with status `'draft'` for Library visibility, but skips API calls.
 
@@ -54,17 +54,19 @@ Key tables: `sermons` (id TEXT PK, title, speaker, recorded_date, status TEXT DE
 
 | Action | File | Line |
 |--------|------|------|
-| `process_new_sermon()` | `sermon_updater.py` | 1276 |
-| Dry run early return (now saves to DB) | `sermon_updater.py` | ~1593 |
-| Database save (normal) | `sermon_updater.py` | ~1704 |
-| Database save (dry run) | `sermon_updater.py` | ~1593 (in dry run block) |
-| `publish_dry_run_sermon()` (push draft → API) | `sermon_updater.py` | ~1858 |
-| `get_sermon_transcript()` (fetch from API) | `sermon_updater.py` | 283 |
-| Library page data fetch | `ui/ui_pages/library.py` | 347 (calls `repo.get_all_sermons()`) |
-| Library "Generate" button (fetches transcript from API if missing locally) | `ui/ui_pages/library.py` | 87 (`generate_ai_content`) |
-| `SermonRepository.save_sermon()` | `ui/database.py` | 561 |
-| `SermonRepository.get_all_sermons()` | `ui/database.py` | 839 |
-| Job executor | `ui/job_executors.py` | 340 (`execute_sermon_processing_job`) |
+| `process_new_sermon()` | `sermon_updater.py` | 1355 |
+| Dry run early return (now saves to DB) | `sermon_updater.py` | ~1688 |
+| Database save (normal) | `sermon_updater.py` | ~1947 |
+| Database save (dry run) | `sermon_updater.py` | ~1779 (in dry run block) |
+| `publish_dry_run_sermon()` (push draft → API) | `sermon_updater.py` | 2037 |
+| `get_sermon_transcript()` (fetch from API) | `sermon_updater.py` | 312 |
+| Library page data fetch | `ui/ui_pages/library.py` | 436 (calls `repo.get_all_sermons()`) |
+| Library "Generate" button (fetches transcript from API if missing locally) | `ui/ui_pages/library.py` | 119 (`generate_ai_content`) |
+| `SermonRepository.save_sermon()` | `ui/database.py` | 632 |
+| `SermonRepository.get_all_sermons()` | `ui/database.py` | 918 |
+| Job executor | `ui/job_executors.py` | 283 (`execute_sermon_processing_job`) |
+
+Line numbers verified against master (ec5965e). Parallel review tickets (T-CLI, T-PERSIST, T-SERIES) may shift them; re-verify at integration.
 
 ## Important Patterns
 
@@ -74,8 +76,8 @@ Key tables: `sermons` (id TEXT PK, title, speaker, recorded_date, status TEXT DE
 - **Config access:** `config.get('key', default)` — YAML config loaded at module level
 - **Import pattern:** `from ui.database import SermonRepository` used inline (inside function body) in `sermon_updater.py` to avoid circular imports
 - **Push dual behavior:** `push_sermon_metadata_to_api()` in `library.py:26` detects `status == 'draft'` → calls `publish_dry_run_sermon()` to create+upload on SermonAudio; otherwise updates existing sermon metadata
-- **Auto-refresh in Jobs:** `ui/ui_pages/jobs.py:72` uses `time.sleep(2)` + `st.rerun()` when running/queued jobs exist (replaced broken `components.html` JS that only reloaded an iframe)
-- **Transcript fallback:** `generate_ai_content()` in `library.py:87` tries local transcript first, falls back to `sermon_updater.get_sermon_transcript()` (fetches from SermonAudio API via `transcript.downloadURL`)
+- **Auto-refresh in Jobs:** `show_jobs()` in `ui/ui_pages/jobs.py` polls with `time.sleep(2)` + `st.rerun()` while running/queued jobs exist (line ~72); the job list renders inside an `@st.fragment` (`_render_job_list`, line ~84), so per-job actions rerun only the fragment
+- **Transcript fallback:** `generate_ai_content()` in `library.py:119` tries local transcript first, falls back to `sermon_updater.get_sermon_transcript()` (fetches from SermonAudio API via `transcript.downloadURL`)
 - **Transcription backends:** `transcription.py` now includes faster-whisper (CTranslate2) backend as default with fallback to standard whisper; supports both AMD ROCm and NVIDIA CUDA via device detection
 
 ## Versioning & Release Process
@@ -109,7 +111,7 @@ Direct commits to `master` are **not allowed**. Every change must go through a b
 8. **Delete the release branch** — `git branch -d release/vX.Y.Z && git push origin --delete release/vX.Y.Z`
 
 ### Tag Naming
-- Tags must start with `v` followed by the version: `v1.5.1`, `v1.6.0`, etc.
+- Tags must start with `v` followed by the version: `v1.5.3`, `v1.6.0`, etc.
 - The tag message should be a one-line summary of changes
 - Tags trigger the CI workflow to build and push Docker images to GHCR
 
