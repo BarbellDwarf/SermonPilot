@@ -4,7 +4,7 @@ Automated sermon processing tool that enhances audio (Clear/DeepFilterNet), tran
 
 ## Features
 
-- **Audio Enhancement**: Clear (desert-ant-labs) ONNX model — built on DeepFilterNet 3, fine-tuned on speech corpus. Runs via ONNX Runtime with zero PyTorch dependency. Supports CUDA, ROCm, CPU. Falls back to DeepFilterNet or noisereduce.
+- **Audio Enhancement**: Clear (desert-ant-labs) ONNX model — built on DeepFilterNet 3, fine-tuned on speech corpus. Runs via ONNX Runtime with zero PyTorch dependency. Supports CUDA, ROCm, CPU. Falls back to DeepFilterNet.
 - **Transcription**: Local Whisper/faster-whisper, OpenAI API, or OpenRouter
 - **AI Metadata**: Title, description, and hashtag generation via Ollama, OpenAI, Anthropic, xAI, or Google
 - **SermonAudio Integration**: Create, update, and upload sermons directly to SermonAudio API
@@ -41,16 +41,16 @@ Pre-built images are available on GitHub Container Registry. Choose your GPU bac
 docker compose up -d
 
 # Or pin a specific version
-SERMONPILOT_TAG=v1.5.0 docker compose up -d
+SERMONPILOT_TAG=v1.5.3 docker compose up -d
 ```
 
-Images are tagged as `ghcr.io/barbelldwarf/sermonpilot:TAG-BACKEND` (e.g. `v1.5.0-cuda`, `v1.5.0-rocm`, `v1.5.0-cpu`). The `latest` tag points to the latest CUDA build.
+Images are tagged as `ghcr.io/barbelldwarf/sermonpilot:TAG-BACKEND` (e.g. `v1.5.3-cuda`, `v1.5.3-rocm`, `v1.5.3-cpu`). The `latest` tag points to the latest CUDA build.
 
 ### Hardware Acceleration
 
 To use GPU acceleration, you need to:
 
-1. **Pull the correct image tag** — set `SERMONPILOT_TAG` to a version with your backend (e.g. `v1.5.1-cuda`)
+1. **Pull the correct image tag** — set `SERMONPILOT_TAG` to a version with your backend (e.g. `v1.5.3-cuda`)
 
 2. **Add device access to docker-compose.yml** — uncomment or add the appropriate `deploy` section:
 
@@ -107,8 +107,8 @@ OLLAMA_HOST=http://localhost:11434
 ```
 
 Key `config.yaml` settings:
-- `audio_enhancement_method`: `deepfilternet` (default, recommended), `clear`, or `none`
-- `transcription.backend`: `whisper_local`, `whisper_openai`, or `whisper_openrouter`
+- `audio_enhancement_method`: `deepfilternet` (default, recommended), `clear-natural`, `clear-studio`, or `none`
+- `transcription.backend`: `faster_whisper_local` (default), `whisper_local`, `whisper_openai`, or `whisper_openrouter`
 
 ## Usage
 
@@ -137,10 +137,9 @@ python sermon_updater.py list --since-days 30
 
 | Method | Description | Torch Dep | GPU Support |
 |--------|-------------|-----------|-------------|
-| **Clear** (default) | ONNX model, DFN3 architecture, fine-tuned speech corpus | None | CUDA/ROCm/CPU via ONNX Runtime |
-| DeepFilterNet | Original DFN3 PyTorch model | Required | CUDA/ROCm |
-| Resemble Enhance | Denoising + enhancement | Required | CUDA |
-| noisereduce | Spectral gating (lightweight) | None | CPU only |
+| **DeepFilterNet** (default) | Original DFN3 PyTorch model | Required | CUDA/ROCm |
+| Clear | ONNX model (desert-ant-labs/clear), DFN3 architecture, fine-tuned speech corpus (`clear-natural`/`clear-studio`) | None | CUDA/ROCm/CPU via ONNX Runtime |
+| none | No enhancement | None | — |
 
 ## Directory Structure
 
