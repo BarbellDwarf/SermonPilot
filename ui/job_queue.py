@@ -48,6 +48,10 @@ class JobStatus(Enum):
     PAUSED = "paused"
 
 
+class JobCancelledError(Exception):
+    """Raised when a job is cancelled while it is executing."""
+
+
 @dataclass
 class JobResult:
     """Job execution result"""
@@ -75,6 +79,7 @@ class Job:
     can_cancel: bool = True
     can_retry: bool = True
     priority: int = 5  # 1-10, higher is more priority
+    cancelled: bool = False
 
     def __post_init__(self):
         if self.logs is None:
@@ -289,6 +294,7 @@ class JobQueue:
                 return False
 
             if job.status in [JobStatus.QUEUED, JobStatus.RUNNING]:
+                job.cancelled = True
                 job.status = JobStatus.CANCELLED
                 job.completed_at = datetime.now()
                 job.add_log("Job cancelled by user")
@@ -306,6 +312,7 @@ class JobQueue:
                 return False
 
             if job.status in [JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.COMPLETED]:
+                job.cancelled = False
                 job.status = JobStatus.QUEUED
                 job.progress = 0.0
                 job.started_at = None
@@ -391,6 +398,10 @@ class JobQueue:
     def _execute_job(self, job: Job):
         """Execute a specific job"""
         try:
+            if job.cancelled or job.status == JobStatus.CANCELLED:
+                job.add_log("Job was cancelled before execution")
+                return
+
             job.add_log(f"Executing {job.type.value} job")
 
             # Get the appropriate job executor
@@ -400,6 +411,10 @@ class JobQueue:
 
             # Execute the job
             result = executor(job)
+
+            if job.cancelled or job.status == JobStatus.CANCELLED:
+                job.add_log("Job was cancelled during execution")
+                return
 
             # Update job with result
             if result.success:
@@ -414,6 +429,9 @@ class JobQueue:
             job.completed_at = datetime.now()
 
         except Exception as e:
+            if job.cancelled or job.status == JobStatus.CANCELLED:
+                job.add_log(f"Job cancelled: {e}")
+                return
             job.status = JobStatus.FAILED
             job.result = JobResult(
                 success=False,
