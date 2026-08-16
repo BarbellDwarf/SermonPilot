@@ -13,13 +13,32 @@ import yaml
 project_root = Path(__file__).parent.parent
 
 def load_config_from_file():
-    """Load configuration from config.yaml file, falling back to database cache."""
+    """Load configuration with precedence: environment > database cache > config.yaml.
+
+    The database config_cache holds the latest settings saved from the UI and is
+    restored to config.yaml so file-based tooling stays consistent. ConfigManager
+    then re-applies environment variable overrides on top, so env vars always win.
+    """
     try:
         import sys
         sys.path.insert(0, str(project_root))
         from sermon_updater import load_config
 
         config_path = project_root / "config.yaml"
+        example_config = project_root / "config" / "config.example.yaml"
+
+        # Prefer settings saved in the database (survives container recreation)
+        try:
+            from database import SermonDatabase
+            db = SermonDatabase()
+            db_config = db.load_config()
+            if db_config:
+                # Restore config.yaml from DB so file-based tools still work
+                with open(config_path, 'w') as f:
+                    yaml.dump(db_config, f, default_flow_style=False, sort_keys=True)
+        except Exception:
+            pass
+
         config = None
 
         if config_path.exists():
@@ -39,7 +58,6 @@ def load_config_from_file():
 
         if config is None:
             # Try example config
-            example_config = project_root / "config.example.yaml"
             if example_config.exists():
                 try:
                     import streamlit as st
