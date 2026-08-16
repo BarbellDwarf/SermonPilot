@@ -20,27 +20,34 @@ class SermonAudioAnalytics:
         self.api_key = api_key
         self.broadcaster_id = broadcaster_id
         self.mock_mode = not (api_key and broadcaster_id)
-        
+        self.using_mock_data = self.mock_mode
+        self.last_error: str | None = None
+
         if self.mock_mode:
             logger.info("SermonAudio analytics running in mock mode (no API credentials)")
         else:
             logger.info(f"SermonAudio analytics configured for broadcaster: {broadcaster_id}")
-    
+
     def get_all_sermon_analytics(self, date_range=None, fetch_all=False) -> List[Dict[str, Any]]:
         """Get comprehensive sermon analytics data
-        
+
         Args:
             date_range: Tuple of (start_date, end_date) as strings in YYYY-MM-DD format
             fetch_all: If True, fetch all available sermons (ignores pageSize limit)
         """
         if self.mock_mode:
+            self.using_mock_data = True
             return self._generate_mock_data()
-        else:
-            try:
-                return self._fetch_real_data(date_range=date_range, fetch_all=fetch_all)
-            except Exception as e:
-                logger.warning(f"Failed to fetch real data, falling back to mock: {e}")
-                return self._generate_mock_data()
+        try:
+            data = self._fetch_real_data(date_range=date_range, fetch_all=fetch_all)
+            self.using_mock_data = False
+            self.last_error = None
+            return data
+        except Exception as e:
+            self.using_mock_data = True
+            self.last_error = str(e)
+            logger.warning(f"Failed to fetch real data, falling back to mock: {e}")
+            return self._generate_mock_data()
     
     def _parse_sermon_data(self, sermon):
         """Parse individual sermon data from API response"""
