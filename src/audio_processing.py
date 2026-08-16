@@ -899,8 +899,10 @@ class AudioProcessor:
         """
         logger.info(f"Normalizing audio to {target_level} dB")
 
-        # Calculate current RMS level
-        rms = np.sqrt(np.mean(audio_data ** 2))
+        # Compute RMS from a float64 copy: squaring the live float32 buffer
+        # can corrupt it in place for very large arrays, ruining the audio.
+        audio_64 = audio_data.astype(np.float64)
+        rms = np.sqrt(np.mean(np.square(audio_64)))
 
         # Avoid log of zero
         if rms == 0:
