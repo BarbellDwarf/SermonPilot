@@ -56,8 +56,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
     menu_items={
-        'Get Help': 'https://github.com/SpirusNox/SermonPilot',
-        'Report a bug': 'https://github.com/SpirusNox/SermonPilot/issues',
+        'Get Help': 'https://github.com/BarbellDwarf/SermonPilot',
+        'Report a bug': 'https://github.com/BarbellDwarf/SermonPilot/issues',
         'About': 'SermonPilot - Enhance sermons with AI'
     }
 )
@@ -180,12 +180,27 @@ def reload_configuration():
     from ui.config_utils import reload_configuration as _reload_config
     return _reload_config()
 
+def ensure_metadata_cache_refresh():
+    """Start a non-blocking background refresh when the cached metadata is missing or stale."""
+    if st.session_state.get('metadata_cache_refresh_started'):
+        return
+    st.session_state.metadata_cache_refresh_started = True
+    try:
+        from ui.sermon_metadata import needs_metadata_refresh, refresh_metadata_in_background
+        if needs_metadata_refresh():
+            refresh_metadata_in_background()
+    except Exception:
+        pass
+
+
 def main():
     """Main application entry point"""
     initialize_session_state()
 
     if not st.session_state.config:
         load_configuration()
+
+    ensure_metadata_cache_refresh()
 
     # Restore last page on refresh when URL loses page param
     if 'active_page_url' not in st.session_state:
