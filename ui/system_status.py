@@ -346,7 +346,13 @@ class SystemStatusManager:
             # Check if required packages are available
             if method == 'deepfilternet':
                 try:
-                    import df  # DeepFilterNet uses 'df' package name
+                    # The torchaudio compat shim must run before importing df:
+                    # df imports torchaudio.backend.common.AudioMetaData which
+                    # newer torchaudio versions removed.
+                    from audio_processing import _ensure_torchaudio_backend_compat
+                    _ensure_torchaudio_backend_compat()
+                    import df  # DeepFilterNet pip package provides 'df' module
+                    from df import enhance as _df_enhance, init_df as _df_init
                     return {
                         'status': 'ok',
                         'message': 'DeepFilterNet ready',
