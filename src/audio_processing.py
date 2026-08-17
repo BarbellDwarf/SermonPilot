@@ -916,7 +916,39 @@ class AudioProcessor:
         # Apply gain
         return self.amplify_audio(audio_data, gain_db)
 
+    def deess_high_shelves(self, audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
+        """
+        Gentle de-esser: high-shelf cut above ~6 kHz to smooth harsh sibilants
+        ('rough S' sounds) that DeepFilterNet can leave behind. Uses an FFT
+        magnitude response so the vocal body below the shelf is untouched.
 
+        Config keys (defaults shown):
+            deess_hf_db:   shelf attenuation in dB above the corner (default -3.0)
+            deess_hf_freq: shelf corner frequency in Hz (default 6000)
+        """
+        cutoff_hz = float(self.config.get("deess_hf_freq", 6000))
+        gain_db = float(self.config.get("deess_hf_db", -3.0))
+        if gain_db >= 0 or cutoff_hz <= 0:
+            return audio_data
+
+        logger.info(f"Applying gentle de-esser high shelf: {gain_db:.1f} dB above {cutoff_hz:.0f} Hz")
+        audio_64 = audio_data.astype(np.float64)
+        spectrum = np.fft.rfft(audio_64)
+        freqs = np.fft.rfftfreq(len(audio_64), 1.0 / sample_rate)
+
+        gain = np.ones_like(freqs, dtype=np.float64)
+        above = freqs > cutoff_hz
+        gain[above] = 10.0 ** (gain_db / 20.0)
+        # smooth the transition over about an octave below the corner
+        transition = (freqs <= cutoff_hz) & (freqs > cutoff_hz * 0.5)
+        t = (freqs[transition] - cutoff_hz * 0.5) / (cutoff_hz * 0.5)
+        gain[transition] = 10.0 ** ((gain_db * t ** 2) / 20.0)
+
+        result = np.fft.irfft(spectrum * gain, n=len(audio_64))
+        peak = np.abs(result).max()
+        if peak > 1.0:
+            result = result / peak
+        return result.astype(np.float32)
 
     def process_sermon_audio(self, input_path: str, output_path: str,
                            noise_reduction: bool = True,
@@ -1015,6 +1047,9 @@ class AudioProcessor:
                 audio_data = self.normalize_audio(audio_data, target_level_db)
             elif amplify:
                 audio_data = self.amplify_audio(audio_data, gain_db)
+
+            # Step 3b: Gentle de-esser (high-shelf) to smooth harsh sibilants
+            audio_data = self.deess_high_shelves(audio_data, sample_rate)
 
             # Step 4: Final peak normalization before saving
             audio_data = peak_normalize(audio_data, peak_db=-1.0)
