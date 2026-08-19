@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -138,6 +139,30 @@ def discover_sermons(output_root: str | Path) -> list[Path]:
     return sermons
 
 
+_INDEX_TTL_SECONDS = 5.0
+_index_cache: dict[str, tuple[float, dict[str, Path]]] = {}
+
+
+def _build_sermon_index(root: Path) -> dict[str, Path]:
+    """Build a sermon_id -> directory map for the whole output tree."""
+    index: dict[str, Path] = {}
+    for speaker_dir in root.iterdir():
+        if not speaker_dir.is_dir():
+            continue
+        for series_dir in speaker_dir.iterdir():
+            if not series_dir.is_dir():
+                continue
+            for sermon_dir in series_dir.iterdir():
+                if not sermon_dir.is_dir():
+                    continue
+                meta = read_metadata(sermon_dir)
+                if meta:
+                    sid = meta.get("sermon_id") or meta.get("sermonID")
+                    if sid:
+                        index[sid] = sermon_dir
+    return index
+
+
 def find_sermon_dir(
     output_root: str | Path,
     sermon_id: str,
@@ -151,16 +176,18 @@ def find_sermon_dir(
     if not root.exists():
         return None
 
-    for speaker_dir in root.iterdir():
-        if not speaker_dir.is_dir():
-            continue
-        for series_dir in speaker_dir.iterdir():
-            if not series_dir.is_dir():
-                continue
-            for sermon_dir in series_dir.iterdir():
-                if not sermon_dir.is_dir():
-                    continue
-                meta = read_metadata(sermon_dir)
-                if meta and meta.get("sermon_id") == sermon_id:
-                    return sermon_dir
-    return None
+    key = str(root.resolve())
+    now = time.monotonic()
+    cached = _index_cache.get(key)
+    if cached is None or now - cached[0] > _INDEX_TTL_SECONDS:
+        index = _build_sermon_index(root)
+        _index_cache[key] = (now, index)
+    else:
+        index = cached[1]
+
+    if sermon_id in index:
+        return index[sermon_id]
+
+    index = _build_sermon_index(root)
+    _index_cache[key] = (now, index)
+    return index.get(sermon_id)

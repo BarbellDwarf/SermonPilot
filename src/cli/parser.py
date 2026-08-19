@@ -32,9 +32,12 @@ class CLIParser:
 
         # Add individual subcommands
         self._add_new_sermon_command(subparsers)
-        self._add_process_command(subparsers)
+        self._add_process_command(subparsers, 'process')
+        self._add_process_command(subparsers, 'sermon-update')
+        self._add_metadata_update_command(subparsers)
         self._add_list_command(subparsers)
-        self._add_validation_command(subparsers)
+        self._add_validation_command(subparsers, 'validate')
+        self._add_validation_command(subparsers, 'validation')
 
         return p
 
@@ -95,11 +98,13 @@ class CLIParser:
                                help='Do not save original audio file')
         new_sermon.add_argument('--save-transcript', action='store_true',
                                help='Save transcript file')
+        new_sermon.add_argument('--no-save-transcript', action='store_true',
+                               help='Do not save transcript file')
 
-    def _add_process_command(self, subparsers):
+    def _add_process_command(self, subparsers, name: str = 'process'):
         """Add process subcommand for processing existing sermons."""
         process_cmd = subparsers.add_parser(
-            'process',
+            name,
             help='Process existing sermons',
             description='Process and enhance existing sermons from SermonAudio'
         )
@@ -121,6 +126,25 @@ class CLIParser:
                                help='Do not save original audio file')
         process_cmd.add_argument('--save-transcript', action='store_true',
                                help='Save transcript file')
+        process_cmd.add_argument('--no-save-transcript', action='store_true',
+                               help='Do not save transcript file')
+
+    def _add_metadata_update_command(self, subparsers):
+        """Add metadata-update subcommand."""
+        meta_cmd = subparsers.add_parser(
+            'metadata-update',
+            help='Update only metadata for existing sermons',
+            description='Update descriptions and hashtags with AI validation, skip audio processing'
+        )
+
+        # Filtering options
+        self._add_sermon_filters(meta_cmd)
+
+        # Metadata options
+        meta_cmd.add_argument('--force-description', action='store_true',
+                             help='Force regeneration of description even if one exists')
+        meta_cmd.add_argument('--force-hashtags', action='store_true',
+                             help='Force regeneration of hashtags even if they exist')
 
     def _add_list_command(self, subparsers):
         """Add list subcommand for listing sermons."""
@@ -137,10 +161,10 @@ class CLIParser:
         list_cmd.add_argument('--list-only', action='store_true',
                             help='Only list sermons, do not process')
 
-    def _add_validation_command(self, subparsers):
+    def _add_validation_command(self, subparsers, name: str = 'validate'):
         """Add validation subcommand."""
         validation_cmd = subparsers.add_parser(
-            'validate',
+            name,
             help='Validate sermon descriptions',
             description='Validate and optionally regenerate sermon descriptions'
         )
