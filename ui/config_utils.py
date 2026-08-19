@@ -128,7 +128,7 @@ def _warn_plaintext_api_keys() -> None:
     if not plaintext_keys:
         return
     message = (
-        f"API keys are stored in plaintext in config.yaml ({', '.join(plaintext_keys)}). "
+        "API keys are stored in plaintext in config.yaml. "
         "Move them to environment variables, e.g. SERMONAUDIO_API_KEY."
     )
     logging.warning(message)
