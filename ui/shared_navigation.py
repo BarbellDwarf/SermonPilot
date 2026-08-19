@@ -136,14 +136,25 @@ def render_detailed_status():
 
 
 def load_config_safely():
-    """Safely load configuration with fallback"""
+    """Safely load configuration with fallback and env-var substitution."""
     try:
+        import os
+        import re
+
         import yaml
+        from dotenv import load_dotenv
 
         config_path = Path(__file__).parent.parent / "config.yaml"
         if config_path.exists():
+            load_dotenv(config_path.parent / ".env")
             with open(config_path) as f:
-                return yaml.safe_load(f)
+                raw = f.read()
+            raw = re.sub(
+                r"\${([A-Z0-9_]+)(:-[^}]*)?}",
+                lambda m: os.getenv(m.group(1), (m.group(2) or "")[2:] if m.group(2) else ""),
+                raw,
+            )
+            return yaml.safe_load(raw) or {}
     except Exception:
         pass
     return {}
