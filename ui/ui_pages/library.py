@@ -837,7 +837,7 @@ def display_sermon_list(filtered_sermons, all_sermons):
             sid = sermon['id']
             is_selected = sid in st.session_state.selected_sermon_ids
 
-            cols = st.columns([0.25, 1.5, 4.2, 1.4, 1.2], vertical_alignment="center")
+            cols = st.columns([0.3, 1.5, 4.2, 1.4, 1.2], vertical_alignment="center")
             with cols[0]:
                 checked = st.checkbox("Select", value=is_selected, key=f"bulk_{sid}",
                                       label_visibility="collapsed",
