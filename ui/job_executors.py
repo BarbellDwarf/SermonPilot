@@ -146,24 +146,24 @@ def execute_validation_job(job: Job) -> JobResult:
                     if validation_result.is_valid:
                         results['valid'] += 1
                         job.add_log(
-                            f"✅ Sermon {sermon_id}: Valid "
+                            f"Sermon {sermon_id}: Valid "
                             f"(score: {validation_result.validation_score:.2f})"
                         )
                     else:
                         results['invalid'] += 1
                         job.add_log(
-                            f"❌ Sermon {sermon_id}: Invalid "
+                            f"Sermon {sermon_id}: Invalid "
                             f"(score: {validation_result.validation_score:.2f})"
                         )
                 else:
                     results['errors'] += 1
-                    job.add_log(f"⚠️ Sermon {sermon_id}: Validation failed")
+                    job.add_log(f"Sermon {sermon_id}: Validation failed")
 
                 results['completed'] += 1
 
             except Exception as e:
                 results['errors'] += 1
-                job.add_log(f"❌ Error validating sermon {sermon_id}: {str(e)}")
+                job.add_log(f"Error validating sermon {sermon_id}: {str(e)}")
                 logger.error(f"Validation error for sermon {sermon_id}: {e}")
 
         job.update_progress(95, "Finalizing validation results...")
@@ -185,7 +185,7 @@ def execute_validation_job(job: Job) -> JobResult:
         raise
     except Exception as e:
         error_msg = f"Validation job failed: {str(e)}"
-        job.add_log(f"❌ {error_msg}")
+        job.add_log(error_msg)
         logger.error(error_msg)
         return JobResult(
             success=False,
@@ -263,12 +263,12 @@ def execute_sermon_import_job(job: Job) -> JobResult:
                 existing_sermon = repo.get_sermon(sermon_id)
                 if existing_sermon and not force_reimport:
                     results['skipped'] += 1
-                    job.add_log(f"⏭️ Sermon {sermon_id}: Already exists, skipping")
+                    job.add_log(f"Sermon {sermon_id}: Already exists, skipping")
                     continue
 
                 # Import or re-import the sermon
                 if force_reimport and existing_sermon:
-                    job.add_log(f"🔄 Sermon {sermon_id}: Force re-importing...")
+                    job.add_log(f"Sermon {sermon_id}: Force re-importing...")
                     # Delete existing sermon if force reimport
                     repo.delete_sermon(sermon_id)
 
@@ -281,7 +281,7 @@ def execute_sermon_import_job(job: Job) -> JobResult:
                     )
 
                     results['imported'] += 1
-                    job.add_log(f"✅ Sermon {sermon_id}: Imported successfully - {sermon_title}")
+                    job.add_log(f"Sermon {sermon_id}: Imported successfully - {sermon_title}")
                     results['details'].append({
                         'sermon_id': sermon_id,
                         'status': 'imported',
@@ -289,11 +289,11 @@ def execute_sermon_import_job(job: Job) -> JobResult:
                     })
                 else:
                     results['errors'] += 1
-                    job.add_log(f"❌ Sermon {sermon_id}: Failed to import")
+                    job.add_log(f"Sermon {sermon_id}: Failed to import")
 
             except Exception as e:
                 results['errors'] += 1
-                job.add_log(f"❌ Error importing sermon {sermon_id}: {str(e)}")
+                job.add_log(f"Error importing sermon {sermon_id}: {str(e)}")
                 logger.error(f"Import error for sermon {sermon_id}: {e}")
 
         job.update_progress(95, "Finalizing import results...")
@@ -315,7 +315,7 @@ def execute_sermon_import_job(job: Job) -> JobResult:
         raise
     except Exception as e:
         error_msg = f"Import job failed: {str(e)}"
-        job.add_log(f"❌ {error_msg}")
+        job.add_log(error_msg)
         logger.error(error_msg)
         return JobResult(
             success=False,
@@ -428,7 +428,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
 
         if result.get('success'):
             sermon_id = result.get('sermon_id')
-            job.add_log(f"✅ Sermon created: {sermon_id or '(dry run)'}")
+            job.add_log(f"Sermon created: {sermon_id or '(dry run)'}")
             return JobResult(
                 success=True,
                 message=f"Sermon processed successfully: {sermon_id or 'dry run'}",
@@ -436,7 +436,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             )
         else:
             err = result.get('error') or 'Unknown processing error'
-            job.add_log(f"❌ {err}")
+            job.add_log(err)
             return JobResult(
                 success=False,
                 message=f"Processing failed: {err}",
@@ -448,7 +448,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
         raise
     except Exception as e:
         error_msg = f"Sermon processing job failed: {e}"
-        job.add_log(f"❌ {error_msg}")
+        job.add_log(error_msg)
         logger.exception(error_msg)
         return JobResult(
             success=False,
@@ -581,7 +581,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
 
                 results['details'].append(sermon_result)
                 job.add_log(
-                    f"✅ Sermon {sermon_id}: "
+                    f"Sermon {sermon_id}: "
                     f"{len(sermon_result['actions_performed'])} actions completed"
                 )
 
@@ -594,7 +594,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                     'errors': [f"Processing error: {str(e)}"]
                 }
                 results['details'].append(error_result)
-                job.add_log(f"❌ Error processing sermon {sermon_id}: {str(e)}")
+                job.add_log(f"Error processing sermon {sermon_id}: {str(e)}")
 
         summary = (
             f"Batch processing completed: {results['completed']} successful, "
@@ -612,7 +612,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
         raise
     except Exception as e:
         error_msg = f"Batch processing job failed: {str(e)}"
-        job.add_log(f"❌ {error_msg}")
+        job.add_log(error_msg)
         return JobResult(
             success=False,
             message="Batch processing job failed",
@@ -683,11 +683,11 @@ def execute_metadata_update_job(job: Job) -> JobResult:
                 )
 
                 results['completed'] += 1
-                job.add_log(f"✅ Sermon {sermon_id}: Updated")
+                job.add_log(f"Sermon {sermon_id}: Updated")
 
             except Exception as e:
                 results['failed'] += 1
-                job.add_log(f"❌ Sermon {sermon_id}: {str(e)}")
+                job.add_log(f"Sermon {sermon_id}: {str(e)}")
                 logger.error(f"Metadata update error for {sermon_id}: {e}")
 
         summary = f"Metadata update: {results['completed']} completed, {results['failed']} failed"
@@ -699,7 +699,7 @@ def execute_metadata_update_job(job: Job) -> JobResult:
         raise
     except Exception as e:
         error_msg = f"Metadata update job failed: {str(e)}"
-        job.add_log(f"❌ {error_msg}")
+        job.add_log(error_msg)
         return JobResult(success=False, message="Metadata update job failed", error=str(e))
 
 

@@ -170,17 +170,17 @@ def fetch_and_cache_metadata(
         return {'pastors': [], 'event_types': [], 'series': []}
 
     if progress_callback:
-        progress_callback(0.1, '📋 Fetching pastors...')
+        progress_callback(0.1, 'Fetching pastors...')
     pastors = sermon_updater.get_broadcaster_pastors(limit=limit)
     logger.info(f"Fetched {len(pastors)} pastors")
 
     if progress_callback:
-        progress_callback(0.5, '📅 Fetching event types...')
+        progress_callback(0.5, 'Fetching event types...')
     event_types = sermon_updater.get_broadcaster_event_types(limit=limit)
     logger.info(f"Fetched {len(event_types)} event types")
 
     if progress_callback:
-        progress_callback(0.8, '📚 Fetching series...')
+        progress_callback(0.8, 'Fetching series...')
     series = sermon_updater.get_broadcaster_series(limit=limit)
     logger.info(f"Fetched {len(series)} series")
 
@@ -256,7 +256,7 @@ def refresh_metadata_from_api() -> bool:
             )
             return False
 
-        with st.spinner('🔄 Refreshing metadata from SermonAudio API...'):
+        with st.spinner('Refreshing metadata from SermonAudio API...'):
             progress_bar = st.progress(0)
             status_text = st.empty()
 
@@ -280,21 +280,21 @@ def refresh_metadata_from_api() -> bool:
                 logger.info(f"Refreshed {len(result['pastors'])} pastors from API")
             else:
                 logger.warning("No pastors found from API, keeping defaults")
-                st.warning("⚠️ No pastors found - keeping default list")
+                st.warning("No pastors found - keeping default list")
 
             if result['event_types']:
                 metadata['event_types'] = result['event_types']
                 logger.info(f"Refreshed {len(result['event_types'])} event types from API")
             else:
                 logger.warning("No event types found from API, keeping defaults")
-                st.warning("⚠️ No event types found - keeping default list")
+                st.warning("No event types found - keeping default list")
 
             if result['series']:
                 metadata['series'] = result['series']
                 logger.info(f"Refreshed {len(result['series'])} series from API")
             else:
                 logger.warning("No series found from API, keeping defaults")
-                st.warning("⚠️ No series found - keeping default list")
+                st.warning("No series found - keeping default list")
 
             metadata['last_refresh'] = datetime.datetime.now()
 
@@ -302,20 +302,20 @@ def refresh_metadata_from_api() -> bool:
             st.session_state.sermon_metadata = metadata
 
             # Stash feedback so it survives the page rerun
-            success_msg = '✅ Metadata refreshed successfully!\n'
-            success_msg += f'📋 Pastors: {len(metadata["pastors"])}\n'
-            success_msg += f'📅 Event Types: {len(metadata["event_types"])}\n'
-            success_msg += f'📚 Series: {len(metadata["series"])}'
+            success_msg = 'Metadata refreshed successfully!\n'
+            success_msg += f'Pastors: {len(metadata["pastors"])}\n'
+            success_msg += f'Event Types: {len(metadata["event_types"])}\n'
+            success_msg += f'Series: {len(metadata["series"])}'
             st.session_state.metadata_refresh_feedback = success_msg
             return True
 
     except ImportError as e:
         logger.error(f"Could not import sermon_updater: {e}")
-        st.error("❌ Could not load sermon processing modules")
+        st.error("Could not load sermon processing modules")
         return False
     except Exception as e:
         logger.error(f"Error refreshing metadata: {e}")
-        st.error(f"❌ Error refreshing metadata: {str(e)}")
+        st.error(f"Error refreshing metadata: {str(e)}")
         return False
 
 
@@ -352,7 +352,7 @@ def show_metadata_refresh_section():
     Show a collapsible section for refreshing metadata from API.
     Call this in UI pages that use the metadata dropdowns.
     """
-    with st.expander("🔄 Refresh Metadata from SermonAudio"):
+    with st.expander("Refresh Metadata from SermonAudio"):
         feedback = st.session_state.pop('metadata_refresh_feedback', None)
         if feedback:
             st.success(feedback)
@@ -376,11 +376,11 @@ def show_metadata_refresh_section():
 
         if metadata.get('stale'):
             st.caption(
-                "⚠️ Showing cached data past its 24h freshness window - click refresh to update"
+                "Showing cached data past its 24h freshness window - click refresh to update"
             )
 
         # Refresh button
-        if st.button("🔄 Refresh from SermonAudio API", width='stretch'):
+        if st.button("Refresh from SermonAudio API", width='stretch'):
             refreshed = refresh_metadata_from_api()
             if refreshed:
                 st.rerun()

@@ -25,9 +25,9 @@ def _run_fallback_import(
         successful, failed, failed_ids = import_fn()
         messages: list[tuple[str, str]] = []
         if successful > 0:
-            messages.append(("success", f"✅ Successfully imported {successful} sermons!"))
+            messages.append(("success", f"Successfully imported {successful} sermons!"))
         if failed > 0:
-            messages.append(("error", f"❌ Failed to import {failed} sermons"))
+            messages.append(("error", f"Failed to import {failed} sermons"))
             if failed_ids:
                 messages.append(("info", "Failed sermon IDs:"))
                 for failed_id in failed_ids[:5]:
@@ -38,7 +38,7 @@ def _run_fallback_import(
 
 
 def show_sermon_import():
-    st.markdown('<div class="main-header">📥 Import Sermons</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Import Sermons</div>', unsafe_allow_html=True)
     st.markdown(
         "Scan the processed_sermons folder and import any missing sermons into the database."
     )
@@ -50,7 +50,7 @@ def show_sermon_import():
 
         status = get_import_status()
 
-        st.markdown("#### 📊 Current Status")
+        st.markdown("#### Current Status")
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Sermons in Folder", status['total_in_folder'])
@@ -61,7 +61,7 @@ def show_sermon_import():
         st.markdown(f"**Folder Path:** `{status['folder_path']}`")
 
         if status['missing_sermon_ids']:
-            st.markdown("#### 🔍 Missing Sermons (Preview)")
+            st.markdown("#### Missing Sermons (Preview)")
             missing_count = status['missing_from_database']
             preview_sermons = status['missing_sermon_ids']
 
@@ -71,27 +71,27 @@ def show_sermon_import():
             for sermon_id in preview_sermons:
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    st.write(f"📄 Sermon ID: `{sermon_id}`")
+                    st.write(f"Sermon ID: `{sermon_id}`")
                 with col2:
                     if st.button("Import", key=f"import_single_{sermon_id}"):
                         with st.spinner(f"Importing sermon {sermon_id}..."):
                             success = import_single_sermon(sermon_id)
                             if success:
                                 st.session_state.import_flash = [
-                                    ("success", f"✅ Successfully imported sermon {sermon_id}")
+                                    ("success", f"Successfully imported sermon {sermon_id}")
                                 ]
                             else:
                                 st.session_state.import_flash = [
-                                    ("error", f"❌ Failed to import sermon {sermon_id}")
+                                    ("error", f"Failed to import sermon {sermon_id}")
                                 ]
                             st.rerun()
 
             st.divider()
-            st.markdown("#### 🚀 Bulk Import")
+            st.markdown("#### Bulk Import")
             col1, col2 = st.columns(2)
 
             with col1:
-                if st.button("📥 Import All Missing Sermons", type="primary"):
+                if st.button("Import All Missing Sermons", type="primary"):
                     if status['missing_from_database'] > 0:
                         try:
                             from job_queue import JobType, get_job_queue
@@ -117,17 +117,17 @@ def show_sermon_import():
 
                             st.session_state.import_job_id = job_id
                             st.session_state.import_flash = [
-                                ("success", f"✅ Import job started! Job ID: {job_id[:8]}"),
+                                ("success", f"Import job started! Job ID: {job_id[:8]}"),
                                 (
                                     "info",
-                                    f"📥 Importing {status['missing_from_database']} sermons "
+                                    f"Importing {status['missing_from_database']} sermons "
                                     "in the background. Monitor progress on the Jobs page.",
                                 ),
                             ]
                             st.rerun()
                         except Exception as e:
                             messages: list[tuple[str, str]] = [
-                                ("error", f"❌ Failed to start import job: {e}")
+                                ("error", f"Failed to start import job: {e}")
                             ]
                             messages.extend(
                                 _run_fallback_import(
@@ -147,17 +147,17 @@ def show_sermon_import():
                         JobStatus.FAILED,
                         JobStatus.CANCELLED,
                     ):
-                        if st.button("📊 View Job Progress", type="secondary"):
+                        if st.button("View Job Progress", type="secondary"):
                             st.switch_page(jobs)
 
             with col2:
-                st.markdown("**🔄 Force Re-import Options**")
+                st.markdown("**Force Re-import Options**")
                 force_refresh_api = st.checkbox(
                     "Refresh API metadata", value=False,
                     help="Re-fetch sermon metadata from SermonAudio API",
                 )
 
-                if st.button("🔄 Force Re-import All Sermons", type="secondary"):
+                if st.button("Force Re-import All Sermons", type="secondary"):
                     if st.session_state.get('confirm_reimport', False):
                         try:
                             from job_queue import JobType, get_job_queue
@@ -182,29 +182,29 @@ def show_sermon_import():
                                 priority=5
                             )
 
-                            st.success(f"✅ Force re-import job started! Job ID: {job_id[:8]}")
+                            st.success(f"Force re-import job started! Job ID: {job_id[:8]}")
                             st.info(
-                                f"🔄 Re-importing all {status['total_in_folder']} sermons "
+                                f"Re-importing all {status['total_in_folder']} sermons "
                                 "in the background. Monitor progress on the Jobs page."
                             )
                             st.session_state.confirm_reimport = False
                         except Exception as e:
-                            st.error(f"❌ Failed to start re-import job: {e}")
+                            st.error(f"Failed to start re-import job: {e}")
                     else:
                         st.warning(
-                            "⚠️ This will re-import ALL sermons and may take a long time. "
+                            "This will re-import ALL sermons and may take a long time. "
                             "Click again to confirm."
                         )
                         st.session_state.confirm_reimport = True
         else:
             st.success(
-                "✅ All sermons in the processed_sermons folder are already in the database!"
+                "All sermons in the processed_sermons folder are already in the database!"
             )
-            if st.button("🔄 Refresh Status"):
+            if st.button("Refresh Status"):
                 st.rerun()
 
-        st.markdown("#### ℹ️ How It Works")
-        with st.expander("📚 Import Process Details"):
+        st.markdown("#### How It Works")
+        with st.expander("Import Process Details"):
             st.markdown("""
             **The import process will:**
 
@@ -222,10 +222,10 @@ def show_sermon_import():
             """)
 
     except ImportError as e:
-        st.error(f"❌ Could not load sermon importer: {e}")
+        st.error(f"Could not load sermon importer: {e}")
         st.info("Please ensure the sermon_importer module is available.")
     except Exception as e:
-        st.error(f"❌ Error checking import status: {e}")
+        st.error(f"Error checking import status: {e}")
         st.info("Please check that the processed_sermons directory exists and is accessible.")
 
 
