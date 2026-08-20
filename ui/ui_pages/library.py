@@ -12,7 +12,7 @@ import io
 import json
 import re
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import streamlit as st
@@ -23,6 +23,30 @@ src_dir = ui_dir.parent / "src"
 sys.path.insert(0, str(ui_dir))
 sys.path.insert(0, str(src_dir))
 
+def _set_feedback(message, kind="success", details=None):
+    """Persist feedback in session state so it survives reruns"""
+    st.session_state['library_feedback'] = {'kind': kind, 'message': message, 'details': details}
+
+
+def _show_feedback():
+    """Render persisted feedback once, then clear it"""
+    feedback = st.session_state.get('library_feedback')
+    if not feedback:
+        return
+    del st.session_state['library_feedback']
+    kind = feedback.get('kind', 'success')
+    message = feedback.get('message', '')
+    if kind == 'error':
+        st.error(message)
+    elif kind == 'warning':
+        st.warning(message)
+    else:
+        st.success(message)
+    details = feedback.get('details')
+    if details:
+        st.code(details)
+
+
 def push_sermon_metadata_to_api(sermon):
     """Push sermon to SermonAudio — creates new sermon for dry runs,
     updates metadata for existing ones."""
@@ -31,7 +55,7 @@ def push_sermon_metadata_to_api(sermon):
 
         sermon_id = sermon.get('id') or sermon.get('sermon_id')
         if not sermon_id:
-            st.error("❌ No sermon ID found")
+            _set_feedback("❌ No sermon ID found", kind="error")
             return
 
         status = sermon.get('status', '')
@@ -42,11 +66,11 @@ def push_sermon_metadata_to_api(sermon):
             ):
                 result = sermon_updater.publish_dry_run_sermon(sermon_id)
                 if result.get('success'):
-                    st.success(
+                    _set_feedback(
                         f"✅ Dry run published! New SermonAudio ID: {result.get('sermon_id')}"
                     )
                 else:
-                    st.error(f"❌ Failed to publish: {result.get('error')}")
+                    _set_feedback(f"❌ Failed to publish: {result.get('error')}", kind="error")
             return
 
         if status == 'error':
@@ -56,17 +80,19 @@ def push_sermon_metadata_to_api(sermon):
                 with st.spinner("📤 Re-uploading media to SermonAudio..."):
                     success = sermon_updater.reupload_media_for_sermon(sermon_id, audio_path)
                     if success:
-                        st.success("✅ Media re-uploaded successfully!")
+                        _set_feedback("✅ Media re-uploaded successfully!")
                         from database import SermonRepository
                         repo = SermonRepository()
                         repo.update_sermon(sermon_id, {'status': 'processed'})
                     else:
-                        st.error(
-                            "❌ Media re-upload failed. Check your API credentials and try again."
+                        _set_feedback(
+                            "❌ Media re-upload failed. Check your API credentials and try again.",
+                            kind="error",
                         )
             else:
-                st.error(
-                    "❌ No local media file found for re-upload. The file may have been deleted."
+                _set_feedback(
+                    "❌ No local media file found for re-upload. The file may have been deleted.",
+                    kind="error",
                 )
             return
 
@@ -77,11 +103,11 @@ def push_sermon_metadata_to_api(sermon):
             with st.spinner("📤 Sermon not found on SermonAudio. Recreating..."):
                 result = sermon_updater.publish_dry_run_sermon(sermon_id)
                 if result.get('success'):
-                    st.success(
+                    _set_feedback(
                         f"✅ Sermon recreated! New SermonAudio ID: {result.get('sermon_id')}"
                     )
                 else:
-                    st.error(f"❌ Failed to recreate: {result.get('error')}")
+                    _set_feedback(f"❌ Failed to recreate: {result.get('error')}", kind="error")
             return
 
         with st.spinner("📤 Pushing metadata to SermonAudio..."):
@@ -103,20 +129,18 @@ def push_sermon_metadata_to_api(sermon):
             )
 
             if success:
-                st.success("✅ Metadata successfully updated on SermonAudio!")
-                st.info("🔄 Refresh the page to see updated data from SermonAudio")
+                _set_feedback("✅ Metadata successfully updated on SermonAudio!")
             else:
-                st.error(
+                _set_feedback(
                     "❌ Failed to update metadata on SermonAudio. "
-                    "Check your API credentials and try again."
+                    "Check your API credentials and try again.",
+                    kind="error",
                 )
 
     except ImportError:
-        st.error("❌ Sermon updater module not available")
+        _set_feedback("❌ Sermon updater module not available", kind="error")
     except Exception as e:
-        st.error(f"❌ Error updating metadata: {e}")
-        if st.checkbox("Show Error Details", key=f"error_details_{sermon_id}"):
-            st.exception(e)
+        _set_feedback(f"❌ Error updating metadata: {e}", kind="error")
 
 
 def _get_transcript(sermon):
@@ -164,20 +188,22 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
             # Fall back to local transcript
             transcript = _get_transcript(sermon)
             if not transcript:
-                st.error(
+                _set_feedback(
                     "⚠️ No transcript available locally or on SermonAudio. "
-                    "Use the New Sermon page to process this sermon with transcription."
+                    "Use the New Sermon page to process this sermon with transcription.",
+                    kind="error",
                 )
                 return
 
     if not gen_description and not gen_hashtags:
-        st.warning("Select at least one item to generate.")
+        _set_feedback("Select at least one item to generate.", kind="warning")
         return
 
     if len(transcript) < 50:
-        st.error(
+        _set_feedback(
             f"⚠️ Transcript too short ({len(transcript)} chars). "
-            "Need at least 50 characters to generate meaningful content."
+            "Need at least 50 characters to generate meaningful content.",
+            kind="error",
         )
         return
 
@@ -193,9 +219,10 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
                 st.session_state.llm_manager is None
                 or not st.session_state.llm_manager.primary_provider
             ):
-                st.error(
+                _set_feedback(
                     "⚠️ No LLM provider configured. "
-                    "Go to Settings to configure an LLM provider first."
+                    "Go to Settings to configure an LLM provider first.",
+                    kind="error",
                 )
                 return
 
@@ -332,14 +359,17 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
                 parts.append("description")
             if hashtags:
                 parts.append("hashtags")
-            st.success(f"✅ AI {' and '.join(parts)} generated and saved!")
+            _set_feedback(f"✅ AI {' and '.join(parts)} generated and saved!")
             # Refresh session state with updated data
             st.session_state.selected_sermon = repo.get_sermon(sermon_id)
 
     except Exception as e:
-        st.error(f"❌ Error generating AI content: {e}")
         import traceback
-        st.code(traceback.format_exc())
+        _set_feedback(
+            f"❌ Error generating AI content: {e}",
+            kind="error",
+            details=traceback.format_exc(),
+        )
 
 
 def _toggle_favorite(sermon_id, current_value):
@@ -403,7 +433,7 @@ def _batch_delete(sermon_ids):
             count += 1
     st.session_state.selected_sermon_ids = []
     st.session_state.selected_sermon = None
-    st.success(f"🗑️ Deleted {count} sermons")
+    _set_feedback(f"🗑️ Deleted {count} sermons")
     st.rerun()
 
 
@@ -451,6 +481,7 @@ def _batch_generate_ai(sermon_ids):
 
 def show_library():
     """Main sermon library interface"""
+    _show_feedback()
     st.markdown('<div class="main-header">📚 Sermon Library</div>', unsafe_allow_html=True)
     st.markdown("Browse and search all processed sermons")
 
@@ -490,7 +521,7 @@ def show_library():
             return
 
         # Search and filter controls
-        col1, col2, col3, col4, col5 = st.columns([2, 1, 1, 1, 0.5])
+        col1, col2, col3, col4, col5 = st.columns([1.5, 1, 1, 1, 1])
 
         with col1:
             search_query = st.text_input(
@@ -538,12 +569,13 @@ def show_library():
         # Sort controls row
         col_s1, col_s2, col_s3, col_s4 = st.columns([1, 1, 2, 2])
         with col_s1:
+            sort_options = ['Date', 'Title', 'Speaker', 'Duration']
+            current_sort = st.session_state.get('library_sort_by', 'Date')
+            sort_index = sort_options.index(current_sort) if current_sort in sort_options else 0
             sort_by = st.selectbox(
                 "Sort by",
-                ["Date", "Title", "Speaker", "Duration"],
-                index=["Date", "Title", "Speaker", "Duration"].index(
-                    st.session_state.library_sort_by
-                ),
+                sort_options,
+                index=sort_index,
                 key="library_sort_by_sel"
             )
             st.session_state.library_sort_by = sort_by
@@ -677,8 +709,8 @@ def apply_filters(sermons, search_query, speaker_filter, date_filter, status_fil
     reverse = sort_order == "Descending"
     if sort_by == "Date":
         def sort_key(s):
-            d = s.get('recorded_date')
-            return d or ''
+            parsed = _parse_date(s.get('recorded_date'))
+            return parsed if parsed else datetime.min
         filtered_sermons.sort(key=sort_key, reverse=reverse)
     elif sort_by == "Title":
         filtered_sermons.sort(key=lambda s: (s.get('title', '') or '').lower(), reverse=reverse)
@@ -701,10 +733,18 @@ def _parse_date(date_str):
     """Parse a date string to datetime, returning None for invalid values"""
     if not date_str:
         return None
-    try:
-        return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-    except (ValueError, TypeError, AttributeError):
-        return None
+    if isinstance(date_str, datetime):
+        parsed = date_str
+    elif isinstance(date_str, date):
+        parsed = datetime.combine(date_str, datetime.min.time())
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(date_str).replace('Z', '+00:00'))
+        except (ValueError, TypeError):
+            return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.replace(tzinfo=None)
+    return parsed
 
 
 def _format_date(date_str):
@@ -781,6 +821,12 @@ def display_sermon_list(filtered_sermons, all_sermons):
     end_idx = min(start_idx + items_per_page, len(filtered_sermons))
     page_sermons = filtered_sermons[start_idx:end_idx]
 
+    header_cols = st.columns([0.3, 0.3, 4.5, 1.2, 0.8])
+    with header_cols[2]:
+        st.caption("Title · Speaker · Date")
+    with header_cols[3]:
+        st.caption("Duration")
+
     for sermon in page_sermons:
         sid = sermon['id']
         is_fav = sermon.get('is_favorite', 0)
@@ -848,20 +894,19 @@ def display_sermon_details(sermon):
     """Display detailed sermon information with API data"""
     st.markdown("### Sermon Details")
 
-    col1, col2, col3, col4, col5, col6, col7 = st.columns([1.5, 1, 1, 1, 1, 0.7, 0.5])
-    with col1:
-        st.markdown(f"## {sermon.get('title', 'Untitled')}")
-    with col2:
+    st.markdown(f"## {sermon.get('title', 'Untitled')}")
+    header_row1 = st.columns(3)
+    with header_row1[0]:
         is_fav = sermon.get('is_favorite', 0)
         fav_label = "⭐" if is_fav else "☆"
         if st.button(fav_label, key=f"fav_{sermon['id']}", width='stretch',
                     help="Toggle favorite"):
             _toggle_favorite(sermon['id'], is_fav)
-    with col3:
+    with header_row1[1]:
         if st.button("✏️ Edit", key=f"edit_{sermon['id']}", width='stretch'):
             st.session_state.editing_sermon = True
             st.rerun()
-    with col4:
+    with header_row1[2]:
         gen_key = f"gen_show_{sermon['id']}"
         if st.button("🤖 Generate", key=f"generate_{sermon['id']}",
                     help="Generate AI description and/or hashtags from transcript",
@@ -876,7 +921,8 @@ def display_sermon_details(sermon):
                     generate_ai_content(sermon, gen_description=gen_desc, gen_hashtags=gen_tags)
                     st.session_state[gen_key] = False
                     st.rerun()
-    with col5:
+    header_row2 = st.columns(3)
+    with header_row2[0]:
         push_help = (
             "Publish dry run to SermonAudio" if sermon.get('status') == 'draft'
             else "Update metadata on SermonAudio"
@@ -886,13 +932,13 @@ def display_sermon_details(sermon):
                     width='stretch'):
             push_sermon_metadata_to_api(sermon)
             st.rerun()
-    with col6:
-        if st.button("🗑️", key=f"delete_{sermon['id']}",
+    with header_row2[1]:
+        if st.button("🗑️ Delete", key=f"delete_{sermon['id']}",
                     help="Delete this sermon", width='stretch'):
             st.session_state.confirm_delete_sermon = sermon['id']
             st.rerun()
-    with col7:
-        if st.button("🔄", key=f"reproc_{sermon['id']}",
+    with header_row2[2]:
+        if st.button("🔄 Re-process", key=f"reproc_{sermon['id']}",
                     help="Re-process this sermon", width='stretch'):
             st.session_state.show_reprocess = sermon['id']
             st.rerun()
@@ -909,7 +955,7 @@ def display_sermon_details(sermon):
                     for _ftype, fpath in file_paths.items():
                         if fpath and Path(fpath).exists():
                             Path(fpath).unlink(missing_ok=True)
-                    st.success("✅ Sermon deleted")
+                    _set_feedback("✅ Sermon deleted")
                     st.session_state.selected_sermon = None
                     st.session_state.confirm_delete_sermon = None
                     st.rerun()
@@ -1220,7 +1266,7 @@ def display_sermon_details(sermon):
             from database import SermonRepository
             repo = SermonRepository()
             repo.update_sermon(sermon['id'], {'transcript': edited_transcript})
-            st.success("✅ Transcript saved")
+            _set_feedback("✅ Transcript saved")
             st.session_state.selected_sermon = repo.get_sermon(sermon['id'])
             st.rerun()
 
@@ -1232,7 +1278,7 @@ def display_sermon_details(sermon):
             save_notes = st.form_submit_button("💾 Save Notes", type="primary")
         if save_notes and new_notes != current_notes:
             _save_notes(sermon['id'], new_notes)
-            st.success("✅ Notes saved")
+            _set_feedback("✅ Notes saved")
             from database import SermonRepository
             st.session_state.selected_sermon = SermonRepository().get_sermon(sermon['id'])
             st.rerun()
@@ -1275,7 +1321,7 @@ def display_sermon_details(sermon):
                     db_updates = {k: v for k, v in raw_updates.items() if v is not None}
                     repo = SermonRepository()
                     if db_updates and repo.update_sermon_metadata(sermon_id, db_updates):
-                        st.success("✅ Sermon data refreshed and saved!")
+                        _set_feedback("✅ Sermon data refreshed and saved!")
                         st.session_state.selected_sermon = repo.get_sermon(sermon_id)
                         st.rerun()
                     else:
@@ -1374,7 +1420,7 @@ def display_sermon_editor(sermon, api_client, repo):
 
                 success = repo.update_sermon_metadata(sermon['id'], updated_data)
                 if success:
-                    st.success("✅ Sermon updated successfully!")
+                    _set_feedback("✅ Sermon updated successfully!")
                     st.session_state.editing_sermon = False
                     # Refresh the selected sermon data
                     st.session_state.selected_sermon = repo.get_sermon(sermon['id'])
