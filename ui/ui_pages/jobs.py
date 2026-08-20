@@ -13,7 +13,6 @@ Features:
 - Automatic refresh for live updates
 """
 
-import time
 from datetime import datetime, timedelta
 
 import streamlit as st
@@ -69,10 +68,6 @@ def show_jobs():
 
         _render_job_list(job_queue)
 
-        if job_queue.get_all_jobs(JobStatus.RUNNING) or job_queue.get_all_jobs(JobStatus.QUEUED):
-            time.sleep(2)
-            st.rerun()
-
     except ImportError as e:
         st.error(f"❌ Job queue system not available: {e}")
         st.info("The background job system requires additional setup.")
@@ -81,9 +76,8 @@ def show_jobs():
         st.info("Please check the job queue system and try again.")
 
 
-@st.fragment
 def _render_job_list(job_queue):
-    """Job list display"""
+    """Job list display with stable tabs; only the Active tab polls."""
     all_jobs = job_queue.get_all_jobs()
     running_count = len([j for j in all_jobs if j.status == JobStatus.RUNNING])
     queued_count = len([j for j in all_jobs if j.status == JobStatus.QUEUED])
@@ -100,7 +94,7 @@ def _render_job_list(job_queue):
     ])
 
     with tab1:
-        show_active_jobs_compact(job_queue)
+        _render_active_tab(job_queue)
 
     with tab2:
         show_completed_jobs_compact(job_queue)
@@ -113,6 +107,12 @@ def _render_job_list(job_queue):
 
     with tab5:
         show_queue_statistics_compact(job_queue)
+
+
+@st.fragment(run_every=2.0)
+def _render_active_tab(job_queue):
+    """Polling fragment for the Active tab; keeps the selected tab stable."""
+    show_active_jobs_compact(job_queue)
 
 
 def show_active_jobs_compact(job_queue):

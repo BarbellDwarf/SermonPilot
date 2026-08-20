@@ -19,13 +19,17 @@ import requests
 logger = logging.getLogger(__name__)
 
 
-def _detect_device(preference: str = "auto") -> str:
+def _detect_device(preference: str = "auto", allow_rocm: bool = True) -> str:
     """Detect the compute device for local Whisper.
 
     Args:
         preference: "auto", "cpu", "cuda", or "rocm".
+        allow_rocm: When True, ROCm (AMD GPU) maps to "cuda" (works for
+            standard Whisper, which runs on torch). When False, ROCm maps
+            to "cpu" because CTranslate2 (faster-whisper) has no ROCm
+            support and fails with "CUDA driver version is insufficient".
     Returns:
-        "cpu" or "cuda" (for both Nvidia and ROCm CUDA).
+        "cpu" or "cuda".
     """
     if preference == "cpu":
         return "cpu"
@@ -33,14 +37,14 @@ def _detect_device(preference: str = "auto") -> str:
     try:
         import torch
         if torch.cuda.is_available():
-            # Detect ROCm (AMD GPU) — pure ROCm builds set torch.version.hip
+            # Pure ROCm builds set torch.version.hip
             if getattr(torch.version, "hip", None) is not None:
                 logger.debug("Detected AMD GPU (ROCm) via torch.version.hip")
-                return "cuda"
+                return "cuda" if allow_rocm else "cpu"
             # Older ROCm builds set torch.version.cuda to "rocmX.Y"
             if "rocm" in (getattr(torch.version, "cuda", "") or "").lower():
                 logger.debug("Detected AMD GPU (ROCm) via torch.version.cuda")
-                return "cuda"
+                return "cuda" if allow_rocm else "cpu"
             logger.debug("Detected NVIDIA GPU via torch.cuda")
             return "cuda"
     except Exception:
@@ -102,7 +106,11 @@ def _transcribe_whisper_local(
 
 
 def _transcribe_faster_whisper_local(
-    audio_path: str, model_size: str, device_preference: str = "auto"
+    audio_path: str,
+    model_size: str,
+    device_preference: str = "auto",
+    compute_type: str | None = None,
+    language: str | None = None,
 ) -> str:
     """Transcribe using faster-whisper (CTranslate2 backend).
 
@@ -110,6 +118,9 @@ def _transcribe_faster_whisper_local(
         audio_path: Path to audio file.
         model_size: Whisper model size (tiny, base, small, medium, large).
         device_preference: Device selection string.
+        compute_type: CTranslate2 compute type; defaults to int8 on CPU
+            and float32 on GPU when not configured.
+        language: ISO 639 language code; None lets faster-whisper detect it.
     Returns:
         Transcript text or empty string on error.
     """
@@ -119,20 +130,21 @@ def _transcribe_faster_whisper_local(
         logger.warning("faster-whisper library not installed, falling back to standard whisper")
         return _transcribe_whisper_local(audio_path, model_size, device_preference)
 
-    device = _detect_device(device_preference)
-    logger.info("Faster Whisper transcription: model=%s, device=%s", model_size, device)
+    device = _detect_device(device_preference, allow_rocm=False)
+    effective_compute_type = compute_type or ("int8" if device == "cpu" else "float32")
+    logger.info(
+        "Faster Whisper transcription: model=%s, device=%s, compute_type=%s, language=%s",
+        model_size, device, effective_compute_type, language,
+    )
 
     try:
-        # Initialize model with appropriate compute type
-        # float16 works well for both AMD and NVIDIA GPUs
-        compute_type = "float16"
-        model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        model = WhisperModel(model_size, device=device, compute_type=effective_compute_type)
 
         # Transcribe with VAD filtering for better performance
         segments, info = model.transcribe(
             audio_path,
             beam_size=5,
-            language="en",
+            language=language,
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 500}
         )
@@ -250,7 +262,11 @@ def transcribe(audio_path: str, model_size: str = "base", config: dict[str, Any]
         device_pref = faster_cfg.get("device", "auto")
         # model_size from CLI overrides config size if provided
         model = model_size or faster_cfg.get("model", "base")
-        return _transcribe_faster_whisper_local(audio_path, model, device_pref)
+        compute_type = faster_cfg.get("compute_type")
+        language = faster_cfg.get("language")
+        return _transcribe_faster_whisper_local(
+            audio_path, model, device_pref, compute_type=compute_type, language=language
+        )
     elif backend == "whisper_openrouter":
         or_cfg = transcription_cfg.get("whisper_openrouter", {})
         api_key = os.getenv("OPENROUTER_API_KEY", or_cfg.get("api_key", ""))
