@@ -1,251 +1,241 @@
-# GPU | File | Purpose | GPU Memory | Install Size | Use Case |
-|------|---------|------------|--------------|----------|
-| `requirements/requirements.txt` | Basic CPU/GPU auto-detect | Any | ~2GB | Standard installation |
-| `requirements/requirements-cpu.txt` | CPU-only operation | None | ~1.5GB | No GPU or compatibility issues |
-| `requirements/requirements-gpu-minimal.txt` | Essential GPU support | 4GB+ | ~3GB | Basic GPU acceleration |
-| `requirements/requirements-gpu.txt` | Full GPU acceleration | 6GB+ | ~4GB | Recommended GPU setup |
-| `requirements/requirements-gpu-full.txt` | Maximum acceleration | 8GB+ | ~8GB | Research/production use |ation Guide
+# GPU Installation Guide
 
-This guide helps you choose the right requirements file for your system and explains how to install GPU acceleration for the SermonPilot.
+This guide covers installing SermonPilot with GPU acceleration for audio
+enhancement and transcription. It covers NVIDIA CUDA, AMD ROCm, CPU-only
+setups, and Docker images built for each backend.
 
-## 📋 Requirements Files Overview
+## How GPU acceleration is used
 
-| File | Purpose | GPU Memory | Install Size | Use Case |
-|------|---------|------------|--------------|----------|
-| `requirements/requirements/requirements.txt` | Basic CPU/GPU auto-detect | Any | ~2GB | Standard installation |
-| `requirements/requirements/requirements-cpu.txt` | CPU-only operation | None | ~1.5GB | No GPU or compatibility issues |
-| `requirements/requirements/requirements-gpu-minimal.txt` | Essential GPU support | 4GB+ | ~3GB | Basic GPU acceleration |
-| `requirements/requirements/requirements-gpu.txt` | Full GPU acceleration | 6GB+ | ~4GB | Recommended GPU setup |
-| `requirements/requirements/requirements-gpu-full.txt` | Maximum acceleration | 8GB+ | ~8GB | Research/production use |
+- **DeepFilterNet** runs on PyTorch and uses CUDA when
+  `torch.cuda.is_available()` is true, with automatic ROCm detection via
+  `torch.version.hip`.
+- **Clear** (the `clear-studio` and `clear-natural` methods) runs through
+  ONNX Runtime, which supports CUDA, ROCm, and CPU.
+- **Local transcription** (faster-whisper) benefits from GPU compute.
 
-## 🎯 Quick Start - Choose Your Installation
+The manifest in `pyproject.toml` requires `torch>=2.6.0`,
+`torchaudio>=2.6.0`, and `torchvision>=0.20.0`. Any PyTorch install must
+satisfy that floor. Some `requirements/` files still pin older CUDA builds
+(see [PyTorch version note](#pytorch-version-note) below).
 
-### 1. **Most Users** (Recommended)
+## Choose an installation
+
+| Scenario | What to install |
+|----------|-----------------|
+| Standard (auto-detects, may use GPU if present) | `requirements/requirements.txt` |
+| NVIDIA GPU, CUDA 12.x | CUDA PyTorch builds (below) |
+| AMD GPU, ROCm 7.x | `requirements/requirements-rocm.txt` |
+| CPU-only | `requirements/requirements-cpu.txt` |
+
+## Setup
+
+### 1. Create and activate a virtual environment
+
 ```bash
-# Activate your virtual environment
 uv venv --python 3.11
 source .venv/bin/activate  # Linux/Mac
-# OR
-.venv\Scripts\activate     # Windows
-
-# Install with automatic GPU detection
-uv pip install -r requirements/requirements.txt
 ```
 
-### 2. **GPU Users** (Recommended for NVIDIA GPU owners)
+Windows activation:
+
 ```bash
-# For standard GPU acceleration
-uv pip install -r requirements/requirements-gpu.txt
-
-# OR for minimal GPU support (if you have compatibility issues)
-uv pip install -r requirements/requirements-gpu-minimal.txt
-
-# OR for Linux with GPU support (requires special flag for dependency resolution)
-uv pip install -r requirements/requirements-linux.txt --index-strategy unsafe-best-match
-```
-
-### 3. **High-Performance Users**
-```bash
-# For maximum GPU acceleration (large download)
-uv pip install -r requirements/requirements-gpu-full.txt
-```
-
-### 4. **CPU-Only Users**
-```bash
-# For systems without GPU or compatibility issues
-uv pip install -r requirements/requirements-cpu.txt
-```
-
-## 🔧 GPU Requirements
-
-### Minimum Requirements
-- **GPU**: NVIDIA GPU with CUDA Compute Capability 3.5+
-- **Driver**: CUDA 12.1 compatible driver (typically 530+)
-- **Memory**: 4GB GPU memory (6GB+ recommended)
-- **System RAM**: 8GB+ (16GB+ recommended for large models)
-
-### Recommended Requirements
-- **GPU**: RTX 3060/4060 or better, Tesla T4, A100, etc.
-- **Memory**: 8GB+ GPU memory
-- **System RAM**: 16GB+
-- **Storage**: 10GB+ free space for models
-
-### Check GPU Compatibility
-```bash
-# Check if CUDA is available
-python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
-
-# Check GPU details
-python -c "import torch; print(f'GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"No GPU\"}')"
-
-# Check CUDA version
-nvidia-smi
-```
-
-## 🚀 Installation Steps
-
-### Step 1: Create Virtual Environment
-```bash
-# Using UV (recommended)
-uv venv --python 3.11 .venv
-
-# Using standard Python
-python -m venv .venv
-```
-
-### Step 2: Activate Environment
-```bash
-# Windows
 .venv\Scripts\activate
-
-# Linux/Mac
-source .venv/bin/activate
 ```
 
-### Step 3: Choose and Install Requirements
-```bash
-# Choose ONE of these based on your needs:
+### 2. Install the base requirements
 
-# Standard installation (auto-detects GPU)
+```bash
 uv pip install -r requirements/requirements.txt
-
-# GPU-optimized installation
-uv pip install -r requirements/requirements-gpu.txt
-
-# Minimal GPU installation
-uv pip install -r requirements/requirements-gpu-minimal.txt
-
-# Maximum performance installation
-uv pip install -r requirements/requirements-gpu-full.txt
-
-# CPU-only installation
-uv pip install -r requirements/requirements-cpu.txt
 ```
 
-### Step 4: Verify Installation
+Or install from the manifest and lockfile:
+
 ```bash
-# Test the installation
+uv sync
+```
+
+### 3. Install GPU PyTorch
+
+Install PyTorch from the wheelhouse that matches your CUDA version. CUDA
+12.x users typically use `cu124` or `cu126`; older toolchains use `cu118`
+or `cu121`. The install commands stay at or above the manifest floor:
+
+```bash
+# NVIDIA CUDA (replace cu124 with your CUDA wheelhouse)
+uv pip install "torch>=2.6.0" "torchaudio>=2.6.0" "torchvision>=0.20.0" \
+  --extra-index-url https://download.pytorch.org/whl/cu124 \
+  --index-strategy unsafe-best-match
+```
+
+For AMD GPUs, install from the ROCm 7.1 wheelhouse instead:
+
+```bash
+uv pip install -r requirements/requirements-rocm.txt
+```
+
+That file pins `torch==2.12.1+rocm7.1`, `torchaudio==2.11.0+rocm7.1`, and
+`torchvision==0.27.1+rocm7.1`, which satisfy the manifest floor.
+
+### 4. Verify the installation
+
+```bash
 python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
 python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
-
-# Test audio processing
-python -c "import torchaudio; print(f'TorchAudio version: {torchaudio.__version__}')"
-```
-
-## 🔄 Switching Between CPU and GPU
-
-You can switch between CPU and GPU installations:
-
-### From CPU to GPU
-```bash
-# Install GPU version (will upgrade packages)
-uv pip install -r requirements/requirements-gpu.txt
-```
-
-### From GPU to CPU
-```bash
-# Uninstall GPU PyTorch
-uv pip uninstall torch torchaudio torchvision
-
-# Install CPU version
-uv pip install -r requirements/requirements-cpu.txt
-```
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-#### 1. CUDA Version Mismatch
-```bash
-# Check CUDA version
 nvidia-smi
-
-# If you have CUDA 11.x, use:
-uv pip install torch==2.1.1+cu118 torchaudio==2.1.1+cu118 torchvision==0.16.1+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
 ```
 
-#### 2. Out of Memory Errors
-- Use `requirements/requirements-gpu-minimal.txt` instead of full version
-- Reduce batch sizes in configuration
-- Close other GPU applications
+Importing `src/audio_processing.py` prints the detected device, for example
+`CUDA available: True` and `CUDA device: NVIDIA GeForce RTX 4060`.
 
-#### 3. Import Errors
+## PyTorch version note
+
+`requirements/requirements-gpu.txt`, `requirements-gpu-minimal.txt`, and
+`requirements-gpu-full.txt` pin `torch==2.1.1+cu121` builds, which predate
+the `torch>=2.6.0` floor in `pyproject.toml`. If you install from those
+files, upgrade PyTorch afterwards with the CUDA install command in
+[step 3](#3-install-gpu-pytorch) so the environment satisfies the manifest.
+
+## Docker
+
+### Build with a GPU backend
+
 ```bash
-# Reinstall with force
-uv pip install -r requirements/requirements-gpu.txt --force-reinstall
+docker build --build-arg GPU_BACKEND=cuda -t sermonpilot:latest .
+```
 
-# Or try CPU fallback
+Backends: `cpu` (default), `cuda`, `rocm`. The `cuda` build installs
+`onnxruntime-gpu`; the `rocm` build installs `requirements-rocm.txt`.
+
+### Run with a GPU image
+
+Prebuilt images carry a backend suffix, for example `v1.5.3-cuda` or
+`v1.5.3-rocm`. The `latest` tag points at the latest CUDA build.
+
+```bash
+SERMONPILOT_TAG=v1.5.3-cuda docker compose up -d
+```
+
+Add device access in `docker-compose.yml`:
+
+```yaml
+services:
+  sermon-pilot:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+```
+
+For ROCm:
+
+```yaml
+services:
+  sermon-pilot:
+    devices:
+      - /dev/kfd
+      - /dev/dri
+```
+
+Install the NVIDIA Container Toolkit (or ROCm Docker setup) on the host
+first. Verify GPU access inside the container:
+
+```bash
+docker compose exec sermon-pilot nvidia-smi
+```
+
+## System requirements
+
+### NVIDIA
+
+- NVIDIA GPU with a CUDA-capable driver
+- Driver version compatible with the CUDA wheelhouse you install
+- 4 GB+ GPU memory (8 GB+ recommended)
+
+### AMD
+
+- ROCm 7.x compatible GPU and driver
+- 4 GB+ GPU memory (8 GB+ recommended)
+
+### CPU-only
+
+- No special hardware requirements
+- Install `requirements/requirements-cpu.txt` to force CPU PyTorch builds
+
+## Selecting a GPU
+
+Use the standard CUDA environment variable to restrict which devices the
+process sees:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python sermon_updater.py new-sermon audio.mp3 --speaker "Speaker" --date "2024-01-15"
+```
+
+## Configuration
+
+Audio enhancement is configured through `config.yaml`:
+
+```yaml
+audio_enhancement_method: deepfilternet  # deepfilternet, clear-studio, clear-natural, custom, none
+clear_model_variant: natural             # Clear model variant when using Clear
+clear_custom_repo: ""                    # Custom Clear model repo (method: custom)
+clear_custom_file: ""                    # Custom Clear model file (method: custom)
+audio_noise_reduction: true
+audio_normalize: true
+audio_target_level_db: -22.0
+audio_gain_db: 0.5
+```
+
+DeepFilterNet needs PyTorch with CUDA or ROCm support. Clear methods use
+ONNX Runtime and work on CUDA, ROCm, or CPU without PyTorch. Set the
+enhancement method to `none` to skip enhancement entirely.
+
+## Troubleshooting
+
+**CUDA is reported as unavailable.** Check the driver and toolkit:
+
+```bash
+nvidia-smi
+```
+
+Confirm the installed PyTorch build matches the CUDA version of the driver.
+Reinstall with the matching wheelhouse from
+[step 3](#3-install-gpu-pytorch).
+
+**Out of memory during processing.** Close other GPU applications, reduce
+the transcription model size in `config.yaml`
+(`transcription.faster_whisper_local.model` or `transcription.whisper_local.model`),
+or use a smaller enhancement model. Clear ONNX inference generally uses less
+memory than DeepFilterNet.
+
+**Import errors after switching builds.** Reinstall the base requirements:
+
+```bash
+uv pip install -r requirements/requirements.txt
+```
+
+**Slow processing on a GPU machine.** Verify the GPU is actually used by
+checking the startup output of `src/audio_processing.py` (look for
+`CUDA available: True`) and watch utilization while processing:
+
+```bash
+nvidia-smi -l 2
+```
+
+**CPU fallback after a failed GPU install.** Install the CPU wheelhouse to
+get a working environment, then retry the GPU install:
+
+```bash
 uv pip install -r requirements/requirements-cpu.txt
 ```
 
-#### 4. Slow Performance
-- Verify GPU is being used: Check logs for "Using device: cuda"
-- Update GPU drivers
-- Check GPU memory usage: `nvidia-smi`
+## Getting help
 
-### Performance Testing
-```bash
-# Test GPU acceleration
-python tests/test_audio_upscaling.py
-
-# Run benchmark
-python -c "
-import torch
-import time
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f'Using device: {device}')
-x = torch.randn(1000, 1000, device=device)
-start = time.time()
-y = torch.matmul(x, x)
-end = time.time()
-print(f'Matrix multiplication time: {end-start:.4f}s')
-"
-```
-
-## 📊 Performance Comparison
-
-| Operation | CPU (seconds) | GPU (seconds) | Speedup |
-|-----------|---------------|---------------|---------|
-| Audio Enhancement | 45-60 | 8-15 | 3-7x |
-| Transcript Generation | 120-180 | 20-40 | 4-8x |
-| Validation (100 sermons) | 300-600 | 60-120 | 4-8x |
-
-## 🔧 Advanced Configuration
-
-### Custom CUDA Version
-If you need a specific CUDA version, modify the PyTorch installation:
-
-```bash
-# For CUDA 11.8
---extra-index-url https://download.pytorch.org/whl/cu118
-torch==2.1.1+cu118
-torchaudio==2.1.1+cu118
-torchvision==0.16.1+cu118
-
-# For CUDA 12.1 (default)
---extra-index-url https://download.pytorch.org/whl/cu121
-torch==2.1.1+cu121
-torchaudio==2.1.1+cu121
-torchvision==0.16.1+cu121
-```
-
-### Memory Optimization
-Add to your configuration:
-```yaml
-# config.yaml
-gpu_memory_fraction: 0.8  # Use 80% of GPU memory
-mixed_precision: true     # Enable mixed precision training
-gradient_checkpointing: true  # Trade compute for memory
-```
-
-## 🆘 Getting Help
-
-If you encounter issues:
-
-1. **Check system requirements** above
-2. **Try minimal installation** first: `requirements/requirements-gpu-minimal.txt`
-3. **Check GPU compatibility** with the verification commands
-4. **Fall back to CPU** if needed: `requirements/requirements-cpu.txt`
-5. **Report issues** with full error logs and system information
-
-For more help, check the main README.md or open an issue on GitHub.
+1. Check the system requirements above.
+2. Confirm the driver, CUDA version, and PyTorch build match.
+3. Verify with the commands in [step 4](#4-verify-the-installation).
+4. Fall back to CPU if needed.
+5. Report issues with the output of `nvidia-smi` and the verification
+   commands.
