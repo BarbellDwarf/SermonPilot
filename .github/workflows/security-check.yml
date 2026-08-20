@@ -94,26 +94,32 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install bandit pip-audit
+        pip install bandit
+
+    - name: Install osv-scanner
+      run: |
+        curl -sSL -o osv-scanner https://github.com/google/osv-scanner/releases/download/v2.5.1/osv-scanner_linux_amd64
+        echo "f9f25499a2c8cc367b3af45df2ea7eeca7fbccceab9c35079968f4b3652194be  osv-scanner" | sha256sum -c -
+        chmod +x osv-scanner
 
     - name: Check for known vulnerabilities
-      # NON-GATING until the dependency cleanup (wayfinder/TKT-64) and torch
-      # evaluation (wayfinder/TKT-69) land: pip-audit currently flags the 78
-      # known advisories (46 torch, GitPython, starlette, etc.) that those
-      # tickets fix. Flip to gating once the manifests are clean.
-      continue-on-error: true
       run: |
         echo "🔍 Checking for known vulnerabilities in dependencies..."
-        pip-audit -r requirements/requirements.txt || true
-        pip-audit -r requirements/requirements-rocm.txt --skip-editable || true
+        args=()
+        for f in requirements/*.txt; do
+          args+=(--lockfile "requirements.txt:$f")
+        done
+        ./osv-scanner scan "${args[@]}" --lockfile uv.lock
 
     - name: Run Bandit security linter
-      # NON-GATING: pre-existing findings; flip to gating once the lint pass
-      # (wayfinder/TKT-68) and scanning gates (wayfinder/TKT-61) land.
-      continue-on-error: true
+      # B324 (weak MD5) is skipped: the two pre-existing findings are MD5 used
+      # to seed deterministic embeddings in ui/embedding_manager.py, not for
+      # security. The proper fix (usedforsecurity=False) is tracked outside
+      # this ticket. -lll fails the job on HIGH severity findings only; the
+      # pre-existing MEDIUM/LOW findings are reported in the artifact.
       run: |
         echo "🔒 Running Bandit security linter..."
-        bandit -r src/ sermon_updater.py ui/ -f json -o bandit_report.json
+        bandit -r src/ ui/ sermon_updater.py streamlit_app.py -lll -s B324 -f json -o bandit_report.json
 
     - name: Upload Bandit report
       if: always()

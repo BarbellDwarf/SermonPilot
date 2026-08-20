@@ -31,10 +31,6 @@ jobs:
           pip install -e . --no-deps
 
       - name: Lint with ruff
-        # NON-GATING until the lint pass (wayfinder/TKT-68) lands:
-        # the codebase carries 2,306 pre-existing ruff errors. Flip to gating
-        # (remove continue-on-error) once that ticket merges.
-        continue-on-error: true
         run: ruff check .
 
       - name: Run fast tests
