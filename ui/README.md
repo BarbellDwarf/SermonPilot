@@ -4,12 +4,12 @@ A modern Streamlit web interface for the SermonAudio AI audio processing pipelin
 
 ## Features
 
-- **📊 Dashboard**: Recent activity, quick stats, system status
-- **🎵 New Sermon**: Upload audio files, configure processing, real-time progress
-- **🔄 Batch Update**: Process multiple sermons with filtering and progress tracking
-- **✅ Validation**: Quality metrics and description validation
-- **📈 Analytics**: Processing metrics and interactive charts
-- **⚙️ Settings**: Configuration management with web-based editing
+- **Dashboard**: Recent activity, quick stats, system status
+- **New Sermon**: Upload audio files, configure processing, real-time progress
+- **Batch Update**: Process multiple sermons with filtering and progress tracking
+- **Validation**: Quality metrics and description validation
+- **Analytics**: Processing metrics and interactive charts
+- **Settings**: Configuration management with web-based editing
 
 ## Installation
 

@@ -22,7 +22,7 @@ try:
     from job_queue import JobStatus, JobType, get_job_queue
     JOB_QUEUE_AVAILABLE = True
 except ImportError as e:
-    st.error(f"❌ Job queue system not available: {e}")
+    st.error(f"Job queue system not available: {e}")
     JOB_QUEUE_AVAILABLE = False
     # Define dummy enums to prevent errors
     class JobStatus:
@@ -63,11 +63,11 @@ def _consume_flash() -> None:
 
 def show_jobs():
     """Main jobs monitoring interface"""
-    st.markdown('<div class="main-header">⚙️ Background Jobs</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Background Jobs</div>', unsafe_allow_html=True)
     _consume_flash()
 
     if not JOB_QUEUE_AVAILABLE:
-        st.error("❌ Job queue system is not available")
+        st.error("Job queue system is not available")
         st.info("Please check that the job queue dependencies are properly installed.")
         return
 
@@ -75,12 +75,12 @@ def show_jobs():
         job_queue = get_job_queue()
 
         with st.sidebar:
-            st.markdown("### 🎛️ Controls")
+            st.markdown("### Controls")
 
-            if st.button("🔄 Refresh", type="primary", width='stretch'):
+            if st.button("Refresh", type="primary", width='stretch'):
                 st.rerun()
 
-            if st.button("🧹 Clear Completed", type="secondary", width='stretch'):
+            if st.button("Clear Completed", type="secondary", width='stretch'):
                 cleared = job_queue.clear_completed_jobs()
                 _set_flash(f"Cleared {cleared} completed jobs")
                 st.rerun()
@@ -88,10 +88,10 @@ def show_jobs():
         _render_job_list(job_queue)
 
     except ImportError as e:
-        st.error(f"❌ Job queue system not available: {e}")
+        st.error(f"Job queue system not available: {e}")
         st.info("The background job system requires additional setup.")
     except Exception as e:
-        st.error(f"❌ Error loading jobs interface: {e}")
+        st.error(f"Error loading jobs interface: {e}")
         st.info("Please check the job queue system and try again.")
 
 
@@ -105,11 +105,11 @@ def _render_job_list(job_queue):
     cancelled_count = len([j for j in all_jobs if j.status == JobStatus.CANCELLED])
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        f"🔄 Active ({running_count + queued_count})",
-        f"✅ Completed ({completed_count})",
-        f"❌ Failed ({failed_count})",
-        f"🚫 Cancelled ({cancelled_count})",
-        "📊 Stats"
+        f"Active ({running_count + queued_count})",
+        f"Completed ({completed_count})",
+        f"Failed ({failed_count})",
+        f"Cancelled ({cancelled_count})",
+        "Stats"
     ])
 
     with tab1:
@@ -146,13 +146,13 @@ def show_active_jobs_compact(job_queue):
 
     # Show running jobs first
     if running_jobs:
-        st.markdown("#### 🟡 Currently Running")
+        st.markdown("#### Currently Running")
         for job in running_jobs:
             show_job_card_compact(job, job_queue, show_actions=True)
 
     # Show queued jobs
     if queued_jobs:
-        st.markdown("#### ⏳ Queued Jobs")
+        st.markdown("#### Queued Jobs")
         for job in queued_jobs:
             show_job_card_compact(job, job_queue, show_actions=True)
 
@@ -173,7 +173,7 @@ def _render_active_empty_state(job_queue):
     )
 
     with st.container(border=True):
-        st.markdown("### 🎉 No active jobs")
+        st.markdown("### No active jobs")
         st.write("Nothing is running or queued right now.")
         if completed_recent or failed_recent:
             col1, col2 = st.columns(2)
@@ -182,7 +182,7 @@ def _render_active_empty_state(job_queue):
             with col2:
                 st.metric("Failed (24h)", failed_recent)
         st.markdown(
-            "**Next step:** start a sermon from the **🎵 New Sermon** page "
+            "**Next step:** start a sermon from the **New Sermon** page "
             "and its progress will appear here."
         )
 
@@ -207,7 +207,7 @@ def show_failed_jobs_compact(job_queue):
     failed_jobs = job_queue.get_all_jobs(JobStatus.FAILED)
 
     if not failed_jobs:
-        st.success("No failed jobs! 🎉")
+        st.success("No failed jobs!")
         return
 
     # Show most recent first
@@ -233,7 +233,7 @@ def show_cancelled_jobs_compact(job_queue):
 
 def show_queue_statistics_compact(job_queue):
     """Show detailed queue statistics in compact format"""
-    st.markdown("### 📊 Queue Statistics")
+    st.markdown("### Queue Statistics")
 
     all_jobs = job_queue.get_all_jobs()
 
@@ -281,27 +281,15 @@ def show_queue_statistics_compact(job_queue):
 
 def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=False):
     """Show a compact job card with essential details"""
-    # Status icon mapping
-    status_icons = {
-        JobStatus.QUEUED: "⏳",
-        JobStatus.RUNNING: "🔄",
-        JobStatus.COMPLETED: "✅",
-        JobStatus.FAILED: "❌",
-        JobStatus.CANCELLED: "🚫",
-        JobStatus.PAUSED: "⏸️"
-    }
-
     # Map job types to display text
     status_display = str(job.status) if hasattr(job.status, 'value') else str(job.status)
-
-    status_icon = status_icons.get(job.status, "❓")
 
     with st.container():
         # Compact header in single row
         col1, col2, col3, col4 = st.columns([4, 2, 2, 2])
 
         with col1:
-            st.markdown(f"**{status_icon} {job.title}**")
+            st.markdown(f"**{job.title}**")
             st.caption(f"{job.description}")
 
         with col2:
@@ -344,7 +332,7 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
 
                 with action_col1:
                     if job.can_cancel and job.status in [JobStatus.QUEUED, JobStatus.RUNNING]:
-                        if st.button("🚫", key=f"cancel_{job.id}", help="Cancel Job"):
+                        if st.button("Cancel", key=f"cancel_{job.id}", help="Cancel Job"):
                             if job_queue.cancel_job(job.id):
                                 _set_flash("Job cancelled")
                             else:
@@ -357,7 +345,7 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                         and job.status
                         in [JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.COMPLETED]
                     ):
-                        if st.button("🔄", key=f"retry_{job.id}", help="Retry Job"):
+                        if st.button("Retry", key=f"retry_{job.id}", help="Retry Job"):
                             if job_queue.retry_job(job.id):
                                 _set_flash("Job queued for retry")
                             else:
@@ -391,7 +379,7 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
 
                 with detail_col2:
                     if job.result and not job.result.success:
-                        st.error(f"❌ {job.result.message}")
+                        st.error(job.result.message)
                         if job.result.error:
                             error_text = job.result.error
                             if len(error_text) > 200:
@@ -411,7 +399,7 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                     and job.type == JobType.SERMON_PROCESSING
                 ):
                     st.markdown("---")
-                    st.markdown("**🔄 Retry with Modified Settings**")
+                    st.markdown("**Retry with Modified Settings**")
                     params = job.parameters or {}
                     form_data = params.get('form_data', {})
 
@@ -461,7 +449,7 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                         )
 
                     if st.button(
-                        "🔄 Retry with These Settings", type="primary",
+                        "Retry with These Settings", type="primary",
                         key=f"retry_modified_{job.id}",
                     ):
                         new_params = dict(params)

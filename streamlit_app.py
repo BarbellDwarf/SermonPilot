@@ -61,7 +61,6 @@ from ui.shared_navigation import render_sidebar_extras  # noqa: E402
 # Configure Streamlit page
 st.set_page_config(
     page_title="SermonPilot",
-    page_icon="🎵",
     layout="wide",
     initial_sidebar_state="expanded",
     menu_items={
@@ -210,7 +209,7 @@ def main():
     ensure_metadata_cache_refresh()
 
     landing = st.Page(
-        _dashboard_landing, title="Dashboard", icon="📊", visibility="hidden"
+        _dashboard_landing, title="Dashboard", visibility="hidden"
     )
 
     pg = st.navigation({

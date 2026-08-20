@@ -601,12 +601,12 @@ def get_status_manager(config: dict[str, Any] | None = None) -> SystemStatusMana
 
     return _status_manager
 
-def get_status_emoji(status: str) -> str:
-    """Get emoji for status"""
+def get_status_label(status: str) -> str:
+    """Get text label for status"""
     status_map = {
-        'ok': '✅',
-        'warning': '⚠️',
-        'error': '❌',
-        'processing': '⏳'
+        'ok': 'OK',
+        'warning': 'Warning',
+        'error': 'Error',
+        'processing': 'Processing'
     }
-    return status_map.get(status, '❓')
+    return status_map.get(status, 'Unknown')
