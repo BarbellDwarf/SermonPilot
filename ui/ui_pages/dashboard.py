@@ -202,7 +202,7 @@ def show_setup_guide():
     with col2:
         st.link_button(
             "📖 View Documentation",
-            "https://github.com/BarbellDwarf/SermonPilot#readme",
+            "https://github.com/BarbellDwarf/SermonPilot/tree/master/docs",
             width='stretch',
         )
 
