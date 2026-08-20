@@ -2,7 +2,7 @@
 
 ## Overview
 
-SermonPilot now supports flexible LLM configuration with both primary and fallback providers. You can easily switch between **6 major LLM providers** with dedicated provider types: OpenAI, Anthropic (Claude), xAI (Grok), Google (Gemini), Groq, and Ollama for local models. Each provider type comes with sensible defaults and simplified configuration.
+SermonPilot now supports flexible LLM configuration with both primary and fallback providers. You can easily switch between **7 major LLM providers** with dedicated provider types: OpenAI, Anthropic (Claude), xAI (Grok), Google (Gemini), Groq, OpenRouter, and Ollama for local models. Each provider type comes with sensible defaults and simplified configuration.
 
 ## New Configuration Structure
 
@@ -12,7 +12,7 @@ SermonPilot now supports flexible LLM configuration with both primary and fallba
 llm:
   # Primary LLM settings
   primary:
-    provider: "ollama"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
+    provider: "ollama"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq", "openrouter"
     ollama:
       host: "http://localhost:11434"
       model: "llama3.1:8b"
@@ -36,7 +36,7 @@ llm:
   # Fallback LLM settings (used if primary fails)
   fallback:
     enabled: true
-    provider: "openai"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
+    provider: "openai"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq", "openrouter"
     ollama:
       host: "http://localhost:11434"
       model: "llama2"
@@ -98,6 +98,21 @@ llm:
       api_key: "gsk_..."
       model: "llama-3.1-70b-versatile"  # Default, can be overridden
 ```
+
+### OpenRouter
+```yaml
+llm:
+  primary:
+    provider: "openrouter"
+    openrouter:
+      api_key: "sk-or-..."
+      model: "openai/gpt-4o-mini"  # Default, can be overridden
+      # base_url defaults to https://openrouter.ai/api/v1
+```
+
+OpenRouter's default model is `openai/gpt-4o-mini` and its base URL is
+`https://openrouter.ai/api/v1`. Set `OPENROUTER_API_KEY` in your `.env` or
+provide `api_key` directly in the config.
 
 ### Local/Self-hosted OpenAI API
 ```yaml
@@ -207,9 +222,9 @@ llm:
 
 ## Features Implemented
 
-✅ **Dedicated Provider Types**: Native support for 6 major LLM providers with intuitive configuration
+✅ **Dedicated Provider Types**: Native support for 7 major LLM providers with intuitive configuration
 
-✅ **Top LLM Provider Support**: OpenAI, Anthropic (Claude), xAI (Grok), Google (Gemini), Groq, and Ollama
+✅ **Top LLM Provider Support**: OpenAI, Anthropic (Claude), xAI (Grok), Google (Gemini), Groq, OpenRouter, and Ollama
 
 ✅ **Smart Defaults**: Each provider comes with sensible default models and endpoints
 
@@ -278,12 +293,25 @@ When debug is disabled, the script will only show essential progress messages an
 
 ## Testing
 
-Run `python tests/test_llm_manager.py` to test your configuration:
+Verify that your configured providers initialize correctly:
 
-- Verifies both providers are configured correctly
-- Tests the fallback mechanism
-- Shows which provider will be used
-- Tests custom endpoint configuration
+```bash
+python -c "
+import sys, yaml
+sys.path.insert(0, 'src')
+from llm_manager import LLMManager
+config = yaml.safe_load(open('config.yaml'))
+manager = LLMManager(config)
+print('Primary:', manager.primary_provider)
+print('Fallback:', manager.fallback_provider)
+print('Validator:', manager.validator_provider)
+"
+```
+
+This checks that both providers are configured correctly, that the fallback
+mechanism resolves, and shows which provider will be used. There is no
+dedicated LLM unit test file; the provider wiring is exercised through the
+CLI and the web UI.
 
 ## Usage
 

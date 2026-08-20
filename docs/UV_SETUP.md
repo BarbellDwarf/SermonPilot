@@ -90,7 +90,7 @@ uv pip sync requirements/requirements.txt
 ```bash
 # Clone and setup
 git clone <repo-url>
-cd sa-updater
+cd SermonPilot
 uv venv --python 3.11
 .venv\Scripts\activate  # Windows
 uv pip install -r requirements/requirements.txt
