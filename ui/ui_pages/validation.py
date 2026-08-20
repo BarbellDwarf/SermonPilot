@@ -9,11 +9,28 @@ import csv
 import datetime as dt
 import io
 import json
+from typing import Any
 
 import streamlit as st
 
 from src.sermon_paths import read_metadata
 from ui.pages import jobs
+
+
+def _parse_validated_at(value: Any) -> dt.datetime | None:
+    """Parse a validated_at value into a datetime, or None if unparseable"""
+    if isinstance(value, dt.datetime):
+        return value
+    if not value:
+        return None
+    try:
+        return dt.datetime.strptime(str(value)[:19], '%Y-%m-%d %H:%M:%S')
+    except ValueError:
+        pass
+    try:
+        return dt.datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
 
 
 def show_validation():
@@ -23,6 +40,10 @@ def show_validation():
     if not st.session_state.config:
         st.error("❌ Configuration not loaded. Please check the Settings page first.")
         return
+
+    flash = st.session_state.pop('validation_flash', None)
+    if flash:
+        st.success(flash)
 
     # Validation tabs
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -420,7 +441,7 @@ def start_background_validation(scope: str, options: dict):
                     sermons = sermons[:max_sermons]
 
                 sermon_ids = [
-                    str(sermon['sermonID']) for sermon in sermons if sermon.get('sermonID')
+                    str(sermon.get('sermonID')) for sermon in sermons if sermon.get('sermonID')
                 ]
 
                 if not sermon_ids:
@@ -449,7 +470,6 @@ def start_background_validation(scope: str, options: dict):
                             return meta.get("sermon_id") or meta.get("sermonID") or sermon_dir.name
                         return sermon_dir.name
 
-                    [d.name for d in discover_sermons(output_dir)]
                     sermon_ids = [_sermon_id_from_dir(d) for d in discover_sermons(output_dir)]
 
                     if not sermon_ids:
@@ -469,9 +489,11 @@ def start_background_validation(scope: str, options: dict):
                 from ui_processor import get_processor
                 processor = get_processor()
                 failed_results = [
-                    r for r in processor.get_validation_results() if not r['is_valid']
+                    r for r in processor.get_validation_results() if not r.get('is_valid')
                 ]
-                sermon_ids = [r['sermon_id'] for r in failed_results]
+                sermon_ids = [
+                    str(r.get('sermon_id')) for r in failed_results if r.get('sermon_id')
+                ]
 
                 if not sermon_ids:
                     st.info("✅ No previously failed descriptions found!")
@@ -541,16 +563,6 @@ def start_background_validation(scope: str, options: dict):
         st.error(f"❌ Failed to start validation job: {e}")
 
 
-def start_real_validation(scope: str, options: dict):
-    """Start real validation process with progress tracking
-    (DEPRECATED - use start_background_validation)"""
-    st.warning(
-        "⚠️ This function is deprecated. Validation now runs in the background. "
-        "Redirecting to background validation..."
-    )
-    start_background_validation(scope, options)
-
-
 def show_current_validation_status():
     """Show current validation status and recent results"""
     try:
@@ -564,11 +576,13 @@ def show_current_validation_status():
         if validation_status:
             st.markdown("##### 🔄 Active Validations")
 
-            for status in validation_status[:5]:  # Show recent 5
+            for item in validation_status[:5]:  # Show recent 5
                 col1, col2, col3, col4 = st.columns([2, 1, 2, 2])
+                item_status = item.get('status', 'unknown')
+                progress = item.get('progress') or 0
 
                 with col1:
-                    st.text(f"Sermon {status['sermon_id']}")
+                    st.text(f"Sermon {item.get('sermon_id', 'Unknown')}")
 
                 with col2:
                     status_icon = {
@@ -576,52 +590,75 @@ def show_current_validation_status():
                         'completed': '🟢',
                         'failed': '🔴',
                         'starting': '🔵'
-                    }.get(status['status'], '⚪')
-                    st.text(f"{status_icon} {status['status']}")
+                    }.get(item_status, '⚪')
+                    st.text(f"{status_icon} {item_status}")
 
                 with col3:
-                    if status['status'] == 'processing':
-                        st.progress(status['progress'] / 100.0)
+                    if item_status == 'processing':
+                        st.progress(progress / 100.0)
                     else:
-                        st.text(f"{status['progress']:.1f}%")
+                        st.text(f"{progress:.1f}%")
 
                 with col4:
-                    st.text(status['message'] or '')
+                    st.text(item.get('message') or '')
+
+        # Capture the most recent completed validation job result
+        from job_queue import JobStatus, JobType, get_job_queue
+
+        job_queue = get_job_queue()
+        completed_jobs = [
+            job for job in job_queue.get_all_jobs(status_filter=JobStatus.COMPLETED)
+            if job.type == JobType.VALIDATION and job.result and job.result.data
+        ]
+        if completed_jobs:
+            latest = max(
+                completed_jobs,
+                key=lambda job: job.completed_at or job.created_at
+            )
+            st.session_state['last_validation_results'] = latest.result.data
 
         # Show recent validation results if available
         if 'last_validation_results' in st.session_state:
             st.markdown("##### 📊 Latest Validation Results")
             results = st.session_state['last_validation_results']
 
+            total = results.get('total', 0)
+            valid = results.get('valid', 0)
+            invalid = results.get('invalid', 0)
+            errors = results.get('errors', 0)
+
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.metric("Total Validated", results['total'])
+                st.metric("Total Validated", total)
             with col2:
                 st.metric(
-                    "Valid", results['valid'],
-                    f"{results['valid']/results['total']*100:.1f}%",
+                    "Valid", valid,
+                    f"{valid/total*100:.1f}%" if total else "0.0%",
                 )
             with col3:
                 st.metric(
-                    "Invalid", results['invalid'],
-                    f"{results['invalid']/results['total']*100:.1f}%",
+                    "Invalid", invalid,
+                    f"{invalid/total*100:.1f}%" if total else "0.0%",
                 )
             with col4:
-                st.metric("Errors", results['errors'])
+                st.metric("Errors", errors)
 
             # Show detailed results
-            if results.get('details'):
+            details = results.get('details') or []
+            if details:
                 st.markdown("##### 📋 Detailed Results")
 
                 details_df = []
-                for detail in results['details']:
+                for detail in details:
                     details_df.append({
-                        'Sermon ID': detail['sermon_id'],
+                        'Sermon ID': detail.get('sermon_id', 'Unknown'),
                         'Status': (
                             '✅ Valid' if detail.get('is_valid')
                             else '❌ Invalid' if 'is_valid' in detail else '⚠️ Error'
                         ),
-                        'Score': f"{detail.get('score', 0):.2f}" if 'score' in detail else 'N/A',
+                        'Score': (
+                            f"{detail.get('score', 0):.2f}" if 'score' in detail else 'N/A'
+                        ),
                         'Reason': detail.get('reason', detail.get('error', ''))
                     })
 
@@ -662,8 +699,22 @@ def show_validation_trends():
             options=["Last 7 Days", "Last 30 Days", "Last 90 Days", "All Time"]
         )
 
-        # Filter results by period if we have datetime data
-        filtered_results = all_results  # For now, show all results
+        # Filter results by period using validated_at
+        period_days = {
+            "Last 7 Days": 7,
+            "Last 30 Days": 30,
+            "Last 90 Days": 90,
+        }.get(period)
+
+        if period_days is None:
+            filtered_results = all_results
+        else:
+            cutoff = dt.datetime.now() - dt.timedelta(days=period_days)
+            filtered_results = [
+                r for r in all_results
+                if (validated := _parse_validated_at(r.get('validated_at'))) is None
+                or validated >= cutoff
+            ]
 
         if filtered_results:
             # Basic statistics
@@ -740,14 +791,12 @@ def show_validation_trends():
 
                 activity_data = []
                 for result in recent_validations:
+                    validated = _parse_validated_at(result.get('validated_at'))
                     activity_data.append({
                         'Sermon ID': result.get('sermon_id', 'Unknown'),
                         'Score': f"{result.get('score', 0):.2f}",
                         'Status': '✅ Valid' if result.get('is_valid', False) else '❌ Invalid',
-                        'Date': (
-                            result.get('validated_at', 'Unknown')[:10]
-                            if result.get('validated_at') else 'Unknown'
-                        )
+                        'Date': validated.strftime('%Y-%m-%d') if validated else 'Unknown'
                     })
 
                 if activity_data:
@@ -793,12 +842,14 @@ def mark_for_manual_review(sermon_id):
         from database import SermonRepository, get_db
         db = get_db()
         db.add_manual_review(sermon_id, reason="Marked from validation page")
-        st.success(f"📝 Sermon {sermon_id} added to manual review queue")
-        # Store selected sermon and navigate to library
+        # Store selected sermon and feedback, then navigate to library
         repo = SermonRepository()
         sermon = repo.get_sermon(sermon_id)
         if sermon:
             st.session_state.selected_sermon = sermon
+        st.session_state.validation_flash = (
+            f"Sermon {sermon_id} added to manual review queue"
+        )
         st.switch_page("ui/ui_pages/library.py")
     except Exception as e:
         st.error(f"❌ Error marking for manual review: {e}")
@@ -811,8 +862,10 @@ def regenerate_high_priority():
         processor = get_processor()
         all_results = processor.get_validation_results()
         failed_ids = [
-            r['sermon_id'] for r in all_results
-            if not r.get('is_valid', True) and r.get('score', 1.0) < 0.4
+            str(r.get('sermon_id')) for r in all_results
+            if r.get('sermon_id')
+            and not r.get('is_valid', True)
+            and r.get('score', 1.0) < 0.4
         ]
         if not failed_ids:
             st.info("No high-priority failures found")
@@ -913,32 +966,6 @@ def generate_validation_report():
     except Exception as e:
         st.error(f"❌ Error generating report: {e}")
 
-def start_batch_validation():
-    """Start batch validation process"""
-    st.session_state.batch_validation_running = True
-    st.success("▶️ Batch validation started")
-
-def preview_validation_selection():
-    """Preview what will be validated"""
-    st.info("📋 Preview: 45 sermons will be validated based on current criteria")
-
-def save_validation_template():
-    """Save current settings as template"""
-    st.success("💾 Validation template saved")
-
-def show_batch_validation_progress():
-    """Show batch validation progress"""
-    st.markdown("#### 🔄 Batch Validation Progress")
-
-    progress = st.session_state.get('batch_validation_progress', 0.3)
-    st.progress(progress)
-    st.text("Validating: 15/50 sermons completed")
-
-    # Mock completion
-    if progress >= 1.0:
-        st.session_state.batch_validation_running = False
-        st.success("✅ Batch validation completed!")
-
 def show_manual_review():
     """Display and manage the manual review queue"""
     st.markdown("### 📝 Manual Review Queue")
@@ -967,30 +994,32 @@ def show_manual_review():
             """)
             return
 
-        for review in reviews:
+        for i, review in enumerate(reviews):
+            review_status = review.get('status') or 'pending'
+            review_id = review.get('id', i)
             with st.expander(
-                f"{'🟡' if review['status'] == 'pending' else '🟢'} "
-                f"Sermon {review['sermon_id']} — {review['status'].title()}"
+                f"{'🟡' if review_status == 'pending' else '🟢'} "
+                f"Sermon {review.get('sermon_id', 'Unknown')} — {review_status.title()}"
             ):
                 col1, col2 = st.columns([3, 1])
                 with col1:
                     st.markdown(f"**Reason:** {review.get('reason', 'No reason')}")
                     st.markdown(f"**Created:** {review.get('created_at', 'Unknown')[:19]}")
                     if review.get('notes'):
-                        st.markdown(f"**Review Notes:** {review['notes']}")
+                        st.markdown(f"**Review Notes:** {review.get('notes')}")
                 with col2:
-                    sid = review['sermon_id']
+                    sid = review.get('sermon_id', 'Unknown')
                     st.markdown("**Actions:**")
-                    if st.button("🔍 Open in Library", key=f"open_review_{review['id']}"):
+                    if st.button("🔍 Open in Library", key=f"open_review_{review_id}"):
                         from database import SermonRepository
                         repo = SermonRepository()
                         sermon = repo.get_sermon(sid)
                         if sermon:
                             st.session_state.selected_sermon = sermon
                         st.switch_page("ui/ui_pages/library.py")
-                    if review['status'] == 'pending':
-                        if st.button("✅ Mark Reviewed", key=f"mark_reviewed_{review['id']}"):
-                            db.update_manual_review_status(review['id'], 'reviewed')
+                    if review_status == 'pending':
+                        if st.button("✅ Mark Reviewed", key=f"mark_reviewed_{review_id}"):
+                            db.update_manual_review_status(review_id, 'reviewed')
                             st.rerun()
 
     except Exception as e:
