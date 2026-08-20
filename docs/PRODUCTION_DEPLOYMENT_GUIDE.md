@@ -1,9 +1,9 @@
 # Production Deployment Guide
 
 ## Overview
-This guide addresses production readiness based on comprehensive testing framework analysis.
-
-**Generated**: 2025-09-07 01:41:34
+This guide covers the steps needed to run SermonPilot in production: real
+credentials, environment configuration, the systemd service, and a reverse
+proxy.
 
 ## ⚠️ Production Safety Checklist
 
@@ -44,9 +44,9 @@ sermonaudio:
 
 #### 1. Code Quality Improvements
 Large files should be refactored for maintainability:
-- `ui/ui_pages/settings.py` (1,879 lines) - Break into smaller components
-- `ui/ui_pages/analytics.py` (1,360 lines) - Extract chart components
-- `ui/ui_pages/library.py` (817 lines) - Separate data and UI logic
+- `ui/ui_pages/settings.py` (2,117 lines) - Break into smaller components
+- `ui/ui_pages/analytics.py` (1,421 lines) - Extract chart components
+- `ui/ui_pages/library.py` (1,438 lines) - Separate data and UI logic
 
 #### 2. Logging and Monitoring
 Implement production logging:
@@ -62,43 +62,49 @@ Implement production logging:
 ## 🏗️ Deployment Architecture
 
 ### Recommended Stack
-- **Application**: Streamlit with production WSGI server
-- **Database**: ChromaDB for vector storage
-- **Caching**: Redis for session and computation caching
-- **Monitoring**: Application and system metrics collection
+- **Application**: Streamlit served by the Streamlit server (no WSGI layer)
+- **Database**: SQLite (`sermon_processor.db`) for the UI; ChromaDB for the
+  analytics vector store
+- **Monitoring**: system metrics collected by `ui/performance_monitor.py`
 
 ### Environment Setup
 
 #### 1. Production Environment Variables
+Copy `.env.example` to `.env` and fill in real values:
+
 ```bash
 # Application Configuration
-APP_ENV=production
+ENVIRONMENT=production
 DEBUG=false
-LOG_LEVEL=info
 
-# API Configuration  
-OPENAI_API_KEY=your-production-openai-key
+# API Configuration
 SERMONAUDIO_API_KEY=your-production-sermonaudio-key
 SERMONAUDIO_BROADCASTER_ID=your-broadcaster-id
+OPENAI_API_KEY=your-production-openai-key
 
-# Database Configuration
-CHROMADB_PATH=/var/lib/sermonaudio/vector_db
-CHROMADB_HOST=localhost
-CHROMADB_PORT=8000
+# Optional password protection for the UI
+APP_PASSWORD=your-strong-password
+HOST_BIND=0.0.0.0
+```
 
-# Security
-SESSION_SECRET_KEY=your-random-secret-key
-ALLOWED_HOSTS=your-domain.com,www.your-domain.com
+`config.yaml` references these variables with `${VAR}` substitution:
+
+```yaml
+api_key: "${SERMONAUDIO_API_KEY}"
+broadcaster_id: "${SERMONAUDIO_BROADCASTER_ID}"
 ```
 
 #### 2. Production Dependencies
 ```bash
-# Install production dependencies
-pip install -r requirements.txt
-pip install -r ui/requirements-ui.txt
+# Install from the manifest (single source of truth)
+uv sync
+
+# Or install the derived requirements files
+uv pip install -r requirements/requirements.txt
+uv pip install -r ui/requirements-ui.txt
 
 # For GPU acceleration (optional)
-pip install -r requirements/requirements-gpu.txt
+uv pip install -r requirements/requirements-gpu.txt --index-strategy unsafe-best-match
 ```
 
 ### 3. System Configuration
@@ -113,10 +119,10 @@ After=network.target
 
 [Service]
 Type=simple
-User=sermonaudio
-WorkingDirectory=/opt/sermonaudio-processor
-Environment=PYTHONPATH=/opt/sermonaudio-processor
-ExecStart=/opt/sermonaudio-processor/.venv/bin/python -m streamlit run streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+User=sermonapp
+WorkingDirectory=/opt/sermon-pilot
+Environment=PYTHONPATH=/opt/sermon-pilot
+ExecStart=/opt/sermon-pilot/.venv/bin/python -m streamlit run streamlit_app.py --server.port 8501 --server.address 0.0.0.0
 Restart=always
 RestartSec=10
 
@@ -196,10 +202,10 @@ server {
 ## 📞 Support and Troubleshooting
 
 ### Common Issues
-1. **Import Errors**: See `docs/IMPORT_RESOLUTION_GUIDE.md`
+1. **Import Errors**: See `docs/` and the project README for setup steps
 2. **Configuration Issues**: Verify environment variables and config.yaml
 3. **API Failures**: Check API keys and quota limits
-4. **Performance Issues**: Monitor resource usage and logs
+4. **Performance Issues**: Monitor resource usage via the Analytics → Performance tab
 
 ### Getting Help
 - Review documentation in `docs/` directory

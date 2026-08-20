@@ -13,12 +13,13 @@ A modern Streamlit web interface for the SermonAudio AI audio processing pipelin
 
 ## Installation
 
-1. Install core project dependencies:
+1. Install the core project dependencies from the repo root:
    ```bash
-   pip install -r ../requirements.txt
+   cd ..
+   uv pip install -r requirements/requirements.txt
    ```
 
-2. Install UI-specific dependencies:
+2. Install UI-specific dependencies (from this directory):
    ```bash
    pip install -r requirements-ui.txt
    ```
@@ -27,11 +28,12 @@ A modern Streamlit web interface for the SermonAudio AI audio processing pipelin
 
 1. Ensure you have a valid `config.yaml` in the project root:
    ```bash
-   cp ../config.example.yaml ../config.yaml
+   cd ..
+   cp config/config.example.yaml config.yaml
    # Edit config.yaml with your settings
    ```
 
-2. Start the Streamlit application:
+2. Start the Streamlit application from the repo root:
    ```bash
    streamlit run streamlit_app.py
    ```
@@ -43,23 +45,34 @@ A modern Streamlit web interface for the SermonAudio AI audio processing pipelin
 ### Project Structure
 
 ```
+streamlit_app.py        # Main application entry point (repo root)
 ui/
-├── streamlit_app.py        # Main application entry point
-├── pages/                  # Individual page implementations
+├── pages.py            # Page registry: st.Page definitions for all pages
+├── ui_pages/           # Individual page implementations
 │   ├── dashboard.py        # Dashboard with activity and stats
-│   ├── new_sermon.py       # New sermon processing workflow
+│   ├── new_sermon_enhanced.py  # New sermon processing workflow
+│   ├── library.py          # Sermon library and metadata management
+│   ├── batch_update.py     # Batch processing
+│   ├── validation.py       # Description validation
+│   ├── jobs.py             # Background job monitoring
+│   ├── analytics.py        # Analytics dashboard
+│   ├── sermon_import.py    # Filesystem import
 │   ├── settings.py         # Configuration management
-│   └── ...                 # Additional pages
-├── requirements-ui.txt     # UI-specific dependencies
-└── README.md              # This file
+│   └── config_management.py  # YAML/SQL config management
+├── database.py         # SQLite models and repository
+├── job_queue.py        # Background job system
+├── job_executors.py    # Job execution
+├── ui_processor.py     # UI processing interface
+├── requirements-ui.txt # UI-specific dependencies
+└── README.md           # This file
 ```
 
 ### Adding New Pages
 
-1. Create a new file in `pages/` directory
+1. Create a new file in `ui/ui_pages/` (e.g., `ui/ui_pages/my_page.py`)
 2. Implement a main function (e.g., `show_my_page()`)
-3. Add the page to the navigation in `streamlit_app.py`
-4. Import and call the page function
+3. Register the page in `ui/pages.py` with an `st.Page` entry pointing at the new file
+4. Import and call the page function from `streamlit_app.py` if it needs explicit wiring
 
 ### Integration with CLI
 

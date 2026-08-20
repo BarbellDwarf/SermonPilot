@@ -6,7 +6,7 @@ Automated sermon processing tool that enhances audio (DeepFilterNet/Clear), tran
 ## Architecture
 
 ```
-sermon_updater.py        — Core CLI processing engine (4481 lines)
+sermon_updater.py        — Core CLI processing engine (4289 lines)
 streamlit_app.py         — Streamlit UI entry point
 ui/
 ├── database.py          — SQLite models: SermonDatabase, SermonRepository
@@ -35,7 +35,7 @@ sermon_processor.db          — SQLite database (UI persistence)
 - **Python 3.10+**, uses `from __future__ import annotations` style
 - **Type hints** everywhere (`dict[str, Any]` not `dict`)
 - **Black** formatting (line-length=100), **Ruff** linting
-- **Pytest** for tests (`testpaths = ['tests']` in pyproject.toml; the suite is being re-enabled as part of the v1.6.0 review)
+- **Pytest** for tests (`testpaths = ['tests']` in pyproject.toml); `tests/conftest.py` points the app at a throwaway config and database (`SA_UPDATER_CONFIG`, `DATABASE_URL`), stubs the `sermonaudio` package when missing, and skips `heavy`-marked tests unless `--run-heavy` is passed
 - **ffmpeg/ffprobe** for audio duration detection and video muxing
 
 ## Database (SQLite — `sermon_processor.db`)
@@ -54,19 +54,19 @@ Key tables: `sermons` (id TEXT PK, title, speaker, recorded_date, status TEXT DE
 
 | Action | File | Line |
 |--------|------|------|
-| `process_new_sermon()` | `sermon_updater.py` | 1355 |
-| Dry run early return (now saves to DB) | `sermon_updater.py` | ~1688 |
-| Database save (normal) | `sermon_updater.py` | ~1947 |
-| Database save (dry run) | `sermon_updater.py` | ~1779 (in dry run block) |
-| `publish_dry_run_sermon()` (push draft → API) | `sermon_updater.py` | 2037 |
-| `get_sermon_transcript()` (fetch from API) | `sermon_updater.py` | 312 |
-| Library page data fetch | `ui/ui_pages/library.py` | 436 (calls `repo.get_all_sermons()`) |
-| Library "Generate" button (fetches transcript from API if missing locally) | `ui/ui_pages/library.py` | 119 (`generate_ai_content`) |
-| `SermonRepository.save_sermon()` | `ui/database.py` | 632 |
-| `SermonRepository.get_all_sermons()` | `ui/database.py` | 918 |
-| Job executor | `ui/job_executors.py` | 283 (`execute_sermon_processing_job`) |
+| `process_new_sermon()` | `sermon_updater.py` | 1348 |
+| Dry run early return (now saves to DB) | `sermon_updater.py` | 1721 |
+| Database save (normal) | `sermon_updater.py` | 2005 |
+| Database save (dry run) | `sermon_updater.py` | 1838 (in dry run block) |
+| `publish_dry_run_sermon()` (push draft → API) | `sermon_updater.py` | 2082 |
+| `get_sermon_transcript()` (fetch from API) | `sermon_updater.py` | 304 |
+| Library page data fetch | `ui/ui_pages/library.py` | 514 (calls `repo.get_all_sermons(limit=1001)`) |
+| Library "Generate" button (fetches transcript from API if missing locally) | `ui/ui_pages/library.py` | 157 (`generate_ai_content`) |
+| `SermonRepository.save_sermon()` | `ui/database.py` | 778 |
+| `SermonRepository.get_all_sermons()` | `ui/database.py` | 1066 |
+| Job executor | `ui/job_executors.py` | 327 (`execute_sermon_processing_job`) |
 
-Line numbers verified against master (ec5965e). Parallel review tickets (T-CLI, T-PERSIST, T-SERIES) may shift them; re-verify at integration.
+Line numbers verified against master (41c17bd) after the v1.6.0 stack merged.
 
 ## Important Patterns
 
@@ -75,10 +75,10 @@ Line numbers verified against master (ec5965e). Parallel review tickets (T-CLI, 
 - **Result dict keys:** `success`, `sermon_id`, `title`, `description`, `hashtags`, `enhanced_audio_path`, `transcript_length`, `transcript`, `error`, `output_dir`
 - **Config access:** `config.get('key', default)` — YAML config loaded at module level
 - **Import pattern:** `from ui.database import SermonRepository` used inline (inside function body) in `sermon_updater.py` to avoid circular imports
-- **Push dual behavior:** `push_sermon_metadata_to_api()` in `library.py:26` detects `status == 'draft'` → calls `publish_dry_run_sermon()` to create+upload on SermonAudio; otherwise updates existing sermon metadata
-- **Auto-refresh in Jobs:** `show_jobs()` in `ui/ui_pages/jobs.py` polls with `time.sleep(2)` + `st.rerun()` while running/queued jobs exist (line ~72); the job list renders inside an `@st.fragment` (`_render_job_list`, line ~84), so per-job actions rerun only the fragment
-- **Transcript fallback:** `generate_ai_content()` in `library.py:119` tries local transcript first, falls back to `sermon_updater.get_sermon_transcript()` (fetches from SermonAudio API via `transcript.downloadURL`)
-- **Transcription backends:** `transcription.py` now includes faster-whisper (CTranslate2) backend as default with fallback to standard whisper; supports both AMD ROCm and NVIDIA CUDA via device detection
+- **Push dual behavior:** `push_sermon_metadata_to_api()` in `library.py:50` detects `status == 'draft'` → calls `publish_dry_run_sermon()` to create+upload on SermonAudio; `status == 'error'` re-uploads local media; otherwise updates existing sermon metadata
+- **Auto-refresh in Jobs:** the Active tab in `ui/ui_pages/jobs.py` renders inside an `@st.fragment(run_every=2.0)` (`_render_active_tab`, line 131), so running/queued job lists update without a full page rerun; the sidebar "Refresh" button calls `st.rerun()`
+- **Transcript fallback:** `generate_ai_content()` in `library.py:157` tries the SermonAudio transcript first via `sermon_updater.get_sermon_transcript()`, falls back to the local transcript
+- **Transcription backends:** `transcription.py` supports whisper-local (default in `config.yaml`), faster-whisper (CTranslate2, suggested by `.env.example`), OpenAI API, and OpenRouter backends; device detection supports AMD ROCm and NVIDIA CUDA
 
 ## Versioning & Release Process
 
