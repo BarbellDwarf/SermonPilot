@@ -14,7 +14,7 @@
 # GPU-specific overrides for PyTorch ecosystem
 torch==2.1.1+cu121
 torchaudio==2.1.1+cu121
-torchvision==0.16.1+cu121
+torchvision==0.28.0+rocm7.1
 
 # NVIDIA GPU management and monitoring
 nvidia-ml-py3>=7.352.0
