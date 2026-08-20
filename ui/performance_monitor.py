@@ -17,11 +17,11 @@ logger = logging.getLogger(__name__)
 
 class PerformanceMonitor:
     """Monitors system performance and processing metrics"""
-    
+
     def __init__(self, db_path: str = "sermon_processor.db"):
         self.db_path = db_path
         self.start_time = time.time()
-        
+
     def get_system_metrics(self) -> dict:
         """Get real-time system resource metrics"""
         try:
@@ -29,21 +29,21 @@ class PerformanceMonitor:
             cpu_percent = psutil.cpu_percent(interval=1)
             cpu_count = psutil.cpu_count()
             cpu_freq = psutil.cpu_freq()
-            
+
             # Memory metrics
             memory = psutil.virtual_memory()
             swap = psutil.swap_memory()
-            
+
             # Disk metrics
             disk = psutil.disk_usage('/')
             disk_io = psutil.disk_io_counters()
-            
+
             # Network metrics
             network = psutil.net_io_counters()
-            
+
             # GPU metrics (if available)
             gpu_metrics = self._get_gpu_metrics()
-            
+
             return {
                 'cpu': {
                     'usage_percent': cpu_percent,
@@ -61,8 +61,14 @@ class PerformanceMonitor:
                     'total_gb': disk.total / (1024**3),
                     'free_gb': disk.free / (1024**3),
                     'used_percent': (disk.used / disk.total) * 100,
-                    'read_mb_per_sec': (disk_io.read_bytes / (1024**2)) / max(1, time.time() - self.start_time) if disk_io else 0,
-                    'write_mb_per_sec': (disk_io.write_bytes / (1024**2)) / max(1, time.time() - self.start_time) if disk_io else 0
+                    'read_mb_per_sec': (
+                        (disk_io.read_bytes / (1024**2)) / max(1, time.time() - self.start_time)
+                        if disk_io else 0
+                    ),
+                    'write_mb_per_sec': (
+                        (disk_io.write_bytes / (1024**2)) / max(1, time.time() - self.start_time)
+                        if disk_io else 0
+                    )
                 },
                 'network': {
                     'bytes_sent_mb': network.bytes_sent / (1024**2) if network else 0,
@@ -73,11 +79,11 @@ class PerformanceMonitor:
                 'gpu': gpu_metrics,
                 'timestamp': time.time()
             }
-            
+
         except Exception as e:
             logger.error(f"Error getting system metrics: {e}")
             return self._get_fallback_metrics()
-    
+
     def _get_gpu_metrics(self) -> dict:
         """Get GPU metrics if available"""
         gpu_info = {
@@ -89,15 +95,15 @@ class PerformanceMonitor:
             'temperature_c': 0,
             'name': 'Not Available'
         }
-        
+
         try:
             # Try NVIDIA GPU first
             result = subprocess.run([
-                'nvidia-smi', 
+                'nvidia-smi',
                 '--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,name',
                 '--format=csv,noheader,nounits'
             ], capture_output=True, text=True, timeout=5)
-            
+
             if result.returncode == 0:
                 lines = result.stdout.strip().split('\n')
                 if lines and lines[0]:
@@ -112,7 +118,10 @@ class PerformanceMonitor:
                             'temperature_c': float(gpu_data[3]),
                             'name': gpu_data[4]
                         })
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError, ValueError):
+        except (
+            subprocess.TimeoutExpired, subprocess.CalledProcessError,
+            FileNotFoundError, ValueError,
+        ):
             # Try PyTorch GPU detection as fallback
             try:
                 import torch
@@ -120,9 +129,11 @@ class PerformanceMonitor:
                     gpu_info.update({
                         'available': True,
                         'name': torch.cuda.get_device_name(0),
-                        'memory_total_gb': torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                        'memory_total_gb': (
+                            torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                        )
                     })
-                    
+
                     # Get memory usage if possible
                     try:
                         memory_allocated = torch.cuda.memory_allocated(0) / (1024**3)
@@ -134,74 +145,76 @@ class PerformanceMonitor:
                         pass
             except ImportError:
                 pass
-        
+
         return gpu_info
-    
+
     def get_processing_metrics(self) -> dict:
         """Get processing performance metrics from database"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
+
             # Get processing status data
             cursor.execute("""
                 SELECT processing_duration, processed_at, quality_score, enhancement_method
-                FROM processing_info 
-                ORDER BY processed_at DESC 
+                FROM processing_info
+                ORDER BY processed_at DESC
                 LIMIT 1000
             """)
             processing_data = cursor.fetchall()
-            
+
             # Get validation results
             cursor.execute("""
                 SELECT is_valid, score, validated_at
-                FROM validation_results 
-                ORDER BY validated_at DESC 
+                FROM validation_results
+                ORDER BY validated_at DESC
                 LIMIT 1000
             """)
             validation_data = cursor.fetchall()
-            
+
             # Get background job data (use background_jobs instead of job_queue)
             cursor.execute("""
                 SELECT status, created_at, started_at, completed_at, type
-                FROM background_jobs 
+                FROM background_jobs
                 WHERE created_at > datetime('now', '-7 days')
                 ORDER BY created_at DESC
             """)
             job_data = cursor.fetchall()
-            
+
             conn.close()
-            
+
             # Calculate metrics based on available data
             total_processed = len(processing_data)
-            
+
             # Since processing_info doesn't have status, we assume all entries are completed
             # (they wouldn't be in the table if processing failed completely)
-            completed_count = total_processed
-            failed_count = 0  # We'd need to check validation_results or other indicators for failures
-            
+
             # Check validation results for actual success/failure rates
             if validation_data:
                 valid_count = sum(1 for row in validation_data if row[0])  # is_valid column
                 invalid_count = len(validation_data) - valid_count
-                success_rate = (valid_count / len(validation_data) * 100) if validation_data else 100
+                success_rate = (
+                    (valid_count / len(validation_data) * 100) if validation_data else 100
+                )
                 error_rate = (invalid_count / len(validation_data) * 100) if validation_data else 0
             else:
                 success_rate = 100 if total_processed > 0 else 0
                 error_rate = 0
-            
+
             # Calculate processing times from processing_duration column
             processing_times = []
             for row in processing_data:
                 if row[0] and row[0] > 0:  # processing_duration (first column)
                     processing_times.append(row[0])  # Duration is already in seconds/minutes
-            
-            avg_processing_time = sum(processing_times) / len(processing_times) if processing_times else 0
-            
+
+            avg_processing_time = (
+                sum(processing_times) / len(processing_times) if processing_times else 0
+            )
+
             # Queue metrics from background_jobs
             pending_jobs = sum(1 for row in job_data if row[0] == 'pending') if job_data else 0
             running_jobs = sum(1 for row in job_data if row[0] == 'running') if job_data else 0
-            
+
             return {
                 'total_processed': total_processed,
                 'success_rate': success_rate,
@@ -211,9 +224,13 @@ class PerformanceMonitor:
                 'queue_length': pending_jobs + running_jobs,
                 'pending_jobs': pending_jobs,
                 'running_jobs': running_jobs,
-                'validation_score_avg': sum(row[1] for row in validation_data if row[1]) / len([row for row in validation_data if row[1]]) if validation_data else 0
+                'validation_score_avg': (
+                    sum(row[1] for row in validation_data if row[1])
+                    / len([row for row in validation_data if row[1]])
+                    if validation_data else 0
+                )
             }
-            
+
         except Exception as e:
             logger.error(f"Error getting processing metrics: {e}")
             return {
@@ -227,38 +244,49 @@ class PerformanceMonitor:
                 'running_jobs': 0,
                 'validation_score_avg': 0
             }
-    
-    def get_optimization_recommendations(self, system_metrics: dict, processing_metrics: dict) -> list[dict]:
+
+    def get_optimization_recommendations(
+        self, system_metrics: dict, processing_metrics: dict
+    ) -> list[dict]:
         """Generate dynamic optimization recommendations based on current metrics"""
         recommendations = []
-        
+
         # CPU recommendations
         if system_metrics['cpu']['usage_percent'] > 80:
             recommendations.append({
                 'title': 'High CPU Usage Detected',
                 'priority': 'High',
-                'description': f'CPU usage is at {system_metrics["cpu"]["usage_percent"]:.1f}%. Consider reducing concurrent processing jobs.',
+                'description': (
+                    f'CPU usage is at {system_metrics["cpu"]["usage_percent"]:.1f}%. '
+                    'Consider reducing concurrent processing jobs.'
+                ),
                 'impact': 'Could improve system responsiveness',
                 'effort': 'Low - adjust processing queue size'
             })
-        
+
         # Memory recommendations
         if system_metrics['memory']['used_percent'] > 85:
             recommendations.append({
                 'title': 'High Memory Usage',
                 'priority': 'High',
-                'description': f'Memory usage is at {system_metrics["memory"]["used_percent"]:.1f}%. Consider clearing cached models.',
+                'description': (
+                    f'Memory usage is at {system_metrics["memory"]["used_percent"]:.1f}%. '
+                    'Consider clearing cached models.'
+                ),
                 'impact': 'Prevent system slowdown and crashes',
                 'effort': 'Low - restart service or clear cache'
             })
-        
+
         # GPU recommendations
         gpu = system_metrics['gpu']
         if not gpu['available'] and processing_metrics['avg_processing_time'] > 5:
             recommendations.append({
                 'title': 'Enable GPU Acceleration',
                 'priority': 'High',
-                'description': 'GPU acceleration not available. Installing CUDA could significantly speed up processing.',
+                'description': (
+                    'GPU acceleration not available. Installing CUDA could significantly '
+                    'speed up processing.'
+                ),
                 'impact': 'Could reduce processing time by 50-70%',
                 'effort': 'Medium - requires CUDA installation'
             })
@@ -266,72 +294,101 @@ class PerformanceMonitor:
             recommendations.append({
                 'title': 'GPU Memory Almost Full',
                 'priority': 'Medium',
-                'description': f'GPU memory usage is at {gpu["memory_percent"]:.1f}%. Consider reducing batch sizes.',
+                'description': (
+                    f'GPU memory usage is at {gpu["memory_percent"]:.1f}%. '
+                    'Consider reducing batch sizes.'
+                ),
                 'impact': 'Prevent GPU memory errors',
                 'effort': 'Low - configuration change'
             })
-        
+
         # Processing performance recommendations
         if processing_metrics['error_rate'] > 10:
             recommendations.append({
                 'title': 'High Error Rate',
                 'priority': 'High',
-                'description': f'Error rate is {processing_metrics["error_rate"]:.1f}%. Check logs for common failure patterns.',
+                'description': (
+                    f'Error rate is {processing_metrics["error_rate"]:.1f}%. '
+                    'Check logs for common failure patterns.'
+                ),
                 'impact': 'Improve processing reliability',
                 'effort': 'Medium - requires investigation'
             })
-        
+
         if processing_metrics['avg_processing_time'] > 10:
             recommendations.append({
                 'title': 'Slow Processing Times',
                 'priority': 'Medium',
-                'description': f'Average processing time is {processing_metrics["avg_processing_time"]:.1f} minutes. Consider optimizing audio enhancement models.',
+                'description': (
+                    f'Average processing time is '
+                    f'{processing_metrics["avg_processing_time"]:.1f} minutes. '
+                    'Consider optimizing audio enhancement models.'
+                ),
                 'impact': 'Faster sermon processing',
                 'effort': 'Medium - model optimization'
             })
-        
+
         # Disk space recommendations
         if system_metrics['disk']['used_percent'] > 90:
             recommendations.append({
                 'title': 'Low Disk Space',
                 'priority': 'High',
-                'description': f'Disk usage is at {system_metrics["disk"]["used_percent"]:.1f}%. Clean up old processed files.',
+                'description': (
+                    f'Disk usage is at {system_metrics["disk"]["used_percent"]:.1f}%. '
+                    'Clean up old processed files.'
+                ),
                 'impact': 'Prevent processing failures',
                 'effort': 'Low - file cleanup'
             })
-        
+
         # Queue recommendations
         if processing_metrics['queue_length'] > 50:
             recommendations.append({
                 'title': 'Large Processing Queue',
                 'priority': 'Medium',
-                'description': f'{processing_metrics["queue_length"]} jobs in queue. Consider increasing worker threads.',
+                'description': (
+                    f'{processing_metrics["queue_length"]} jobs in queue. '
+                    'Consider increasing worker threads.'
+                ),
                 'impact': 'Faster queue processing',
                 'effort': 'Low - configuration change'
             })
-        
+
         # Add positive recommendations if system is performing well
-        if (system_metrics['cpu']['usage_percent'] < 50 and 
-            system_metrics['memory']['used_percent'] < 70 and 
+        if (system_metrics['cpu']['usage_percent'] < 50 and
+            system_metrics['memory']['used_percent'] < 70 and
             processing_metrics['error_rate'] < 5):
             recommendations.append({
                 'title': 'System Running Optimally',
                 'priority': 'Low',
-                'description': 'System resources are well-utilized with low error rates. Consider increasing concurrent processing.',
+                'description': (
+                    'System resources are well-utilized with low error rates. '
+                    'Consider increasing concurrent processing.'
+                ),
                 'impact': 'Process more sermons simultaneously',
                 'effort': 'Low - increase worker count'
             })
-        
+
         return recommendations
-    
+
     def _get_fallback_metrics(self) -> dict:
         """Fallback metrics when real monitoring fails"""
         return {
             'cpu': {'usage_percent': 0, 'count': 1, 'frequency_mhz': 0, 'load_average': None},
             'memory': {'total_gb': 0, 'available_gb': 0, 'used_percent': 0, 'swap_used_percent': 0},
-            'disk': {'total_gb': 0, 'free_gb': 0, 'used_percent': 0, 'read_mb_per_sec': 0, 'write_mb_per_sec': 0},
-            'network': {'bytes_sent_mb': 0, 'bytes_recv_mb': 0, 'packets_sent': 0, 'packets_recv': 0},
-            'gpu': {'available': False, 'usage_percent': 0, 'memory_used_gb': 0, 'memory_total_gb': 0, 'memory_percent': 0, 'temperature_c': 0, 'name': 'Not Available'},
+            'disk': {
+                'total_gb': 0, 'free_gb': 0, 'used_percent': 0,
+                'read_mb_per_sec': 0, 'write_mb_per_sec': 0,
+            },
+            'network': {
+                'bytes_sent_mb': 0, 'bytes_recv_mb': 0,
+                'packets_sent': 0, 'packets_recv': 0,
+            },
+            'gpu': {
+                'available': False, 'usage_percent': 0, 'memory_used_gb': 0,
+                'memory_total_gb': 0, 'memory_percent': 0, 'temperature_c': 0,
+                'name': 'Not Available',
+            },
             'timestamp': time.time()
         }
 
@@ -339,17 +396,17 @@ class PerformanceMonitor:
 def get_comprehensive_performance_data() -> dict:
     """Get complete performance data for analytics display"""
     monitor = PerformanceMonitor()
-    
+
     system_metrics = monitor.get_system_metrics()
     processing_metrics = monitor.get_processing_metrics()
     recommendations = monitor.get_optimization_recommendations(system_metrics, processing_metrics)
-    
+
     # Calculate time-based changes (simplified - would need historical tracking for real deltas)
     processing_time_change = -0.3 if processing_metrics['avg_processing_time'] > 0 else 0
     success_rate_change = 2.1 if processing_metrics['success_rate'] > 80 else -1.5
     error_rate_change = -1.5 if processing_metrics['error_rate'] < 10 else 2.0
     queue_change = 1 if processing_metrics['queue_length'] > 10 else -1
-    
+
     return {
         'avg_processing_time': processing_metrics['avg_processing_time'],
         'processing_time_change': processing_time_change,
@@ -360,17 +417,35 @@ def get_comprehensive_performance_data() -> dict:
         'error_rate': processing_metrics['error_rate'],
         'error_rate_change': error_rate_change,
         'step_performance': [
-            {'step': 'Audio Enhancement', 'avg_time': 120.0, 'success_rate': 95.0, 'bottleneck_score': 0.80},
-            {'step': 'Transcription', 'avg_time': 45.0, 'success_rate': 98.0, 'bottleneck_score': 0.30},
-            {'step': 'Description Generation', 'avg_time': 15.0, 'success_rate': 92.0, 'bottleneck_score': 0.20},
-            {'step': 'Hashtag Generation', 'avg_time': 8.0, 'success_rate': 94.0, 'bottleneck_score': 0.15},
-            {'step': 'Validation', 'avg_time': 5.0, 'success_rate': 97.0, 'bottleneck_score': 0.10}
+            {
+                'step': 'Audio Enhancement', 'avg_time': 120.0,
+                'success_rate': 95.0, 'bottleneck_score': 0.80,
+            },
+            {
+                'step': 'Transcription', 'avg_time': 45.0,
+                'success_rate': 98.0, 'bottleneck_score': 0.30,
+            },
+            {
+                'step': 'Description Generation', 'avg_time': 15.0,
+                'success_rate': 92.0, 'bottleneck_score': 0.20,
+            },
+            {
+                'step': 'Hashtag Generation', 'avg_time': 8.0,
+                'success_rate': 94.0, 'bottleneck_score': 0.15,
+            },
+            {
+                'step': 'Validation', 'avg_time': 5.0,
+                'success_rate': 97.0, 'bottleneck_score': 0.10,
+            }
         ],
         'resource_usage': {
             'cpu_usage': system_metrics['cpu']['usage_percent'],
             'memory_usage': system_metrics['memory']['used_percent'],
             'disk_usage': system_metrics['disk']['used_percent'],
-            'network_io': (system_metrics['disk']['read_mb_per_sec'] + system_metrics['disk']['write_mb_per_sec']),
+            'network_io': (
+                system_metrics['disk']['read_mb_per_sec']
+                + system_metrics['disk']['write_mb_per_sec']
+            ),
             'gpu_usage': system_metrics['gpu']['usage_percent'],
             'gpu_memory': system_metrics['gpu']['memory_percent']
         },

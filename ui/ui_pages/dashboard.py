@@ -9,6 +9,7 @@ import datetime
 
 import pandas as pd
 import streamlit as st
+
 from ui.pages import batch_update, new_sermon, settings, validation
 
 
@@ -99,10 +100,15 @@ def show_recent_activity():
     formatted_data = []
     for s in sermons:
         formatted_data.append({
-            'Date': s.get('recorded_date', s.get('updated_at', '')[:10] if s.get('updated_at') else ''),
+            'Date': s.get(
+                'recorded_date', s.get('updated_at', '')[:10] if s.get('updated_at') else ''
+            ),
             'Title': s.get('title', '(no title)'),
             'Speaker': s.get('speaker', ''),
-            'Status': "✅" if s.get('status') == 'processed' else "⏳" if s.get('status') == 'processing' else "❌",
+            'Status': (
+                "✅" if s.get('status') == 'processed'
+                else "⏳" if s.get('status') == 'processing' else "❌"
+            ),
         })
 
     df = pd.DataFrame(formatted_data)
@@ -133,17 +139,20 @@ def show_system_status():
 
     status = check_system_components()
     cols = st.columns(len(status))
-    for col, (component, details) in zip(cols, status.items()):
+    for col, (component, details) in zip(cols, status.items(), strict=False):
         with col:
             healthy = details['status']
             icon = "✅" if healthy else "❌"
-            st.metric(component, f"{icon} {'OK' if healthy else 'Error'}", help=details.get('message', ''))
+            st.metric(
+                component, f"{icon} {'OK' if healthy else 'Error'}",
+                help=details.get('message', ''),
+            )
 
 def show_processing_queue():
     """Show current processing queue from job_queue module"""
     st.markdown("### 📤 Processing Queue")
     try:
-        from job_queue import get_job_queue, JobStatus
+        from job_queue import JobStatus, get_job_queue
         jq = get_job_queue()
         active = jq.get_all_jobs(JobStatus.RUNNING) or []
         queued = jq.get_all_jobs(JobStatus.QUEUED) or []
@@ -156,11 +165,15 @@ def show_processing_queue():
         return
 
     for job in active:
-        sid = job.parameters.get('sermon_id', job.parameters.get('form_data', {}).get('title', job.id))
+        sid = job.parameters.get(
+            'sermon_id', job.parameters.get('form_data', {}).get('title', job.id)
+        )
         st.write(f"🔄 {sid} — running ({job.progress:.0f}%)")
 
     for job in queued[:5]:
-        sid = job.parameters.get('sermon_id', job.parameters.get('form_data', {}).get('title', job.id))
+        sid = job.parameters.get(
+            'sermon_id', job.parameters.get('form_data', {}).get('title', job.id)
+        )
         st.write(f"⏳ {sid} — queued")
 
     remaining = len(queued) - 5
@@ -173,7 +186,7 @@ def show_setup_guide():
 
     st.markdown("""
     To get started, please complete the setup:
-    
+
     1. **Configuration**: Copy `config.example.yaml` to `config.yaml` and update your settings
     2. **API Keys**: Add your SermonAudio API credentials
     3. **LLM Provider**: Configure OpenAI or Ollama for AI processing
@@ -187,7 +200,11 @@ def show_setup_guide():
             st.switch_page(settings)
 
     with col2:
-        st.link_button("📖 View Documentation", "https://github.com/BarbellDwarf/SermonPilot#readme", width='stretch')
+        st.link_button(
+            "📖 View Documentation",
+            "https://github.com/BarbellDwarf/SermonPilot#readme",
+            width='stretch',
+        )
 
 def check_system_components():
     """Check individual system components and return detailed status"""

@@ -64,7 +64,7 @@ class SermonAudioAPI:
         """Check if cache file is valid and not expired"""
         if not cache_file.exists():
             return False
-        
+
         try:
             file_age = datetime.now() - datetime.fromtimestamp(cache_file.stat().st_mtime)
             return file_age < timedelta(hours=max_age_hours)
@@ -124,7 +124,7 @@ class SermonAudioAPI:
     def get_speakers(self, force_refresh: bool = False) -> list[dict[str, Any]]:
         """Get list of speakers from API with caching"""
         cache_key = "speakers"
-        
+
         if not force_refresh:
             cached_data = self._load_from_cache(cache_key)
             if cached_data:
@@ -137,11 +137,11 @@ class SermonAudioAPI:
 
         try:
             import sermon_updater
-            
+
             # Fetch speakers/pastors from API
             logger.info("Fetching speakers from SermonAudio API...")
             api_speakers = sermon_updater.get_broadcaster_pastors()
-            
+
             if api_speakers:
                 for speaker_name in api_speakers:
                     speakers.append({
@@ -149,7 +149,7 @@ class SermonAudioAPI:
                         'name': speaker_name,
                         'displayName': speaker_name
                     })
-                
+
                 # Cache the results
                 cache_data = {
                     'speakers': speakers,
@@ -157,7 +157,7 @@ class SermonAudioAPI:
                 }
                 self._save_to_cache(cache_key, cache_data)
                 logger.info(f"Fetched and cached {len(speakers)} speakers")
-            
+
         except Exception as e:
             logger.error(f"Error fetching speakers from API: {e}")
 
@@ -166,7 +166,7 @@ class SermonAudioAPI:
     def get_series(self, force_refresh: bool = False) -> list[dict[str, Any]]:
         """Get list of series from API with caching"""
         cache_key = "series"
-        
+
         if not force_refresh:
             cached_data = self._load_from_cache(cache_key)
             if cached_data:
@@ -179,11 +179,11 @@ class SermonAudioAPI:
 
         try:
             import sermon_updater
-            
+
             # Fetch series from API
             logger.info("Fetching series from SermonAudio API...")
             api_series = sermon_updater.get_broadcaster_series()
-            
+
             if api_series:
                 for series_item in api_series:
                     if isinstance(series_item, dict):
@@ -199,7 +199,7 @@ class SermonAudioAPI:
                         'description': '',
                         'sermonCount': 0
                     })
-                
+
                 # Cache the results
                 cache_data = {
                     'series': series,
@@ -207,16 +207,18 @@ class SermonAudioAPI:
                 }
                 self._save_to_cache(cache_key, cache_data)
                 logger.info(f"Fetched and cached {len(series)} series")
-            
+
         except Exception as e:
             logger.error(f"Error fetching series from API: {e}")
 
         return series
 
-    def get_sermon_details(self, sermon_id: str, force_refresh: bool = False) -> dict[str, Any] | None:
+    def get_sermon_details(
+        self, sermon_id: str, force_refresh: bool = False
+    ) -> dict[str, Any] | None:
         """Get sermon details from API with caching"""
         cache_key = f"sermon_{sermon_id}"
-        
+
         if not force_refresh:
             cached_data = self._load_from_cache(cache_key)
             if cached_data:
@@ -228,11 +230,11 @@ class SermonAudioAPI:
 
         try:
             import sermon_updater
-            
+
             # Fetch sermon details using existing function
             logger.info(f"Fetching sermon {sermon_id} from SermonAudio API...")
             sermon_details = sermon_updater.get_sermon_details(sermon_id)
-            
+
             if sermon_details:
                 # Cache the results
                 cache_data = {
@@ -242,7 +244,7 @@ class SermonAudioAPI:
                 self._save_to_cache(cache_key, cache_data)
                 logger.info(f"Fetched and cached sermon {sermon_id}")
                 return sermon_details
-            
+
         except Exception as e:
             logger.error(f"Error fetching sermon {sermon_id} from API: {e}")
 

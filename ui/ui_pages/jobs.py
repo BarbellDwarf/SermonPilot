@@ -53,7 +53,7 @@ def show_jobs():
 
         with st.sidebar:
             st.markdown("### 🎛️ Controls")
-            
+
             if st.button("🔄 Refresh", type="primary", width='stretch'):
                 st.rerun()
 
@@ -207,7 +207,7 @@ def show_queue_statistics_compact(job_queue):
 
     # Recent activity and success rate
     col1, col2 = st.columns(2)
-    
+
     with col1:
         # Recent activity (last 24 hours)
         recent_jobs = [
@@ -218,9 +218,15 @@ def show_queue_statistics_compact(job_queue):
 
     with col2:
         # Success rate
-        finished_jobs = [job for job in all_jobs if job.status in [JobStatus.COMPLETED, JobStatus.FAILED]]
+        finished_jobs = [
+            job for job in all_jobs
+            if job.status in [JobStatus.COMPLETED, JobStatus.FAILED]
+        ]
         if finished_jobs:
-            success_rate = len([job for job in finished_jobs if job.status == JobStatus.COMPLETED]) / len(finished_jobs) * 100
+            success_rate = (
+                len([job for job in finished_jobs if job.status == JobStatus.COMPLETED])
+                / len(finished_jobs) * 100
+            )
             st.metric("Success Rate", f"{success_rate:.1f}%")
 
 
@@ -237,20 +243,20 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
     }
 
     # Map job types to display text
-    job_type_display = str(job.type) if hasattr(job.type, 'value') else str(job.type)
+    str(job.type) if hasattr(job.type, 'value') else str(job.type)
     status_display = str(job.status) if hasattr(job.status, 'value') else str(job.status)
-    
+
     status_icon = status_icons.get(job.status, "❓")
 
     # Card styling based on status
     if highlight_errors and job.status == JobStatus.FAILED:
-        border_color = "#ff6b6b"
+        pass
     elif job.status == JobStatus.RUNNING:
-        border_color = "#4ecdc4"
+        pass
     elif job.status == JobStatus.COMPLETED:
-        border_color = "#51cf66"
+        pass
     else:
-        border_color = "#e9ecef"
+        pass
 
     with st.container():
         # Compact header in single row
@@ -297,16 +303,20 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
             # Compact action buttons and job info
             if show_actions:
                 action_col1, action_col2 = st.columns(2)
-                
+
                 with action_col1:
                     if job.can_cancel and job.status in [JobStatus.QUEUED, JobStatus.RUNNING]:
                         if st.button("🚫", key=f"cancel_{job.id}", help="Cancel Job"):
                             if job_queue.cancel_job(job.id):
                                 st.success("Cancelled")
                                 st.rerun()
-                
+
                 with action_col2:
-                    if job.can_retry and job.status in [JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.COMPLETED]:
+                    if (
+                        job.can_retry
+                        and job.status
+                        in [JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.COMPLETED]
+                    ):
                         if st.button("🔄", key=f"retry_{job.id}", help="Retry Job"):
                             if job_queue.retry_job(job.id):
                                 st.success("Retrying")
@@ -319,12 +329,14 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
         if job.logs or job.result or job.parameters:
             with st.expander(f"Details - {job.id[:8]}", expanded=False):
                 detail_col1, detail_col2 = st.columns(2)
-                
+
                 with detail_col1:
                     if job.parameters:
                         st.markdown("**Key Parameters:**")
-                        relevant_params = ['sermon_ids', 'actions', 'enhance_audio', 'generate_description',
-                                           'skip_audio', 'skip_transcription', 'whisper_model', 'dry_run']
+                        relevant_params = [
+                            'sermon_ids', 'actions', 'enhance_audio', 'generate_description',
+                            'skip_audio', 'skip_transcription', 'whisper_model', 'dry_run',
+                        ]
                         for param in relevant_params:
                             if param in job.parameters:
                                 value = job.parameters[param]
@@ -334,7 +346,7 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                                     st.text(f"Actions: {', '.join(value)}")
                                 else:
                                     st.text(f"{param.replace('_', ' ').title()}: {value}")
-                
+
                 with detail_col2:
                     if job.result and not job.result.success:
                         st.error(f"❌ {job.result.message}")
@@ -343,12 +355,19 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                             if len(error_text) > 200:
                                 error_text = error_text[:197] + "..."
                             st.code(error_text, language="text")
-                    
+
                     if job.logs:
                         recent_logs = job.logs[-3:]
-                        st.text_area("Recent Activity", "\n".join(f"• {log}" for log in recent_logs), height=80, disabled=True)
+                        st.text_area(
+                            "Recent Activity",
+                            "\n".join(f"• {log}" for log in recent_logs),
+                            height=80, disabled=True,
+                        )
 
-                if job.status in [JobStatus.FAILED, JobStatus.CANCELLED] and job.type == JobType.SERMON_PROCESSING:
+                if (
+                    job.status in [JobStatus.FAILED, JobStatus.CANCELLED]
+                    and job.type == JobType.SERMON_PROCESSING
+                ):
                     st.markdown("---")
                     st.markdown("**🔄 Retry with Modified Settings**")
                     params = job.parameters or {}
@@ -378,18 +397,31 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                             key=f"retry_dry_run_{job.id}"
                         )
                     with retry_col3:
-                        _whisper_options = ["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo"]
+                        _whisper_options = [
+                            "tiny", "tiny.en", "base", "base.en", "small", "small.en",
+                            "medium", "medium.en", "large", "large-v2", "large-v3",
+                            "large-v3-turbo",
+                        ]
                         _current_wm = form_data.get('whisper_model', 'base')
-                        _wm_index = _whisper_options.index(_current_wm) if _current_wm in _whisper_options else 2
+                        _wm_index = (
+                            _whisper_options.index(_current_wm)
+                            if _current_wm in _whisper_options else 2
+                        )
                         new_whisper_model = st.selectbox(
                             "Whisper Model",
                             options=_whisper_options,
                             index=_wm_index,
                             key=f"retry_whisper_{job.id}",
-                            help="Larger model = better accuracy but slower. .en models are English-only (faster)."
+                            help=(
+                                "Larger model = better accuracy but slower. "
+                                ".en models are English-only (faster)."
+                            ),
                         )
 
-                    if st.button("🔄 Retry with These Settings", type="primary", key=f"retry_modified_{job.id}"):
+                    if st.button(
+                        "🔄 Retry with These Settings", type="primary",
+                        key=f"retry_modified_{job.id}",
+                    ):
                         new_params = dict(params)
                         new_form_data = dict(form_data)
                         new_form_data['skip_audio'] = new_skip_audio
