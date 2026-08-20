@@ -203,7 +203,10 @@ class SermonManager:
                 sermon_data = SermonData(
                     id=sermon_id,
                     title=db_sermon.get('title', f'Sermon {sermon_id}'),
-                    date=datetime.fromisoformat(db_sermon.get('recorded_date', '1900-01-01')),
+                    date=self._parse_date(
+                        db_sermon.get('recorded_date'),
+                        datetime.fromtimestamp(sermon_dir.stat().st_mtime),
+                    ),
                     speaker=db_sermon.get('speaker', 'Unknown'),
                     description=db_sermon.get('description', ''),
                     hashtags=db_sermon.get('hashtags', []),
@@ -370,24 +373,20 @@ class SermonManager:
         remote_data = remote_data or {}
 
         # Parse date
-        try:
-            if base_data.get('recorded_date'):
-                sermon_date = datetime.fromisoformat(base_data['recorded_date'])
-            elif remote_data.get('preachDate'):
-                sermon_date = datetime.fromisoformat(
-                    remote_data['preachDate'].replace('Z', '+00:00')
-                )
-            else:
-                sermon_date = datetime.now()
-        except (ValueError, TypeError):
-            sermon_date = datetime.now()
+        sermon_date = self._parse_date(
+            base_data.get('recorded_date'),
+            self._parse_date(
+                (remote_data.get('preachDate') or '').replace('Z', '+00:00'),
+                datetime.now(),
+            ),
+        )
 
         # Build audio files info
         audio_files = AudioFiles()
 
         # Local files
-        sermon_dir = self.output_directory / sermon_id
-        if sermon_dir.exists():
+        sermon_dir = self._safe_sermon_dir(sermon_id)
+        if sermon_dir is not None and sermon_dir.exists():
             for audio_file in sermon_dir.glob("*.mp3"):
                 if "original" in audio_file.name.lower():
                     audio_files.original = str(audio_file)
@@ -442,12 +441,14 @@ class SermonManager:
             })
 
         # Check for transcript file
-        transcript_file = self.output_directory / sermon_id / "transcript.txt"
-        if transcript_file.exists():
-            try:
-                content['transcript_text'] = transcript_file.read_text(encoding='utf-8')
-            except Exception as e:
-                logger.warning(f"Could not read transcript file for {sermon_id}: {e}")
+        sermon_dir = self._safe_sermon_dir(sermon_id)
+        if sermon_dir is not None:
+            transcript_file = sermon_dir / "transcript.txt"
+            if transcript_file.exists():
+                try:
+                    content['transcript_text'] = transcript_file.read_text(encoding='utf-8')
+                except Exception as e:
+                    logger.warning(f"Could not read transcript file for {sermon_id}: {e}")
 
         return content
 
@@ -461,8 +462,8 @@ class SermonManager:
             files[record['file_type']] = record['file_path']
 
         # Scan directory
-        sermon_dir = self.output_directory / sermon_id
-        if sermon_dir.exists():
+        sermon_dir = self._safe_sermon_dir(sermon_id)
+        if sermon_dir is not None and sermon_dir.exists():
             for file_path in sermon_dir.iterdir():
                 if file_path.is_file():
                     file_type = file_path.suffix.lower()
@@ -490,6 +491,26 @@ class SermonManager:
 
         age = (datetime.now() - self._cache_timestamp).total_seconds()
         return age < self.cache_ttl
+
+    @staticmethod
+    def _parse_date(value: str | None, fallback: datetime) -> datetime:
+        """Parse an ISO date string, falling back when missing or invalid."""
+        if not value:
+            return fallback
+        try:
+            return datetime.fromisoformat(value)
+        except (ValueError, TypeError):
+            return fallback
+
+    def _safe_sermon_dir(self, sermon_id: str) -> Path | None:
+        """Resolve a sermon directory inside the output root, or None if unsafe."""
+        if not sermon_id:
+            return None
+        root = self.output_directory.resolve()
+        candidate = (self.output_directory / sermon_id).resolve()
+        if root not in candidate.parents:
+            return None
+        return candidate
 
     def _apply_filters(
         self, sermons: list[SermonData], filters: dict[str, Any] | None
