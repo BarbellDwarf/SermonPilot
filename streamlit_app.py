@@ -135,10 +135,11 @@ st.markdown("""
     }
 
     .main-header {
-        font-size: 2.5rem;
+        font-size: 2.25rem;
+        line-height: 1.3;
         font-weight: bold;
         color: var(--header-color);
-        margin-bottom: 1rem;
+        margin: 0 0 1rem;
         text-align: center;
     }
 
@@ -204,7 +205,7 @@ st.markdown("""
 
     /* Pull the page content up under the header bar */
     [data-testid="stMainBlockContainer"] {
-        padding-top: 1.5rem;
+        padding-top: 3.75rem;
     }
 
     /* Sidebar: divide the nav from the status and actions sections */
