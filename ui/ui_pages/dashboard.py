@@ -187,8 +187,7 @@ def show_setup_guide():
             st.switch_page(settings)
 
     with col2:
-        if st.button("📖 View Documentation", width='stretch'):
-            st.info("Documentation will open in your browser")
+        st.link_button("📖 View Documentation", "https://github.com/BarbellDwarf/SermonPilot#readme", width='stretch')
 
 def check_system_components():
     """Check individual system components and return detailed status"""
