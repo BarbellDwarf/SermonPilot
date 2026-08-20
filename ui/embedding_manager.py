@@ -201,7 +201,7 @@ class HashEmbeddingProvider(EmbeddingProvider):
         embeddings: list[list[float]] = []
         for text in texts:
             # Create a deterministic but pseudo-random embedding based on text hash
-            hash_value = hashlib.md5(text.encode()).hexdigest()
+            hash_value = hashlib.md5(text.encode(), usedforsecurity=False).hexdigest()
             random.seed(hash_value)
             # Create embedding vector with specified dimensions
             embedding = [random.random() - 0.5 for _ in range(self.dimensions)]
@@ -439,7 +439,7 @@ class AnthropicEmbeddingProvider(EmbeddingProvider):
             for text in texts:
                 import hashlib as _hashlib
 
-                hash_obj = _hashlib.md5(text.encode())
+                hash_obj = _hashlib.md5(text.encode(), usedforsecurity=False)
                 hash_int = int(hash_obj.hexdigest(), 16)
 
                 # Create deterministic embedding from hash
