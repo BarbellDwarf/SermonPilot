@@ -104,6 +104,55 @@ All `requirements/` override files pin builds at or above the
 The older `requirements-gpu-minimal.txt` and `requirements-gpu-full.txt`
 files no longer exist; if you see references to them, treat them as stale.
 
+## Torch upgrade / venv rebuild
+
+Two open PyTorch advisories are accepted as of v1.6.0:
+
+- **GHSA-rrmf-rvhw-rf47** (CVE-2025-3000): memory corruption through
+  `torch.jit.script`. Affects all torch releases up to 2.12.1 and is fixed
+  only in 2.13.0. Low severity, local attack.
+- **GHSA-vgrw-7cvw-pwgx** (CVE-2025-2999): memory corruption through
+  `torch.nn.utils.rnn.unpack_sequence`. Affects all releases before 2.9.1
+  and is fixed in 2.9.1. Medium severity, local attack.
+
+The torch pins in `pyproject.toml` and `requirements/` stay unchanged
+because no build that fixes both advisories is compatible with the
+verified ROCm setup. The verified-clean build (no chunked-audio
+corruption, issue #41) is `torch==2.11.0.dev20260206+rocm7.0` from the
+rocm7.0 nightly index, which is also the newest build that index
+publishes. The only fully patched build, torch 2.13.0, ships ROCm
+wheels only as `+rocm7.1` and `+rocm7.2`; it sits on the same
+2.12/2.13 line as the corrupting `2.12.0+rocm7.14.0` and has not passed
+the regression gate below, so upgrading to it would risk reintroducing
+issue #41.
+
+To reproduce the verified working setup:
+
+```bash
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install -r requirements/requirements.txt
+uv pip install "torch==2.11.0.dev20260206+rocm7.0" \
+  "torchaudio==2.11.0.dev20260216+rocm7.0" \
+  --extra-index-url https://download.pytorch.org/whl/nightly/rocm7.0 \
+  --index-strategy unsafe-best-match
+```
+
+Before adopting any newer torch (the candidate that fixes both
+advisories is `torch==2.13.0+rocm7.1`), run the chunked-enhancement
+stability gate on the ROCm machine:
+
+1. Take a 7-minute slice of a sermon recording and enhance it in a
+   single pass.
+2. Enhance the same slice in 60-second chunks, three times.
+3. Cross-correlate each chunked output against the single-pass output;
+   all three trials must score 0.999 or higher.
+4. Run the full 42-minute pipeline and confirm it completes without
+   corruption.
+
+Only after the gate passes should the pin be raised in `pyproject.toml`
+and the `requirements/` override files.
+
 ## Docker
 
 ### Build with a GPU backend
