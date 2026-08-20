@@ -79,6 +79,9 @@ st.markdown("""
         --surface-color: #ffffff;
         --surface-border: #e5e7eb;
         --muted-text: #64748b;
+        --surface-card: #ffffff;
+        --surface-card-hover: #f8fafc;
+        --card-border-hover: #cbd5e1;
         --card-grad-a: #4f46e5;
         --card-grad-b: #6d28d9;
         --status-ok: #047857;
@@ -93,6 +96,9 @@ st.markdown("""
         --surface-color: #141419;
         --surface-border: rgba(255, 255, 255, 0.08);
         --muted-text: #94a3b8;
+        --surface-card: #141419;
+        --surface-card-hover: #1e293b;
+        --card-border-hover: rgba(255, 255, 255, 0.25);
         --card-grad-a: #4338ca;
         --card-grad-b: #5b21b6;
         --status-ok: #34d399;
@@ -108,6 +114,9 @@ st.markdown("""
             --surface-color: #141419;
             --surface-border: rgba(255, 255, 255, 0.08);
             --muted-text: #94a3b8;
+            --surface-card: #141419;
+            --surface-card-hover: #1e293b;
+            --card-border-hover: rgba(255, 255, 255, 0.25);
             --card-grad-a: #4338ca;
             --card-grad-b: #5b21b6;
             --status-ok: #34d399;
@@ -124,6 +133,9 @@ st.markdown("""
             --surface-color: #ffffff;
             --surface-border: #e5e7eb;
             --muted-text: #64748b;
+            --surface-card: #ffffff;
+            --surface-card-hover: #f8fafc;
+            --card-border-hover: #cbd5e1;
             --card-grad-a: #4f46e5;
             --card-grad-b: #6d28d9;
             --status-ok: #047857;
@@ -192,17 +204,61 @@ st.markdown("""
     }
 
     .sermon-meta {
+        display: block;
         color: var(--muted-text);
         font-size: 0.8rem;
-        margin-top: 0.15rem;
+        margin-top: 0.2rem;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
-    /* Compact, even row rhythm inside the sermon list */
+    /* The gap is the space between rows */
     .st-key-sermon_list {
-        gap: 0.2rem;
+        gap: 0.5rem;
+    }
+
+    /* The markdown wrapper adds its own margins and padding around the
+       row text (including a -16px bottom compensation); zero them so the
+       card is a tight unit */
+    .st-key-sermon_rows [data-testid="stMarkdown"],
+    .st-key-sermon_rows [data-testid="stMarkdownContainer"],
+    .st-key-sermon_rows [data-testid="stMarkdown"] p,
+    .st-key-sermon_rows [data-testid="stMarkdownContainer"] p {
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+    }
+
+    /* Card rows: each sermon entry is a bordered card with a hover tint.
+       Streamlit's default 16px gaps (vertical and horizontal) inflate the
+       card; compact them so the entry reads as one tight unit. */
+    .st-key-sermon_rows > [data-testid="stLayoutWrapper"] {
+        border: 1px solid var(--surface-border);
+        border-radius: 0.5rem;
+        background: var(--surface-card);
+        padding: 0.35rem 0.6rem;
+        transition: background-color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .st-key-sermon_rows > [data-testid="stLayoutWrapper"]:hover {
+        background: var(--surface-card-hover);
+        border-color: var(--card-border-hover);
+    }
+
+    .st-key-sermon_rows [data-testid="stVerticalBlock"] {
+        gap: 0.1rem;
+    }
+
+    .st-key-sermon_rows [data-testid="stHorizontalBlock"] {
+        gap: 0.5rem;
+    }
+
+    /* Align the pagination/header rows with the card content inset */
+    .st-key-sermon_list > [data-testid="stLayoutWrapper"] {
+        padding-left: 0.6rem;
+        padding-right: 0.6rem;
     }
 
     /* Pull the page content up under the header bar */
