@@ -1,16 +1,16 @@
 """Processing modules for SermonPilot."""
 
 from .orchestrator import (
-    ProcessingOptions,
-    ValidationOptions,
     ArgumentsNormalizer,
+    ProcessingOptions,
     ProcessingOrchestrator,
     SermonFilter,
+    ValidationOptions,
 )
 
 __all__ = [
     'ProcessingOptions',
-    'ValidationOptions', 
+    'ValidationOptions',
     'ArgumentsNormalizer',
     'ProcessingOrchestrator',
     'SermonFilter',

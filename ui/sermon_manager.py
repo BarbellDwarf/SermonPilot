@@ -32,9 +32,10 @@ except ImportError:
             pass
     sermonaudio = MockSermonAudio()
 
-import yaml
-from database import SermonRepository
-from src.sermon_paths import discover_sermons, read_metadata
+import yaml  # noqa: E402
+from database import SermonRepository  # noqa: E402
+
+from src.sermon_paths import discover_sermons, read_metadata  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +180,10 @@ class SermonManager:
             for audio_file in sermon_dir.glob("*.mp3"):
                 if "original" in audio_file.name.lower():
                     audio_files.original = str(audio_file)
-                elif "enhanced" in audio_file.name.lower() or "processed" in audio_file.name.lower():
+                elif (
+                    "enhanced" in audio_file.name.lower()
+                    or "processed" in audio_file.name.lower()
+                ):
                     audio_files.processed = str(audio_file)
                 else:
                     audio_files.processed = str(audio_file)
@@ -214,7 +218,10 @@ class SermonManager:
                     qa_segments=db_sermon.get('qa_segments', [])
                 )
             else:
-                title = meta.get("title", f"Local Sermon {sermon_id}") if meta else f"Local Sermon {sermon_id}"
+                title = (
+                    meta.get("title", f"Local Sermon {sermon_id}")
+                    if meta else f"Local Sermon {sermon_id}"
+                )
                 speaker = meta.get("speaker", "Unknown") if meta else "Unknown"
                 date_str = meta.get("recorded_date", "1900-01-01") if meta else "1900-01-01"
                 try:
@@ -240,7 +247,9 @@ class SermonManager:
 
         return local_sermons
 
-    def merge_local_remote_data(self, remote_sermons: list[dict], local_data: dict[str, SermonData]) -> list[SermonData]:
+    def merge_local_remote_data(
+        self, remote_sermons: list[dict], local_data: dict[str, SermonData]
+    ) -> list[SermonData]:
         """Merge local and remote sermon data"""
         merged = {}
 
@@ -269,7 +278,9 @@ class SermonManager:
                 local_sermon = merged[sermon_id]
                 local_sermon.remote_available = True
                 local_sermon.title = remote_sermon.get('fullTitle', local_sermon.title)
-                local_sermon.speaker = remote_sermon.get('speaker', {}).get('displayName', local_sermon.speaker)
+                local_sermon.speaker = remote_sermon.get(
+                    'speaker', {}
+                ).get('displayName', local_sermon.speaker)
                 local_sermon.date = sermon_date
                 local_sermon.event_type = remote_sermon.get('eventType', local_sermon.event_type)
                 local_sermon.bible_text = remote_sermon.get('bibleText', local_sermon.bible_text)
@@ -347,7 +358,9 @@ class SermonManager:
         """Get local sermon data from database"""
         return self.repo.get_sermon(sermon_id)
 
-    def _merge_sermon_details(self, sermon_id: str, local_data: dict | None, remote_data: dict | None) -> SermonData | None:
+    def _merge_sermon_details(
+        self, sermon_id: str, local_data: dict | None, remote_data: dict | None
+    ) -> SermonData | None:
         """Merge local and remote sermon details"""
         if not local_data and not remote_data:
             return None
@@ -361,7 +374,9 @@ class SermonManager:
             if base_data.get('recorded_date'):
                 sermon_date = datetime.fromisoformat(base_data['recorded_date'])
             elif remote_data.get('preachDate'):
-                sermon_date = datetime.fromisoformat(remote_data['preachDate'].replace('Z', '+00:00'))
+                sermon_date = datetime.fromisoformat(
+                    remote_data['preachDate'].replace('Z', '+00:00')
+                )
             else:
                 sermon_date = datetime.now()
         except (ValueError, TypeError):
@@ -376,7 +391,10 @@ class SermonManager:
             for audio_file in sermon_dir.glob("*.mp3"):
                 if "original" in audio_file.name.lower():
                     audio_files.original = str(audio_file)
-                elif "enhanced" in audio_file.name.lower() or "processed" in audio_file.name.lower():
+                elif (
+                    "enhanced" in audio_file.name.lower()
+                    or "processed" in audio_file.name.lower()
+                ):
                     audio_files.processed = str(audio_file)
 
         # Remote URL
@@ -387,7 +405,10 @@ class SermonManager:
             id=sermon_id,
             title=base_data.get('title') or remote_data.get('fullTitle', f'Sermon {sermon_id}'),
             date=sermon_date,
-            speaker=base_data.get('speaker') or remote_data.get('speaker', {}).get('displayName', 'Unknown'),
+            speaker=(
+                base_data.get('speaker')
+                or remote_data.get('speaker', {}).get('displayName', 'Unknown')
+            ),
             description=base_data.get('description') or remote_data.get('shortDescription', ''),
             hashtags=base_data.get('hashtags', []),
             local_available=bool(local_data),
@@ -448,7 +469,10 @@ class SermonManager:
                     if file_type == '.mp3':
                         if 'original' in file_path.name.lower():
                             files['original_audio'] = str(file_path)
-                        elif 'enhanced' in file_path.name.lower() or 'processed' in file_path.name.lower():
+                        elif (
+                            'enhanced' in file_path.name.lower()
+                            or 'processed' in file_path.name.lower()
+                        ):
                             files['processed_audio'] = str(file_path)
                         else:
                             files['audio'] = str(file_path)
@@ -467,7 +491,9 @@ class SermonManager:
         age = (datetime.now() - self._cache_timestamp).total_seconds()
         return age < self.cache_ttl
 
-    def _apply_filters(self, sermons: list[SermonData], filters: dict[str, Any] | None) -> list[SermonData]:
+    def _apply_filters(
+        self, sermons: list[SermonData], filters: dict[str, Any] | None
+    ) -> list[SermonData]:
         """Apply filters to sermon list"""
         if not filters:
             return sermons
@@ -480,7 +506,10 @@ class SermonManager:
 
         # Filter by event type
         if filters.get('event_type'):
-            filtered = [s for s in filtered if s.event_type and filters['event_type'].lower() in s.event_type.lower()]
+            filtered = [
+                s for s in filtered
+                if s.event_type and filters['event_type'].lower() in s.event_type.lower()
+            ]
 
         # Filter by date range
         if filters.get('start_date'):

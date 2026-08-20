@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+
 from ui.pages import jobs
 
 # Add parent directory to path for imports
@@ -62,14 +63,14 @@ def show_filter_and_select():
     col1, col2 = st.columns(2)
 
     with col1:
-        start_date = st.date_input(
+        st.date_input(
             "Start Date",
             value=datetime.date.today() - datetime.timedelta(days=30),
             key="batch_start_date"
         )
 
     with col2:
-        end_date = st.date_input(
+        st.date_input(
             "End Date",
             value=datetime.date.today(),
             key="batch_end_date"
@@ -90,9 +91,9 @@ def show_filter_and_select():
 
         # Allow custom input if "All" is not selected
         if speaker_filter_select != "All":
-            speaker_filter = speaker_filter_select
+            pass
         else:
-            speaker_filter = st.text_input(
+            st.text_input(
                 "Or enter custom speaker:",
                 placeholder="Custom speaker name",
                 key="batch_speaker_filter_custom"
@@ -102,14 +103,14 @@ def show_filter_and_select():
         # Dynamic event type filter
         event_types = get_event_types()
         event_options = ["All"] + event_types
-        event_type_filter = st.selectbox(
+        st.selectbox(
             "Event Type (optional)",
             options=event_options,
             key="batch_event_filter"
         )
 
     with col3:
-        content_requirement = st.selectbox(
+        st.selectbox(
             "Content Requirement",
             options=["Any", "Missing Description", "Missing Hashtags", "Both Missing", "Has Audio"],
             key="batch_content_filter"
@@ -120,20 +121,20 @@ def show_filter_and_select():
         col1, col2 = st.columns(2)
 
         with col1:
-            min_duration = st.number_input(
+            st.number_input(
                 "Min Duration (minutes)",
                 min_value=0,
                 value=0,
                 key="batch_min_duration"
             )
 
-            require_transcript = st.checkbox(
+            st.checkbox(
                 "Require Transcript",
                 key="batch_require_transcript"
             )
 
         with col2:
-            max_duration = st.number_input(
+            st.number_input(
                 "Max Duration (minutes)",
                 min_value=0,
                 value=0,
@@ -141,7 +142,7 @@ def show_filter_and_select():
                 key="batch_max_duration"
             )
 
-            require_audio = st.checkbox(
+            st.checkbox(
                 "Require Audio File",
                 key="batch_require_audio"
             )
@@ -154,7 +155,7 @@ def show_filter_and_select():
             search_sermons()
 
     with col2:
-        max_results = st.number_input("Max Results", min_value=1, max_value=1000, value=100,
+        st.number_input("Max Results", min_value=1, max_value=1000, value=100,
                                       key="batch_max_results")
 
     with col3:
@@ -174,14 +175,14 @@ def show_batch_processing_options():
     col1, col2 = st.columns(2)
 
     with col1:
-        process_audio = st.checkbox(
+        st.checkbox(
             "Process Audio",
             value=True,
             key="batch_process_audio",
             help="Apply audio enhancement to selected sermons"
         )
 
-        update_descriptions = st.checkbox(
+        st.checkbox(
             "Update Descriptions",
             value=True,
             key="batch_update_descriptions",
@@ -189,14 +190,14 @@ def show_batch_processing_options():
         )
 
     with col2:
-        update_hashtags = st.checkbox(
+        st.checkbox(
             "Update Hashtags",
             value=True,
             key="batch_update_hashtags",
             help="Generate/update sermon hashtags"
         )
 
-        validate_content = st.checkbox(
+        st.checkbox(
             "Validate Content Quality",
             value=True,
             key="batch_validate_content",
@@ -209,13 +210,13 @@ def show_batch_processing_options():
     col1, col2 = st.columns(2)
 
     with col1:
-        force_update = st.checkbox(
+        st.checkbox(
             "Force Update Existing Content",
             key="batch_force_update",
             help="Update content even if it already exists"
         )
 
-        skip_on_error = st.checkbox(
+        st.checkbox(
             "Skip on Error",
             value=True,
             key="batch_skip_error",
@@ -223,13 +224,13 @@ def show_batch_processing_options():
         )
 
     with col2:
-        dry_run = st.checkbox(
+        st.checkbox(
             "Dry Run (Preview Only)",
             key="batch_dry_run",
             help="Process locally but don't upload changes"
         )
 
-        save_backups = st.checkbox(
+        st.checkbox(
             "Save Backups",
             value=True,
             key="batch_save_backups",
@@ -250,7 +251,7 @@ def show_batch_processing_options():
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        batch_size = st.number_input(
+        st.number_input(
             "Batch Size",
             min_value=1,
             max_value=50,
@@ -260,7 +261,7 @@ def show_batch_processing_options():
         )
 
     with col2:
-        delay_between = st.number_input(
+        st.number_input(
             "Delay Between (seconds)",
             min_value=0.0,
             max_value=10.0,
@@ -271,7 +272,7 @@ def show_batch_processing_options():
         )
 
     with col3:
-        max_retries = st.number_input(
+        st.number_input(
             "Max Retries",
             min_value=0,
             max_value=5,
@@ -324,10 +325,10 @@ def show_execute_batch():
     job_id = st.session_state.get('current_batch_job_id')
     active_job = None
     is_job_running = False
-    
+
     if job_id:
         try:
-            from job_queue import get_job_queue, JobStatus
+            from job_queue import JobStatus, get_job_queue
             job_queue = get_job_queue()
             active_job = job_queue.get_job(job_id)
             if active_job is None:
@@ -417,7 +418,9 @@ def show_batch_results():
             filtered_df = df_results
 
         st.dataframe(
-            filtered_df[['sermon_id', 'title', 'speaker', 'Status', 'processing_time', 'actions_performed']],
+            filtered_df[
+                ['sermon_id', 'title', 'speaker', 'Status', 'processing_time', 'actions_performed']
+            ],
             width='stretch',
             hide_index=True
         )
@@ -506,7 +509,10 @@ def search_sermons():
             elif content_requirement == "Missing Hashtags":
                 filtered_sermons = [s for s in filtered_sermons if not s['has_hashtags']]
             elif content_requirement == "Both Missing":
-                filtered_sermons = [s for s in filtered_sermons if not s['has_description'] and not s['has_hashtags']]
+                filtered_sermons = [
+                    s for s in filtered_sermons
+                    if not s['has_description'] and not s['has_hashtags']
+                ]
 
             progress_bar.progress(1.0)
             progress_bar.empty()
@@ -559,18 +565,21 @@ def start_batch_processing():
     """Start batch processing using job queue"""
     try:
         from job_queue import JobType, get_job_queue
-        
+
         # Get selected sermons
         selected_sermons = st.session_state.get('selected_sermons', [])
         if not selected_sermons:
             st.error("❌ No sermons selected for batch processing")
             return
-            
+
         # Get current configuration from session state
         config = st.session_state.get('config', {})
         if not config:
             st.error("❌ No configuration loaded. Please check the Settings page first.")
-            st.info("💡 Try going to Settings → Configuration and saving your settings, then return to this page.")
+            st.info(
+                "💡 Try going to Settings → Configuration and saving your settings, "
+                "then return to this page."
+            )
             return
 
         # Validate that essential config fields are present
@@ -578,12 +587,15 @@ def start_batch_processing():
         missing_fields = [field for field in required_fields if not config.get(field)]
         if missing_fields:
             st.error(f"❌ Configuration is missing required fields: {', '.join(missing_fields)}")
-            st.info("Please go to Settings → Configuration and ensure all required fields are filled out.")
+            st.info(
+                "Please go to Settings → Configuration and ensure all required fields "
+                "are filled out."
+            )
             return
-            
+
         # Get sermon IDs
         sermon_ids = [sermon['sermon_id'] for sermon in selected_sermons]
-        
+
         # Get processing actions from session state
         actions = {
             'generate_description': st.session_state.get('batch_update_descriptions', False),
@@ -591,19 +603,24 @@ def start_batch_processing():
             'enhance_audio': st.session_state.get('batch_process_audio', False),
             'validate_content': st.session_state.get('batch_validate_content', False)
         }
-        
+
         # Check if any actions are selected
         if not any(actions.values()):
-            st.error("❌ No processing actions selected. Please select at least one action to perform.")
+            st.error(
+                "❌ No processing actions selected. Please select at least one action to perform."
+            )
             return
-        
+
         # Create batch processing job
         job_queue = get_job_queue()
-        
+
         action_names = [k.replace('_', ' ').title() for k, v in actions.items() if v]
         job_title = f"Batch Processing: {len(sermon_ids)} sermons"
-        job_description = f"Processing {len(sermon_ids)} sermons with actions: {', '.join(action_names)}"
-        
+        job_description = (
+            f"Processing {len(sermon_ids)} sermons with actions: "
+            f"{', '.join(action_names)}"
+        )
+
         job_id = job_queue.add_job(
             job_type=JobType.BATCH_PROCESSING,
             title=job_title,
@@ -618,17 +635,20 @@ def start_batch_processing():
             },
             priority=6  # Medium-high priority for batch processing
         )
-        
+
         # Store job ID in session state for tracking
         st.session_state.current_batch_job_id = job_id
-        
+
         st.success(f"✅ Batch processing job created! Job ID: {job_id[:8]}")
-        st.info(f"🔍 Processing {len(sermon_ids)} sermons in the background. You can monitor progress on the Jobs page.")
-        
+        st.info(
+            f"🔍 Processing {len(sermon_ids)} sermons in the background. "
+            "You can monitor progress on the Jobs page."
+        )
+
         # Add button to go to jobs page
         if st.button("📊 View Job Progress", type="secondary"):
             st.switch_page(jobs)
-            
+
     except Exception as e:
         st.error(f"❌ Failed to start batch processing job: {e}")
 
@@ -678,46 +698,46 @@ def show_batch_progress():
     if not job_id:
         st.info("No active batch processing job")
         return
-        
+
     try:
-        from job_queue import get_job_queue, JobStatus
+        from job_queue import JobStatus, get_job_queue
         job_queue = get_job_queue()
         job = job_queue.get_job(job_id)
-        
+
         if not job:
             st.warning("⚠️ Batch processing job not found")
             st.session_state.current_batch_job_id = None
             return
-            
+
         # Show progress bar
-        progress_bar = st.progress(job.progress / 100.0)
-        
+        st.progress(job.progress / 100.0)
+
         # Show status
         status_colors = {
             JobStatus.QUEUED: "🔵",
-            JobStatus.RUNNING: "🟡", 
+            JobStatus.RUNNING: "🟡",
             JobStatus.COMPLETED: "🟢",
             JobStatus.FAILED: "🔴",
             JobStatus.CANCELLED: "⚫",
             JobStatus.PAUSED: "🟠"
         }
-        
+
         status_icon = status_colors.get(job.status, "❓")
         st.text(f"{status_icon} Status: {job.status.value.title()}")
         st.text(f"Progress: {job.progress:.1f}%")
-        
+
         # Show recent logs
         if job.logs:
             with st.expander("📋 Recent Activity", expanded=False):
                 for log in job.logs[-5:]:  # Show last 5 log entries
                     st.text(log)
-        
+
         # Clear job ID if completed
         if job.status in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
             if st.button("Clear Completed Job"):
                 st.session_state.current_batch_job_id = None
                 st.rerun()
-                
+
     except Exception as e:
         st.error(f"❌ Error checking job progress: {e}")
         st.session_state.current_batch_job_id = None
