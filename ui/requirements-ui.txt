@@ -16,4 +16,4 @@ reportlab>=4.0.0
 sermonaudio>=1.1.0
 # Additional UI components
 streamlit-option-menu>=0.3.6
-streamlit-aggrid>=0.3.4
+streamlit-aggrid>=1.2.1.post2
