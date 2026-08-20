@@ -193,13 +193,7 @@ st.markdown("""
     .status-progress { color: var(--status-progress); font-weight: 600; }
     .status-neutral { color: var(--status-neutral); font-weight: 600; }
 
-    /* Library list rows: fixed slot model, one flexible title slot.
-       Title and meta live in one block so the meta always reads as
-       belonging to its title; the container gap separates the rows. */
-    .sermon-text {
-        display: block;
-    }
-
+    /* Library list rows: fixed slot model, one flexible title slot */
     .sermon-title {
         display: block;
         line-height: 1.3;
