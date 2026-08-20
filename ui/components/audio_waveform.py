@@ -167,6 +167,6 @@ class AudioWaveformViewer:
             with col3:
                 st.write(f"**Action:** {action.title()}")
             with col4:
-                if st.button("❌", key=f"remove_segment_{i}", help="Remove segment"):
+                if st.button("Remove", key=f"remove_segment_{i}", help="Remove segment"):
                     self.remove_segment(i)
                     st.rerun()

@@ -27,7 +27,7 @@ class AudioPreview:
         Returns:
             Dictionary containing preview actions and settings
         """
-        st.subheader("🔊 Audio Preview")
+        st.subheader("Audio Preview")
 
         # Preview action buttons
         col1, col2, col3, col4 = st.columns(4)
@@ -35,19 +35,19 @@ class AudioPreview:
         controls = {}
 
         with col1:
-            if st.button("▶️ Play Original", help="Play original audio"):
+            if st.button("Play Original", help="Play original audio"):
                 controls['action'] = 'play_original'
 
         with col2:
-            if st.button("▶️ Play Edited", help="Play edited audio"):
+            if st.button("Play Edited", help="Play edited audio"):
                 controls['action'] = 'play_edited'
 
         with col3:
-            if st.button("🔄 Compare A/B", help="Toggle between original and edited"):
+            if st.button("Compare A/B", help="Toggle between original and edited"):
                 controls['action'] = 'compare'
 
         with col4:
-            if st.button("🔄 Reset Edits", help="Clear all edits"):
+            if st.button("Reset Edits", help="Clear all edits"):
                 controls['action'] = 'reset'
 
         # Preview settings
