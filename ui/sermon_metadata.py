@@ -5,8 +5,13 @@ Handles caching and retrieval of pastors, events, and series from the SermonAudi
 to populate dynamic dropdowns in the UI.
 """
 
+from __future__ import annotations
+
+import datetime
 import logging
+import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import streamlit as st
@@ -43,31 +48,48 @@ DEFAULT_SERIES = [
     "Easter Series"
 ]
 
+_METADATA_KEYS = ('pastors', 'event_types', 'series')
+
 
 def get_cached_metadata() -> dict[str, list[str]]:
     """
     Get cached sermon metadata (pastors, events, series) from SQLite database.
+    Expired rows are still returned so the last-known data survives the 24h TTL;
+    hardcoded defaults are used only when the cache has never been populated.
     Falls back to session state and defaults if database is unavailable.
-    
+
     Returns:
-        Dictionary with 'pastors', 'event_types', and 'series' lists
+        Dictionary with 'pastors', 'event_types', and 'series' lists, plus
+        'last_refresh' (datetime or None) and 'stale' (bool) flags.
     """
     try:
         from database import get_db
         db = get_db()
 
-        # Try to get from SQLite cache first
-        pastors = db.get_cached_metadata('pastors')
-        event_types = db.get_cached_metadata('event_types')
-        series = db.get_cached_metadata('series')
+        infos = {key: db.get_cached_metadata_info(key) for key in _METADATA_KEYS}
 
-        # Use cached data if available, otherwise use defaults
+        pastors = infos['pastors']['data'] if infos['pastors'] else DEFAULT_PASTORS.copy()
+        event_types = (
+            infos['event_types']['data'] if infos['event_types'] else DEFAULT_EVENT_TYPES.copy()
+        )
+        series = infos['series']['data'] if infos['series'] else DEFAULT_SERIES.copy()
+
         result = {
-            'pastors': pastors if pastors is not None else DEFAULT_PASTORS.copy(),
-            'event_types': event_types if event_types is not None else DEFAULT_EVENT_TYPES.copy(),
-            'series': series if series is not None else DEFAULT_SERIES.copy(),
-            'last_refresh': None  # TODO: Track refresh time in database
+            'pastors': pastors,
+            'event_types': event_types,
+            'series': series,
+            'last_refresh': None,
+            'stale': False,
         }
+
+        refreshed_at = [
+            info['last_updated'] for info in infos.values() if info and info['last_updated']
+        ]
+        if refreshed_at:
+            result['last_refresh'] = max(refreshed_at)
+        result['stale'] = any(
+            info and info['is_stale'] for info in infos.values()
+        )
 
         return result
 
@@ -80,112 +102,183 @@ def get_cached_metadata() -> dict[str, list[str]]:
                 'pastors': DEFAULT_PASTORS.copy(),
                 'event_types': DEFAULT_EVENT_TYPES.copy(),
                 'series': DEFAULT_SERIES.copy(),
-                'last_refresh': None
+                'last_refresh': None,
+                'stale': False,
             }
 
         return st.session_state.sermon_metadata
+
+
+def needs_metadata_refresh() -> bool:
+    """True when any metadata key is missing from the cache or expired."""
+    try:
+        from database import get_db
+        db = get_db()
+        for key in _METADATA_KEYS:
+            info = db.get_cached_metadata_info(key)
+            if info is None or info['is_stale']:
+                return True
+        return False
+    except Exception as e:
+        logger.warning(f"Could not check metadata cache: {e}")
+        return True
+
+
+def fetch_and_cache_metadata(
+    api_key: str | None = None,
+    broadcaster_id: str | None = None,
+    limit: int = 200,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> dict[str, list[str]]:
+    """Fetch pastors, event types and series from the SermonAudio API and cache them.
+
+    Pure function with no Streamlit calls, safe to run from a background thread.
+    Credentials fall back to the SERMONAUDIO_API_KEY / SERMONAUDIO_BROADCASTER_ID
+    environment variables when not passed explicitly.
+
+    Returns:
+        Dictionary with 'pastors', 'event_types', and 'series' lists
+    """
+    import sermon_updater
+
+    api_key = api_key or os.environ.get('SERMONAUDIO_API_KEY')
+    broadcaster_id = broadcaster_id or os.environ.get('SERMONAUDIO_BROADCASTER_ID')
+
+    if not api_key or not broadcaster_id:
+        logger.warning(
+            "SermonAudio API credentials not configured - "
+            f"api_key: {'present' if api_key else 'missing'}, "
+            f"broadcaster_id: {'present' if broadcaster_id else 'missing'}"
+        )
+        return {'pastors': [], 'event_types': [], 'series': []}
+
+    if progress_callback:
+        progress_callback(0.1, '📋 Fetching pastors...')
+    pastors = sermon_updater.get_broadcaster_pastors(limit=limit)
+    logger.info(f"Fetched {len(pastors)} pastors")
+
+    if progress_callback:
+        progress_callback(0.5, '📅 Fetching event types...')
+    event_types = sermon_updater.get_broadcaster_event_types(limit=limit)
+    logger.info(f"Fetched {len(event_types)} event types")
+
+    if progress_callback:
+        progress_callback(0.8, '📚 Fetching series...')
+    series = sermon_updater.get_broadcaster_series(limit=limit)
+    logger.info(f"Fetched {len(series)} series")
+
+    if progress_callback:
+        progress_callback(1.0, 'Saving to cache...')
+
+    try:
+        from database import get_db
+        db = get_db()
+
+        if pastors:
+            db.cache_metadata('pastors', pastors, expires_hours=24)
+            logger.info(f"Cached {len(pastors)} pastors to SQLite")
+
+        if event_types:
+            db.cache_metadata('event_types', event_types, expires_hours=24)
+            logger.info(f"Cached {len(event_types)} event types to SQLite")
+
+        if series:
+            db.cache_metadata('series', series, expires_hours=24)
+            logger.info(f"Cached {len(series)} series to SQLite")
+
+    except Exception as db_error:
+        logger.warning(f"Could not cache to SQLite, using session state: {db_error}")
+
+    return {'pastors': pastors, 'event_types': event_types, 'series': series}
+
+
+def refresh_metadata_in_background() -> None:
+    """Start a non-blocking background refresh of the cached metadata."""
+    import threading
+
+    def _run() -> None:
+        try:
+            fetch_and_cache_metadata()
+        except Exception as e:
+            logger.warning(f"Background metadata refresh failed: {e}")
+
+    threading.Thread(target=_run, name='sermon-metadata-refresh', daemon=True).start()
+
+
+def _resolve_api_credentials() -> tuple[str | None, str | None]:
+    """Resolve SermonAudio credentials from session config or environment."""
+    api_key = None
+    broadcaster_id = None
+    try:
+        config = st.session_state.get('config') or {}
+        api_key = config.get('api_key')
+        broadcaster_id = config.get('broadcaster_id')
+    except Exception:
+        pass
+    api_key = api_key or os.environ.get('SERMONAUDIO_API_KEY')
+    broadcaster_id = broadcaster_id or os.environ.get('SERMONAUDIO_BROADCASTER_ID')
+    return api_key or None, broadcaster_id or None
 
 
 def refresh_metadata_from_api() -> bool:
     """
     Refresh metadata by fetching fresh data from SermonAudio API.
     Stores results in SQLite cache for persistence across sessions.
-    
+
     Returns:
         True if successful, False if failed (will use cached/default data)
     """
     try:
-        # Import sermon_updater functions - only when needed to avoid startup delays
-        import sermon_updater
-
-        # Check if we have API configuration
-        if not hasattr(st.session_state, 'config') or not st.session_state.config:
-            logger.warning("No configuration available for API calls")
-            return False
-
-        # Test if we can make API calls by checking if API key is configured
-        api_key = st.session_state.config.get('api_key')
-        broadcaster_id = st.session_state.config.get('broadcaster_id')
+        api_key, broadcaster_id = _resolve_api_credentials()
 
         if not api_key or not broadcaster_id:
-            logger.warning(f"SermonAudio API credentials not configured - api_key: {'present' if api_key else 'missing'}, broadcaster_id: {'present' if broadcaster_id else 'missing'}")
+            logger.warning(
+                "SermonAudio API credentials not configured - "
+                f"api_key: {'present' if api_key else 'missing'}, "
+                f"broadcaster_id: {'present' if broadcaster_id else 'missing'}"
+            )
             return False
 
         with st.spinner('🔄 Refreshing metadata from SermonAudio API...'):
-            # Fetch data from API with progress indicators
             progress_bar = st.progress(0)
+            status_text = st.empty()
 
-            # Fetch pastors
-            st.text('📋 Fetching pastors...')
-            progress_bar.progress(0.1)
-            pastors = sermon_updater.get_broadcaster_pastors(limit=200)
-            progress_bar.progress(0.4)
-            logger.info(f"Fetched {len(pastors) if pastors else 0} pastors")
+            def _progress(pct: float, message: str) -> None:
+                progress_bar.progress(pct)
+                status_text.text(message)
 
-            # Fetch event types
-            st.text('📅 Fetching event types...')
-            progress_bar.progress(0.5)
-            event_types = sermon_updater.get_broadcaster_event_types(limit=200)
-            progress_bar.progress(0.7)
-            logger.info(f"Fetched {len(event_types) if event_types else 0} event types")
+            result = fetch_and_cache_metadata(
+                api_key=api_key,
+                broadcaster_id=broadcaster_id,
+                progress_callback=_progress,
+            )
 
-            # Fetch series
-            st.text('📚 Fetching series...')
-            progress_bar.progress(0.8)
-            series = sermon_updater.get_broadcaster_series(limit=200)
-            progress_bar.progress(1.0)
-            logger.info(f"Fetched {len(series) if series else 0} series")
-
-            # Clear progress indicators
             progress_bar.empty()
+            status_text.empty()
 
-            # Store in SQLite cache for persistence
-            try:
-                from database import get_db
-                db = get_db()
-
-                # Cache with 24-hour expiration
-                if pastors:
-                    db.cache_metadata('pastors', pastors, expires_hours=24)
-                    logger.info(f"Cached {len(pastors)} pastors to SQLite")
-
-                if event_types:
-                    db.cache_metadata('event_types', event_types, expires_hours=24)
-                    logger.info(f"Cached {len(event_types)} event types to SQLite")
-
-                if series:
-                    db.cache_metadata('series', series, expires_hours=24)
-                    logger.info(f"Cached {len(series)} series to SQLite")
-
-            except Exception as db_error:
-                logger.warning(f"Could not cache to SQLite, using session state: {db_error}")
-
-            # Also update session state for immediate use
             metadata = get_cached_metadata()
 
-            # Use fetched data if available, otherwise keep defaults
-            if pastors:
-                metadata['pastors'] = pastors
-                logger.info(f"Refreshed {len(pastors)} pastors from API")
+            if result['pastors']:
+                metadata['pastors'] = result['pastors']
+                logger.info(f"Refreshed {len(result['pastors'])} pastors from API")
             else:
                 logger.warning("No pastors found from API, keeping defaults")
                 st.warning("⚠️ No pastors found - keeping default list")
 
-            if event_types:
-                metadata['event_types'] = event_types
-                logger.info(f"Refreshed {len(event_types)} event types from API")
+            if result['event_types']:
+                metadata['event_types'] = result['event_types']
+                logger.info(f"Refreshed {len(result['event_types'])} event types from API")
             else:
                 logger.warning("No event types found from API, keeping defaults")
                 st.warning("⚠️ No event types found - keeping default list")
 
-            if series:
-                metadata['series'] = series
-                logger.info(f"Refreshed {len(series)} series from API")
+            if result['series']:
+                metadata['series'] = result['series']
+                logger.info(f"Refreshed {len(result['series'])} series from API")
             else:
                 logger.warning("No series found from API, keeping defaults")
                 st.warning("⚠️ No series found - keeping default list")
 
-            import datetime
             metadata['last_refresh'] = datetime.datetime.now()
 
             # Update session state
@@ -249,6 +342,11 @@ def show_metadata_refresh_section():
             st.caption(f"Last refreshed: {metadata['last_refresh'].strftime('%Y-%m-%d %H:%M:%S')}")
         else:
             st.caption("Using default data - click refresh to load from API")
+
+        if metadata.get('stale'):
+            st.caption(
+                "⚠️ Showing cached data past its 24h freshness window - click refresh to update"
+            )
 
         # Refresh button
         if st.button("🔄 Refresh from SermonAudio API", width='stretch'):

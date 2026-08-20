@@ -1353,6 +1353,7 @@ def show_validation_settings():
     validation_enabled = st.checkbox(
         "Enable Description Validation",
         value=desc_validation.get('enabled', True),
+        key="validation_enabled",
         help="Use AI to validate description quality"
     )
 
@@ -1831,7 +1832,7 @@ def reset_to_defaults():
     # Load example config as defaults
     try:
         project_root = Path(__file__).parent.parent.parent
-        example_config_path = project_root / "config.example.yaml"
+        example_config_path = project_root / "config" / "config.example.yaml"
 
         with open(example_config_path) as f:
             default_config = yaml.safe_load(f)
