@@ -13,6 +13,7 @@ import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import streamlit as st
 
@@ -51,6 +52,20 @@ DEFAULT_SERIES = [
 _METADATA_KEYS = ('pastors', 'event_types', 'series')
 
 
+def _normalize_series(data) -> list[dict[str, Any]]:
+    """Normalize cached series data to [{'name': str, 'seriesID': int | None}]."""
+    normalized = []
+    for item in data or []:
+        if isinstance(item, dict):
+            normalized.append({
+                'name': item.get('name') or str(item),
+                'seriesID': item.get('seriesID'),
+            })
+        else:
+            normalized.append({'name': str(item), 'seriesID': None})
+    return normalized
+
+
 def get_cached_metadata() -> dict[str, list[str]]:
     """
     Get cached sermon metadata (pastors, events, series) from SQLite database.
@@ -72,7 +87,9 @@ def get_cached_metadata() -> dict[str, list[str]]:
         event_types = (
             infos['event_types']['data'] if infos['event_types'] else DEFAULT_EVENT_TYPES.copy()
         )
-        series = infos['series']['data'] if infos['series'] else DEFAULT_SERIES.copy()
+        series = _normalize_series(
+            infos['series']['data'] if infos['series'] else DEFAULT_SERIES.copy()
+        )
 
         result = {
             'pastors': pastors,
@@ -101,7 +118,7 @@ def get_cached_metadata() -> dict[str, list[str]]:
             st.session_state.sermon_metadata = {
                 'pastors': DEFAULT_PASTORS.copy(),
                 'event_types': DEFAULT_EVENT_TYPES.copy(),
-                'series': DEFAULT_SERIES.copy(),
+                'series': _normalize_series(DEFAULT_SERIES.copy()),
                 'last_refresh': None,
                 'stale': False,
             }
@@ -315,9 +332,19 @@ def get_event_types() -> list[str]:
 
 
 def get_series() -> list[str]:
-    """Get list of sermon series."""
+    """Get list of sermon series names."""
     metadata = get_cached_metadata()
-    return metadata['series']
+    return [s['name'] for s in metadata['series']]
+
+
+def get_series_map() -> dict[str, int]:
+    """Map series names to their numeric SermonAudio seriesID."""
+    metadata = get_cached_metadata()
+    return {
+        s['name']: s['seriesID']
+        for s in metadata['series']
+        if s.get('seriesID') is not None
+    }
 
 
 def show_metadata_refresh_section():
@@ -427,16 +454,12 @@ def create_event_type_selectbox(label: str = "Event Type", key: str = "event_typ
 def create_series_selectbox(label: str = "Series (optional)", key: str = "series", **kwargs) -> str | None:
     """
     Create a selectbox for series selection with option to add new series.
-    
-    Args:
-        label: Label for the selectbox
-        key: Unique key for the widget
-        **kwargs: Additional arguments passed to selectbox
-        
-    Returns:
-        Selected series name or None
+
+    Returns the selected series name for display; the matching numeric
+    seriesID is stored in st.session_state[f"{key}_id"] for uploads.
     """
     series = get_series()
+    series_map = get_series_map()
 
     # Add option for custom series and no series
     options = ["[No Series]"] + series + ["[Add New Series]"]
@@ -450,8 +473,11 @@ def create_series_selectbox(label: str = "Series (optional)", key: str = "series
             key=f"{key}_custom",
             placeholder="Book of Romans"
         )
+        st.session_state[f"{key}_id"] = None
         return custom_series if custom_series else None
     elif selected == "[No Series]":
+        st.session_state[f"{key}_id"] = None
         return None
     else:
+        st.session_state[f"{key}_id"] = series_map.get(selected)
         return selected
