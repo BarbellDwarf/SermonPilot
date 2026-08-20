@@ -825,7 +825,7 @@ def display_sermon_list(filtered_sermons, all_sermons):
     end_idx = min(start_idx + items_per_page, len(filtered_sermons))
     page_sermons = filtered_sermons[start_idx:end_idx]
 
-    header_cols = st.columns([0.3, 1.0, 4.5, 1.2, 0.8])
+    header_cols = st.columns([0.25, 1.5, 4.2, 1.4, 1.2])
     with header_cols[2]:
         st.caption("Title · Speaker · Date")
     with header_cols[3]:
@@ -835,7 +835,7 @@ def display_sermon_list(filtered_sermons, all_sermons):
         sid = sermon['id']
         is_selected = sid in st.session_state.selected_sermon_ids
 
-        cols = st.columns([0.3, 1.0, 4.5, 1.2, 0.8])
+        cols = st.columns([0.25, 1.5, 4.2, 1.4, 1.2])
         with cols[0]:
             checked = st.checkbox("Select", value=is_selected, key=f"bulk_{sid}",
                                   label_visibility="collapsed",
