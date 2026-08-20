@@ -457,7 +457,7 @@ class JobQueue:
 
         try:
             with self.db.get_connection() as conn:
-                job_data = job.to_dict()
+                job.to_dict()
                 conn.execute("""
                     INSERT OR REPLACE INTO background_jobs (
                         id, type, title, description, status, progress,
@@ -498,11 +498,22 @@ class JobQueue:
                             'description': row['description'],
                             'status': JobStatus(row['status']),
                             'progress': row['progress'],
-                            'parameters': json.loads(row['parameters']) if row['parameters'] else {},
+                            'parameters': (
+                                json.loads(row['parameters']) if row['parameters'] else {}
+                            ),
                             'logs': json.loads(row['logs']) if row['logs'] else [],
-                            'created_at': datetime.fromisoformat(row['created_at']) if row['created_at'] else None,
-                            'started_at': datetime.fromisoformat(row['started_at']) if row['started_at'] else None,
-                            'completed_at': datetime.fromisoformat(row['completed_at']) if row['completed_at'] else None,
+                            'created_at': (
+                                datetime.fromisoformat(row['created_at'])
+                                if row['created_at'] else None
+                            ),
+                            'started_at': (
+                                datetime.fromisoformat(row['started_at'])
+                                if row['started_at'] else None
+                            ),
+                            'completed_at': (
+                                datetime.fromisoformat(row['completed_at'])
+                                if row['completed_at'] else None
+                            ),
                             'can_cancel': bool(row['can_cancel']),
                             'can_retry': bool(row['can_retry']),
                             'priority': row['priority']

@@ -16,7 +16,7 @@ project_root = ui_dir.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "src"))
 
-from job_queue import Job, JobResult, JobStatus, JobType
+from job_queue import Job, JobResult, JobStatus, JobType  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +78,12 @@ def execute_validation_job(job: Job) -> JobResult:
         for i, sermon_id in enumerate(sermon_ids):
             try:
                 progress = 20 + (i / len(sermon_ids)) * 70  # 20-90% for processing
-                job.update_progress(progress, f"Validating sermon {sermon_id} ({i+1}/{len(sermon_ids)})")
+                job.update_progress(
+                    progress, f"Validating sermon {sermon_id} ({i+1}/{len(sermon_ids)})"
+                )
 
-                # Get configuration from job parameters first, then try loading from file as fallback
+                # Get configuration from job parameters first, then try loading
+                # from file as fallback
                 config = job.parameters.get('config', {})
                 if not config:
                     job.add_log("No config in job parameters, attempting to load from file...")
@@ -100,7 +103,10 @@ def execute_validation_job(job: Job) -> JobResult:
                             raise FileNotFoundError(f"Config file not found at {config_path}")
                     except Exception as e:
                         job.add_log(f"Failed to load config from file: {e}")
-                        raise ValueError(f"No configuration available in job parameters and failed to load from file: {e}")
+                        raise ValueError(
+                            f"No configuration available in job parameters and failed "
+                            f"to load from file: {e}"
+                        ) from e
 
                 if not config:
                     raise ValueError("No configuration available")
@@ -131,10 +137,16 @@ def execute_validation_job(job: Job) -> JobResult:
 
                     if validation_result.is_valid:
                         results['valid'] += 1
-                        job.add_log(f"✅ Sermon {sermon_id}: Valid (score: {validation_result.validation_score:.2f})")
+                        job.add_log(
+                            f"✅ Sermon {sermon_id}: Valid "
+                            f"(score: {validation_result.validation_score:.2f})"
+                        )
                     else:
                         results['invalid'] += 1
-                        job.add_log(f"❌ Sermon {sermon_id}: Invalid (score: {validation_result.validation_score:.2f})")
+                        job.add_log(
+                            f"❌ Sermon {sermon_id}: Invalid "
+                            f"(score: {validation_result.validation_score:.2f})"
+                        )
                 else:
                     results['errors'] += 1
                     job.add_log(f"⚠️ Sermon {sermon_id}: Validation failed")
@@ -149,7 +161,10 @@ def execute_validation_job(job: Job) -> JobResult:
         job.update_progress(95, "Finalizing validation results...")
 
         # Create summary message
-        summary = f"Validation completed: {results['valid']} valid, {results['invalid']} invalid, {results['errors']} errors"
+        summary = (
+            f"Validation completed: {results['valid']} valid, "
+            f"{results['invalid']} invalid, {results['errors']} errors"
+        )
         job.update_progress(100, summary)
 
         return JobResult(
@@ -186,7 +201,9 @@ def execute_sermon_import_job(job: Job) -> JobResult:
                 error="Missing processed_sermons_dir parameter"
             )
 
-        job.update_progress(20, f"Scanning processed sermons directory... (force_reimport={force_reimport})")
+        job.update_progress(
+            20, f"Scanning processed sermons directory... (force_reimport={force_reimport})"
+        )
 
         # Import sermon importer
         from database import SermonRepository
@@ -220,7 +237,9 @@ def execute_sermon_import_job(job: Job) -> JobResult:
         for i, sermon_id in enumerate(sermon_folders):
             try:
                 progress = 40 + (i / len(sermon_folders)) * 50  # 40-90% for processing
-                job.update_progress(progress, f"Importing sermon {sermon_id} ({i+1}/{len(sermon_folders)})")
+                job.update_progress(
+                    progress, f"Importing sermon {sermon_id} ({i+1}/{len(sermon_folders)})"
+                )
 
                 # Check if sermon already exists (skip check if force_reimport is True)
                 existing_sermon = repo.get_sermon(sermon_id)
@@ -239,7 +258,9 @@ def execute_sermon_import_job(job: Job) -> JobResult:
                 if success:
                     # Get the imported sermon data for logging
                     imported_sermon = repo.get_sermon(sermon_id)
-                    sermon_title = imported_sermon.get('title', 'Unknown') if imported_sermon else 'Unknown'
+                    sermon_title = (
+                        imported_sermon.get('title', 'Unknown') if imported_sermon else 'Unknown'
+                    )
 
                     results['imported'] += 1
                     job.add_log(f"✅ Sermon {sermon_id}: Imported successfully - {sermon_title}")
@@ -260,7 +281,10 @@ def execute_sermon_import_job(job: Job) -> JobResult:
         job.update_progress(95, "Finalizing import results...")
 
         # Create summary message
-        summary = f"Import completed: {results['imported']} imported, {results['skipped']} skipped, {results['errors']} errors"
+        summary = (
+            f"Import completed: {results['imported']} imported, "
+            f"{results['skipped']} skipped, {results['errors']} errors"
+        )
         job.update_progress(100, summary)
 
         return JobResult(
@@ -457,7 +481,9 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                     break
 
                 progress = 20 + (i / len(sermon_ids)) * 70  # 20-90% for processing
-                job.update_progress(progress, f"Processing sermon {sermon_id} ({i+1}/{len(sermon_ids)})")
+                job.update_progress(
+                    progress, f"Processing sermon {sermon_id} ({i+1}/{len(sermon_ids)})"
+                )
 
                 sermon_result = {
                     'sermon_id': sermon_id,
@@ -483,7 +509,9 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                             no_upload=bool(form_data.get('dry_run', False)),
                             verbose=False,
                             skip_audio=not actions.get('enhance_audio', False),
-                            force_description=actions.get('generate_description', False) or force_update,
+                            force_description=(
+                                actions.get('generate_description', False) or force_update
+                            ),
                             force_hashtags=actions.get('generate_hashtags', False) or force_update,
                             no_metadata=False,
                             transcription_backend=form_data.get('transcription_backend'),
@@ -522,7 +550,10 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                     results['completed'] += 1
 
                 results['details'].append(sermon_result)
-                job.add_log(f"✅ Sermon {sermon_id}: {len(sermon_result['actions_performed'])} actions completed")
+                job.add_log(
+                    f"✅ Sermon {sermon_id}: "
+                    f"{len(sermon_result['actions_performed'])} actions completed"
+                )
 
             except Exception as e:
                 results['failed'] += 1
@@ -535,7 +566,10 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                 results['details'].append(error_result)
                 job.add_log(f"❌ Error processing sermon {sermon_id}: {str(e)}")
 
-        summary = f"Batch processing completed: {results['completed']} successful, {results['failed']} failed"
+        summary = (
+            f"Batch processing completed: {results['completed']} successful, "
+            f"{results['failed']} failed"
+        )
         job.update_progress(100, summary)
 
         return JobResult(
@@ -580,7 +614,6 @@ def execute_metadata_update_job(job: Job) -> JobResult:
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
         import sermon_updater
-        from sermon_updater import DescriptionValidator
 
         _inject_sermon_updater_config(config)
 
@@ -594,7 +627,9 @@ def execute_metadata_update_job(job: Job) -> JobResult:
         for i, sermon_id in enumerate(sermon_ids):
             try:
                 progress = 10 + (i / len(sermon_ids)) * 80
-                job.update_progress(progress, f"Processing sermon {sermon_id} ({i+1}/{len(sermon_ids)})")
+                job.update_progress(
+                    progress, f"Processing sermon {sermon_id} ({i+1}/{len(sermon_ids)})"
+                )
 
                 sermon_updater.process_single_sermon(
                     sermon_id,

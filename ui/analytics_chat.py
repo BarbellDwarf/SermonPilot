@@ -23,18 +23,18 @@ class AnalyticsChatInterface:
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self.rag_system: SermonAnalyticsRAG | None = None
-        
+
         # Extract SermonAudio credentials from config
         api_key = self.config.get('api_key', '')
         broadcaster_id = self.config.get('broadcaster_id', '')
-        
+
         # Initialize analytics with real credentials
         # If credentials are missing, analytics will operate in mock mode
         self.analytics = SermonAudioAnalytics(
             api_key=api_key,
             broadcaster_id=broadcaster_id
         )
-        
+
         self._initialize_session_state()
 
     def _initialize_session_state(self):
@@ -285,26 +285,35 @@ class AnalyticsChatInterface:
                         "nomic-embed-text": "General purpose (768D) - Versatile, auto-download",
                         "mxbai-embed-large": "Multilingual (1024D) - High quality, auto-download",
                         "snowflake-arctic-embed:s": "Small Arctic (384D) - Fast, auto-download",
-                        "snowflake-arctic-embed:m": "Arctic Medium (768D) - Balanced, auto-download",
-                        "snowflake-arctic-embed:l": "Arctic Large (1024D) - Best quality, auto-download",
+                        "snowflake-arctic-embed:m": (
+                            "Arctic Medium (768D) - Balanced, auto-download"
+                        ),
+                        "snowflake-arctic-embed:l": (
+                            "Arctic Large (1024D) - Best quality, auto-download"
+                        ),
                         # Sentence Transformers models (local, no download needed)
                         "all-MiniLM-L6-v2": "Fast, good quality (384D) - Default local",
                         "all-mpnet-base-v2": "Higher quality (768D) - Slower but better",
                         "all-distilroberta-v1": "Good balance (768D) - Robust performance",
-                        "paraphrase-multilingual-MiniLM-L12-v2": "Multilingual (384D) - Cross-language support"
+                        "paraphrase-multilingual-MiniLM-L12-v2": (
+                            "Multilingual (384D) - Cross-language support"
+                        )
                     }
-                    
+
                     # Try to get available Ollama models dynamically and add explanations
                     available_ollama_models = []
                     try:
-                        import ollama
                         import os
+
+                        import ollama
                         os.environ["OLLAMA_HOST"] = os.getenv("OLLAMA_HOST", "http://localhost:11434")
                         models_list = ollama.list()
                         available_ollama_models = []
                         for model in models_list.get('models', []):
                             try:
-                                available_ollama_models.append(model.get('model') or model.get('name'))
+                                available_ollama_models.append(
+                                    model.get('model') or model.get('name')
+                                )
                             except Exception:
                                 continue
                         available_ollama_models = [m for m in available_ollama_models if m]
@@ -344,11 +353,11 @@ class AnalyticsChatInterface:
                                 elif 'small' in model.lower():
                                     dimensions = 384
                                 model_options[model] = f"Ollama ({dimensions}D) - Refreshed"
-                    
+
                     # Create display options with descriptions
                     display_options = [f"{model} - {desc}" for model, desc in model_options.items()]
                     model_keys = list(model_options.keys())
-                    
+
                     # Find current model index
                     current_model = current.get('model', 'bge-large')
                     # Handle models with :latest suffix
@@ -357,7 +366,7 @@ class AnalyticsChatInterface:
                     current_index = 0
                     if current_model in model_keys:
                         current_index = model_keys.index(current_model)
-                    
+
                     col1, col2 = st.columns([3, 1])
                     with col1:
                         selected_display = st.selectbox(
@@ -367,33 +376,36 @@ class AnalyticsChatInterface:
                             key="embedding_model_select",
                             help="Choose embedding model for semantic search."
                         )
-                    
+
                     with col2:
                         # Add refresh button for Ollama models
                         if st.button("🔄 Refresh Models", key="refresh_ollama_models",
                                    help="Refresh available Ollama models"):
                             try:
-                                import ollama
                                 import os
+
+                                import ollama
                                 os.environ["OLLAMA_HOST"] = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-                                
+
                                 with st.spinner("Fetching available Ollama models..."):
                                     models_list = ollama.list()
                                     available_models = []
                                     for model in models_list.get('models', []):
                                         try:
-                                            available_models.append(model.get('model') or model.get('name'))
+                                            available_models.append(
+                                                model.get('model') or model.get('name')
+                                            )
                                         except Exception:
                                             continue
                                     available_models = [m for m in available_models if m]
-                                    
+
                                     embedding_models = [
                                         m for m in available_models
                                         if any(embed in m.lower()
                                                for embed in ['embed', 'bge', 'nomic',
                                                              'arctic', 'mxbai'])
                                     ]
-                                    
+
                                     if embedding_models:
                                         count = len(embedding_models)
                                         st.success(f"Found {count} embedding models")
@@ -404,13 +416,13 @@ class AnalyticsChatInterface:
                                         st.rerun()
                                     else:
                                         st.warning("No embedding models found in Ollama")
-                                        
+
                             except ImportError:
                                 st.error("Ollama library not installed")
                             except Exception as e:
                                 st.error(f"Failed to fetch Ollama models: {e}")
                                 logger.error(f"Ollama model refresh error: {e}")
-                    
+
                     # Display available Ollama models
                     if 'available_ollama_embedding_models' in st.session_state:
                         available_models = st.session_state.available_ollama_embedding_models
@@ -423,27 +435,30 @@ class AnalyticsChatInterface:
                                         dimensions = 1024
                                     elif 'small' in model.lower():
                                         dimensions = 384
-                                    
+
                                     st.write(f"• **{model}** ({dimensions}D) - Available locally")
                         else:
-                            st.info("No embedding models found. Click '🔄 Refresh Models' to check again.")
-                        
+                            st.info(
+                                "No embedding models found. "
+                                "Click '🔄 Refresh Models' to check again."
+                            )
+
                         if st.button("🔄 Switch Model", key="switch_model"):
                             # Extract model name from selected display option
                             selected_model = model_keys[display_options.index(selected_display)]
-                            
+
                             with st.spinner(f"Switching to {selected_model}..."):
                                 # Determine provider based on model name
                                 is_ollama_model = any(
                                     embed in selected_model.lower()
                                     for embed in ['embed', 'bge', 'nomic', 'arctic', 'mxbai']
                                 )
-                                
+
                                 # Use the model name with :latest suffix for Ollama models
                                 model_to_use = selected_model
                                 if is_ollama_model and ':' not in selected_model:
                                     model_to_use = f"{selected_model}:latest"
-                                
+
                                 new_config = {
                                     'primary': {
                                         'provider': ('ollama' if is_ollama_model
@@ -457,11 +472,11 @@ class AnalyticsChatInterface:
                                         }
                                     ]
                                 }
-                                
+
                                 if is_ollama_model:
                                     new_config['primary']['host'] = os.getenv("OLLAMA_HOST", "http://localhost:11434")
                                     new_config['primary']['auto_download'] = True
-                                
+
                                 # Switch the embedding provider
                                 success = self.rag_system.switch_embedding_provider(new_config)
                                 if success:

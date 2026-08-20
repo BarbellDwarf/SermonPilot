@@ -381,15 +381,17 @@ def show_metadata_refresh_section():
             st.rerun()
 
 
-def create_pastor_selectbox(label: str = "Speaker Name", key: str = "speaker_name", **kwargs) -> str | None:
+def create_pastor_selectbox(
+    label: str = "Speaker Name", key: str = "speaker_name", **kwargs
+) -> str | None:
     """
     Create a selectbox for pastor selection with option to add new pastor.
-    
+
     Args:
         label: Label for the selectbox
         key: Unique key for the widget
         **kwargs: Additional arguments passed to selectbox
-        
+
     Returns:
         Selected pastor name or None
     """
@@ -418,15 +420,17 @@ def create_pastor_selectbox(label: str = "Speaker Name", key: str = "speaker_nam
         return selected
 
 
-def create_event_type_selectbox(label: str = "Event Type", key: str = "event_type", **kwargs) -> str | None:
+def create_event_type_selectbox(
+    label: str = "Event Type", key: str = "event_type", **kwargs
+) -> str | None:
     """
     Create a selectbox for event type selection with option to add new type.
-    
+
     Args:
         label: Label for the selectbox
         key: Unique key for the widget
         **kwargs: Additional arguments passed to selectbox
-        
+
     Returns:
         Selected event type or None
     """
@@ -451,7 +455,9 @@ def create_event_type_selectbox(label: str = "Event Type", key: str = "event_typ
         return selected
 
 
-def create_series_selectbox(label: str = "Series (optional)", key: str = "series", **kwargs) -> str | None:
+def create_series_selectbox(
+    label: str = "Series (optional)", key: str = "series", **kwargs
+) -> str | None:
     """
     Create a selectbox for series selection with option to add new series.
 

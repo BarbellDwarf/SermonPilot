@@ -1,17 +1,17 @@
 # ui/components/audio_waveform.py
-import streamlit as st
-import plotly.graph_objects as go
-from typing import Optional, Tuple, List
+
 import numpy as np
+import plotly.graph_objects as go
+import streamlit as st
 
 
 class AudioWaveformViewer:
     """Interactive waveform display component for audio editing."""
-    
+
     def __init__(self, audio_data: np.ndarray, sample_rate: int):
         """
         Initialize the waveform viewer.
-        
+
         Args:
             audio_data: Audio signal as numpy array
             sample_rate: Sample rate of the audio
@@ -21,10 +21,10 @@ class AudioWaveformViewer:
         self.segments = []  # List of (start_time, end_time, action) tuples
         self.duration = len(audio_data) / sample_rate
 
-    def render_waveform(self) -> Optional[Tuple[float, float]]:
+    def render_waveform(self) -> tuple[float, float] | None:
         """
         Render interactive waveform with selection capabilities.
-        
+
         Returns:
             Selected region as (start_time, end_time) or None
         """
@@ -40,7 +40,7 @@ class AudioWaveformViewer:
             y=self.audio_data,
             mode='lines',
             name='Audio Waveform',
-            line=dict(color='blue', width=1),
+            line={'color': 'blue', 'width': 1},
             hovertemplate='Time: %{x:.2f}s<br>Amplitude: %{y:.3f}<extra></extra>'
         ))
 
@@ -73,8 +73,8 @@ class AudioWaveformViewer:
         )
 
         # Display the chart and capture selection
-        selected_data = st.plotly_chart(fig, width='stretch', key="waveform_chart")
-        
+        st.plotly_chart(fig, width='stretch', key="waveform_chart")
+
         # For now, return None as selection handling needs more complex implementation
         return None
 
@@ -101,7 +101,7 @@ class AudioWaveformViewer:
         if 0 <= index < len(self.segments):
             self.segments.pop(index)
 
-    def get_segments(self) -> List[Tuple[float, float, str]]:
+    def get_segments(self) -> list[tuple[float, float, str]]:
         """Get all defined segments."""
         return self.segments.copy()
 
@@ -124,7 +124,7 @@ class AudioWaveformViewer:
                 'max_amplitude': 0.0,
                 'rms_level': 0.0
             }
-        
+
         return {
             'duration': self.duration,
             'sample_rate': self.sample_rate,
@@ -137,9 +137,9 @@ class AudioWaveformViewer:
     def render_audio_info(self):
         """Render audio information display."""
         info = self.get_audio_info()
-        
+
         col1, col2, col3, col4 = st.columns(4)
-        
+
         with col1:
             st.metric("Duration", f"{info['duration']:.1f}s")
         with col2:
@@ -156,10 +156,10 @@ class AudioWaveformViewer:
             return
 
         st.subheader("Current Segments")
-        
+
         for i, (start, end, action) in enumerate(self.segments):
             col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
-            
+
             with col1:
                 st.write(f"**Start:** {start:.1f}s")
             with col2:
