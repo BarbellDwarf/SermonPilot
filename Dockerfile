@@ -30,8 +30,8 @@ ENV PATH="/app/venv/bin:$PATH"
 ENV PYTHONPATH="/app:/app/src:/app/ui"
 
 RUN useradd -m -u 1000 sermonapp && \
-    mkdir -p /app /data /models /logs && \
-    chown -R sermonapp:sermonapp /app /data /models /logs
+    mkdir -p /app /data /models /logs /home/sermonapp/.cache && \
+    chown -R sermonapp:sermonapp /app /data /models /logs /home/sermonapp/.cache
 
 WORKDIR /app
 
@@ -44,6 +44,12 @@ RUN pip install --no-cache-dir uv
 # Install core + GPU-specific dependencies
 RUN if [ "$GPU_BACKEND" = "cuda" ]; then \
         uv pip install --no-cache-dir -r requirements/requirements.txt && \
+        uv pip install --no-cache-dir \
+            --index-url https://download.pytorch.org/whl/cu121 \
+            --reinstall-package torch \
+            --reinstall-package torchaudio \
+            --reinstall-package torchvision \
+            torch torchaudio torchvision && \
         uv pip install --no-cache-dir onnxruntime-gpu; \
     elif [ "$GPU_BACKEND" = "rocm" ]; then \
         uv pip install --no-cache-dir -r requirements/requirements-rocm.txt; \

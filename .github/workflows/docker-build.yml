@@ -16,6 +16,10 @@ on:
           - cpu
         default: all
 
+concurrency:
+  group: docker-build
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
 
@@ -23,10 +27,7 @@ jobs:
   build:
     strategy:
       matrix:
-        gpu:
-          - cuda
-          - rocm
-          - cpu
+        gpu: ${{ fromJSON(github.event_name == 'workflow_dispatch' && (github.event.inputs.gpu_backend == 'cuda' && '["cuda"]' || github.event.inputs.gpu_backend == 'rocm' && '["rocm"]' || github.event.inputs.gpu_backend == 'cpu' && '["cpu"]' || '["cuda", "rocm", "cpu"]') || '["cuda", "rocm", "cpu"]') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -54,19 +55,22 @@ jobs:
         id: version
         run: |
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+            echo "publish_moving=true" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=$(date +%Y%m%d%H%M%S)" >> $GITHUB_OUTPUT
+            echo "tag=$(date +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+            echo "publish_moving=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          push: ${{ matrix.gpu != 'cpu' }}
+          load: ${{ matrix.gpu == 'cpu' }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}-${{ matrix.gpu }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ matrix.gpu }}
+            ${{ steps.version.outputs.publish_moving == 'true' && format('{0}/{1}:{2}', env.REGISTRY, env.IMAGE_NAME, matrix.gpu) || '' }}
           labels: |
             org.opencontainers.image.version=${{ steps.version.outputs.tag }}
             org.opencontainers.image.description=SermonPilot (${{ matrix.gpu }})
@@ -74,6 +78,48 @@ jobs:
             GPU_BACKEND=${{ matrix.gpu }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Smoke test container (cpu)
+        if: matrix.gpu == 'cpu'
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}-cpu"
+          docker run -d --name sermonpilot-smoke \
+            --health-cmd "curl -f http://localhost:8501/ || exit 1" \
+            --health-interval 5s --health-retries 3 --health-start-period 15s \
+            -p 8501:8501 "$IMAGE"
+          for attempt in $(seq 1 60); do
+            if [ "$(docker inspect -f '{{.State.Running}}' sermonpilot-smoke 2>/dev/null)" != "true" ]; then
+              docker logs sermonpilot-smoke 2>/dev/null || true
+              docker rm -f sermonpilot-smoke >/dev/null 2>&1 || true
+              echo "Smoke test failed: container exited"
+              exit 1
+            fi
+            status="$(docker inspect -f '{{.State.Health.Status}}' sermonpilot-smoke 2>/dev/null || echo starting)"
+            if [ "$status" = "healthy" ]; then
+              echo "Smoke test passed"
+              docker rm -f sermonpilot-smoke >/dev/null 2>&1 || true
+              exit 0
+            fi
+            if [ "$status" = "unhealthy" ]; then
+              docker logs sermonpilot-smoke 2>/dev/null || true
+              docker rm -f sermonpilot-smoke >/dev/null 2>&1 || true
+              echo "Smoke test failed: container unhealthy"
+              exit 1
+            fi
+            sleep 5
+          done
+          docker logs sermonpilot-smoke 2>/dev/null || true
+          docker rm -f sermonpilot-smoke >/dev/null 2>&1 || true
+          echo "Smoke test failed: timed out waiting for healthy"
+          exit 1
+
+      - name: Push cpu image
+        if: matrix.gpu == 'cpu'
+        run: |
+          docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.tag }}-cpu"
+          if [[ "${{ steps.version.outputs.publish_moving }}" == "true" ]]; then
+            docker push "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cpu"
+          fi
 
   tag-latest:
     needs: build
