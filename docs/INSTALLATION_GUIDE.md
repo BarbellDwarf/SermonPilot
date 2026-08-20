@@ -1,186 +1,163 @@
-# Installation Guide - Requirements Files
+# Installation Guide
 
-This repository provides multiple requirements files for different installation scenarios. Choose the appropriate file based on your hardware and performance needs.
+This guide covers installing SermonPilot from source. `pyproject.toml` is the
+single source of truth for dependencies; `requirements/` provides derived
+files for specific hardware scenarios. Choose the file that matches your
+hardware and performance needs.
 
-## 📋 Available Requirements Files
+## Prerequisites
 
-### 1. `requirements/requirements.txt` (Default - Automatic Detection)
-**Best for:** Most users, development, automatic hardware detection
+- Python **3.10+** (see `requires-python = ">=3.10"` in `pyproject.toml`)
+- [uv](https://docs.astral.sh/uv/) (recommended) or `pip`
+- ffmpeg/ffprobe for audio duration detection and video muxing
+- 4 GB+ RAM (8 GB+ recommended for GPU transcription)
+
+## Available Requirements Files
+
+| File | Use case |
+|------|----------|
+| `requirements/requirements.txt` | Default: base runtime dependencies (torch family at the manifest floor) |
+| `requirements/requirements-cpu.txt` | CPU-only PyTorch builds (CPU index) |
+| `requirements/requirements-gpu.txt` | NVIDIA CUDA builds (cu124 index) |
+| `requirements/requirements-rocm.txt` | AMD ROCm builds (rocm7.1 index) |
+| `requirements/requirements-linux.txt` | Linux convenience install (CUDA index) |
+| `requirements/requirements-dev.txt` | Development and testing tools |
+| `requirements/requirements-models-deepfilternet.txt` | DeepFilterNet model extras |
+| `requirements/requirements-models-all.txt` | All AI enhancement models combined |
+
+The torch family is pinned once in `pyproject.toml` (`torch>=2.6.0`,
+`torchaudio>=2.6.0`). Each override file adds the matching wheelhouse index
+and pins the same version with the platform suffix, so any install satisfies
+the manifest floor.
+
+## Quick Selection Guide
+
+### I have an NVIDIA GPU
 ```bash
-pip install -r requirements/requirements.txt
+uv pip install -r requirements/requirements-gpu.txt --index-strategy unsafe-best-match
 ```
-- **CPU fallback with GPU detection**: Installs CPU versions but allows GPU upgrade
-- **Moderate size**: ~2-3GB installation
-- **Compatible**: Works on all systems
-- **Performance**: Good CPU performance, can be upgraded to GPU later
+**Requirements:** NVIDIA GPU (4 GB+), driver compatible with CUDA 12.4
 
-### 2. `requirements/requirements-cpu.txt` (CPU-Only)
-**Best for:** Servers without GPU, testing, low-resource environments
+### I have an AMD GPU
 ```bash
-pip install -r requirements/requirements-cpu.txt
+uv pip install -r requirements/requirements-rocm.txt --index-strategy unsafe-best-match
 ```
-- **CPU-only**: Explicitly installs CPU-only versions
-- **Smallest size**: ~1-2GB installation
-- **Compatible**: Works on all systems
-- **Performance**: CPU-only, slower AI processing
+**Requirements:** ROCm 7.x compatible GPU and driver
 
-### 3. `requirements/requirements-gpu.txt` (GPU Accelerated)
-**Best for:** Users with NVIDIA GPUs, production environments
+### I don't have a GPU or want a minimal installation
 ```bash
-pip install -r requirements/requirements-gpu.txt
-```
-- **GPU acceleration**: CUDA 12.1 support
-- **Moderate GPU size**: ~3-4GB installation
-- **Requirements**: NVIDIA GPU with 4GB+ memory
-- **Performance**: Significantly faster AI processing
-
-### 4. `requirements/requirements-gpu-full.txt` (Maximum GPU Acceleration)
-**Best for:** High-end systems, research, maximum performance
-```bash
-pip install -r requirements/requirements-gpu-full.txt
-```
-- **Full GPU acceleration**: All available GPU optimizations
-- **Large size**: ~6-8GB installation
-- **Requirements**: NVIDIA GPU with 8GB+ memory, 16GB+ system RAM
-- **Performance**: Maximum possible performance
-
-### 5. `requirements/requirements-linux.txt` (Linux-Specific)
-**Best for:** Linux servers, containerized deployments
-```bash
-pip install -r requirements/requirements-linux.txt
-```
-- **Linux optimizations**: Platform-specific packages
-- **Server-friendly**: Headless operation support
-- **Docker compatible**: Works in containers
-
-### 6. `requirements/requirements-dev.txt` (Development)
-**Best for:** Contributors, debugging, development work
-```bash
-pip install -r requirements/requirements-dev.txt
-```
-- **Development tools**: Testing, linting, formatting
-- **Debugging**: Profiling and analysis tools
-- **Code quality**: Pre-commit hooks, type checking
-
-## 🎯 Quick Selection Guide
-
-### I want maximum performance and have a powerful GPU
-```bash
-pip install -r requirements/requirements-gpu-full.txt
-```
-**Requirements:** NVIDIA GPU (8GB+), 16GB+ RAM, 20GB+ disk space
-
-### I have an NVIDIA GPU but want a lighter installation
-```bash
-pip install -r requirements/requirements-gpu.txt
-```
-**Requirements:** NVIDIA GPU (4GB+), 8GB+ RAM, 10GB+ disk space
-
-### I want it to work everywhere (recommended for most users)
-```bash
-pip install -r requirements/requirements.txt
-```
-**Requirements:** Any system, will use GPU if available
-
-### I don't have a GPU or want minimal installation
-```bash
-pip install -r requirements/requirements-cpu.txt
+uv pip install -r requirements/requirements-cpu.txt
 ```
 **Requirements:** Any CPU, slower AI processing
 
-### I'm running on Linux server
+### I want it to work everywhere (recommended for most users)
 ```bash
-pip install -r requirements/requirements-linux.txt
+uv pip install -r requirements/requirements.txt
 ```
-**Requirements:** Linux system, optimized for server deployment
+**Requirements:** Any system; install a GPU override later to upgrade
 
-## 🔧 Installation Instructions
+### I'm running on a Linux server
+```bash
+uv pip install -r requirements/requirements-linux.txt --index-strategy unsafe-best-match
+```
+**Requirements:** Linux system, CUDA-capable for GPU use
+
+## Installation Instructions
 
 ### Standard Installation
+
 ```bash
 # Clone repository
-git clone https://github.com/SpirusNox/SermonPilot.git
+git clone https://github.com/BarbellDwarf/SermonPilot.git
 cd SermonPilot
 
 # Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# OR
-.venv\Scripts\activate     # Windows
-
-# Install dependencies (choose one)
-pip install -r requirements/requirements.txt          # Default
-pip install -r requirements/requirements-gpu.txt      # GPU accelerated
-pip install -r requirements/requirements-gpu-full.txt # Maximum performance
-pip install -r requirements/requirements-cpu.txt      # CPU only
-```
-
-### UV Package Manager (Recommended)
-```bash
-# Install UV
-pip install uv
-
-# Create environment and install
 uv venv --python 3.11
 source .venv/bin/activate  # Linux/Mac
 # OR
 .venv\Scripts\activate     # Windows
 
-# Install dependencies
-uv pip install -r requirements/requirements-gpu.txt  # or your chosen file
+# Install dependencies (choose one)
+uv pip install -r requirements/requirements.txt          # Default
+uv pip install -r requirements/requirements-gpu.txt      # NVIDIA GPU
+uv pip install -r requirements/requirements-rocm.txt     # AMD GPU
+uv pip install -r requirements/requirements-cpu.txt      # CPU only
+```
+
+GPU and ROCm overrides need `--index-strategy unsafe-best-match` so pip can
+pull each package from the wheelhouse that carries the platform suffix.
+
+### Install from the Manifest (Alternative)
+
+```bash
+uv sync
+```
+
+This installs exactly the locked dependency set from `uv.lock` into the
+project virtual environment.
+
+### Configure
+
+```bash
+cp .env.example .env          # Fill in your SermonAudio and LLM API keys
+cp config/config.example.yaml config.yaml   # Optional: customize settings
 ```
 
 ### GPU Installation Verification
+
 After installing GPU requirements, verify CUDA is working:
-```python
-import torch
-print(f"CUDA available: {torch.cuda.is_available()}")
-print(f"CUDA device count: {torch.cuda.device_count()}")
-if torch.cuda.is_available():
-    print(f"CUDA device: {torch.cuda.get_device_name(0)}")
+
+```bash
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+python -c "import torch; print(f'CUDA device count: {torch.cuda.device_count()}')"
+python -c "import torch; print(torch.__version__)"
 ```
 
-## 🚨 Troubleshooting
+For ROCm, confirm the build carries the ROCm suffix:
+
+```bash
+python -c "import torch; print(torch.__version__)"   # e.g. 2.12.1+rocm7.1
+```
+
+## Troubleshooting
 
 ### GPU Installation Issues
-1. **CUDA version mismatch**: Ensure your NVIDIA driver supports CUDA 12.1+
-2. **Out of memory**: Use `requirements/requirements-gpu.txt` instead of `requirements-gpu-full.txt`
-3. **Package conflicts**: Create a fresh virtual environment
+
+1. **CUDA version mismatch**: Ensure your NVIDIA driver supports CUDA 12.4
+   (the cu124 wheelhouse). `nvidia-smi` shows the driver's CUDA version.
+2. **Package conflicts**: Create a fresh virtual environment and use
+   `--index-strategy unsafe-best-match` with the override files.
+3. **Slow transcription on GPU**: Confirm the torch build is the GPU variant
+   (`torch.__version__` shows `+cu124` or `+rocm7.1`) and that
+   `torch.cuda.is_available()` returns `True`.
 
 ### CPU Fallback
-If GPU installation fails, automatically fallback:
+
+If the GPU install fails, install the CPU wheelhouse to get a working
+environment, then retry the GPU install:
+
 ```bash
-pip install -r requirements/requirements-cpu.txt
+uv pip install -r requirements/requirements-cpu.txt
 ```
 
 ### Memory Issues
+
 For systems with limited memory:
-1. Use `requirements/requirements-cpu.txt` for minimal installation
+
+1. Use `requirements/requirements-cpu.txt` for a minimal installation
 2. Close other applications during installation
 3. Consider installing packages individually
 
-## 📊 Performance Comparison
-
-| Requirements File | Installation Size | GPU Memory | Performance | Use Case |
-|-------------------|------------------|------------|-------------|----------|
-| `requirements/requirements.txt` | ~2-3GB | 2GB+ | Good | General use |
-| `requirements/requirements-cpu.txt` | ~1-2GB | N/A | Basic | CPU-only |
-| `requirements/requirements-gpu.txt` | ~3-4GB | 4GB+ | Fast | GPU users |
-| `requirements/requirements-gpu-full.txt` | ~6-8GB | 8GB+ | Maximum | High-end systems |
-
-## 🔄 Upgrading Between Versions
+## Upgrading Between Versions
 
 ### From CPU to GPU
-```bash
-pip install -r requirements/requirements-gpu.txt --force-reinstall
-```
 
-### From Basic GPU to Full GPU
 ```bash
-pip install -r requirements/requirements-gpu-full.txt --upgrade
+uv pip install -r requirements/requirements-gpu.txt --index-strategy unsafe-best-match
 ```
 
 ### Clean Installation (Recommended)
+
 ```bash
 # Remove existing environment
 rm -rf .venv  # Linux/Mac
@@ -188,31 +165,31 @@ rm -rf .venv  # Linux/Mac
 rmdir /s .venv  # Windows
 
 # Create fresh environment
-python -m venv .venv
+uv venv --python 3.11
 source .venv/bin/activate
-pip install -r requirements/requirements-gpu.txt
+uv pip install -r requirements/requirements-gpu.txt --index-strategy unsafe-best-match
 ```
 
-## 📋 System Requirements Summary
+## System Requirements Summary
 
 ### Minimum (CPU-only)
-- Python 3.9+
-- 4GB RAM
-- 5GB disk space
+- Python 3.10+
+- 4 GB RAM
+- 5 GB disk space
 - Any CPU
 
-### Recommended (GPU)
-- Python 3.11+
-- 8GB RAM
-- NVIDIA GPU (4GB+ memory)
-- 10GB disk space
-- CUDA 12.1+ compatible driver
+### Recommended (NVIDIA GPU)
+- Python 3.10+
+- 8 GB RAM
+- NVIDIA GPU (4 GB+ memory)
+- 10 GB disk space
+- CUDA 12.4 compatible driver
 
-### High-Performance (Full GPU)
-- Python 3.11+
-- 16GB+ RAM
-- NVIDIA GPU (8GB+ memory)
-- 20GB+ disk space
-- CUDA 12.1+ compatible driver
+### Recommended (AMD GPU)
+- Python 3.10+
+- 8 GB RAM
+- ROCm 7.x compatible GPU
+- 10 GB disk space
 
-Choose the requirements file that best matches your system capabilities and performance needs!
+Choose the requirements file that best matches your system capabilities and
+performance needs. For GPU details, see [GPU_INSTALLATION.md](GPU_INSTALLATION.md).

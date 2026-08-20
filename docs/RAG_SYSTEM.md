@@ -2,466 +2,227 @@
 
 ## Overview
 
-The SermonPilot implements a sophisticated RAG system that enables natural language queries over sermon analytics data. The system combines ChromaDB for vector storage, sentence transformers for embeddings, and LLM integration for generating responses.
+The SermonPilot web UI includes a RAG system that answers natural-language
+questions about sermon analytics data. It combines ChromaDB for vector
+storage, configurable embedding providers, and the existing LLM
+configuration for response generation. The implementation lives in
+`ui/rag_system.py` (`SermonAnalyticsRAG`) and is used by the Analytics chat
+interface (`ui/analytics_chat.py`).
 
 ## Architecture
 
 ### Components
 
-1. **Vector Database**: ChromaDB for storing sermon analytics embeddings
-2. **Configurable Embedding Providers**: Support for multiple embedding models:
-   - **Sentence Transformers**: Local models (all-MiniLM-L6-v2, all-mpnet-base-v2, etc.)
-   - **OpenAI Embeddings**: Remote API (text-embedding-3-small, text-embedding-3-large, etc.)
-   - **Ollama Embeddings**: Local API server (nomic-embed-text, mxbai-embed-large, etc.)
-   - **Hash-based Fallback**: Deterministic offline embeddings
-3. **LLM Integration**: Uses existing LLMManager for response generation
-4. **Query Processor**: Converts natural language to vector queries
-5. **Response Generator**: Combines retrieved data with LLM responses
-6. **Automatic Fallback**: Graceful degradation when providers fail
+1. **Vector Database**: ChromaDB (persistent client) for storing sermon
+   analytics embeddings
+2. **Configurable Embedding Providers** (`ui/embedding_manager.py`):
+   - **Sentence Transformers**: local models (`all-MiniLM-L6-v2`, `all-mpnet-base-v2`, ...)
+   - **OpenAI**: remote API (`text-embedding-3-small`, `text-embedding-3-large`, ...)
+   - **Ollama**: local API server (`nomic-embed-text`, `mxbai-embed-large`, ...)
+   - **xAI / Anthropic**: remote API (OpenAI-compatible or deterministic fallback)
+   - **Hash-based fallback**: deterministic offline embeddings (the default when
+     no configuration is provided)
+3. **LLM Integration**: response generation reuses the `llm` block from
+   `config.yaml`
+4. **Automatic Fallback**: if the primary embedding provider fails, the
+   configured fallbacks are tried in order
 
 ### Data Flow
 
 ```
-User Query → Embedding → Vector Search → Context Retrieval → LLM Response → User
+Question → Embedding → Vector Search (ChromaDB) → Context → LLM Answer
 ```
 
-## Implementation Details
+## Vector Database Setup
 
-### Vector Database Setup
-
-The RAG system uses ChromaDB as a persistent vector database:
-
-```python
-from chromadb.config import Settings
-import chromadb
-
-client = chromadb.PersistentClient(
-    path="analytics_vector_db",
-    settings=Settings(anonymized_telemetry=False)
-)
-
-collection = client.get_or_create_collection(
-    name="sermon_analytics",
-    metadata={"description": "SermonAudio analytics data for RAG queries"}
-)
-```
-
-### Embedding Pipeline
-
-The system now supports multiple configurable embedding providers with automatic fallback:
-
-```python
-from ui.embedding_manager import EmbeddingManager
-
-# Configure embedding providers
-embedding_config = {
-    'primary': {
-        'provider': 'openai',
-        'api_key': 'your-key',
-        'model': 'text-embedding-3-small'
-    },
-    'fallback': [
-        {
-            'provider': 'sentence_transformers',
-            'model': 'all-MiniLM-L6-v2'
-        },
-        {
-            'provider': 'hash',
-            'dimensions': 1536
-        }
-    ]
-}
-
-manager = EmbeddingManager(embedding_config)
-embeddings = manager.get_embeddings(texts)
-```
-
-**Supported Providers:**
-- **Sentence Transformers**: Local models for offline operation
-- **OpenAI**: High-quality remote embeddings
-- **Ollama**: Local API server embeddings  
-- **Hash Fallback**: Deterministic offline embeddings
-
-See [EMBEDDING_PROVIDERS.md](EMBEDDING_PROVIDERS.md) for detailed configuration options.
-
-### Document Processing
-
-Analytics data is converted to searchable text documents:
-
-```python
-def create_document_text(sermon_data):
-    """Convert sermon analytics to searchable text"""
-    return f"""
-    Sermon: {sermon_data['title']}
-    Speaker: {sermon_data['speaker']}
-    Views: {sermon_data['views']}
-    Engagement: {sermon_data['engagement_score']}
-    Date: {sermon_data['date_preached']}
-    """
-```
-
-### Query Processing
-
-Natural language queries are processed and matched against stored embeddings:
-
-```python
-def query_sermons(query_text, n_results=5):
-    """Find relevant sermons for a query"""
-    query_embedding = embedding_model.encode([query_text])
-    
-    results = collection.query(
-        query_embeddings=query_embedding,
-        n_results=n_results,
-        include=['documents', 'metadatas', 'distances']
-    )
-    
-    return results
-```
-
-## Configuration
-
-### Basic Configuration
-
-```yaml
-embeddings:
-  primary:
-    provider: "sentence_transformers"  # Local embeddings
-    model: "all-MiniLM-L6-v2"
-  fallback:
-    - provider: "hash"
-      dimensions: 384
-
-rag_system:
-  enabled: true
-  vector_db_path: "analytics_vector_db"
-  similarity_threshold: 0.7
-  max_results: 10
-```
-
-### Advanced Configuration
-
-```yaml
-embeddings:
-  primary:
-    provider: "openai"
-    openai:
-      api_key: "your-openai-key"
-      model: "text-embedding-3-small"
-  fallback:
-    - provider: "sentence_transformers"
-      model: "all-MiniLM-L6-v2"
-    - provider: "ollama"
-      host: "http://localhost:11434"
-      model: "nomic-embed-text"
-    - provider: "hash"
-      dimensions: 1536
-
-rag_system:
-  enabled: true
-  vector_db_path: "analytics_vector_db"
-  collection_name: "sermon_analytics"
-  persistence_directory: "./chroma_db"
-  similarity_threshold: 0.7
-  max_results: 10
-  min_similarity_score: 0.5
-  context_window_size: 4000
-  response_max_tokens: 500
-  temperature: 0.7
-```
-
-## Usage Examples
-
-### Basic Setup
+The RAG system uses a ChromaDB persistent client stored at
+`analytics_vector_db` (or the path configured under
+`rag_system.vector_db_path`):
 
 ```python
 from ui.rag_system import SermonAnalyticsRAG
 
-# Initialize RAG system with embedding configuration
-embedding_config = {
-    'primary': {
-        'provider': 'sentence_transformers',
-        'model': 'all-MiniLM-L6-v2'
-    },
-    'fallback': [
-        {
-            'provider': 'hash',
-            'dimensions': 384
-        }
-    ]
-}
-
-rag = SermonAnalyticsRAG(embedding_config=embedding_config)
-
-# Add sermon data
-sermon_data = {
-    "sermon_id": "123456",
-    "title": "The Power of Prayer",
-    "speaker": "John Doe",
-    "views": 1250,
-    "engagement_score": 8.5
-}
-
-rag.add_analytics_data([sermon_data])
-
-# Query the system
-results = rag.query_analytics("sermons about prayer with high engagement")
-
-# Check embedding provider
-provider_info = rag.get_embedding_provider_info()
-print(f"Using: {provider_info['current_provider']['provider']}")
+rag = SermonAnalyticsRAG()  # db_path="analytics_vector_db" by default
 ```
 
-### Advanced Queries
+The collection is named `sermon_analytics`.
+
+## Configuration
+
+### Embeddings
+
+Embedding providers are configured under `embeddings` in `config.yaml`:
+
+```yaml
+embeddings:
+  primary:
+    provider: "ollama"                # sentence_transformers, openai, ollama, xai, anthropic
+    ollama:
+      host: "http://localhost:11434"
+      model: "mxbai-embed-large:latest"
+  fallback:
+    - provider: "sentence_transformers"
+      model: "all-MiniLM-L6-v2"
+    - provider: "openai"
+      openai:
+        api_key: "${OPENAI_API_KEY}"
+        model: "text-embedding-3-small"
+```
+
+The only RAG-specific key is `rag_system.vector_db_path`, which overrides the
+default `analytics_vector_db` storage location:
+
+```yaml
+rag_system:
+  vector_db_path: "/data/analytics_vector_db"
+```
+
+See [EMBEDDING_PROVIDERS.md](EMBEDDING_PROVIDERS.md) for the full provider
+list and fallback behavior.
+
+## Usage
+
+### Adding analytics data
 
 ```python
-# Statistical queries
-results = rag.query("What's the average engagement score for John Doe's sermons?")
+from ui.rag_system import SermonAnalyticsRAG
 
-# Trend analysis
-results = rag.query("How has sermon engagement changed over the last 6 months?")
+rag = SermonAnalyticsRAG()
 
-# Comparative analysis
-results = rag.query("Compare engagement between Sunday morning and evening services")
+analytics_data = [
+    {
+        "sermon_id": "123456",
+        "title": "The Power of Prayer",
+        "speaker": "John Doe",
+        "series": "Foundations",
+        "event_type": "Sunday - AM",
+        "date_preached": "2025-01-15",
+        "views": 1250,
+        "listens": 800,
+        "downloads": 150,
+        "duration_minutes": 38,
+        "engagement_score": 8.5,
+        "watch_time_avg": 0.75,
+        "keywords": ["prayer", "faith"],
+    }
+]
 
-# Content discovery
-results = rag.query("Find sermons about forgiveness with more than 1000 views")
+rag.add_analytics_data(analytics_data)
+```
+
+### Querying
+
+```python
+results = rag.query_analytics("sermons about prayer with high engagement")
+print(results["answer"])
+for sermon in results["relevant_sermons"]:
+    print(sermon["title"], sermon["relevance_score"])
+```
+
+### Collection management
+
+```python
+stats = rag.get_collection_stats()   # document count, provider, model, dimensions
+rag.clear_collection()               # wipe all stored documents
+rag.get_embedding_provider_info()    # current provider and available fallbacks
+rag.switch_embedding_provider(new_config)  # change provider at runtime
+```
+
+### Creating from configuration
+
+```python
+from ui.rag_system import create_rag_with_config
+
+rag = create_rag_with_config(config)  # reads embeddings + rag_system.vector_db_path
 ```
 
 ## Data Models
 
-### Sermon Analytics Document
+### Analytics document
+
+Each analytics record added to the store carries these fields:
 
 ```python
 {
-    "sermon_id": str,           # Unique identifier
-    "title": str,               # Sermon title
-    "speaker": str,             # Speaker name
-    "series": str,              # Sermon series
-    "date_preached": str,       # Preaching date
-    "event_type": str,          # Service type
-    "bible_text": str,          # Scripture reference
-    "views": int,               # View count
-    "listens": int,             # Listen count
-    "downloads": int,           # Download count
-    "avg_watch_percentage": float,  # Completion rate
-    "engagement_score": float,  # Calculated engagement
-    "keywords": List[str],      # Content keywords
-    "metadata": dict           # Additional metadata
+    "sermon_id": str,             # Unique identifier
+    "title": str,                 # Sermon title
+    "speaker": str,               # Speaker name
+    "series": str,                # Sermon series
+    "event_type": str,            # Service type
+    "date_preached": str,         # Preaching date
+    "date_uploaded": str,         # Upload date
+    "views": int,                 # View count (0 when the API does not provide it)
+    "listens": int,               # Listen count
+    "downloads": int,             # Download count
+    "duration_minutes": int,      # Audio duration
+    "engagement_score": float,    # Calculated engagement
+    "watch_time_avg": float,      # Average completion rate
+    "keywords": list[str],        # Content keywords
 }
 ```
 
-### Query Result Format
+String fields are stored as ChromaDB metadata strings, numeric fields as
+floats, and keywords as a comma-joined string.
+
+### Query result format
+
+`query_analytics()` returns:
 
 ```python
 {
-    "query": str,              # Original query
-    "results": [
+    "question": str,              # Original question
+    "answer": str,                # LLM-generated answer
+    "relevant_sermons": [         # Retrieved sermons, best match first
         {
-            "document": str,    # Document text
-            "metadata": dict,   # Sermon metadata
-            "similarity": float # Similarity score
+            "title": str,
+            "speaker": str,
+            "views": int,
+            "listens": int,
+            "relevance_score": float,  # 1 - distance
         }
     ],
-    "response": str,           # Generated response
-    "context_used": str        # Context provided to LLM
+    "data_source": str,           # "rag_system", "dimension_mismatch_error", or "error"
+    "timestamp": str,             # ISO timestamp (successful queries only)
 }
 ```
 
-## Performance Optimization
-
-### Embedding Caching
-
-```python
-# Cache embeddings to avoid recomputation
-EMBEDDING_CACHE = {}
-
-def get_cached_embedding(text):
-    if text not in EMBEDDING_CACHE:
-        EMBEDDING_CACHE[text] = model.encode([text])
-    return EMBEDDING_CACHE[text]
-```
-
-### Batch Processing
-
-```python
-# Process multiple documents efficiently
-def add_batch_data(sermon_batch):
-    texts = [create_document_text(s) for s in sermon_batch]
-    embeddings = model.encode(texts, batch_size=32)
-    
-    collection.add(
-        documents=texts,
-        embeddings=embeddings,
-        metadatas=[s['metadata'] for s in sermon_batch],
-        ids=[s['sermon_id'] for s in sermon_batch]
-    )
-```
-
-### Query Optimization
-
-```python
-# Use appropriate similarity thresholds
-def optimized_query(query_text, threshold=0.7):
-    results = collection.query(
-        query_embeddings=model.encode([query_text]),
-        n_results=20,  # Get more candidates
-        include=['documents', 'metadatas', 'distances']
-    )
-    
-    # Filter by similarity threshold
-    filtered_results = [
-        r for r in results if r['distance'] >= threshold
-    ]
-    
-    return filtered_results[:10]  # Return top 10
-```
+When no relevant documents are found, `relevant_sermons` is empty and
+`answer` explains that nothing matched. A dimension mismatch (for example,
+after switching embedding models) triggers an automatic reset message.
 
 ## Troubleshooting
 
-### Common Issues
+### Model download failures
 
-**Model Download Failures:**
+Pre-download sentence-transformers models so first use is offline:
+
 ```bash
-# Pre-download models
 python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 ```
 
-**ChromaDB Persistence Issues:**
-```python
-# Check database permissions
-import os
-db_path = "analytics_vector_db"
-if not os.path.exists(db_path):
-    os.makedirs(db_path, exist_ok=True)
+### Dimension mismatch after changing the embedding model
+
+ChromaDB rejects queries whose embedding dimensions differ from the stored
+vectors. `query_analytics()` detects this and returns a reset message; the
+Analytics chat interface clears the collection and re-indexes on the next
+query.
+
+### ChromaDB persistence issues
+
+The vector store is a local directory. Ensure the process can write to it:
+
+```bash
+ls -ld analytics_vector_db
 ```
 
-**Memory Issues with Large Datasets:**
-```python
-# Process in smaller batches
-BATCH_SIZE = 100
-for i in range(0, len(sermon_data), BATCH_SIZE):
-    batch = sermon_data[i:i+BATCH_SIZE]
-    rag.add_sermon_data(batch)
-```
-
-### Performance Monitoring
-
-```python
-import time
-import logging
-
-def monitor_query_performance(query):
-    start_time = time.time()
-    results = rag.query(query)
-    end_time = time.time()
-    
-    logging.info(f"Query '{query}' took {end_time - start_time:.2f}s")
-    logging.info(f"Returned {len(results)} results")
-    
-    return results
-```
-
-## API Reference
-
-### SermonAnalyticsRAG Class
-
-```python
-class SermonAnalyticsRAG:
-    def __init__(self, db_path: str = "analytics_vector_db"):
-        """Initialize RAG system"""
-        
-    def add_sermon_data(self, sermon_list: List[dict]):
-        """Add sermon analytics data to vector database"""
-        
-    def query(self, query_text: str, n_results: int = 5) -> dict:
-        """Query sermon data using natural language"""
-        
-    def clear_database(self):
-        """Clear all data from vector database"""
-        
-    def get_collection_info(self) -> dict:
-        """Get information about stored data"""
-```
-
-### Helper Functions
-
-```python
-def initialize_rag_system_with_data(sermon_data: List[dict]) -> SermonAnalyticsRAG:
-    """Initialize RAG system and populate with data"""
-    
-def create_document_text(sermon: dict) -> str:
-    """Convert sermon data to searchable text"""
-    
-def extract_query_intent(query: str) -> dict:
-    """Analyze query to determine intent and parameters"""
-```
+Delete the directory to start from scratch; it will be recreated on the next
+indexing pass.
 
 ## Security Considerations
 
-### Data Privacy
-- Sermon data is stored locally in ChromaDB
-- No external services receive sensitive data
-- Embeddings are anonymized representations
-
-### API Security
-- LLM providers receive only aggregated, anonymized data
-- No personal information is included in queries
-- Rate limiting prevents abuse
-
-### Access Control
-- Database files are protected by file system permissions
-- Web interface requires authentication (if configured)
-- Audit logging for all queries
-
-## Deployment
-
-### Docker Deployment
-
-```dockerfile
-FROM python:3.11-slim
-
-WORKDIR /app
-
-# Install dependencies
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-# Copy application
-COPY . .
-
-# Initialize RAG system
-RUN python -c "from ui.rag_system import SermonAnalyticsRAG; rag = SermonAnalyticsRAG()"
-
-EXPOSE 8501
-
-CMD ["streamlit", "run", "streamlit_app.py"]
-```
-
-### Production Configuration
-
-```yaml
-rag_system:
-  enabled: true
-  
-  # Production settings
-  vector_db_path: "/data/analytics_vector_db"
-  embedding_model: "all-MiniLM-L6-v2"
-  
-  # Performance settings
-  embedding_batch_size: 64
-  max_concurrent_queries: 10
-  query_timeout_seconds: 30
-  
-  # Monitoring
-  enable_metrics: true
-  log_level: "INFO"
-  metrics_export_path: "/data/metrics"
-```
-
-## Future Enhancements
-
-- **Multi-modal embeddings**: Support for audio and video content
-- **Custom models**: Fine-tuned embeddings for sermon content
-- **Distributed deployment**: Scale across multiple servers
-- **Real-time updates**: Stream new sermon data automatically
-- **Advanced analytics**: Trend prediction and anomaly detection
+- Analytics data is stored locally in the ChromaDB directory; nothing is
+  sent to external services except the question and retrieved context, which
+  go to the configured LLM provider
+- API keys are read from environment variables via `config.yaml` substitution
+- The web UI can require a password before any page renders (set
+  `APP_PASSWORD` in `.env`); see [SECURITY_SETUP_GUIDE.md](SECURITY_SETUP_GUIDE.md)
