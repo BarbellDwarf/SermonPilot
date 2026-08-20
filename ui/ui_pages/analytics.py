@@ -77,7 +77,7 @@ def show_processing_metrics():
     st.markdown("### 📊 Processing Metrics")
 
     # Time range selector
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns([2, 1])
 
     with col1:
         time_range = st.selectbox(
@@ -87,10 +87,11 @@ def show_processing_metrics():
         )
 
     with col2:
-        st.button("🔄 Refresh Data")
-
-    with col3:
-        st.checkbox("Auto Refresh (30s)")
+        if st.button(
+            "🔄 Refresh Data", help="Clear cached analytics and reload from the database"
+        ):
+            st.cache_data.clear()
+            st.rerun()
 
     # Generate real data based on time range
     metrics_data = get_real_metrics_data(time_range)
@@ -222,28 +223,40 @@ def show_cost_tracking():
         st.metric(
             "Total API Calls",
             f"{cost_data['total_calls']:,}",
-            f"+{cost_data['calls_change']:,} vs last month"
+            delta=_metric_delta(
+                cost_data['total_calls'],
+                f"{cost_data['calls_change']:+,} vs last month",
+            ),
         )
 
     with col2:
         st.metric(
             "Total Tokens",
             f"{cost_data['total_tokens']:,}",
-            f"+{cost_data['tokens_change']:,} vs last month"
+            delta=_metric_delta(
+                cost_data['total_tokens'],
+                f"{cost_data['tokens_change']:+,} vs last month",
+            ),
         )
 
     with col3:
         st.metric(
             "Total Cost",
             f"${cost_data['total_cost']:.2f}",
-            f"+${cost_data['cost_change']:.2f} vs last month"
+            delta=_metric_delta(
+                cost_data['total_cost'],
+                f"${cost_data['cost_change']:+.2f} vs last month",
+            ),
         )
 
     with col4:
         st.metric(
             "Avg Cost/Sermon",
             f"${cost_data['avg_cost_per_sermon']:.3f}",
-            f"{cost_data['efficiency_change']:+.1f}% efficiency"
+            delta=_metric_delta(
+                cost_data['avg_cost_per_sermon'],
+                f"{cost_data['efficiency_change']:+.1f}% efficiency",
+            ),
         )
 
     # Provider breakdown
@@ -325,28 +338,40 @@ def show_performance_metrics():
         st.metric(
             "Avg Processing Time",
             f"{perf_data['avg_processing_time']:.1f} min",
-            f"{perf_data['processing_time_change']:+.1f} min vs last week"
+            delta=_metric_delta(
+                perf_data['avg_processing_time'],
+                f"{perf_data['processing_time_change']:+.1f} min vs last week",
+            ),
         )
 
     with col2:
         st.metric(
             "Success Rate",
             f"{perf_data['success_rate']:.1f}%",
-            f"{perf_data['success_rate_change']:+.1f}% vs last week"
+            delta=_metric_delta(
+                perf_data['success_rate'],
+                f"{perf_data['success_rate_change']:+.1f}% vs last week",
+            ),
         )
 
     with col3:
         st.metric(
             "Queue Length",
             f"{perf_data['queue_length']}",
-            f"{perf_data['queue_change']:+d} vs yesterday"
+            delta=_metric_delta(
+                perf_data['queue_length'],
+                f"{perf_data['queue_change']:+d} vs yesterday",
+            ),
         )
 
     with col4:
         st.metric(
             "Error Rate",
             f"{perf_data['error_rate']:.1f}%",
-            f"{perf_data['error_rate_change']:+.1f}% vs last week"
+            delta=_metric_delta(
+                perf_data['error_rate'],
+                f"{perf_data['error_rate_change']:+.1f}% vs last week",
+            ),
         )
 
     # Performance charts
@@ -407,16 +432,16 @@ def show_performance_metrics():
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric("CPU Usage", f"{resource_data['cpu_usage']:.1f}%")
-        st.metric("Memory Usage", f"{resource_data['memory_usage']:.1f}%")
+        st.metric("CPU Usage", f"{resource_data.get('cpu_usage', 0):.1f}%")
+        st.metric("Memory Usage", f"{resource_data.get('memory_usage', 0):.1f}%")
 
     with col2:
-        st.metric("Disk Usage", f"{resource_data['disk_usage']:.1f}%")
-        st.metric("Network I/O", f"{resource_data['network_io']:.1f} MB/s")
+        st.metric("Disk Usage", f"{resource_data.get('disk_usage', 0):.1f}%")
+        st.metric("Network I/O", f"{resource_data.get('network_io', 0):.1f} MB/s")
 
     with col3:
-        st.metric("GPU Usage", f"{resource_data['gpu_usage']:.1f}%")
-        st.metric("GPU Memory", f"{resource_data['gpu_memory']:.1f}%")
+        st.metric("GPU Usage", f"{resource_data.get('gpu_usage', 0):.1f}%")
+        st.metric("GPU Memory", f"{resource_data.get('gpu_memory', 0):.1f}%")
 
     # Optimization recommendations
     st.markdown("#### 💡 Optimization Recommendations")
@@ -432,6 +457,20 @@ def show_performance_metrics():
             st.write(f"**Impact:** {rec['impact']}")
             st.write(f"**Effort:** {rec['effort']}")
 
+def _metric_delta(base: float, delta: str) -> str | None:
+    """Return the delta label only when the base metric has data"""
+    if base == 0:
+        return None
+    return delta
+
+
+def _period_delta(current: float, previous: float, fmt: str) -> str | None:
+    """Build a comparison delta, or None when either period has no data"""
+    if current == 0 or previous == 0:
+        return None
+    return fmt.format(current - previous)
+
+
 def show_key_metrics(metrics_data):
     """Display key processing metrics"""
     st.markdown("#### 📊 Key Metrics")
@@ -442,28 +481,44 @@ def show_key_metrics(metrics_data):
         st.metric(
             "Total Processed",
             f"{metrics_data['total_processed']:,}",
-            f"+{metrics_data['processed_change']:,} vs previous period"
+            delta=_period_delta(
+                metrics_data['total_processed'],
+                metrics_data['prev_total_processed'],
+                "{:+,} vs previous period",
+            ),
         )
 
     with col2:
         st.metric(
             "Success Rate",
             f"{metrics_data['success_rate']:.1f}%",
-            f"{metrics_data['success_rate_change']:+.1f}% vs previous period"
+            delta=_period_delta(
+                metrics_data['success_rate'],
+                metrics_data['prev_success_rate'],
+                "{:+.1f}% vs previous period",
+            ),
         )
 
     with col3:
         st.metric(
             "Avg Processing Time",
             f"{metrics_data['avg_time']:.1f} min",
-            f"{metrics_data['time_change']:+.1f} min vs previous period"
+            delta=_period_delta(
+                metrics_data['avg_time'],
+                metrics_data['prev_avg_time'],
+                "{:+.1f} min vs previous period",
+            ),
         )
 
     with col4:
         st.metric(
             "Total Errors",
             f"{metrics_data['total_errors']:,}",
-            f"{metrics_data['error_change']:+d} vs previous period"
+            delta=_period_delta(
+                metrics_data['total_errors'],
+                metrics_data['prev_total_errors'],
+                "{:+,} vs previous period",
+            ),
         )
 
 def show_success_rate_chart(metrics_data):
@@ -520,85 +575,109 @@ def show_processing_time_trend(metrics_data):
     else:
         st.info("No processing time data available yet")
 
+def _summarize_processing(processing_data, start_date, end_date):
+    """Summarize processing records within a date range"""
+    from datetime import datetime
+
+    total = 0
+    success = 0
+    errors = 0
+    times = []
+
+    for item in processing_data:
+        try:
+            item_date = datetime.fromisoformat(item.get('timestamp', '2024-01-01'))
+        except Exception:
+            continue
+        if start_date is not None and item_date < start_date:
+            continue
+        if item_date >= end_date:
+            continue
+        total += 1
+        status = item.get('status')
+        if status == 'completed':
+            success += 1
+        elif status == 'failed':
+            errors += 1
+        if item.get('duration'):
+            try:
+                duration_str = str(item.get('duration', '0'))
+                if 'min' in duration_str:
+                    times.append(float(duration_str.replace('min', '').strip()))
+                elif 'sec' in duration_str:
+                    times.append(float(duration_str.replace('sec', '').strip()) / 60)
+            except Exception:
+                continue
+
+    avg_time = sum(times) / len(times) if times else 0.0
+    success_rate = (success / total * 100) if total > 0 else 0.0
+
+    return {
+        'total': total,
+        'success_rate': success_rate,
+        'avg_time': avg_time,
+        'errors': errors,
+    }
+
+
 def get_real_metrics_data(time_range):
     """Get real metrics data from database"""
     try:
         # Import database module
         import sys
+        from datetime import datetime, timedelta
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
         from database import get_db
 
         db = get_db()
-
-        # Calculate date range
-        from datetime import datetime, timedelta
-        end_date = datetime.now()
-        if time_range == "Last 7 Days":
-            start_date = end_date - timedelta(days=7)
-        elif time_range == "Last 30 Days":
-            start_date = end_date - timedelta(days=30)
-        elif time_range == "Last 90 Days":
-            start_date = end_date - timedelta(days=90)
-        else:  # All Time
-            start_date = datetime.min
-
-        # Get processing status data from database
         processing_data = db.get_processing_status()
 
-        # Filter by date range
-        filtered_data = []
-        for item in processing_data:
-            try:
-                item_date = datetime.fromisoformat(item.get('timestamp', '2024-01-01'))
-                if item_date >= start_date:
-                    filtered_data.append(item)
-            except Exception:
-                continue
+        end_date = datetime.now()
+        period_days = {"Last 7 Days": 7, "Last 30 Days": 30, "Last 90 Days": 90}
 
-        total_processed = len(filtered_data)
-        success_count = sum(1 for item in filtered_data if item.get('status') == 'completed')
-        success_rate = (success_count / total_processed * 100) if total_processed > 0 else 0
-        error_count = sum(1 for item in filtered_data if item.get('status') == 'failed')
+        if time_range == "All Time":
+            current = _summarize_processing(processing_data, None, end_date)
+            return {
+                'total_processed': current['total'],
+                'prev_total_processed': 0,
+                'success_rate': current['success_rate'],
+                'prev_success_rate': 0,
+                'avg_time': current['avg_time'],
+                'prev_avg_time': 0,
+                'total_errors': current['errors'],
+                'prev_total_errors': 0,
+            }
 
-        # Calculate processing times
-        times = []
-        for item in filtered_data:
-            if item.get('duration'):
-                try:
-                    # Convert duration to minutes
-                    duration_str = item.get('duration', '0')
-                    if 'min' in duration_str:
-                        times.append(float(duration_str.replace('min', '').strip()))
-                    elif 'sec' in duration_str:
-                        times.append(float(duration_str.replace('sec', '').strip()) / 60)
-                except Exception:
-                    continue
-
-        avg_time = sum(times) / len(times) if times else 0
+        days = period_days[time_range]
+        start_date = end_date - timedelta(days=days)
+        current = _summarize_processing(processing_data, start_date, end_date)
+        previous = _summarize_processing(
+            processing_data, start_date - timedelta(days=days), start_date
+        )
 
         return {
-            'total_processed': total_processed,
-            'processed_change': max(0, total_processed - 50),  # Estimate change
-            'success_rate': success_rate,
-            'success_rate_change': 2.1 if success_rate > 80 else -1.5,
-            'avg_time': avg_time,
-            'time_change': -0.3 if avg_time > 0 else 0,
-            'total_errors': error_count,
-            'error_change': -5 if error_count < 20 else 3
+            'total_processed': current['total'],
+            'prev_total_processed': previous['total'],
+            'success_rate': current['success_rate'],
+            'prev_success_rate': previous['success_rate'],
+            'avg_time': current['avg_time'],
+            'prev_avg_time': previous['avg_time'],
+            'total_errors': current['errors'],
+            'prev_total_errors': previous['errors'],
         }
 
     except Exception:
         # Fallback to reasonable defaults if database fails
         return {
             'total_processed': 0,
-            'processed_change': 0,
+            'prev_total_processed': 0,
             'success_rate': 0,
-            'success_rate_change': 0,
+            'prev_success_rate': 0,
             'avg_time': 0,
-            'time_change': 0,
+            'prev_avg_time': 0,
             'total_errors': 0,
-            'error_change': 0
+            'prev_total_errors': 0,
         }
 
 def get_real_content_data():
