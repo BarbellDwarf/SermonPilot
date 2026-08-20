@@ -154,10 +154,16 @@ class SermonImporter:
         elif file_name.endswith('.mp3'):
             if file_name == FILENAMES["original"]:
                 metadata['file_paths']['original_audio'] = str(file_path)
+                metadata['file_paths'].setdefault('audio', str(file_path))
             elif file_name == FILENAMES["enhanced"] or file_name == FILENAMES["audio"]:
                 metadata['file_paths']['processed_audio'] = str(file_path)
+                metadata['file_paths']['audio'] = str(file_path)
             else:
                 metadata['file_paths']['original_audio'] = str(file_path)
+                if 'Processed' in file_name:
+                    metadata['file_paths']['audio'] = str(file_path)
+                else:
+                    metadata['file_paths'].setdefault('audio', str(file_path))
 
             try:
                 metadata['duration'] = self._get_audio_duration(file_path)
@@ -167,6 +173,7 @@ class SermonImporter:
         elif file_name.endswith('.wav'):
             if 'ai_upscaled' in file_name:
                 metadata['file_paths']['enhanced_audio'] = str(file_path)
+                metadata['file_paths'].setdefault('audio', str(file_path))
                 metadata['processing_info']['enhancement_method'] = 'ai_upscaling'
 
         # Processing info files
