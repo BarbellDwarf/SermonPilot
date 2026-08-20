@@ -891,8 +891,8 @@ def _format_duration(seconds):
     hours, remainder = divmod(seconds, 3600)
     minutes, secs = divmod(remainder, 60)
     if hours > 0:
-        return f"{hours}:{minutes:02d}:{secs:02d}"
-    return f"{minutes}:{secs:02d}"
+        return f"{int(hours)}:{int(minutes):02d}:{int(secs):02d}"
+    return f"{int(minutes):02d}:{int(secs):02d}"
 
 def display_sermon_details(sermon):
     """Display detailed sermon information with API data"""
