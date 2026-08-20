@@ -4325,7 +4325,7 @@ wheels = [
 
 [[package]]
 name = "sermon-audio-updater"
-version = "1.5.3"
+version = "1.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
@@ -4418,7 +4418,7 @@ requires-dist = [
     { name = "sermon-audio-updater", extras = ["audacity", "dev"], marker = "extra == 'all'" },
     { name = "sermonaudio", specifier = ">=1.0.0" },
     { name = "soundfile", specifier = ">=0.12.1" },
-    { name = "streamlit", specifier = ">=1.28.0" },
+    { name = "streamlit", specifier = ">=1.36.0" },
     { name = "torch", specifier = ">=2.6.0" },
     { name = "torchaudio", specifier = ">=2.6.0" },
     { name = "voyageai", specifier = ">=0.2.0" },
