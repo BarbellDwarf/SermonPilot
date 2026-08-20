@@ -202,6 +202,30 @@ st.markdown("""
         gap: 0.2rem;
     }
 
+    /* Pull the page content up under the header bar */
+    [data-testid="stMainBlockContainer"] {
+        padding-top: 1.5rem;
+    }
+
+    /* Sidebar: divide the nav from the status and actions sections */
+    [data-testid="stSidebarNav"] {
+        border-bottom: 1px solid var(--surface-border);
+        padding-bottom: 0.75rem;
+        margin-bottom: 0.25rem;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stExpander"] {
+        border-top: 1px solid var(--surface-border);
+        margin-top: 0.5rem;
+        padding-top: 0.5rem;
+    }
+
+    [data-testid="stSidebar"] h3 {
+        border-top: 1px solid var(--surface-border);
+        margin-top: 0.5rem;
+        padding-top: 0.5rem;
+    }
+
     /* Hide the Streamlit skills promo banner */
     [data-testid="stSkillsNudgeAnchor"] {
         display: none !important;
