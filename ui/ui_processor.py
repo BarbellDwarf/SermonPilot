@@ -271,13 +271,13 @@ def show_validation_progress(sermon_ids: list[str]):
             status_text.text(message)
 
         # Run validation
-        with st.spinner('🔍 Running validation...'):
+        with st.spinner('Running validation...'):
             try:
                 results = processor.validate_sermons(sermon_ids, progress_callback)
 
                 # Show results
                 progress_bar.progress(1.0)
-                status_text.text("✅ Validation completed!")
+                status_text.text("Validation completed!")
 
                 # Display summary
                 col1, col2, col3, col4 = st.columns(4)
@@ -294,7 +294,7 @@ def show_validation_progress(sermon_ids: list[str]):
                 return results
 
             except Exception as e:
-                st.error(f"❌ Validation failed: {e}")
+                st.error(f"Validation failed: {e}")
                 return None
 
 
@@ -317,7 +317,7 @@ def show_processing_status():
         by_operation[op].append(record)
 
     for operation, records in by_operation.items():
-        st.subheader(f"📊 {operation.title()} Operations")
+        st.subheader(f"{operation.title()} Operations")
 
         for record in records:
             col1, col2, col3, col4 = st.columns([2, 1, 1, 3])
@@ -326,13 +326,7 @@ def show_processing_status():
                 st.text(f"Sermon {record['sermon_id']}")
 
             with col2:
-                status_color = {
-                    'processing': '🟡',
-                    'completed': '🟢',
-                    'failed': '🔴',
-                    'starting': '🔵'
-                }.get(record['status'], '⚪')
-                st.text(f"{status_color} {record['status']}")
+                st.text(record['status'])
 
             with col3:
                 st.progress(record['progress'] / 100.0)

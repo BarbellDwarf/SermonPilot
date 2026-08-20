@@ -32,34 +32,34 @@ class AudioEditor:
         Returns:
             Dictionary containing editor state and actions
         """
-        st.subheader("🎵 Audio Editor")
+        st.subheader("Audio Editor")
 
         # Mode selection buttons
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            if st.button("✂️ Select",
+            if st.button("Select",
                         type="primary" if self.editing_mode == "select" else "secondary",
                         help="Select regions for editing"):
                 self.editing_mode = "select"
                 st.session_state.audio_editor_state['mode'] = "select"
 
         with col2:
-            if st.button("🗑️ Remove",
+            if st.button("Remove",
                         type="primary" if self.editing_mode == "remove" else "secondary",
                         help="Mark regions for removal"):
                 self.editing_mode = "remove"
                 st.session_state.audio_editor_state['mode'] = "remove"
 
         with col3:
-            if st.button("🔊 Amplify",
+            if st.button("Amplify",
                         type="primary" if self.editing_mode == "amplify" else "secondary",
                         help="Mark regions for amplification"):
                 self.editing_mode = "amplify"
                 st.session_state.audio_editor_state['mode'] = "amplify"
 
         with col4:
-            if st.button("❓ Mark Q&A",
+            if st.button("Mark Q&A",
                         type="primary" if self.editing_mode == "question" else "secondary",
                         help="Mark question and answer segments"):
                 self.editing_mode = "question"
@@ -90,7 +90,7 @@ class AudioEditor:
             )
 
         with col3:
-            if st.button("📍 Add Segment", type="primary"):
+            if st.button("Add Segment", type="primary"):
                 return {
                     'action': 'add_segment',
                     'start_time': start_time,

@@ -29,7 +29,7 @@ except ImportError as e:
 
 def show_database_setup(db_path: str):
     """Setup interface for creating new configuration database."""
-    st.subheader("🔧 Database Setup")
+    st.subheader("Database Setup")
 
     col1, col2 = st.columns(2)
 
@@ -49,7 +49,7 @@ def show_database_setup(db_path: str):
                 format_func=lambda x: str(x)
             )
 
-            if st.button("🔄 Migrate YAML to SQL"):
+            if st.button("Migrate YAML to SQL"):
                 try:
                     with st.spinner("Migrating configuration..."):
                         with ConfigMigrationManager(db_path) as manager:
@@ -59,14 +59,14 @@ def show_database_setup(db_path: str):
                             status = manager.get_migration_status()
 
                     st.session_state['settings_feedback'] = (
-                        "✅ Migration completed successfully!\n"
-                        f"📊 Categories: {status['categories']} | 🔑 Keys: {status['keys']} "
-                        f"| 💾 Values: {status['values']}"
+                        "Migration completed successfully!\n"
+                        f"Categories: {status['categories']} | Keys: {status['keys']} "
+                        f"| Values: {status['values']}"
                     )
                     st.rerun()
 
                 except Exception as e:
-                    st.error(f"❌ Migration failed: {e}")
+                    st.error(f"Migration failed: {e}")
         else:
             st.info("No YAML configuration files found in current directory")
 
@@ -83,7 +83,7 @@ def show_database_setup(db_path: str):
             if file_type in ['yml']:
                 file_type = 'yaml'
 
-            if st.button("📤 Import and Create Database"):
+            if st.button("Import and Create Database"):
                 try:
                     with st.spinner("Creating database from uploaded file..."):
                         # Save uploaded file temporarily
@@ -114,14 +114,14 @@ def show_database_setup(db_path: str):
                         status_manager.close()
 
                     st.session_state['settings_feedback'] = (
-                        "✅ Database created successfully!\n"
-                        f"📊 Categories: {status['categories']} | 🔑 Keys: {status['keys']} "
-                        f"| 💾 Values: {status['values']}"
+                        "Database created successfully!\n"
+                        f"Categories: {status['categories']} | Keys: {status['keys']} "
+                        f"| Values: {status['values']}"
                     )
                     st.rerun()
 
                 except Exception as e:
-                    st.error(f"❌ Import failed: {e}")
+                    st.error(f"Import failed: {e}")
 
 
 def show_config_editor(db_path: str):
@@ -157,7 +157,7 @@ def show_config_editor(db_path: str):
                 )
 
     except Exception as e:
-        st.error(f"❌ Failed to load configuration: {e}")
+        st.error(f"Failed to load configuration: {e}")
 
 
 def show_category_editor(config_manager: SQLConfigManager, category: str, keys: list):
@@ -191,8 +191,6 @@ def show_category_editor(config_manager: SQLConfigManager, category: str, keys: 
             label = key['key_name']
             if is_required:
                 label += " *"
-            if is_secret:
-                label += " 🔒"
 
             if data_type == 'boolean':
                 new_value = st.checkbox(
@@ -241,7 +239,7 @@ def show_category_editor(config_manager: SQLConfigManager, category: str, keys: 
         # Form submission
         col1, col2 = st.columns([3, 1])
         with col2:
-            submitted = st.form_submit_button("💾 Save Changes", width='stretch')
+            submitted = st.form_submit_button("Save Changes", width='stretch')
 
         with col1:
             change_reason = st.text_input(
@@ -257,12 +255,12 @@ def show_category_editor(config_manager: SQLConfigManager, category: str, keys: 
                     config_manager.set_config(key_path, value, changed_by, change_reason)
 
                 st.session_state['settings_feedback'] = (
-                    f"✅ Updated {len(changes)} configuration value(s)"
+                    f"Updated {len(changes)} configuration value(s)"
                 )
                 st.rerun()
 
             except Exception as e:
-                st.error(f"❌ Error saving configuration: {str(e)}")
+                st.error(f"Error saving configuration: {str(e)}")
 
         elif submitted and not changes:
             st.info("No changes detected")
@@ -283,7 +281,7 @@ def show_import_export(db_path: str):
 
 def show_import_section(db_path: str):
     """Configuration import section."""
-    st.subheader("📥 Import Configuration")
+    st.subheader("Import Configuration")
 
     upload_format = st.selectbox("Import Format", ['yaml', 'json'])
     uploaded_file = st.file_uploader(
@@ -293,7 +291,7 @@ def show_import_section(db_path: str):
 
     overwrite_existing = st.checkbox("Overwrite existing values")
 
-    if uploaded_file and st.button("🔄 Import Configuration"):
+    if uploaded_file and st.button("Import Configuration"):
         try:
             config_data = uploaded_file.getvalue().decode('utf-8')
 
@@ -305,28 +303,28 @@ def show_import_section(db_path: str):
                     overwrite_existing
                 )
 
-            st.session_state['settings_feedback'] = "✅ Configuration imported successfully!"
+            st.session_state['settings_feedback'] = "Configuration imported successfully!"
             st.rerun()
 
         except Exception as e:
-            st.error(f"❌ Import failed: {str(e)}")
+            st.error(f"Import failed: {str(e)}")
 
 
 def show_export_section(db_path: str):
     """Configuration export section."""
-    st.subheader("📤 Export Configuration")
+    st.subheader("Export Configuration")
 
     export_format = st.selectbox("Export Format", ['yaml', 'json', 'env'])
     template_name = st.text_input("Template Name (optional)")
 
-    if st.button("📋 Generate Export"):
+    if st.button("Generate Export"):
         try:
             with SQLConfigManager(db_path) as config_manager:
                 config_str = config_manager.export_config(export_format, template_name)
 
                 # Download button
                 st.download_button(
-                    label=f"💾 Download {export_format.upper()} Config",
+                    label=f"Download {export_format.upper()} Config",
                     data=config_str,
                     file_name=f"sermon_config_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{export_format}",
                     mime=f"text/{export_format}"
@@ -336,7 +334,7 @@ def show_export_section(db_path: str):
                 st.text_area("Configuration Preview", config_str, height=300)
 
         except Exception as e:
-            st.error(f"❌ Export failed: {str(e)}")
+            st.error(f"Export failed: {str(e)}")
 
 
 def show_config_history(db_path: str):
@@ -389,4 +387,4 @@ def show_config_history(db_path: str):
                 st.info("No configuration changes recorded yet.")
 
     except Exception as e:
-        st.error(f"❌ Failed to load history: {e}")
+        st.error(f"Failed to load history: {e}")

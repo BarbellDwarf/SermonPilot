@@ -75,7 +75,7 @@ class AnalyticsChatInterface:
 
     def render_chat_interface(self):
         """Render the chat interface"""
-        st.subheader("🤖 Analytics Chat Assistant")
+        st.subheader("Analytics Chat Assistant")
         st.write("Ask questions about your sermon analytics data using natural language.")
 
         # Initialize RAG system if needed
@@ -84,7 +84,7 @@ class AnalyticsChatInterface:
                 self.initialize_rag_system()
 
         if not st.session_state.rag_initialized:
-            st.info("👆 Click the button above to initialize the chat system.")
+            st.info("Click the button above to initialize the chat system.")
             return
 
         # Chat interface
@@ -102,7 +102,7 @@ class AnalyticsChatInterface:
 
         with col2:
             send_button = st.button("Send", key="send_message")
-            refresh_button = st.button("🔄", help="Refresh data", key="refresh_data")
+            refresh_button = st.button("Refresh", help="Refresh data", key="refresh_data")
 
         # Handle refresh
         if refresh_button:
@@ -177,7 +177,7 @@ class AnalyticsChatInterface:
 
                     # Show relevant sermons if available
                     if message.get('relevant_sermons'):
-                        with st.expander("📊 Relevant Sermons"):
+                        with st.expander("Relevant Sermons"):
                             self._render_relevant_sermons(message['relevant_sermons'])
 
             elif message['type'] == 'error':
@@ -213,7 +213,7 @@ class AnalyticsChatInterface:
             try:
                 stats = self.rag_system.get_collection_stats()
                 if 'error' not in stats:
-                    st.markdown("#### 📈 Data Status")
+                    st.markdown("#### Data Status")
                     st.metric("Total Sermons", stats.get('total_documents', 0))
                     st.write(f"Last updated: {stats.get('last_updated', 'Unknown')[:19]}")
             except Exception as e:
@@ -221,7 +221,7 @@ class AnalyticsChatInterface:
 
     def render_example_questions(self):
         """Render example questions to help users get started"""
-        st.subheader("💡 Example Questions")
+        st.subheader("Example Questions")
         st.write("Here are some questions you can ask:")
 
         example_questions = [
@@ -244,7 +244,7 @@ class AnalyticsChatInterface:
 
     def render_chat_settings(self):
         """Render chat settings and configuration"""
-        with st.expander("🔧 Chat Settings", expanded=False):
+        with st.expander("Chat Settings", expanded=False):
             # RAG system settings
             if st.button("Reset Chat System", key="reset_rag"):
                 if self.rag_system:
@@ -262,7 +262,7 @@ class AnalyticsChatInterface:
                 self._download_chat_history()
 
             # Embedding provider information
-            st.markdown("#### 🔧 Embedding Provider")
+            st.markdown("#### Embedding Provider")
             if self.rag_system:
                 try:
                     provider_info = self.rag_system.get_embedding_provider_info()
@@ -377,7 +377,7 @@ class AnalyticsChatInterface:
 
                     with col2:
                         # Add refresh button for Ollama models
-                        if st.button("🔄 Refresh Models", key="refresh_ollama_models",
+                        if st.button("Refresh Models", key="refresh_ollama_models",
                                    help="Refresh available Ollama models"):
                             try:
                                 import os
@@ -437,10 +437,10 @@ class AnalyticsChatInterface:
                         else:
                             st.info(
                                 "No embedding models found. "
-                                "Click '🔄 Refresh Models' to check again."
+                                "Click 'Refresh Models' to check again."
                             )
 
-                        if st.button("🔄 Switch Model", key="switch_model"):
+                        if st.button("Switch Model", key="switch_model"):
                             # Extract model name from selected display option
                             selected_model = model_keys[display_options.index(selected_display)]
 
@@ -514,7 +514,7 @@ class AnalyticsChatInterface:
 
         # Provide download
         st.download_button(
-            label="📥 Download Chat History",
+            label="Download Chat History",
             data=chat_text,
             file_name=f"sermon_analytics_chat_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
             mime="text/plain",
@@ -533,7 +533,7 @@ def render_analytics_chat_tab():
     chat_interface.render_chat_settings()
 
     # Example questions in an expander
-    with st.expander("💡 Example Questions", expanded=False):
+    with st.expander("Example Questions", expanded=False):
         chat_interface.render_example_questions()
 
 
@@ -541,7 +541,6 @@ if __name__ == "__main__":
     # For testing purposes
     st.set_page_config(
         page_title="Analytics Chat",
-        page_icon="🤖",
         layout="wide"
     )
 
