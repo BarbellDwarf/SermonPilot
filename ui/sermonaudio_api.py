@@ -264,15 +264,17 @@ class SermonAudioAPI:
 
     def test_connection(self) -> bool:
         """Test the API connection by fetching the broadcaster info."""
-        if not self.api_key:
-            logger.warning("No API key configured for connection test")
+        if not self.api_key or not self.broadcaster_id:
+            logger.warning("No API key or broadcaster ID configured for connection test")
             return False
         try:
             import requests
-            headers = {"X-API-Key": self.api_key, "Content-Type": "application/json"}
+            headers = {"X-Api-Key": self.api_key, "Content-Type": "application/json"}
             resp = requests.get(
-                "https://api.sermonaudio.com/v2/node/broadcasters/self",
-                headers=headers, timeout=15
+                "https://api.sermonaudio.com/v2/node/sermons",
+                headers=headers,
+                params={"broadcasterID": self.broadcaster_id, "pageSize": 1, "lite": "true"},
+                timeout=15,
             )
             return resp.status_code == 200
         except Exception as e:
