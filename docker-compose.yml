@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     ports:
       - "${HOST_BIND:-127.0.0.1}:8501:8501"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - APP_PASSWORD=${APP_PASSWORD}
@@ -24,7 +26,8 @@ services:
       - sermon_cache:/home/sermonapp/.cache
       - sermon_logs:/app/logs
     env_file:
-      - .env
+      - path: .env
+        required: false
     networks:
       - sermon_network
     healthcheck:
