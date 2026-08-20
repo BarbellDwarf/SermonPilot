@@ -1074,7 +1074,7 @@ def display_sermon_details(sermon):
         st.text(f"🎤 Speaker: {speaker_name}")
         st.text(f"📅 Date: {_format_date(display_data.get('recorded_date'))}")
         st.text(f"📍 Church: {display_data.get('church_name', 'Unknown')}")
-        st.text(f"⏱️ Duration: {display_data.get('duration', 'Unknown')}")
+        st.text(f"⏱️ Duration: {_format_duration(display_data.get('duration')) or 'Unknown'}")
     with col2:
         series_title = display_data.get('series_title', 'None')
         if isinstance(series_title, dict):
