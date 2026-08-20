@@ -1,23 +1,24 @@
 # Requirements Files Guide
 
-This directory contains various requirement files for different platforms and installation scenarios.
+`pyproject.toml` is the single source of truth for dependencies. `requirements/requirements.txt` is a derived mirror of the `[project] dependencies` block (regenerate with `uv export --no-dev --format requirements.txt`). The remaining files are per-index overrides for the PyTorch family and convenience installs.
 
 ## Directory Structure
 
 ```text
 requirements/
 ├── README.md                           # This documentation
-├── requirements.txt                    # Core dependencies (all platforms)
-├── requirements-cpu.txt               # CPU-only (all platforms)
-├── requirements-gpu-minimal.txt       # Basic GPU (all platforms)
-├── requirements-gpu.txt               # Standard GPU (all platforms)
-├── requirements-gpu-full.txt          # Full GPU acceleration (all platforms)
-├── requirements-dev.txt               # Development tools (all platforms)
+├── requirements.txt                    # Derived mirror of pyproject.toml runtime deps
+├── requirements-cpu.txt               # CPU-only PyTorch override (CPU index)
+├── requirements-gpu.txt                # CUDA PyTorch override (cu124 index)
+├── requirements-rocm.txt               # ROCm PyTorch override (rocm7.1 index)
+├── requirements-dev.txt               # Development tools (mirror of the [dev] extra)
+├── requirements-linux.txt             # Linux convenience install
+├── requirements-models-deepfilternet.txt  # DeepFilterNet model extras
+├── requirements-models-all.txt        # All AI model extras
 ├── linux/                             # Linux-specific files
-│   ├── requirements-linux.txt         # Linux base requirements
 │   └── requirements-models-deepfilternet.txt  # DeepFilterNet (Linux)
 └── windows/                           # Windows-specific files
-    ├── requirements-windows.txt       # Windows base requirements
+    ├── requirements-windows.txt       # Windows convenience install
     └── requirements-models-deepfilternet.txt  # DeepFilterNet (Windows)
 ```
 
@@ -25,83 +26,67 @@ requirements/
 
 ### `requirements.txt`
 
-Base requirements for all platforms. Contains all essential dependencies for the SermonAudio processor.
+Derived mirror of the `[project] dependencies` block in `pyproject.toml`. The Dockerfile and the wheel install the same dependency set.
 
 ```bash
-uv pip install -r requirements.txt
+uv pip install -r requirements/requirements.txt
 ```
 
-## Platform-Specific Requirements
+## PyTorch Index Overrides
 
-### Linux (`linux/`)
+The torch family is pinned once in `pyproject.toml` (`torch>=2.6.0`, `torchaudio>=2.6.0`). Each override file adds the matching index and pins the same version with the platform suffix.
 
-#### `requirements-linux.txt`
+### `requirements-cpu.txt`
 
-Linux-specific requirements with GPU support via CUDA 12.1.
-
-```bash
-uv pip install -r requirements/linux/requirements-linux.txt --index-strategy unsafe-best-match
-```
-
-#### Model Files (Linux)
-
-- **`requirements-models-deepfilternet.txt`**: DeepFilterNet audio enhancement
-
-### Windows (`windows/`)
-
-#### `requirements-windows.txt`
-
-Windows-specific requirements with GPU support via CUDA 12.1.
+CPU-only PyTorch builds from the CPU index.
 
 ```bash
-uv pip install -r requirements/windows/requirements-windows.txt --index-strategy unsafe-best-match
-```
-
-#### Model Files (Windows)
-
-- **`requirements-models-deepfilternet.txt`**: DeepFilterNet audio enhancement
-
-## GPU Acceleration Levels
-
-### `requirements-gpu-minimal.txt`
-
-Minimal GPU support with essential CUDA packages.
-
-- Basic PyTorch GPU acceleration
-- GPU monitoring
-- Memory management
-
-```bash
-uv pip install -r requirements/requirements-gpu-minimal.txt
+uv pip install -r requirements/requirements-cpu.txt
 ```
 
 ### `requirements-gpu.txt`
 
-Standard GPU installation with enhanced acceleration.
-
-- Full PyTorch GPU stack
-- GPU monitoring and profiling
-- Memory optimization
-- Compatible with all AI models
+CUDA-enabled PyTorch builds from the cu124 index.
 
 ```bash
 uv pip install -r requirements/requirements-gpu.txt --index-strategy unsafe-best-match
 ```
 
-### `requirements-gpu-full.txt`
+### `requirements-rocm.txt`
 
-Complete GPU acceleration with all optional packages.
-
-- Maximum performance (~4-8GB download)
-- Advanced GPU monitoring
-- Distributed computing support
-- All GPU-accelerated libraries
+ROCm-enabled PyTorch builds from the rocm7.1 index.
 
 ```bash
-uv pip install -r requirements/requirements-gpu-full.txt
+uv pip install -r requirements/requirements-rocm.txt --index-strategy unsafe-best-match
+```
+
+## Platform-Specific Files
+
+### Linux (`linux/`)
+
+- **`requirements-linux.txt`**: Linux convenience install with the CUDA index.
+- **`requirements-models-deepfilternet.txt`**: DeepFilterNet audio enhancement.
+
+### Windows (`windows/`)
+
+- **`requirements-windows.txt`**: Windows convenience install with the CUDA index.
+- **`requirements-models-deepfilternet.txt`**: DeepFilterNet audio enhancement.
+
+## Development Requirements
+
+### `requirements-dev.txt`
+
+Development and testing tools (mirror of the `[dev]` extra in `pyproject.toml`).
+
+```bash
+uv pip install -r requirements/requirements-dev.txt
 ```
 
 ## AI Model Requirements
+
+### `requirements-models-deepfilternet.txt`
+
+DeepFilterNet model extras (already part of the base runtime deps; kept for standalone installs).
 
 ### `requirements-models-all.txt`
 
@@ -109,16 +94,6 @@ All AI enhancement models combined.
 
 ```bash
 uv pip install -r requirements/requirements-models-all.txt
-```
-
-## Development Requirements
-
-### `requirements-dev.txt`
-
-Development and testing dependencies.
-
-```bash
-uv pip install -r requirements/requirements-dev.txt
 ```
 
 ## Installation Recommendations
@@ -130,7 +105,7 @@ uv pip install -r requirements/requirements-dev.txt
 source .venv/bin/activate
 
 # Install base + GPU + models
-uv pip install -r requirements/linux/requirements-linux.txt --index-strategy unsafe-best-match
+uv pip install -r requirements/requirements-linux.txt --index-strategy unsafe-best-match
 uv pip install -r requirements/linux/requirements-models-deepfilternet.txt
 uv pip install -r requirements/requirements-dev.txt
 ```
@@ -165,7 +140,7 @@ uv pip install -r requirements/linux/requirements-models-deepfilternet.txt  # or
 ### GPU Installation
 
 - NVIDIA GPU with CUDA Compute Capability 3.5+
-- CUDA 12.1 compatible driver
+- CUDA 12.4 compatible driver
 - 4GB+ GPU memory (8GB+ recommended for full acceleration)
 
 ### CPU Installation
@@ -192,7 +167,7 @@ uv pip install -r requirements/linux/requirements-models-deepfilternet.txt  # or
 ### Common Issues
 
 1. **Packaging conflicts**: Use `--index-strategy unsafe-best-match`
-2. **CUDA compatibility**: Ensure NVIDIA drivers match CUDA 12.1
+2. **CUDA compatibility**: Ensure NVIDIA drivers match CUDA 12.4
 3. **Model installation**: Some AI models may need manual installation
 4. **Virtual environment**: Always install within `.venv`
 
