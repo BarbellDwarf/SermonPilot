@@ -16,6 +16,7 @@ requirements/
 ├── requirements-models-deepfilternet.txt  # DeepFilterNet model extras
 ├── requirements-models-all.txt        # All AI model extras
 ├── linux/                             # Linux-specific files
+│   ├── requirements-linux.txt        # Linux convenience install (CUDA index)
 │   └── requirements-models-deepfilternet.txt  # DeepFilterNet (Linux)
 └── windows/                           # Windows-specific files
     ├── requirements-windows.txt       # Windows convenience install
@@ -90,7 +91,9 @@ DeepFilterNet model extras (already part of the base runtime deps; kept for stan
 
 ### `requirements-models-all.txt`
 
-All AI enhancement models combined.
+All AI enhancement models combined (DeepFilterNet; optional extras such as
+voicefixer, speechbrain, and demucs stay commented out because they have
+complex dependencies and must be installed manually when needed).
 
 ```bash
 uv pip install -r requirements/requirements-models-all.txt
@@ -168,20 +171,4 @@ uv pip install -r requirements/linux/requirements-models-deepfilternet.txt  # or
 
 1. **Packaging conflicts**: Use `--index-strategy unsafe-best-match`
 2. **CUDA compatibility**: Ensure NVIDIA drivers match CUDA 12.4
-3. **Model installation**: Some AI models may need manual installation
-4. **Virtual environment**: Always install within `.venv`
-
-### Manual Model Installation
-
-Some AI models have complex dependencies and may need manual installation:
-
-```bash
-# VoiceFixer
-pip install voicefixer
-
-# SpeechBrain
-pip install speechbrain
-
-# Demucs
-pip install demucs
-```
+3. **Virtual environment**: Always install within `.venv`
