@@ -42,8 +42,10 @@ class SermonImporter:
         sermon_ids = []
         for sermon_dir in discover_sermons(self.processed_sermons_dir):
             meta = read_metadata(sermon_dir)
-            if meta and meta.get("sermon_id"):
-                sermon_ids.append(meta["sermon_id"])
+            if meta:
+                sermon_id = meta.get("sermon_id") or meta.get("sermonID")
+                if sermon_id:
+                    sermon_ids.append(sermon_id)
 
         logger.info(f"Found {len(sermon_ids)} sermon directories")
         return sermon_ids
