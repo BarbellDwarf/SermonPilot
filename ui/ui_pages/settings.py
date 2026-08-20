@@ -69,15 +69,29 @@ def show_settings():
     """Main settings management interface"""
     st.markdown('<div class="main-header">⚙️ Settings</div>', unsafe_allow_html=True)
 
+    feedback = st.session_state.pop('settings_feedback', None)
+    if feedback:
+        st.success(feedback)
+
+    st.markdown(
+        """
+        <style>
+        .stTabs [data-baseweb="tab-list"] { flex-wrap: wrap; gap: 0.25rem; }
+        .stTabs [data-baseweb="tab"] { padding-left: 0.75rem; padding-right: 0.75rem; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
         "🔧 General",
-        "🤖 LLM Providers",
+        "🤖 LLM",
         "🧠 Embeddings",
-        "🎵 Audio Processing",
+        "🎵 Audio",
         "📝 Transcription",
         "✅ Validation",
         "🗄️ Advanced",
-        "📝 Prompt Templates"
+        "📝 Templates",
     ], key="settings_tabs")
 
     with tab1:
@@ -110,30 +124,38 @@ def show_general_settings():
 
     config = st.session_state.get('config') or {}
 
+    _init_general_session_state(config)
+
+    if st.button("💾 Save General Settings", type="primary", key="save_general_button"):
+        save_general_settings()
+
     # API Configuration
     st.markdown("#### 🔗 SermonAudio API")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        api_key = st.text_input(
+        st.text_input(
             "API Key",
-            value=config.get('api_key', ''),
+            key="settings_api_key",
             type="password",
             help="Your SermonAudio API key"
         )
 
     with col2:
-        broadcaster_id = st.text_input(
+        st.text_input(
             "Broadcaster ID",
-            value=config.get('broadcaster_id', ''),
+            key="settings_broadcaster_id",
             help="Your SermonAudio broadcaster ID"
         )
 
     # Test API connection
-    if api_key and broadcaster_id:
+    if st.session_state.get("settings_api_key") and st.session_state.get("settings_broadcaster_id"):
         if st.button("🔍 Test API Connection"):
-            test_api_connection(api_key, broadcaster_id)
+            test_api_connection(
+                st.session_state.get("settings_api_key", ""),
+                st.session_state.get("settings_broadcaster_id", ""),
+            )
 
     # Processing Options
     st.markdown("#### ⚙️ Processing Options")
@@ -141,22 +163,22 @@ def show_general_settings():
     col1, col2 = st.columns(2)
 
     with col1:
-        dry_run = st.checkbox(
+        st.checkbox(
             "Dry Run Mode (Default)",
-            value=config.get('dry_run', False),
+            key="settings_dry_run",
             help="Preview changes without uploading by default"
         )
 
-        debug = st.checkbox(
+        st.checkbox(
             "Debug Mode",
-            value=config.get('debug', False),
+            key="settings_debug",
             help="Enable verbose debug output"
         )
 
     with col2:
-        hashtag_verification = st.checkbox(
+        st.checkbox(
             "Hashtag Verification",
-            value=config.get('hashtag_verification', True),
+            key="settings_hashtag_verification",
             help="Verify hashtags through second LLM pass"
         )
 
@@ -166,30 +188,24 @@ def show_general_settings():
     col1, col2 = st.columns(2)
 
     with col1:
-        output_directory = st.text_input(
+        st.text_input(
             "Output Directory",
-            value=config.get('output_directory', 'processed_sermons'),
+            key="settings_output_directory",
             help="Directory to store processed sermon files"
         )
 
-        save_original_audio = st.checkbox(
+        st.checkbox(
             "Save Original Audio",
-            value=config.get('save_original_audio', True),
+            key="settings_save_original_audio",
             help="Keep copy of original audio file"
         )
 
     with col2:
-        save_transcript = st.checkbox(
+        st.checkbox(
             "Save Transcript",
-            value=config.get('save_transcript', True),
+            key="settings_save_transcript",
             help="Save sermon transcript as text file"
         )
-
-    # Save button
-    if st.button("💾 Save General Settings", type="primary"):
-        save_general_settings(api_key, broadcaster_id, dry_run, debug,
-                            hashtag_verification, output_directory,
-                            save_original_audio, save_transcript)
 
 def initialize_llm_session_state(llm_config):
     """Initialize session state values from config if not already set"""
@@ -287,6 +303,9 @@ def show_llm_settings():
 
     # Initialize session state from config if not already set
     initialize_llm_session_state(llm_config)
+
+    if st.button("💾 Save LLM Settings", type="primary", key="save_llm_button"):
+        save_llm_settings()
 
     # Primary Provider
     st.markdown("#### 🥇 Primary Provider")
@@ -389,10 +408,6 @@ def show_llm_settings():
         elif validator_provider == "google":
             show_google_settings("Validator", validator_config.get('google', {}), "validator")
 
-    # Save button
-    if st.button("💾 Save LLM Settings", type="primary"):
-        save_llm_settings()
-
 def show_ollama_settings(label, config, key_prefix):
     """Show Ollama-specific settings with automatic model refresh"""
     col1, col2 = st.columns(2)
@@ -405,7 +420,6 @@ def show_ollama_settings(label, config, key_prefix):
 
         api_key = st.text_input(
             f"{label} Ollama API Key (Optional)",
-            value=config.get('api_key', ''),
             type="password",
             key=f"{key_prefix}_ollama_api_key",
             help="Required if Ollama is behind an authenticated proxy"
@@ -691,6 +705,9 @@ def show_embedding_settings():
     # Initialize session state from config if not already set
     initialize_embedding_session_state(embeddings_config)
 
+    if st.button("💾 Save Embedding Settings", type="primary", key="save_embeddings_button"):
+        save_embedding_settings()
+
     # Primary Provider
     st.markdown("#### 🥇 Primary Embedding Provider")
 
@@ -798,7 +815,9 @@ def show_embedding_settings():
                 if 'embeddings' not in st.session_state.config:
                     st.session_state.config['embeddings'] = {}
                 st.session_state.config['embeddings']['fallback'] = fallback_config
-                st.success(f"Added {new_fallback_provider} with model {new_fallback_model}")
+                st.session_state['settings_feedback'] = (
+                    f"✅ Added {new_fallback_provider} with model {new_fallback_model}"
+                )
                 st.rerun()
             else:
                 st.warning("This provider and model combination already exists")
@@ -809,10 +828,6 @@ def show_embedding_settings():
         "added as the final fallback to ensure the system works offline without any "
         "external dependencies."
     )
-
-    # Save button
-    if st.button("💾 Save Embedding Settings", type="primary"):
-        save_embedding_settings()
 
 def initialize_embedding_session_state(embeddings_config):
     """Initialize session state values from embedding config if not already set"""
@@ -1119,17 +1134,20 @@ def show_audio_settings():
 
     config = st.session_state.get('config') or {}
 
+    _init_audio_session_state(config)
+
+    if st.button("💾 Save Audio Settings", type="primary", key="save_audio_button"):
+        save_audio_settings()
+
     # Enhancement Method
     st.markdown("#### 🔧 Enhancement Method")
 
     methods = ["deepfilternet", "clear-natural", "clear-studio", "custom", "none"]
-    current = config.get('audio_enhancement_method', 'deepfilternet')
-    index = methods.index(current) if current in methods else 0
 
     enhancement_method = st.selectbox(
         "Audio Enhancement Method",
         options=methods,
-        index=index,
+        key="settings_enhancement_method",
         help=(
             "DeepFilterNet: standard (best for speech). Clear-Natural: gentler noise "
             "suppression. Clear-Studio: aggressive, podcast-ready. Custom: point to any "
@@ -1139,14 +1157,22 @@ def show_audio_settings():
 
     if enhancement_method == "custom":
         st.caption("Configure a custom ONNX model from HuggingFace:")
-        custom_repo = st.text_input("HF Repo (e.g. tonythethompson/DeepFilterNet3-ONNX)",
-                                     value=config.get('clear_custom_repo', ''),
-                                     key="settings_custom_repo")
-        custom_file = st.text_input("ONNX filename (e.g. model.onnx)",
-                                    value=config.get('clear_custom_file', ''),
-                                    key="settings_custom_file")
-        if custom_repo and custom_file:
-            st.info(f"Will use: **{custom_repo}/{custom_file}**")
+        st.text_input(
+            "HF Repo (e.g. tonythethompson/DeepFilterNet3-ONNX)",
+            key="settings_custom_repo",
+        )
+        st.text_input(
+            "ONNX filename (e.g. model.onnx)",
+            key="settings_custom_file",
+        )
+        if (
+            st.session_state.get("settings_custom_repo")
+            and st.session_state.get("settings_custom_file")
+        ):
+            st.info(
+                f"Will use: **{st.session_state['settings_custom_repo']}"
+                f"/{st.session_state['settings_custom_file']}**"
+            )
         else:
             st.warning("Enter both a HuggingFace repo and ONNX filename.")
 
@@ -1156,53 +1182,50 @@ def show_audio_settings():
     col1, col2 = st.columns(2)
 
     with col1:
-        use_audacity = st.checkbox(
+        st.checkbox(
             "Use Audacity Integration",
-            value=config.get('use_audacity', False),
+            key="settings_use_audacity",
             help="Use Audacity with mod-script-pipe if available"
         )
 
-        audio_noise_reduction = st.checkbox(
+        st.checkbox(
             "Noise Reduction",
-            value=config.get('audio_noise_reduction', True),
+            key="settings_noise_reduction",
             help="Apply noise reduction during processing"
         )
 
-        audio_amplify = st.checkbox(
+        st.checkbox(
             "Audio Amplification",
-            value=config.get('audio_amplify', True),
+            key="settings_amplify",
             help="Apply audio amplification"
         )
 
     with col2:
-        audio_normalize = st.checkbox(
+        st.checkbox(
             "Audio Normalization",
-            value=config.get('audio_normalize', True),
+            key="settings_normalize",
             help="Normalize audio levels"
         )
 
-        audio_gain_db = st.slider(
+        st.slider(
             "Gain (dB)",
             min_value=-10.0,
             max_value=10.0,
-            value=float(config.get('audio_gain_db', 0.5)),
             step=0.1,
+            key="settings_gain_db",
+            format="%.1f dB",
             help="Audio gain adjustment in decibels"
         )
 
-        target_level_db = st.slider(
+        st.slider(
             "Target Level (dB)",
             min_value=-30.0,
             max_value=-10.0,
-            value=float(config.get('audio_target_level_db', -22.0)),
             step=1.0,
+            key="settings_target_level_db",
+            format="%.0f dB",
             help="Target audio level for normalization"
         )
-
-    # Save button
-    if st.button("💾 Save Audio Settings", type="primary"):
-        save_audio_settings(enhancement_method, use_audacity, audio_noise_reduction,
-                          audio_amplify, audio_normalize, audio_gain_db, target_level_db)
 
 def show_transcription_settings():
     """Transcription configuration"""
@@ -1211,6 +1234,11 @@ def show_transcription_settings():
     config = st.session_state.get('config') or {}
     transcription_cfg = config.get('transcription', {})
 
+    _init_transcription_session_state(transcription_cfg)
+
+    if st.button("💾 Save Transcription Settings", type="primary", key="save_transcription_button"):
+        save_transcription_settings()
+
     st.markdown("#### 🔧 Backend")
     backend_options = ["faster_whisper_local", "whisper_openai", "whisper_openrouter"]
     display_names = {
@@ -1218,22 +1246,15 @@ def show_transcription_settings():
         "whisper_openai": "OpenAI Whisper API",
         "whisper_openrouter": "OpenRouter Whisper API",
     }
-    current_backend = transcription_cfg.get('backend', 'faster_whisper_local')
-    current_index = (
-        backend_options.index(current_backend)
-        if current_backend in backend_options else 0
-    )
     backend_key = st.selectbox(
         "Transcription Backend",
         options=backend_options,
         format_func=lambda x: display_names.get(x, x),
-        index=current_index,
+        key="settings_trans_backend",
         help="Local Whisper (runs on your machine) or API-based transcription"
     )
 
     if backend_key == "faster_whisper_local":
-        local_cfg = transcription_cfg.get('faster_whisper_local', {})
-
         st.markdown("#### 💻 Local Whisper Settings")
         col1, col2 = st.columns(2)
 
@@ -1242,105 +1263,81 @@ def show_transcription_settings():
                 "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium",
                 "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo",
             ]
-            local_model = st.selectbox(
+            st.selectbox(
                 "Model",
                 options=model_options,
-                index=model_options.index(local_cfg.get('model', 'base'))
-                if local_cfg.get('model', 'base') in model_options else 2,
+                key="settings_trans_local_model",
                 help="Model size. Larger = better accuracy but slower"
             )
-            device = st.selectbox(
+            st.selectbox(
                 "Device",
                 options=["auto", "cpu", "cuda"],
-                index=["auto", "cpu", "cuda"].index(local_cfg.get('device', 'auto')),
+                key="settings_trans_device",
                 help="Compute device"
             )
 
         with col2:
-            compute_type = st.selectbox(
+            st.selectbox(
                 "Compute Type",
                 options=["float16", "float32", "int8_float16", "int8"],
-                index=["float16", "float32", "int8_float16", "int8"].index(
-                    local_cfg.get('compute_type', 'float16')
-                ),
+                key="settings_trans_compute_type",
                 help="Floating point precision for the model"
             )
-            language = st.text_input(
+            st.text_input(
                 "Language",
-                value=local_cfg.get('language', 'en'),
+                key="settings_trans_language",
                 help="Language code (e.g. 'en' for English)"
             )
 
-        if st.button("💾 Save Local Transcription Settings", type="primary"):
-            save_transcription_settings(
-                backend_key, local_model, device, compute_type, language, None, None, None
-            )
-
     elif backend_key == "whisper_openai":
-        openai_cfg = transcription_cfg.get('whisper_openai', {})
-
         st.markdown("#### ☁️ OpenAI API Settings")
         col1, col2 = st.columns(2)
 
         with col1:
-            api_key = st.text_input(
+            st.text_input(
                 "API Key",
-                value=openai_cfg.get('api_key', ''),
+                key="settings_trans_openai_key",
                 type="password",
                 help="OpenAI API key (or set OPENAI_API_KEY env var)"
             )
-            base_url = st.text_input(
+            st.text_input(
                 "Base URL",
-                value=openai_cfg.get('base_url', 'https://api.openai.com/v1'),
+                key="settings_trans_openai_base_url",
                 help="OpenAI-compatible API endpoint"
             )
 
         with col2:
-            model = st.text_input(
+            st.text_input(
                 "Model",
-                value=openai_cfg.get('model', 'whisper-1'),
+                key="settings_trans_openai_model",
                 help="API model name (e.g. whisper-1)"
             )
 
-        if st.button("💾 Save OpenAI Transcription Settings", type="primary"):
-            save_transcription_settings(
-                backend_key, None, None, None, None, api_key, base_url, model
-            )
-
     elif backend_key == "whisper_openrouter":
-        or_cfg = transcription_cfg.get('whisper_openrouter', {})
-
         st.markdown("#### 🌐 OpenRouter API Settings")
         col1, col2 = st.columns(2)
 
         with col1:
-            api_key = st.text_input(
+            st.text_input(
                 "API Key",
-                value=or_cfg.get('api_key', ''),
+                key="settings_trans_or_key",
                 type="password",
                 help="OpenRouter API key (or set OPENROUTER_API_KEY env var)"
             )
-            base_url = st.text_input(
+            st.text_input(
                 "Base URL",
-                value=or_cfg.get('base_url', 'https://openrouter.ai/api/v1'),
+                key="settings_trans_or_base_url",
                 help="OpenRouter API endpoint"
             )
 
         with col2:
-            model = st.text_input(
+            st.text_input(
                 "Model",
-                value=or_cfg.get('model', 'openai/whisper-large-v3'),
+                key="settings_trans_or_model",
                 help="API model name"
             )
 
-        if st.button("💾 Save OpenRouter Transcription Settings", type="primary"):
-            save_transcription_settings(
-                backend_key, None, None, None, None, api_key, base_url, model
-            )
-
-def save_transcription_settings(
-    backend, local_model, device, compute_type, language, api_key, base_url, model
-):
+def save_transcription_settings():
     """Save transcription settings to configuration"""
     if not st.session_state.get('config'):
         st.session_state.config = {}
@@ -1348,31 +1345,50 @@ def save_transcription_settings(
     if 'transcription' not in config:
         config['transcription'] = {}
 
+    backend = st.session_state.get('settings_trans_backend', 'faster_whisper_local')
     config['transcription']['backend'] = backend
 
     if backend in ("whisper_local", "faster_whisper_local"):
         if backend not in config['transcription']:
             config['transcription'][backend] = {}
-        config['transcription'][backend]['model'] = local_model
-        config['transcription'][backend]['device'] = device
-        config['transcription'][backend]['compute_type'] = compute_type
-        config['transcription'][backend]['language'] = language
+        config['transcription'][backend]['model'] = st.session_state.get(
+            'settings_trans_local_model', 'base'
+        )
+        config['transcription'][backend]['device'] = st.session_state.get(
+            'settings_trans_device', 'auto'
+        )
+        config['transcription'][backend]['compute_type'] = st.session_state.get(
+            'settings_trans_compute_type', 'float16'
+        )
+        config['transcription'][backend]['language'] = st.session_state.get(
+            'settings_trans_language', 'en'
+        )
 
     elif backend == "whisper_openai":
         if 'whisper_openai' not in config['transcription']:
             config['transcription']['whisper_openai'] = {}
+        api_key = st.session_state.get('settings_trans_openai_key', '')
         if api_key:
             config['transcription']['whisper_openai']['api_key'] = api_key
-        config['transcription']['whisper_openai']['base_url'] = base_url
-        config['transcription']['whisper_openai']['model'] = model
+        config['transcription']['whisper_openai']['base_url'] = st.session_state.get(
+            'settings_trans_openai_base_url', 'https://api.openai.com/v1'
+        )
+        config['transcription']['whisper_openai']['model'] = st.session_state.get(
+            'settings_trans_openai_model', 'whisper-1'
+        )
 
     elif backend == "whisper_openrouter":
         if 'whisper_openrouter' not in config['transcription']:
             config['transcription']['whisper_openrouter'] = {}
+        api_key = st.session_state.get('settings_trans_or_key', '')
         if api_key:
             config['transcription']['whisper_openrouter']['api_key'] = api_key
-        config['transcription']['whisper_openrouter']['base_url'] = base_url
-        config['transcription']['whisper_openrouter']['model'] = model
+        config['transcription']['whisper_openrouter']['base_url'] = st.session_state.get(
+            'settings_trans_or_base_url', 'https://openrouter.ai/api/v1'
+        )
+        config['transcription']['whisper_openrouter']['model'] = st.session_state.get(
+            'settings_trans_or_model', 'openai/whisper-large-v3'
+        )
 
     from config_utils import save_config_to_file as _save_config
     if _save_config(config):
@@ -1385,6 +1401,11 @@ def show_validation_settings():
     config = st.session_state.get('config') or {}
     metadata_config = config.get('metadata_processing', {})
 
+    _init_validation_session_state(metadata_config)
+
+    if st.button("💾 Save Validation Settings", type="primary", key="save_validation_button"):
+        save_validation_settings()
+
     # Description validation
     st.markdown("#### 📝 Description Validation")
 
@@ -1393,7 +1414,6 @@ def show_validation_settings():
 
     validation_enabled = st.checkbox(
         "Enable Description Validation",
-        value=desc_validation.get('enabled', True),
         key="validation_enabled",
         help="Use AI to validate description quality"
     )
@@ -1402,21 +1422,33 @@ def show_validation_settings():
         st.markdown("**Validation Criteria:**")
 
         criteria = desc_validation.get('criteria', [])
+        mirror = st.session_state.get('settings_validation_criteria')
+        if mirror is None or len(mirror) != len(criteria):
+            st.session_state['settings_validation_criteria'] = list(criteria)
+        mirror = st.session_state['settings_validation_criteria']
 
-        # Allow editing criteria
-        new_criteria = []
-        for i, criterion in enumerate(criteria):
-            edited = st.text_input(f"Criterion {i+1}", value=criterion, key=f"criteria_{i}")
-            if edited.strip():
-                new_criteria.append(edited.strip())
+        edited = []
+        for i, _criterion in enumerate(criteria):
+            edited.append(
+                st.text_input(
+                    f"Criterion {i+1}",
+                    value=mirror[i] if i < len(mirror) else '',
+                    placeholder="Validation criterion text",
+                ).strip()
+            )
+        st.session_state['settings_validation_criteria'] = edited
 
-        # Add new criterion
-        new_criterion = st.text_input("Add new criterion:", key="new_criterion")
-        if new_criterion.strip():
-            new_criteria.append(new_criterion.strip())
+        if st.session_state.pop('clear_new_criterion', False):
+            st.session_state['new_criterion'] = ''
 
-        if st.button("➕ Add Criterion"):
-            st.rerun()
+        st.text_input(
+            "Add new criterion:",
+            key="new_criterion",
+            placeholder="e.g. Contains a scripture reference",
+        )
+
+        if st.button("➕ Add Criterion", key="add_criterion_button"):
+            _add_validation_criterion()
 
     # Metadata processing settings
     st.markdown("#### 🔧 Processing Settings")
@@ -1428,52 +1460,40 @@ def show_validation_settings():
 
         st.checkbox(
             "Update if Missing",
-            value=desc_config.get('update_if_missing', True),
-            key="desc_update_missing"
+            key="desc_update_missing",
         )
 
         st.checkbox(
             "Update if Minimal",
-            value=desc_config.get('update_if_minimal', True),
-            key="desc_update_minimal"
+            key="desc_update_minimal",
         )
 
         st.number_input(
             "Min Length Threshold",
-            value=desc_config.get('min_length_threshold', 50),
             min_value=10,
             max_value=200,
-            key="desc_min_length"
+            key="desc_min_length",
         )
 
     with col2:
         st.markdown("**Hashtag Settings:**")
 
-        hashtag_config = metadata_config.get('hashtags', {})
-
         st.checkbox(
             "Update if Missing",
-            value=hashtag_config.get('update_if_missing', True),
-            key="hash_update_missing"
+            key="hash_update_missing",
         )
 
         st.checkbox(
             "Update if Minimal",
-            value=hashtag_config.get('update_if_minimal', True),
-            key="hash_update_minimal"
+            key="hash_update_minimal",
         )
 
         st.number_input(
             "Min Length Threshold",
-            value=hashtag_config.get('min_length_threshold', 10),
             min_value=5,
             max_value=50,
-            key="hash_min_length"
+            key="hash_min_length",
         )
-
-    # Save button
-    if st.button("💾 Save Validation Settings", type="primary"):
-        save_validation_settings()
 
 
 
@@ -1487,6 +1507,12 @@ def show_prompt_templates():
     config = st.session_state.get('config') or {}
     templates = config.get('prompt_templates', {})
 
+    _init_prompt_template_state(templates)
+
+    if st.button("💾 Save Prompt Templates", type="primary", key="save_prompt_templates_button"):
+        save_prompt_templates()
+        st.success("✅ Prompt templates saved!")
+
     template_names = {
         "title": "Title Generation",
         "short_title": "Short Title Generation",
@@ -1497,28 +1523,22 @@ def show_prompt_templates():
     }
 
     for key, label in template_names.items():
-        tmpl = templates.get(key, {})
-        with st.expander(f"{'✅' if tmpl.get('enabled', True) else '⏸️'} {label}", expanded=False):
-            st.checkbox("Enabled", value=tmpl.get('enabled', True), key=f"pt_{key}_enabled")
+        enabled = st.session_state.get(f"pt_{key}_enabled", True)
+        with st.expander(f"{'✅' if enabled else '⏸️'} {label}", expanded=False):
+            st.checkbox("Enabled", key=f"pt_{key}_enabled")
             st.text_area(
                 "System Prompt",
-                value=tmpl.get('system', ''),
                 height=60,
                 key=f"pt_{key}_system",
                 help="System-level instruction for the LLM. Leave empty to omit."
             )
             st.text_area(
                 "User Prompt",
-                value=tmpl.get('user', ''),
                 height=200,
                 key=f"pt_{key}_user",
                 help="User message template. Use {variable} placeholders for dynamic content."
             )
             st.caption(f"Available variables: {_get_template_vars(key)}")
-
-    if st.button("💾 Save Prompt Templates", type="primary"):
-        save_prompt_templates()
-        st.success("✅ Prompt templates saved!")
 
 
 def _get_template_vars(template_key: str) -> str:
@@ -1575,7 +1595,8 @@ def show_yaml_backup_restore():
     config = st.session_state.get('config') or {}
 
     if config:
-        config_yaml = yaml.dump(config, default_flow_style=False, sort_keys=True)
+        masked_config = _mask_secrets(config)
+        config_yaml = yaml.dump(masked_config, default_flow_style=False, sort_keys=True)
         with st.expander("📄 Current Configuration", expanded=True):
             st.code(config_yaml, language='yaml')
         st.download_button(
@@ -1597,13 +1618,22 @@ def show_yaml_backup_restore():
             config_content = uploaded_config.read().decode('utf-8')
             new_config = yaml.safe_load(config_content)
             st.success("✅ Configuration file loaded successfully!")
-            st.code(config_content, language='yaml')
-            if st.button("🔄 Apply Configuration", type="primary"):
-                st.session_state.config = new_config
-                from config_utils import save_config_to_file
-                if save_config_to_file(new_config):
-                    st.success("Configuration applied and saved!")
-                    st.rerun()
+            if isinstance(new_config, dict):
+                masked_preview = yaml.dump(
+                    _mask_secrets(new_config), default_flow_style=False, sort_keys=True
+                )
+                st.code(masked_preview, language='yaml')
+                if st.button("🔄 Apply Configuration", type="primary"):
+                    st.session_state.config = new_config
+                    from config_utils import save_config_to_file
+                    if save_config_to_file(new_config):
+                        _clear_settings_widget_keys()
+                        st.session_state['settings_feedback'] = (
+                            "✅ Configuration applied and saved!"
+                        )
+                        st.rerun()
+            else:
+                st.error("❌ Configuration file must contain a YAML mapping at the top level.")
         except Exception as e:
             st.error(f"❌ Failed to load configuration: {e}")
 
@@ -1612,7 +1642,9 @@ def show_yaml_backup_restore():
     if st.button("🔄 Reset to Defaults", type="secondary"):
         if st.session_state.get('confirm_reset'):
             reset_to_defaults()
-            st.success("Configuration reset to defaults!")
+            st.session_state.pop('confirm_reset', None)
+            _clear_settings_widget_keys()
+            st.session_state['settings_feedback'] = "✅ Configuration reset to defaults!"
             st.rerun()
         else:
             st.session_state.confirm_reset = True
@@ -1695,22 +1727,20 @@ def test_llm_provider(provider, config):
     except Exception as e:
         st.error(f"❌ {provider.title()} provider connection failed: {e}")
 
-def save_general_settings(api_key, broadcaster_id, dry_run, debug,
-                         hashtag_verification, output_directory,
-                         save_original_audio, save_transcript):
+def save_general_settings():
     """Save general settings to configuration"""
     if not st.session_state.get('config'):
         st.session_state.config = {}
 
     st.session_state.config.update({
-        'api_key': api_key,
-        'broadcaster_id': broadcaster_id,
-        'dry_run': dry_run,
-        'debug': debug,
-        'hashtag_verification': hashtag_verification,
-        'output_directory': output_directory,
-        'save_original_audio': save_original_audio,
-        'save_transcript': save_transcript
+        'api_key': st.session_state.get('settings_api_key', ''),
+        'broadcaster_id': st.session_state.get('settings_broadcaster_id', ''),
+        'dry_run': st.session_state.get('settings_dry_run', False),
+        'debug': st.session_state.get('settings_debug', False),
+        'hashtag_verification': st.session_state.get('settings_hashtag_verification', True),
+        'output_directory': st.session_state.get('settings_output_directory', 'processed_sermons'),
+        'save_original_audio': st.session_state.get('settings_save_original_audio', True),
+        'save_transcript': st.session_state.get('settings_save_transcript', True),
     })
 
     save_config_to_file(st.session_state.config)
@@ -1804,20 +1834,21 @@ def save_provider_settings(provider_config, provider_type, key_prefix):
             provider_settings['api_key'] = api_key
         provider_settings['model'] = model
 
-def save_audio_settings(enhancement_method, use_audacity, audio_noise_reduction,
-                       audio_amplify, audio_normalize, audio_gain_db, target_level_db):
+def save_audio_settings():
     """Save audio settings to configuration"""
     if not st.session_state.get('config'):
         st.session_state.config = {}
 
     st.session_state.config.update({
-        'audio_enhancement_method': enhancement_method,
-        'use_audacity': use_audacity,
-        'audio_noise_reduction': audio_noise_reduction,
-        'audio_amplify': audio_amplify,
-        'audio_normalize': audio_normalize,
-        'audio_gain_db': audio_gain_db,
-        'audio_target_level_db': target_level_db
+        'audio_enhancement_method': st.session_state.get(
+            'settings_enhancement_method', 'deepfilternet'
+        ),
+        'use_audacity': st.session_state.get('settings_use_audacity', False),
+        'audio_noise_reduction': st.session_state.get('settings_noise_reduction', True),
+        'audio_amplify': st.session_state.get('settings_amplify', True),
+        'audio_normalize': st.session_state.get('settings_normalize', True),
+        'audio_gain_db': st.session_state.get('settings_gain_db', 0.5),
+        'audio_target_level_db': st.session_state.get('settings_target_level_db', -22.0),
     })
 
     save_config_to_file(st.session_state.config)
@@ -1834,16 +1865,13 @@ def save_validation_settings():
 
     mp = config['metadata_processing']
 
-    criteria = []
-    i = 0
-    while f"criteria_{i}" in st.session_state:
-        val = st.session_state[f"criteria_{i}"]
-        if val.strip():
-            criteria.append(val.strip())
-        i += 1
+    criteria = [
+        c for c in st.session_state.get('settings_validation_criteria', []) if c.strip()
+    ]
     new_val = st.session_state.get('new_criterion', '')
     if new_val.strip():
         criteria.append(new_val.strip())
+        st.session_state['new_criterion'] = ''
 
     if 'description' not in mp:
         mp['description'] = {}
@@ -1868,6 +1896,205 @@ def save_config_to_file(config):
     """Save configuration to config.yaml file and reload in session"""
     from config_utils import save_config_to_file as _save_config
     return _save_config(config)
+
+def _init_general_session_state(config):
+    """Initialize General tab widget keys from config if not already set"""
+    defaults = {
+        "settings_api_key": config.get('api_key', ''),
+        "settings_broadcaster_id": config.get('broadcaster_id', ''),
+        "settings_dry_run": config.get('dry_run', False),
+        "settings_debug": config.get('debug', False),
+        "settings_hashtag_verification": config.get('hashtag_verification', True),
+        "settings_output_directory": config.get('output_directory', 'processed_sermons'),
+        "settings_save_original_audio": config.get('save_original_audio', True),
+        "settings_save_transcript": config.get('save_transcript', True),
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+def _init_audio_session_state(config):
+    """Initialize Audio tab widget keys from config if not already set"""
+    methods = ["deepfilternet", "clear-natural", "clear-studio", "custom", "none"]
+    method = config.get('audio_enhancement_method', 'deepfilternet')
+    if method not in methods:
+        method = methods[0]
+
+    defaults = {
+        "settings_enhancement_method": method,
+        "settings_custom_repo": config.get('clear_custom_repo', ''),
+        "settings_custom_file": config.get('clear_custom_file', ''),
+        "settings_use_audacity": config.get('use_audacity', False),
+        "settings_noise_reduction": config.get('audio_noise_reduction', True),
+        "settings_amplify": config.get('audio_amplify', True),
+        "settings_normalize": config.get('audio_normalize', True),
+        "settings_gain_db": float(config.get('audio_gain_db', 0.5)),
+        "settings_target_level_db": float(config.get('audio_target_level_db', -22.0)),
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+def _init_transcription_session_state(transcription_cfg):
+    """Initialize Transcription tab widget keys from config if not already set"""
+    local_cfg = transcription_cfg.get('faster_whisper_local', {})
+    openai_cfg = transcription_cfg.get('whisper_openai', {})
+    or_cfg = transcription_cfg.get('whisper_openrouter', {})
+
+    backend_options = ["faster_whisper_local", "whisper_openai", "whisper_openrouter"]
+    model_options = [
+        "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium",
+        "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo",
+    ]
+    device_options = ["auto", "cpu", "cuda"]
+    compute_options = ["float16", "float32", "int8_float16", "int8"]
+
+    backend = transcription_cfg.get('backend', 'faster_whisper_local')
+    if backend not in backend_options:
+        backend = backend_options[0]
+
+    model = local_cfg.get('model', 'base')
+    if model not in model_options:
+        model = 'base'
+
+    device = local_cfg.get('device', 'auto')
+    if device not in device_options:
+        device = device_options[0]
+
+    compute_type = local_cfg.get('compute_type', 'float16')
+    if compute_type not in compute_options:
+        compute_type = compute_options[0]
+
+    defaults = {
+        "settings_trans_backend": backend,
+        "settings_trans_local_model": model,
+        "settings_trans_device": device,
+        "settings_trans_compute_type": compute_type,
+        "settings_trans_language": local_cfg.get('language', 'en'),
+        "settings_trans_openai_key": openai_cfg.get('api_key', ''),
+        "settings_trans_openai_base_url": openai_cfg.get('base_url', 'https://api.openai.com/v1'),
+        "settings_trans_openai_model": openai_cfg.get('model', 'whisper-1'),
+        "settings_trans_or_key": or_cfg.get('api_key', ''),
+        "settings_trans_or_base_url": or_cfg.get('base_url', 'https://openrouter.ai/api/v1'),
+        "settings_trans_or_model": or_cfg.get('model', 'openai/whisper-large-v3'),
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+def _init_validation_session_state(metadata_config):
+    """Initialize Validation tab widget keys from config if not already set"""
+    desc_config = metadata_config.get('description', {})
+    desc_validation = desc_config.get('validation', {})
+    hashtag_config = metadata_config.get('hashtags', {})
+
+    defaults = {
+        "validation_enabled": desc_validation.get('enabled', True),
+        "desc_update_missing": desc_config.get('update_if_missing', True),
+        "desc_update_minimal": desc_config.get('update_if_minimal', True),
+        "desc_min_length": desc_config.get('min_length_threshold', 50),
+        "hash_update_missing": hashtag_config.get('update_if_missing', True),
+        "hash_update_minimal": hashtag_config.get('update_if_minimal', True),
+        "hash_min_length": hashtag_config.get('min_length_threshold', 10),
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+def _add_validation_criterion():
+    """Persist the pending criterion to the live config and refresh the form"""
+    pending = st.session_state.get("new_criterion", "").strip()
+    if not pending:
+        st.warning("Enter a criterion before adding it.")
+        return
+    if not st.session_state.get('config'):
+        st.session_state.config = {}
+    config = st.session_state.config
+    mp = config.setdefault('metadata_processing', {})
+    desc = mp.setdefault('description', {})
+    validation = desc.setdefault('validation', {})
+    criteria = [
+        c for c in st.session_state.get('settings_validation_criteria', []) if c.strip()
+    ]
+    criteria.append(pending)
+    validation['criteria'] = criteria
+    st.session_state['settings_validation_criteria'] = criteria
+    st.session_state['clear_new_criterion'] = True
+    from config_utils import save_config_to_file
+    save_config_to_file(config)
+    st.rerun()
+
+def _init_prompt_template_state(templates):
+    """Initialize Prompt Templates widget keys from config if not already set"""
+    template_keys = [
+        "title", "short_title", "description", "hashtags",
+        "hashtag_verification", "description_validation",
+    ]
+    for key in template_keys:
+        tmpl = templates.get(key, {})
+        defaults = {
+            f"pt_{key}_enabled": tmpl.get('enabled', True),
+            f"pt_{key}_system": tmpl.get('system', ''),
+            f"pt_{key}_user": tmpl.get('user', ''),
+        }
+        for k, value in defaults.items():
+            if k not in st.session_state:
+                st.session_state[k] = value
+
+def _mask_secrets(value):
+    """Return a copy of a config value with secret-bearing keys masked"""
+    if isinstance(value, dict):
+        masked = {}
+        for key, item in value.items():
+            if 'key' in str(key).lower() and isinstance(item, str) and item:
+                masked[key] = '***'
+            else:
+                masked[key] = _mask_secrets(item)
+        return masked
+    if isinstance(value, list):
+        return [_mask_secrets(item) for item in value]
+    return value
+
+def _clear_settings_widget_keys():
+    """Drop Settings widget keys so they re-initialize from the new config"""
+    keys = [
+        "settings_api_key", "settings_broadcaster_id", "settings_dry_run", "settings_debug",
+        "settings_hashtag_verification", "settings_output_directory",
+        "settings_save_original_audio", "settings_save_transcript",
+        "primary_provider", "fallback_enabled", "fallback_provider",
+        "validator_enabled", "validator_provider",
+        "primary_embedding_provider",
+        "settings_enhancement_method", "settings_custom_repo", "settings_custom_file",
+        "settings_use_audacity", "settings_noise_reduction", "settings_amplify",
+        "settings_normalize", "settings_gain_db", "settings_target_level_db",
+        "settings_trans_backend", "settings_trans_local_model", "settings_trans_device",
+        "settings_trans_compute_type", "settings_trans_language",
+        "settings_trans_openai_key", "settings_trans_openai_base_url",
+        "settings_trans_openai_model", "settings_trans_or_key",
+        "settings_trans_or_base_url", "settings_trans_or_model",
+        "validation_enabled", "new_criterion", "settings_validation_criteria",
+        "desc_update_missing", "desc_update_minimal", "desc_min_length",
+        "hash_update_missing", "hash_update_minimal", "hash_min_length",
+        "confirm_reset",
+    ]
+    for prefix in ("primary_", "fallback_", "validator_"):
+        for suffix in (
+            "ollama_host", "ollama_model", "ollama_api_key",
+            "openai_preset", "openai_key", "openai_url", "openai_model",
+            "anthropic_key", "anthropic_model", "google_key", "google_model",
+            "st_model", "openai_embedding_key", "openai_embedding_url",
+            "openai_embedding_model", "ollama_embedding_host", "ollama_embedding_model",
+        ):
+            keys.append(f"{prefix}{suffix}")
+    for name in (
+        "title", "short_title", "description", "hashtags",
+        "hashtag_verification", "description_validation",
+    ):
+        keys.append(f"pt_{name}_enabled")
+        keys.append(f"pt_{name}_system")
+        keys.append(f"pt_{name}_user")
+    for key in keys:
+        st.session_state.pop(key, None)
 
 def reset_to_defaults():
     """Reset configuration to default values"""

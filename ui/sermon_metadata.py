@@ -301,12 +301,12 @@ def refresh_metadata_from_api() -> bool:
             # Update session state
             st.session_state.sermon_metadata = metadata
 
-            # Show detailed success message
+            # Stash feedback so it survives the page rerun
             success_msg = '✅ Metadata refreshed successfully!\n'
             success_msg += f'📋 Pastors: {len(metadata["pastors"])}\n'
             success_msg += f'📅 Event Types: {len(metadata["event_types"])}\n'
             success_msg += f'📚 Series: {len(metadata["series"])}'
-            st.success(success_msg)
+            st.session_state.metadata_refresh_feedback = success_msg
             return True
 
     except ImportError as e:
@@ -353,6 +353,10 @@ def show_metadata_refresh_section():
     Call this in UI pages that use the metadata dropdowns.
     """
     with st.expander("🔄 Refresh Metadata from SermonAudio"):
+        feedback = st.session_state.pop('metadata_refresh_feedback', None)
+        if feedback:
+            st.success(feedback)
+
         metadata = get_cached_metadata()
 
         # Show current counts
@@ -377,8 +381,9 @@ def show_metadata_refresh_section():
 
         # Refresh button
         if st.button("🔄 Refresh from SermonAudio API", width='stretch'):
-            refresh_metadata_from_api()
-            st.rerun()
+            refreshed = refresh_metadata_from_api()
+            if refreshed:
+                st.rerun()
 
 
 def create_pastor_selectbox(
