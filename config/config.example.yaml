@@ -78,6 +78,7 @@ llm:
 # Audio Processing Settings
 use_audacity: false  # Set to true if Audacity with mod-script-pipe is available
 audio_enhancement_method: "deepfilternet"  # Options: "deepfilternet", "clear-natural", "clear-studio", "none"
+preprocess_noise_gate: false  # Legacy pre-enhancement noise gate; keep false (it destroyed sermon speech)
 audio_noise_reduction: true
 audio_amplify: true
 audio_normalize: true
