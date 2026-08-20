@@ -41,7 +41,7 @@ def _get_cached_status_manager():
 def render_system_status():
     """Render compact system status as a single-line summary with expander."""
     try:
-        from system_status import get_status_emoji
+        from system_status import get_status_label
 
         status_manager = _get_cached_status_manager()
 
@@ -63,24 +63,24 @@ def render_system_status():
         warning_count = sum(1 for s in status_data.values() if s.get("status") == "warning")
 
         if error_count > 0:
-            summary = f"⚠️ {error_count} errors"
+            summary = f"{error_count} errors"
         elif warning_count > 0:
-            summary = f"⚠️ {warning_count} warnings"
+            summary = f"{warning_count} warnings"
         else:
-            summary = "✅ All systems OK"
+            summary = "All systems OK"
 
-        with st.sidebar.expander(f"🔍 System Status — {summary}", expanded=False):
+        with st.sidebar.expander(f"System Status — {summary}", expanded=False):
             for status_key, display_name in core_components:
                 if status_key in status_data:
                     status_info = status_data[status_key]
-                    emoji = get_status_emoji(status_info["status"])
+                    label = get_status_label(status_info["status"])
                     st.markdown(
-                        f"{emoji} **{display_name}**  \n{status_info.get('message', '')}",
+                        f"**{display_name}**: {label}  \n{status_info.get('message', '')}",
                         unsafe_allow_html=False,
                     )
 
     except Exception:
-        st.sidebar.warning("⚠️ Status unavailable")
+        st.sidebar.warning("Status unavailable")
 
 
 def render_queue_status():
@@ -92,47 +92,47 @@ def render_queue_status():
         running = len(jq.get_all_jobs(JobStatus.RUNNING) or [])
         queued = len(jq.get_all_jobs(JobStatus.QUEUED) or [])
         if running:
-            st.sidebar.info(f"🔄 {running} running, {queued} queued")
+            st.sidebar.info(f"{running} running, {queued} queued")
         elif queued:
-            st.sidebar.info(f"⏳ {queued} jobs queued")
+            st.sidebar.info(f"{queued} jobs queued")
     except Exception:
         pass
 
 
 def render_quick_actions():
     """Render quick actions section"""
-    st.sidebar.markdown("### ⚡ Quick Actions")
+    st.sidebar.markdown("### Quick Actions")
 
     col1, col2 = st.sidebar.columns(2)
 
     with col1:
-        if st.button("🔄 Refresh", help="Refresh system status", width="stretch"):
+        if st.button("Refresh", help="Refresh system status", width="stretch"):
             st.cache_data.clear()
             st.rerun()
 
     with col2:
-        if st.button("📊 Status", help="View detailed system status", width="stretch"):
+        if st.button("Status", help="View detailed system status", width="stretch"):
             render_detailed_status()
 
 
 def render_detailed_status():
     """Render the full system status for every monitored component."""
     try:
-        from system_status import get_status_emoji
+        from system_status import get_status_label
 
         status_manager = _get_cached_status_manager()
         status_data = status_manager.get_comprehensive_status()
 
-        with st.sidebar.expander("📊 Full System Status", expanded=True):
+        with st.sidebar.expander("Full System Status", expanded=True):
             for status_key, status_info in status_data.items():
-                emoji = get_status_emoji(status_info["status"])
-                label = status_key.replace("_", " ").title()
+                label = get_status_label(status_info["status"])
+                display_name = status_key.replace("_", " ").title()
                 st.markdown(
-                    f"{emoji} **{label}**  \n{status_info.get('message', '')}",
+                    f"**{display_name}**: {label}  \n{status_info.get('message', '')}",
                     unsafe_allow_html=False,
                 )
     except Exception:
-        st.sidebar.warning("⚠️ Status unavailable")
+        st.sidebar.warning("Status unavailable")
 
 
 def load_config_safely():

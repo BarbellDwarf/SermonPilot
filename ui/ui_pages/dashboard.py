@@ -15,10 +15,10 @@ from ui.pages import batch_update, new_sermon, settings, validation
 
 def show_dashboard():
     """Main dashboard display"""
-    st.markdown('<div class="main-header">📊 Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Dashboard</div>', unsafe_allow_html=True)
 
     if not st.session_state.config:
-        st.error("❌ Configuration not loaded. Please check the Settings page.")
+        st.error("Configuration not loaded. Please check the Settings page.")
         show_setup_guide()
         return
 
@@ -38,7 +38,7 @@ def show_dashboard():
 
 def show_quick_stats():
     """Display key metrics from the real database"""
-    st.markdown("### 📈 Quick Statistics")
+    st.markdown("### Quick Statistics")
     try:
         from database import SermonRepository
         repo = SermonRepository()
@@ -85,7 +85,7 @@ def show_quick_stats():
 
 def show_recent_activity():
     """Show recent sermons from the database"""
-    st.markdown("### 📋 Recent Activity")
+    st.markdown("### Recent Activity")
     try:
         from database import SermonRepository
         repo = SermonRepository()
@@ -94,7 +94,7 @@ def show_recent_activity():
         sermons = []
 
     if not sermons:
-        st.info("💡 No sermons in the database yet. Start processing to see activity here.")
+        st.info("No sermons in the database yet. Start processing to see activity here.")
         return
 
     formatted_data = []
@@ -106,8 +106,8 @@ def show_recent_activity():
             'Title': s.get('title', '(no title)'),
             'Speaker': s.get('speaker', ''),
             'Status': (
-                "✅" if s.get('status') == 'processed'
-                else "⏳" if s.get('status') == 'processing' else "❌"
+                "Processed" if s.get('status') == 'processed'
+                else "Processing" if s.get('status') == 'processing' else "Error"
             ),
         })
 
@@ -116,41 +116,40 @@ def show_recent_activity():
 
 def show_quick_actions():
     """Show quick action shortcuts for common tasks"""
-    st.markdown("### ⚡ Quick Start")
+    st.markdown("### Quick Start")
     st.markdown("*Quick shortcuts to get started with common tasks*")
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        if st.button("🎵 Process New Sermon", type="primary", width='stretch'):
+        if st.button("Process New Sermon", type="primary", width='stretch'):
             st.switch_page(new_sermon)
 
     with col2:
-        if st.button("🔄 Batch Update", width='stretch'):
+        if st.button("Batch Update", width='stretch'):
             st.switch_page(batch_update)
 
     with col3:
-        if st.button("✅ Validate Descriptions", width='stretch'):
+        if st.button("Validate Descriptions", width='stretch'):
             st.switch_page(validation)
 
 def show_system_status():
     """Show compact system health metrics"""
-    st.markdown("### 🔍 System Health")
+    st.markdown("### System Health")
 
     status = check_system_components()
     cols = st.columns(len(status))
     for col, (component, details) in zip(cols, status.items(), strict=False):
         with col:
             healthy = details['status']
-            icon = "✅" if healthy else "❌"
             st.metric(
-                component, f"{icon} {'OK' if healthy else 'Error'}",
+                component, f"{'OK' if healthy else 'Error'}",
                 help=details.get('message', ''),
             )
 
 def show_processing_queue():
     """Show current processing queue from job_queue module"""
-    st.markdown("### 📤 Processing Queue")
+    st.markdown("### Processing Queue")
     try:
         from job_queue import JobStatus, get_job_queue
         jq = get_job_queue()
@@ -168,13 +167,13 @@ def show_processing_queue():
         sid = job.parameters.get(
             'sermon_id', job.parameters.get('form_data', {}).get('title', job.id)
         )
-        st.write(f"🔄 {sid} — running ({job.progress:.0f}%)")
+        st.write(f"{sid} — running ({job.progress:.0f}%)")
 
     for job in queued[:5]:
         sid = job.parameters.get(
             'sermon_id', job.parameters.get('form_data', {}).get('title', job.id)
         )
-        st.write(f"⏳ {sid} — queued")
+        st.write(f"{sid} — queued")
 
     remaining = len(queued) - 5
     if remaining > 0:
@@ -182,7 +181,7 @@ def show_processing_queue():
 
 def show_setup_guide():
     """Show setup guide when configuration is missing"""
-    st.markdown("### 🚀 Welcome to SermonPilot!")
+    st.markdown("### Welcome to SermonPilot!")
 
     st.markdown("""
     To get started, please complete the setup:
@@ -196,12 +195,12 @@ def show_setup_guide():
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("📁 Go to Settings", type="primary", width='stretch'):
+        if st.button("Go to Settings", type="primary", width='stretch'):
             st.switch_page(settings)
 
     with col2:
         st.link_button(
-            "📖 View Documentation",
+            "View Documentation",
             "https://github.com/BarbellDwarf/SermonPilot/tree/master/docs",
             width='stretch',
         )

@@ -67,7 +67,7 @@ OPENAI_PRESETS = {
 
 def show_settings():
     """Main settings management interface"""
-    st.markdown('<div class="main-header">⚙️ Settings</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Settings</div>', unsafe_allow_html=True)
 
     feedback = st.session_state.pop('settings_feedback', None)
     if feedback:
@@ -84,14 +84,14 @@ def show_settings():
     )
 
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-        "🔧 General",
-        "🤖 LLM",
-        "🧠 Embeddings",
-        "🎵 Audio",
-        "📝 Transcription",
-        "✅ Validation",
-        "🗄️ Advanced",
-        "📝 Templates",
+        "General",
+        "LLM",
+        "Embeddings",
+        "Audio",
+        "Transcription",
+        "Validation",
+        "Advanced",
+        "Templates",
     ], key="settings_tabs")
 
     with tab1:
@@ -120,17 +120,17 @@ def show_settings():
 
 def show_general_settings():
     """General configuration settings"""
-    st.markdown("### 🔧 General Configuration")
+    st.markdown("### General Configuration")
 
     config = st.session_state.get('config') or {}
 
     _init_general_session_state(config)
 
-    if st.button("💾 Save General Settings", type="primary", key="save_general_button"):
+    if st.button("Save General Settings", type="primary", key="save_general_button"):
         save_general_settings()
 
     # API Configuration
-    st.markdown("#### 🔗 SermonAudio API")
+    st.markdown("#### SermonAudio API")
 
     col1, col2 = st.columns(2)
 
@@ -151,14 +151,14 @@ def show_general_settings():
 
     # Test API connection
     if st.session_state.get("settings_api_key") and st.session_state.get("settings_broadcaster_id"):
-        if st.button("🔍 Test API Connection"):
+        if st.button("Test API Connection"):
             test_api_connection(
                 st.session_state.get("settings_api_key", ""),
                 st.session_state.get("settings_broadcaster_id", ""),
             )
 
     # Processing Options
-    st.markdown("#### ⚙️ Processing Options")
+    st.markdown("#### Processing Options")
 
     col1, col2 = st.columns(2)
 
@@ -183,7 +183,7 @@ def show_general_settings():
         )
 
     # Output Settings
-    st.markdown("#### 📁 Output Settings")
+    st.markdown("#### Output Settings")
 
     col1, col2 = st.columns(2)
 
@@ -296,7 +296,7 @@ def initialize_provider_session_state(provider_config, provider_type, key_prefix
 
 def show_llm_settings():
     """LLM provider configuration"""
-    st.markdown("### 🤖 LLM Provider Configuration")
+    st.markdown("### LLM Provider Configuration")
 
     config = st.session_state.get('config') or {}
     llm_config = config.get('llm', {})
@@ -304,11 +304,11 @@ def show_llm_settings():
     # Initialize session state from config if not already set
     initialize_llm_session_state(llm_config)
 
-    if st.button("💾 Save LLM Settings", type="primary", key="save_llm_button"):
+    if st.button("Save LLM Settings", type="primary", key="save_llm_button"):
         save_llm_settings()
 
     # Primary Provider
-    st.markdown("#### 🥇 Primary Provider")
+    st.markdown("#### Primary Provider")
 
     primary_config = llm_config.get('primary', {})
 
@@ -327,7 +327,7 @@ def show_llm_settings():
         )
 
     with col2:
-        if st.button("🔍 Test Primary Provider"):
+        if st.button("Test Primary Provider"):
             test_llm_provider(primary_provider, primary_config.get(primary_provider, {}))
 
     if primary_provider == "ollama":
@@ -340,7 +340,7 @@ def show_llm_settings():
         show_google_settings("Primary", primary_config.get('google', {}), "primary")
 
     # Fallback Provider
-    st.markdown("#### 🥈 Fallback Provider")
+    st.markdown("#### Fallback Provider")
 
     fallback_config = llm_config.get('fallback', {})
 
@@ -375,7 +375,7 @@ def show_llm_settings():
             show_google_settings("Fallback", fallback_config.get('google', {}), "fallback")
 
     # Validator Provider
-    st.markdown("#### ✅ Validator Provider (Optional)")
+    st.markdown("#### Validator Provider (Optional)")
 
     validator_config = llm_config.get('validator', {})
 
@@ -429,7 +429,7 @@ def show_ollama_settings(label, config, key_prefix):
         # Auto-refresh models when host changes or button clicked
         available_models = []
         refresh_clicked = st.button(
-            f"🔄 Refresh {label} Models", key=f"{key_prefix}_refresh_models"
+            f"Refresh {label} Models", key=f"{key_prefix}_refresh_models"
         )
 
         if refresh_clicked or not st.session_state.get(f"{key_prefix}_ollama_models"):
@@ -501,7 +501,7 @@ def show_openai_settings(label, config, key_prefix):
     with col2:
         model_options = list(preset['models'])
 
-        if api_key and st.button(f"🔄 Load {label} Models", key=f"{key_prefix}_load_models"):
+        if api_key and st.button(f"Load {label} Models", key=f"{key_prefix}_load_models"):
             try:
                 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
                 from llm_manager import OpenAIProvider
@@ -562,7 +562,7 @@ def show_anthropic_settings(label, config, key_prefix):
         ]
 
         if api_key and st.button(
-            f"🔄 Load {label} Models", key=f"{key_prefix}_load_anthropic_models"
+            f"Load {label} Models", key=f"{key_prefix}_load_anthropic_models"
         ):
             try:
                 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
@@ -602,18 +602,18 @@ def show_anthropic_settings(label, config, key_prefix):
             )
 
         # Show test button if API key is provided
-        if api_key and st.button(f"🔍 Test {label} Connection", key=f"{key_prefix}_test_anthropic"):
+        if api_key and st.button(f"Test {label} Connection", key=f"{key_prefix}_test_anthropic"):
             try:
                 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
                 from llm_manager import AnthropicProvider
 
                 provider = AnthropicProvider({'api_key': api_key, 'model': model})
                 provider.chat([{"role": "user", "content": "Hello, this is a test."}])
-                st.success("✅ Anthropic connection successful!")
+                st.success("Anthropic connection successful!")
             except Exception as e:
-                st.error(f"❌ Connection failed: {e}")
+                st.error(f"Connection failed: {e}")
 
-    st.info("💡 Anthropic endpoint (https://api.anthropic.com/v1) is automatically configured")
+    st.info("Anthropic endpoint (https://api.anthropic.com/v1) is automatically configured")
 
 def show_google_settings(label, config, key_prefix):
     """Show Google-specific settings with dynamic model loading"""
@@ -636,7 +636,7 @@ def show_google_settings(label, config, key_prefix):
             'gemini-1.0-pro'
         ]
 
-        if api_key and st.button(f"🔄 Load {label} Models", key=f"{key_prefix}_load_google_models"):
+        if api_key and st.button(f"Load {label} Models", key=f"{key_prefix}_load_google_models"):
             try:
                 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
                 from llm_manager import GoogleProvider
@@ -675,25 +675,25 @@ def show_google_settings(label, config, key_prefix):
             )
 
         # Show test button if API key is provided
-        if api_key and st.button(f"🔍 Test {label} Connection", key=f"{key_prefix}_test_google"):
+        if api_key and st.button(f"Test {label} Connection", key=f"{key_prefix}_test_google"):
             try:
                 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
                 from llm_manager import GoogleProvider
 
                 provider = GoogleProvider({'api_key': api_key, 'model': model})
                 provider.chat([{"role": "user", "content": "Hello, this is a test."}])
-                st.success("✅ Google AI connection successful!")
+                st.success("Google AI connection successful!")
             except Exception as e:
-                st.error(f"❌ Connection failed: {e}")
+                st.error(f"Connection failed: {e}")
 
     st.info(
-        "💡 Google AI endpoint (https://generativelanguage.googleapis.com/v1beta) "
+        "Google AI endpoint (https://generativelanguage.googleapis.com/v1beta) "
         "is automatically configured"
     )
 
 def show_embedding_settings():
     """Embedding provider configuration for RAG system"""
-    st.markdown("### 🧠 Embedding Provider Configuration")
+    st.markdown("### Embedding Provider Configuration")
     st.markdown(
         "Configure embedding providers for the RAG (Retrieval-Augmented Generation) "
         "system used in analytics."
@@ -705,11 +705,11 @@ def show_embedding_settings():
     # Initialize session state from config if not already set
     initialize_embedding_session_state(embeddings_config)
 
-    if st.button("💾 Save Embedding Settings", type="primary", key="save_embeddings_button"):
+    if st.button("Save Embedding Settings", type="primary", key="save_embeddings_button"):
         save_embedding_settings()
 
     # Primary Provider
-    st.markdown("#### 🥇 Primary Embedding Provider")
+    st.markdown("#### Primary Embedding Provider")
 
     primary_config = embeddings_config.get('primary', {})
 
@@ -726,7 +726,7 @@ def show_embedding_settings():
         )
 
     with col2:
-        if st.button("🔍 Test Primary Embedding Provider"):
+        if st.button("Test Primary Embedding Provider"):
             test_embedding_provider(primary_provider, primary_config.get(primary_provider, {}))
 
     # Provider-specific settings
@@ -740,7 +740,7 @@ def show_embedding_settings():
         show_ollama_embedding_settings("Primary", primary_config.get('ollama', {}), "primary")
 
     # Fallback Providers
-    st.markdown("#### 🥈 Fallback Embedding Providers")
+    st.markdown("#### Fallback Embedding Providers")
     st.markdown(
         "Configure multiple fallback providers that will be tried in order "
         "if the primary provider fails."
@@ -761,7 +761,10 @@ def show_embedding_settings():
                 st.write(f"Model: `{fallback.get('model', 'default')}`")
 
             with col3:
-                if st.button("🗑️", key=f"remove_fallback_{i}", help="Remove this fallback provider"):
+                if st.button(
+                    "Remove", key=f"remove_fallback_{i}",
+                    help="Remove this fallback provider",
+                ):
                     fallback_config.pop(i)
                     st.rerun()
 
@@ -804,7 +807,7 @@ def show_embedding_settings():
             )
 
     with col3:
-        if st.button("➕ Add", key="add_fallback_provider"):
+        if st.button("Add", key="add_fallback_provider"):
             new_fallback = {
                 "provider": new_fallback_provider,
                 "model": new_fallback_model
@@ -816,7 +819,7 @@ def show_embedding_settings():
                     st.session_state.config['embeddings'] = {}
                 st.session_state.config['embeddings']['fallback'] = fallback_config
                 st.session_state['settings_feedback'] = (
-                    f"✅ Added {new_fallback_provider} with model {new_fallback_model}"
+                    f"Added {new_fallback_provider} with model {new_fallback_model}"
                 )
                 st.rerun()
             else:
@@ -824,7 +827,7 @@ def show_embedding_settings():
 
     # Info about hash fallback
     st.info(
-        "💡 **Hash-based Fallback**: A hash-based embedding provider is automatically "
+        "**Hash-based Fallback**: A hash-based embedding provider is automatically "
         "added as the final fallback to ensure the system works offline without any "
         "external dependencies."
     )
@@ -905,7 +908,7 @@ def show_sentence_transformers_settings(label, config, key_prefix):
 
         st.info(f"**Model Info:** {model_info.get(model, 'Local sentence transformer model')}")
 
-        if st.button(f"📥 Download {label} Model", key=f"{key_prefix}_download_st"):
+        if st.button(f"Download {label} Model", key=f"{key_prefix}_download_st"):
             download_sentence_transformer_model(model)
 
 def show_openai_embedding_settings(label, config, key_prefix):
@@ -967,7 +970,7 @@ def show_ollama_embedding_settings(label, config, key_prefix):
     with col2:
         # Auto-refresh models when host changes or button clicked
         refresh_clicked = st.button(
-            f"🔄 Refresh {label} Models", key=f"{key_prefix}_refresh_embedding_models"
+            f"Refresh {label} Models", key=f"{key_prefix}_refresh_embedding_models"
         )
 
         if refresh_clicked or not st.session_state.get(f"{key_prefix}_ollama_embedding_models"):
@@ -1035,9 +1038,9 @@ def download_sentence_transformer_model(model_name):
             from sentence_transformers import SentenceTransformer
             # This will download the model if not already present
             SentenceTransformer(model_name)
-            st.success(f"✅ Successfully downloaded {model_name}")
+            st.success(f"Successfully downloaded {model_name}")
     except Exception as e:
-        st.error(f"❌ Failed to download {model_name}: {e}")
+        st.error(f"Failed to download {model_name}: {e}")
 
 def test_embedding_provider(provider, config):
     """Test embedding provider connection"""
@@ -1063,13 +1066,13 @@ def test_embedding_provider(provider, config):
             if embeddings and len(embeddings) == 1 and len(embeddings[0]) > 0:
                 dimensions = len(embeddings[0])
                 st.success(
-                    f"✅ {provider.title()} provider working! Generated {dimensions}D embedding."
+                    f"{provider.title()} provider working! Generated {dimensions}D embedding."
                 )
             else:
-                st.error(f"❌ {provider.title()} provider test failed - no embeddings generated")
+                st.error(f"{provider.title()} provider test failed - no embeddings generated")
 
     except Exception as e:
-        st.error(f"❌ {provider.title()} provider test failed: {e}")
+        st.error(f"{provider.title()} provider test failed: {e}")
 
 def save_embedding_settings():
     """Save embedding settings to configuration"""
@@ -1096,7 +1099,7 @@ def save_embedding_settings():
 
     # Save to file
     if save_config_to_file(st.session_state.config):
-        st.success("✅ Embedding settings saved and configuration reloaded!")
+        st.success("Embedding settings saved and configuration reloaded!")
 
 def save_embedding_provider_settings(provider_config, provider_type, key_prefix):
     """Save embedding provider-specific settings from session state"""
@@ -1130,17 +1133,17 @@ def save_embedding_provider_settings(provider_config, provider_type, key_prefix)
 
 def show_audio_settings():
     """Audio processing configuration"""
-    st.markdown("### 🎵 Audio Processing Configuration")
+    st.markdown("### Audio Processing Configuration")
 
     config = st.session_state.get('config') or {}
 
     _init_audio_session_state(config)
 
-    if st.button("💾 Save Audio Settings", type="primary", key="save_audio_button"):
+    if st.button("Save Audio Settings", type="primary", key="save_audio_button"):
         save_audio_settings()
 
     # Enhancement Method
-    st.markdown("#### 🔧 Enhancement Method")
+    st.markdown("#### Enhancement Method")
 
     methods = ["deepfilternet", "clear-natural", "clear-studio", "custom", "none"]
 
@@ -1177,7 +1180,7 @@ def show_audio_settings():
             st.warning("Enter both a HuggingFace repo and ONNX filename.")
 
     # Enhancement options
-    st.markdown("#### ⚙️ Processing Options")
+    st.markdown("#### Processing Options")
 
     col1, col2 = st.columns(2)
 
@@ -1229,17 +1232,17 @@ def show_audio_settings():
 
 def show_transcription_settings():
     """Transcription configuration"""
-    st.markdown("### 📝 Transcription Configuration")
+    st.markdown("### Transcription Configuration")
 
     config = st.session_state.get('config') or {}
     transcription_cfg = config.get('transcription', {})
 
     _init_transcription_session_state(transcription_cfg)
 
-    if st.button("💾 Save Transcription Settings", type="primary", key="save_transcription_button"):
+    if st.button("Save Transcription Settings", type="primary", key="save_transcription_button"):
         save_transcription_settings()
 
-    st.markdown("#### 🔧 Backend")
+    st.markdown("#### Backend")
     backend_options = ["faster_whisper_local", "whisper_openai", "whisper_openrouter"]
     display_names = {
         "faster_whisper_local": "Faster Whisper (Local)",
@@ -1255,7 +1258,7 @@ def show_transcription_settings():
     )
 
     if backend_key == "faster_whisper_local":
-        st.markdown("#### 💻 Local Whisper Settings")
+        st.markdown("#### Local Whisper Settings")
         col1, col2 = st.columns(2)
 
         with col1:
@@ -1290,7 +1293,7 @@ def show_transcription_settings():
             )
 
     elif backend_key == "whisper_openai":
-        st.markdown("#### ☁️ OpenAI API Settings")
+        st.markdown("#### OpenAI API Settings")
         col1, col2 = st.columns(2)
 
         with col1:
@@ -1314,7 +1317,7 @@ def show_transcription_settings():
             )
 
     elif backend_key == "whisper_openrouter":
-        st.markdown("#### 🌐 OpenRouter API Settings")
+        st.markdown("#### OpenRouter API Settings")
         col1, col2 = st.columns(2)
 
         with col1:
@@ -1392,22 +1395,22 @@ def save_transcription_settings():
 
     from config_utils import save_config_to_file as _save_config
     if _save_config(config):
-        st.success("✅ Transcription settings saved and configuration reloaded!")
+        st.success("Transcription settings saved and configuration reloaded!")
 
 def show_validation_settings():
     """Validation criteria configuration"""
-    st.markdown("### ✅ Validation Configuration")
+    st.markdown("### Validation Configuration")
 
     config = st.session_state.get('config') or {}
     metadata_config = config.get('metadata_processing', {})
 
     _init_validation_session_state(metadata_config)
 
-    if st.button("💾 Save Validation Settings", type="primary", key="save_validation_button"):
+    if st.button("Save Validation Settings", type="primary", key="save_validation_button"):
         save_validation_settings()
 
     # Description validation
-    st.markdown("#### 📝 Description Validation")
+    st.markdown("#### Description Validation")
 
     desc_config = metadata_config.get('description', {})
     desc_validation = desc_config.get('validation', {})
@@ -1447,11 +1450,11 @@ def show_validation_settings():
             placeholder="e.g. Contains a scripture reference",
         )
 
-        if st.button("➕ Add Criterion", key="add_criterion_button"):
+        if st.button("Add Criterion", key="add_criterion_button"):
             _add_validation_criterion()
 
     # Metadata processing settings
-    st.markdown("#### 🔧 Processing Settings")
+    st.markdown("#### Processing Settings")
 
     col1, col2 = st.columns(2)
 
@@ -1500,7 +1503,7 @@ def show_validation_settings():
 
 def show_prompt_templates():
     """Prompt template editor for LLM generation tasks."""
-    st.markdown("### 📝 Prompt Templates")
+    st.markdown("### Prompt Templates")
     st.caption("Customize the instructions sent to the LLM for each generation task. "
                "Changes take effect immediately on save.")
 
@@ -1509,9 +1512,9 @@ def show_prompt_templates():
 
     _init_prompt_template_state(templates)
 
-    if st.button("💾 Save Prompt Templates", type="primary", key="save_prompt_templates_button"):
+    if st.button("Save Prompt Templates", type="primary", key="save_prompt_templates_button"):
         save_prompt_templates()
-        st.success("✅ Prompt templates saved!")
+        st.success("Prompt templates saved!")
 
     template_names = {
         "title": "Title Generation",
@@ -1523,8 +1526,7 @@ def show_prompt_templates():
     }
 
     for key, label in template_names.items():
-        enabled = st.session_state.get(f"pt_{key}_enabled", True)
-        with st.expander(f"{'✅' if enabled else '⏸️'} {label}", expanded=False):
+        with st.expander(label, expanded=False):
             st.checkbox("Enabled", key=f"pt_{key}_enabled")
             st.text_area(
                 "System Prompt",
@@ -1580,7 +1582,7 @@ def save_prompt_templates():
 
 def show_advanced_settings():
     """Backup, restore, and config management"""
-    sub_tab1, sub_tab2 = st.tabs(["💾 YAML Backup & Restore", "🗄️ SQL Config Manager"])
+    sub_tab1, sub_tab2 = st.tabs(["YAML Backup & Restore", "SQL Config Manager"])
 
     with sub_tab1:
         show_yaml_backup_restore()
@@ -1590,23 +1592,23 @@ def show_advanced_settings():
 
 def show_yaml_backup_restore():
     """Simple YAML-based backup and restore"""
-    st.markdown("### 💾 YAML Backup & Restore")
+    st.markdown("### YAML Backup & Restore")
 
     config = st.session_state.get('config') or {}
 
     if config:
         masked_config = _mask_secrets(config)
         config_yaml = yaml.dump(masked_config, default_flow_style=False, sort_keys=True)
-        with st.expander("📄 Current Configuration", expanded=True):
+        with st.expander("Current Configuration", expanded=True):
             st.code(config_yaml, language='yaml')
         st.download_button(
-            "📥 Download Config",
+            "Download Config",
             data=config_yaml,
             file_name="config_backup.yaml",
             mime="text/yaml"
         )
 
-    st.markdown("#### 📤 Restore Configuration")
+    st.markdown("#### Restore Configuration")
     uploaded_config = st.file_uploader(
         "Upload Configuration File",
         type=['yaml', 'yml'],
@@ -1617,34 +1619,34 @@ def show_yaml_backup_restore():
         try:
             config_content = uploaded_config.read().decode('utf-8')
             new_config = yaml.safe_load(config_content)
-            st.success("✅ Configuration file loaded successfully!")
+            st.success("Configuration file loaded successfully!")
             if isinstance(new_config, dict):
                 masked_preview = yaml.dump(
                     _mask_secrets(new_config), default_flow_style=False, sort_keys=True
                 )
                 st.code(masked_preview, language='yaml')
-                if st.button("🔄 Apply Configuration", type="primary"):
+                if st.button("Apply Configuration", type="primary"):
                     st.session_state.config = new_config
                     from config_utils import save_config_to_file
                     if save_config_to_file(new_config):
                         _clear_settings_widget_keys()
                         st.session_state['settings_feedback'] = (
-                            "✅ Configuration applied and saved!"
+                            "Configuration applied and saved!"
                         )
                         st.rerun()
             else:
-                st.error("❌ Configuration file must contain a YAML mapping at the top level.")
+                st.error("Configuration file must contain a YAML mapping at the top level.")
         except Exception as e:
-            st.error(f"❌ Failed to load configuration: {e}")
+            st.error(f"Failed to load configuration: {e}")
 
-    st.markdown("#### 🔄 Reset to Defaults")
-    st.warning("⚠️ This will reset all settings to default values")
-    if st.button("🔄 Reset to Defaults", type="secondary"):
+    st.markdown("#### Reset to Defaults")
+    st.warning("This will reset all settings to default values")
+    if st.button("Reset to Defaults", type="secondary"):
         if st.session_state.get('confirm_reset'):
             reset_to_defaults()
             st.session_state.pop('confirm_reset', None)
             _clear_settings_widget_keys()
-            st.session_state['settings_feedback'] = "✅ Configuration reset to defaults!"
+            st.session_state['settings_feedback'] = "Configuration reset to defaults!"
             st.rerun()
         else:
             st.session_state.confirm_reset = True
@@ -1660,7 +1662,7 @@ def show_sql_config_management():
     )
 
     if not SQL_CONFIG_AVAILABLE:
-        st.error("❌ SQL Configuration system is not available.")
+        st.error("SQL Configuration system is not available.")
         return
 
     db_path = "sermon_config.db"
@@ -1674,9 +1676,9 @@ def show_sql_config_management():
         return
 
     cm_tab1, cm_tab2, cm_tab3 = st.tabs([
-        "📝 Edit Config",
-        "📥 Import/Export",
-        "📊 History"
+        "Edit Config",
+        "Import/Export",
+        "History"
     ])
 
     with cm_tab1:
@@ -1699,11 +1701,11 @@ def test_api_connection(api_key, broadcaster_id):
         api = SermonAudioAPI(api_key=api_key, broadcaster_id=broadcaster_id)
         result = api.test_connection()
         if result:
-            st.success("✅ API connection successful!")
+            st.success("API connection successful!")
         else:
-            st.error("❌ API connection failed")
+            st.error("API connection failed")
     except Exception as e:
-        st.error(f"❌ API connection failed: {e}")
+        st.error(f"API connection failed: {e}")
 
 def test_llm_provider(provider, config):
     """Test LLM provider connection"""
@@ -1719,13 +1721,13 @@ def test_llm_provider(provider, config):
         if test_response:
             cleaned = str(test_response).strip().strip('"').strip("'").strip()
             if cleaned.upper() == 'OK' or 'OK' in cleaned.upper():
-                st.success(f"✅ {provider.title()} provider connection successful!")
+                st.success(f"{provider.title()} provider connection successful!")
             else:
-                st.warning(f"⚠️ {provider.title()} responded but unexpected: {cleaned[:100]}")
+                st.warning(f"{provider.title()} responded but unexpected: {cleaned[:100]}")
         else:
-            st.error(f"❌ {provider.title()} returned empty response")
+            st.error(f"{provider.title()} returned empty response")
     except Exception as e:
-        st.error(f"❌ {provider.title()} provider connection failed: {e}")
+        st.error(f"{provider.title()} provider connection failed: {e}")
 
 def save_general_settings():
     """Save general settings to configuration"""
@@ -1744,7 +1746,7 @@ def save_general_settings():
     })
 
     save_config_to_file(st.session_state.config)
-    st.success("✅ General settings saved and configuration reloaded!")
+    st.success("General settings saved and configuration reloaded!")
 
 def save_llm_settings():
     """Save LLM settings to configuration"""
@@ -1790,7 +1792,7 @@ def save_llm_settings():
 
     # Save to file
     if save_config_to_file(st.session_state.config):
-        st.success("✅ LLM settings saved and configuration reloaded!")
+        st.success("LLM settings saved and configuration reloaded!")
 
 def save_provider_settings(provider_config, provider_type, key_prefix):
     """Save provider-specific settings from session state"""
@@ -1852,7 +1854,7 @@ def save_audio_settings():
     })
 
     save_config_to_file(st.session_state.config)
-    st.success("✅ Audio settings saved and configuration reloaded!")
+    st.success("Audio settings saved and configuration reloaded!")
 
 def save_validation_settings():
     """Save validation settings to configuration"""
@@ -1890,7 +1892,7 @@ def save_validation_settings():
     mp['hashtags']['min_length_threshold'] = st.session_state.get('hash_min_length', 10)
 
     save_config_to_file(config)
-    st.success("✅ Validation settings saved!")
+    st.success("Validation settings saved!")
 
 def save_config_to_file(config):
     """Save configuration to config.yaml file and reload in session"""
