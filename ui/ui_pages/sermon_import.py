@@ -6,7 +6,9 @@ import streamlit as st
 
 def show_sermon_import():
     st.markdown('<div class="main-header">📥 Import Sermons</div>', unsafe_allow_html=True)
-    st.markdown("Scan the processed_sermons folder and import any missing sermons into the database.")
+    st.markdown(
+        "Scan the processed_sermons folder and import any missing sermons into the database."
+    )
 
     try:
         sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -57,12 +59,17 @@ def show_sermon_import():
                             from job_queue import JobType, get_job_queue
                             job_queue = get_job_queue()
                             config = st.session_state.get('config', {})
-                            processed_sermons_dir = config.get('output_directory', 'processed_sermons')
+                            processed_sermons_dir = config.get(
+                                'output_directory', 'processed_sermons'
+                            )
 
                             job_id = job_queue.add_job(
                                 job_type=JobType.SERMON_IMPORT,
                                 title="Bulk Sermon Import",
-                                description=f"Importing {status['missing_from_database']} missing sermons from processed_sermons folder",
+                                description=(
+                                    f"Importing {status['missing_from_database']} missing "
+                                    "sermons from processed_sermons folder"
+                                ),
                                 parameters={
                                     'processed_sermons_dir': processed_sermons_dir,
                                     'force_reimport': False
@@ -71,14 +78,19 @@ def show_sermon_import():
                             )
 
                             st.success(f"✅ Import job started! Job ID: {job_id[:8]}")
-                            st.info(f"📥 Importing {status['missing_from_database']} sermons in the background. Monitor progress on the Jobs page.")
+                            st.info(
+                                f"📥 Importing {status['missing_from_database']} sermons "
+                                "in the background. Monitor progress on the Jobs page."
+                            )
 
                             if st.button("📊 View Job Progress", type="secondary"):
                                 st.switch_page("jobs")
 
                         except Exception as e:
                             st.error(f"❌ Failed to start import job: {e}")
-                            with st.spinner(f"Importing {status['missing_from_database']} sermons..."):
+                            with st.spinner(
+                                f"Importing {status['missing_from_database']} sermons..."
+                            ):
                                 successful, failed, failed_ids = import_missing_sermons()
                                 if successful > 0:
                                     st.success(f"✅ Successfully imported {successful} sermons!")
@@ -96,7 +108,10 @@ def show_sermon_import():
 
             with col2:
                 st.markdown("**🔄 Force Re-import Options**")
-                force_refresh_api = st.checkbox("Refresh API metadata", value=False, help="Re-fetch sermon metadata from SermonAudio API")
+                force_refresh_api = st.checkbox(
+                    "Refresh API metadata", value=False,
+                    help="Re-fetch sermon metadata from SermonAudio API",
+                )
 
                 if st.button("🔄 Force Re-import All Sermons", type="secondary"):
                     if st.session_state.get('confirm_reimport', False):
@@ -104,12 +119,17 @@ def show_sermon_import():
                             from job_queue import JobType, get_job_queue
                             job_queue = get_job_queue()
                             config = st.session_state.get('config', {})
-                            processed_sermons_dir = config.get('output_directory', 'processed_sermons')
+                            processed_sermons_dir = config.get(
+                                'output_directory', 'processed_sermons'
+                            )
 
                             job_id = job_queue.add_job(
                                 job_type=JobType.SERMON_IMPORT,
                                 title="Force Re-import All Sermons",
-                                description=f"Re-importing all {status['total_in_folder']} sermons with fresh API data",
+                                description=(
+                                    f"Re-importing all {status['total_in_folder']} sermons "
+                                    "with fresh API data"
+                                ),
                                 parameters={
                                     'processed_sermons_dir': processed_sermons_dir,
                                     'force_reimport': True,
@@ -119,15 +139,23 @@ def show_sermon_import():
                             )
 
                             st.success(f"✅ Force re-import job started! Job ID: {job_id[:8]}")
-                            st.info(f"🔄 Re-importing all {status['total_in_folder']} sermons in the background. Monitor progress on the Jobs page.")
+                            st.info(
+                                f"🔄 Re-importing all {status['total_in_folder']} sermons "
+                                "in the background. Monitor progress on the Jobs page."
+                            )
                             st.session_state.confirm_reimport = False
                         except Exception as e:
                             st.error(f"❌ Failed to start re-import job: {e}")
                     else:
-                        st.warning("⚠️ This will re-import ALL sermons and may take a long time. Click again to confirm.")
+                        st.warning(
+                            "⚠️ This will re-import ALL sermons and may take a long time. "
+                            "Click again to confirm."
+                        )
                         st.session_state.confirm_reimport = True
         else:
-            st.success("✅ All sermons in the processed_sermons folder are already in the database!")
+            st.success(
+                "✅ All sermons in the processed_sermons folder are already in the database!"
+            )
             if st.button("🔄 Refresh Status"):
                 st.rerun()
 

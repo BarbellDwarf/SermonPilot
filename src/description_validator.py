@@ -41,16 +41,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
 Examples:
   # Validate all local processed sermons
   python description_validator.py --local-sermons
-  
+
   # Validate specific sermons by ID
   python description_validator.py --local-sermons --sermon-ids 123456789,987654321
-  
+
   # Validate and export detailed report
   python description_validator.py --local-sermons --detailed-report --export-json results.json
-  
+
   # Validate and export CSV for spreadsheet analysis
   python description_validator.py --local-sermons --export-csv validation_results.csv
-  
+
   # Use different config file
   python description_validator.py --config my_config.yaml --local-sermons
         """

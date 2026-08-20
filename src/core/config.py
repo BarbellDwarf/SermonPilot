@@ -318,7 +318,10 @@ class ConfigManager:
             if isinstance(obj, dict):
                 for key, value in obj.items():
                     current_path = f"{path}.{key}" if path else key
-                    if any(sensitive in key.lower() for sensitive in ['key', 'password', 'token', 'secret']):
+                    if any(
+                        sensitive in key.lower()
+                        for sensitive in ['key', 'password', 'token', 'secret']
+                    ):
                         obj[key] = "***HIDDEN***"
                     else:
                         hide_sensitive(value, current_path)

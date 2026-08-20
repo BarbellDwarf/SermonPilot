@@ -12,8 +12,8 @@ import json
 
 import streamlit as st
 
+from src.sermon_paths import read_metadata
 from ui.pages import jobs
-from src.sermon_paths import discover_sermons, read_metadata
 
 
 def show_validation():
@@ -60,7 +60,9 @@ def show_quality_metrics():
         validation_results = processor.get_validation_results()
 
         if not validation_results:
-            st.info("📊 No validation data available yet. Run some validations to see metrics here.")
+            st.info(
+                "📊 No validation data available yet. Run some validations to see metrics here."
+            )
             return
 
         # Calculate real metrics
@@ -111,7 +113,9 @@ def show_quality_metrics():
 
         if validation_results:
             # Show most recent results
-            recent_results = validation_results[-10:] if len(validation_results) > 10 else validation_results
+            recent_results = (
+                validation_results[-10:] if len(validation_results) > 10 else validation_results
+            )
 
             results_data = []
             for result in recent_results:
@@ -119,8 +123,15 @@ def show_quality_metrics():
                     'Sermon ID': result.get('sermon_id', 'Unknown'),
                     'Status': '✅ Pass' if result.get('is_valid', False) else '❌ Fail',
                     'Score': f"{result.get('score', 0):.2f}/1.0",
-                    'Reason': result.get('reason', 'No reason provided')[:50] + '...' if len(result.get('reason', '')) > 50 else result.get('reason', 'No reason provided'),
-                    'Validated': result.get('validated_at', 'Unknown')[:10] if result.get('validated_at') else 'Unknown'
+                    'Reason': (
+                        result.get('reason', 'No reason provided')[:50] + '...'
+                        if len(result.get('reason', '')) > 50
+                        else result.get('reason', 'No reason provided')
+                    ),
+                    'Validated': (
+                        result.get('validated_at', 'Unknown')[:10]
+                        if result.get('validated_at') else 'Unknown'
+                    )
                 })
 
             import pandas as pd
@@ -175,12 +186,15 @@ def show_failed_descriptions():
         with col1:
             priority_filter = st.selectbox(
                 "Filter by Priority",
-                options=["All", "High Priority (<0.4)", "Medium Priority (0.4-0.6)", "Low Priority (>0.6)"]
+                options=[
+                    "All", "High Priority (<0.4)", "Medium Priority (0.4-0.6)",
+                    "Low Priority (>0.6)",
+                ]
             )
 
         with col2:
             # Get unique sermon IDs for filtering (speaker info may not be available)
-            sermon_ids = list(set(r.get('sermon_id', 'Unknown') for r in failed_results))
+            sermon_ids = list({r.get('sermon_id', 'Unknown') for r in failed_results})
             sermon_filter = st.selectbox(
                 "Filter by Sermon ID",
                 options=["All"] + sermon_ids[:20]  # Limit to first 20 for UI performance
@@ -189,7 +203,10 @@ def show_failed_descriptions():
         with col3:
             score_filter = st.selectbox(
                 "Filter by Score Range",
-                options=["All", "Very Low (0.0-0.2)", "Low (0.2-0.4)", "Medium (0.4-0.6)", "High (0.6-0.8)"]
+                options=[
+                    "All", "Very Low (0.0-0.2)", "Low (0.2-0.4)",
+                    "Medium (0.4-0.6)", "High (0.6-0.8)",
+                ]
             )
 
         # Apply filters
@@ -246,7 +263,11 @@ def show_failed_descriptions():
                     st.markdown("**Details:**")
                     st.write(f"**Sermon ID:** {sermon_id}")
                     st.write(f"**Score:** {score:.2f}/1.0")
-                    st.write(f"**Validated:** {result.get('validated_at', 'Unknown')[:10] if result.get('validated_at') else 'Unknown'}")
+                    validated_date = (
+                        result.get('validated_at', 'Unknown')[:10]
+                        if result.get('validated_at') else 'Unknown'
+                    )
+                    st.write(f"**Validated:** {validated_date}")
 
                     # Action buttons
                     col_a, col_b = st.columns(2)
@@ -260,7 +281,10 @@ def show_failed_descriptions():
                             mark_for_manual_review(sermon_id)
 
         if len(filtered_results) > 10:
-            st.info(f"Showing first 10 of {len(filtered_results)} failed descriptions. Use filters to narrow down results.")
+            st.info(
+                f"Showing first 10 of {len(filtered_results)} failed descriptions. "
+                "Use filters to narrow down results."
+            )
 
         # Bulk actions
         st.markdown("#### 🔄 Bulk Actions")
@@ -295,7 +319,10 @@ def show_batch_validation():
     with col1:
         validation_scope = st.selectbox(
             "Validation Scope",
-            ["Recent Sermons (Last 30 days)", "All Processed Sermons", "Specific Sermon IDs", "Failed Descriptions Only"],
+            [
+                "Recent Sermons (Last 30 days)", "All Processed Sermons",
+                "Specific Sermon IDs", "Failed Descriptions Only",
+            ],
             key="validation_scope"
         )
 
@@ -392,7 +419,9 @@ def start_background_validation(scope: str, options: dict):
                 if len(sermons) > max_sermons:
                     sermons = sermons[:max_sermons]
 
-                sermon_ids = [str(sermon['sermonID']) for sermon in sermons if sermon.get('sermonID')]
+                sermon_ids = [
+                    str(sermon['sermonID']) for sermon in sermons if sermon.get('sermonID')
+                ]
 
                 if not sermon_ids:
                     st.info("✅ No recent sermons found!")
@@ -420,7 +449,7 @@ def start_background_validation(scope: str, options: dict):
                             return meta.get("sermon_id") or meta.get("sermonID") or sermon_dir.name
                         return sermon_dir.name
 
-                    sermon_dirs = [d.name for d in discover_sermons(output_dir)]
+                    [d.name for d in discover_sermons(output_dir)]
                     sermon_ids = [_sermon_id_from_dir(d) for d in discover_sermons(output_dir)]
 
                     if not sermon_ids:
@@ -439,7 +468,9 @@ def start_background_validation(scope: str, options: dict):
             try:
                 from ui_processor import get_processor
                 processor = get_processor()
-                failed_results = [r for r in processor.get_validation_results() if not r['is_valid']]
+                failed_results = [
+                    r for r in processor.get_validation_results() if not r['is_valid']
+                ]
                 sermon_ids = [r['sermon_id'] for r in failed_results]
 
                 if not sermon_ids:
@@ -466,7 +497,10 @@ def start_background_validation(scope: str, options: dict):
         config = st.session_state.get('config', {})
         if not config:
             st.error("❌ No configuration loaded. Please check the Settings page first.")
-            st.info("💡 Try going to Settings → Configuration and saving your settings, then return to this page.")
+            st.info(
+                "💡 Try going to Settings → Configuration and saving your settings, "
+                "then return to this page."
+            )
             return
 
         # Validate that essential config fields are present
@@ -474,7 +508,10 @@ def start_background_validation(scope: str, options: dict):
         missing_fields = [field for field in required_fields if not config.get(field)]
         if missing_fields:
             st.error(f"❌ Configuration is missing required fields: {', '.join(missing_fields)}")
-            st.info("Please go to Settings → Configuration and ensure all required fields are filled out.")
+            st.info(
+                "Please go to Settings → Configuration and ensure all required fields "
+                "are filled out."
+            )
             return
 
         job_id = job_queue.add_job(
@@ -491,7 +528,10 @@ def start_background_validation(scope: str, options: dict):
         )
 
         st.success(f"✅ Validation job created! Job ID: {job_id[:8]}")
-        st.info(f"🔍 Validating {len(sermon_ids)} sermons in the background. You can monitor progress on the Jobs page.")
+        st.info(
+            f"🔍 Validating {len(sermon_ids)} sermons in the background. "
+            "You can monitor progress on the Jobs page."
+        )
 
         # Add button to go to jobs page
         if st.button("📊 View Job Progress", type="secondary"):
@@ -502,8 +542,12 @@ def start_background_validation(scope: str, options: dict):
 
 
 def start_real_validation(scope: str, options: dict):
-    """Start real validation process with progress tracking (DEPRECATED - use start_background_validation)"""
-    st.warning("⚠️ This function is deprecated. Validation now runs in the background. Redirecting to background validation...")
+    """Start real validation process with progress tracking
+    (DEPRECATED - use start_background_validation)"""
+    st.warning(
+        "⚠️ This function is deprecated. Validation now runs in the background. "
+        "Redirecting to background validation..."
+    )
     start_background_validation(scope, options)
 
 
@@ -553,9 +597,15 @@ def show_current_validation_status():
             with col1:
                 st.metric("Total Validated", results['total'])
             with col2:
-                st.metric("Valid", results['valid'], f"{results['valid']/results['total']*100:.1f}%")
+                st.metric(
+                    "Valid", results['valid'],
+                    f"{results['valid']/results['total']*100:.1f}%",
+                )
             with col3:
-                st.metric("Invalid", results['invalid'], f"{results['invalid']/results['total']*100:.1f}%")
+                st.metric(
+                    "Invalid", results['invalid'],
+                    f"{results['invalid']/results['total']*100:.1f}%",
+                )
             with col4:
                 st.metric("Errors", results['errors'])
 
@@ -567,7 +617,10 @@ def show_current_validation_status():
                 for detail in results['details']:
                     details_df.append({
                         'Sermon ID': detail['sermon_id'],
-                        'Status': '✅ Valid' if detail.get('is_valid') else '❌ Invalid' if 'is_valid' in detail else '⚠️ Error',
+                        'Status': (
+                            '✅ Valid' if detail.get('is_valid')
+                            else '❌ Invalid' if 'is_valid' in detail else '⚠️ Error'
+                        ),
                         'Score': f"{detail.get('score', 0):.2f}" if 'score' in detail else 'N/A',
                         'Reason': detail.get('reason', detail.get('error', ''))
                     })
@@ -597,7 +650,10 @@ def show_validation_trends():
         all_results = processor.get_validation_results()
 
         if not all_results:
-            st.info("📈 No validation trend data available yet. Run validations over time to see trends here.")
+            st.info(
+                "📈 No validation trend data available yet. "
+                "Run validations over time to see trends here."
+            )
             return
 
         # Time period selector
@@ -678,7 +734,9 @@ def show_validation_trends():
                 st.markdown("#### 📋 Recent Validation Activity")
 
                 # Show last 20 validations
-                recent_validations = filtered_results[-20:] if len(filtered_results) > 20 else filtered_results
+                recent_validations = (
+                    filtered_results[-20:] if len(filtered_results) > 20 else filtered_results
+                )
 
                 activity_data = []
                 for result in recent_validations:
@@ -686,7 +744,10 @@ def show_validation_trends():
                         'Sermon ID': result.get('sermon_id', 'Unknown'),
                         'Score': f"{result.get('score', 0):.2f}",
                         'Status': '✅ Valid' if result.get('is_valid', False) else '❌ Invalid',
-                        'Date': result.get('validated_at', 'Unknown')[:10] if result.get('validated_at') else 'Unknown'
+                        'Date': (
+                            result.get('validated_at', 'Unknown')[:10]
+                            if result.get('validated_at') else 'Unknown'
+                        )
                     })
 
                 if activity_data:

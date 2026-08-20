@@ -47,19 +47,18 @@ from typing import Any
 print("🔄 Initializing SermonPilot...")
 print("   📦 Loading dependencies...")
 
-import requests
-import sermonaudio
-from dotenv import load_dotenv
-from sermonaudio.node.requests import Node
+import requests  # noqa: E402
+import sermonaudio  # noqa: E402
+from dotenv import load_dotenv  # noqa: E402
+from sermonaudio.node.requests import Node  # noqa: E402
 
-from src.sermon_paths import (
+from src.sermon_paths import (  # noqa: E402
     FILENAMES,
     discover_sermons,
     find_sermon_dir,
     get_file_path,
     get_sermon_dir,
     read_metadata,
-    sanitize,
 )
 
 print("   🤖 Loading AI components...")
@@ -204,7 +203,7 @@ def _get_prompt_template(template_name: str, **kwargs) -> tuple[str, str] | None
 
 def console_print(message: str, level: str = "info"):
     """Print messages to console with appropriate formatting.
-    
+
     Args:
         message: Message to print
         level: Message level (info, warning, error, success)
@@ -221,11 +220,11 @@ def console_print(message: str, level: str = "info"):
 
 def is_content_missing_or_minimal(content: str | None, min_length: int) -> bool:
     """Check if content is missing or too minimal to be useful.
-    
+
     Args:
         content: The content to check (description or hashtags)
         min_length: Minimum length threshold for substantial content
-        
+
     Returns:
         True if content is missing or minimal, False otherwise
     """
@@ -304,10 +303,10 @@ def should_update_hashtags(
 
 def get_sermon_transcript(sermon_id: str) -> str:
     """Retrieve transcript for a sermon from the SermonAudio API.
-    
+
     Args:
         sermon_id: The sermon ID to get transcript for
-        
+
     Returns:
         Transcript text if available, empty string otherwise
     """
@@ -331,10 +330,10 @@ def get_sermon_transcript(sermon_id: str) -> str:
 
 def get_sermon_details(sermon_id: str) -> dict:
     """Retrieve full sermon details from the SermonAudio API.
-    
+
     Args:
         sermon_id: The sermon ID to get details for
-        
+
     Returns:
         Dictionary containing sermon metadata, empty dict if not found
     """
@@ -349,7 +348,9 @@ def get_sermon_details(sermon_id: str) -> dict:
             if resp.status_code == 404:
                 logger.info(f"Sermon {sermon_id} not yet available on SermonAudio (404)")
             else:
-                logger.warning(f"Failed to get sermon details for {sermon_id}: HTTP {resp.status_code}")
+                logger.warning(
+                    f"Failed to get sermon details for {sermon_id}: HTTP {resp.status_code}"
+                )
             return {}
     except Exception as e:
         logger.error(f"Error retrieving sermon details for {sermon_id}: {e}")
@@ -385,11 +386,11 @@ def needs_metadata_processing(
 
 def needs_audio_processing(config: dict, skip_audio: bool = False) -> bool:
     """Determine if audio processing is needed.
-    
+
     Args:
         config: Configuration dictionary
         skip_audio: CLI flag to skip audio processing
-        
+
     Returns:
         True if audio should be processed, False otherwise
     """
@@ -474,14 +475,16 @@ class DescriptionValidator:
 
         return validation_config.get('criteria', default_criteria)
 
-    def validate_description(self, description: str, context: dict = None) -> tuple[bool, str, float, list[str], list[str]]:
+    def validate_description(
+        self, description: str, context: dict = None
+    ) -> tuple[bool, str, float, list[str], list[str]]:
         """
         Validate a single description against criteria.
-        
+
         Args:
             description: The description text to validate
             context: Additional context (title, speaker, etc.)
-            
+
         Returns:
             Tuple of (is_valid, reason, score, criteria_met, criteria_failed)
         """
@@ -499,9 +502,12 @@ class DescriptionValidator:
             if context.get('speaker'):
                 context_info += f"Speaker: {context['speaker']}\n"
 
-        criteria_text = "\n".join([f"{i+1}. {criterion}" for i, criterion in enumerate(self.validation_criteria)])
+        criteria_text = "\n".join(
+            [f"{i+1}. {criterion}" for i, criterion in enumerate(self.validation_criteria)]
+        )
 
-        validation_prompt = f"""You are a sermon description quality validator. Evaluate the following description against specific criteria and provide a detailed assessment.
+        validation_prompt = f"""You are a sermon description quality validator.
+Evaluate the following description against specific criteria and provide a detailed assessment.
 
 {context_info}
 Validation Criteria:
@@ -535,7 +541,9 @@ Guidelines:
                 ])
 
             # Parse the structured response
-            score, is_valid, reason, criteria_met, criteria_failed = self._parse_validation_response(response)
+            score, is_valid, reason, criteria_met, criteria_failed = (
+                self._parse_validation_response(response)
+            )
 
             return is_valid, reason, score, criteria_met, criteria_failed
 
@@ -543,7 +551,9 @@ Guidelines:
             logger.warning(f"Validation failed: {e}")
             return True, f"Validation error: {e}", 0.5, [], []
 
-    def _parse_validation_response(self, response: str) -> tuple[float, bool, str, list[str], list[str]]:
+    def _parse_validation_response(
+        self, response: str
+    ) -> tuple[float, bool, str, list[str], list[str]]:
         """Parse the LLM validation response into structured data."""
         lines = [line.strip() for line in response.strip().split('\n') if line.strip()]
 
@@ -572,7 +582,9 @@ Guidelines:
                 met_text = line.split(':', 1)[1].strip()
                 if met_text and met_text != 'None':
                     try:
-                        met_indices = [int(x.strip()) - 1 for x in met_text.split(',') if x.strip().isdigit()]
+                        met_indices = [
+                            int(x.strip()) - 1 for x in met_text.split(',') if x.strip().isdigit()
+                        ]
                         criteria_met = [self.validation_criteria[i] for i in met_indices
                                       if 0 <= i < len(self.validation_criteria)]
                     except (ValueError, IndexError):
@@ -582,7 +594,11 @@ Guidelines:
                 failed_text = line.split(':', 1)[1].strip()
                 if failed_text and failed_text != 'None':
                     try:
-                        failed_indices = [int(x.strip()) - 1 for x in failed_text.split(',') if x.strip().isdigit()]
+                        failed_indices = [
+                            int(x.strip()) - 1
+                            for x in failed_text.split(',')
+                            if x.strip().isdigit()
+                        ]
                         criteria_failed = [self.validation_criteria[i] for i in failed_indices
                                          if 0 <= i < len(self.validation_criteria)]
                     except (ValueError, IndexError):
@@ -623,7 +639,10 @@ Guidelines:
     def _validate_local_sermon(self, sermon_dir: Path) -> ValidationResult | None:
         """Validate a single local sermon directory."""
         meta = read_metadata(sermon_dir)
-        sermon_id = (meta.get("sermon_id") or meta.get("sermonID")) or sermon_dir.name if meta else sermon_dir.name
+        sermon_id = (
+            (meta.get("sermon_id") or meta.get("sermonID")) or sermon_dir.name
+            if meta else sermon_dir.name
+        )
         description_file = get_file_path(sermon_dir, "description")
 
         if not description_file.exists():
@@ -634,7 +653,9 @@ Guidelines:
             description = description_file.read_text(encoding='utf-8').strip()
             context = {'sermon_id': sermon_id}
 
-            is_valid, reason, score, criteria_met, criteria_failed = self.validate_description(description, context)
+            is_valid, reason, score, criteria_met, criteria_failed = (
+                self.validate_description(description, context)
+            )
 
             return ValidationResult(
                 sermon_id=sermon_id,
@@ -709,7 +730,10 @@ Guidelines:
         # Summary section
         print("\n📈 SUMMARY:")
         print(f"   Total Sermons Validated: {summary.total_sermons}")
-        print(f"   ✅ Valid Descriptions: {summary.valid_descriptions} ({summary.validation_rate:.1f}%)")
+        print(
+            f"   ✅ Valid Descriptions: {summary.valid_descriptions} "
+            f"({summary.validation_rate:.1f}%)"
+        )
         print(f"   ❌ Invalid Descriptions: {summary.invalid_descriptions}")
         print(f"   🔄 Need Regeneration: {summary.needs_regeneration}")
         print(f"   📊 Average Score: {summary.average_score:.2f}/1.0")
@@ -741,7 +765,10 @@ Guidelines:
         if low_score_passed:
             print(f"\n⚠️  PASSED BUT LOW SCORING ({len(low_score_passed)} sermons):")
             for result in low_score_passed[:5]:  # Show first 5
-                print(f"   📝 {result.sermon_id}: {result.validation_score:.2f}/1.0 - {result.validation_reason}")
+                print(
+                    f"   📝 {result.sermon_id}: {result.validation_score:.2f}/1.0 "
+                    f"- {result.validation_reason}"
+                )
 
         print("\n" + "="*80)
 
@@ -777,7 +804,9 @@ Guidelines:
 
         logger.info(f"Results exported to {filename}")
 
-    def export_to_json(self, results: list[ValidationResult], summary: ValidationSummary, filename: str):
+    def export_to_json(
+        self, results: list[ValidationResult], summary: ValidationSummary, filename: str
+    ):
         """Export detailed validation results to JSON file."""
         import json
         from dataclasses import asdict
@@ -809,14 +838,14 @@ def validate_and_regenerate_descriptions(
 ) -> dict:
     """
     Validate existing descriptions and optionally regenerate failed ones.
-    
+
     Args:
         validator: Description validator instance
         sermon_ids: Specific sermon IDs to process (None for all)
         regenerate_failed: Whether to regenerate descriptions that fail validation
         dry_run: If True, don't actually update descriptions locally or on SermonAudio
         upload_to_sermonaudio: If True, upload regenerated descriptions to SermonAudio
-        
+
     Returns:
         Dictionary with processing results including links to changed sermons
     """
@@ -877,14 +906,18 @@ def validate_and_regenerate_descriptions(
 
                 # Double-validate the newly generated description
                 console_print("      🔍 Double-validating new description...")
-                is_valid, reason, score, criteria_met, criteria_failed = validator.validate_description(
-                    new_description,
-                    {'sermon_id': sermon_id}
+                is_valid, reason, score, criteria_met, criteria_failed = (
+                    validator.validate_description(
+                        new_description,
+                        {'sermon_id': sermon_id}
+                    )
                 )
 
                 # Check if the new description actually passes validation
                 if not is_valid:
-                    console_print("      ⚠️  WARNING: New description still fails validation!", "warning")
+                    console_print(
+                        "      ⚠️  WARNING: New description still fails validation!", "warning"
+                    )
                     console_print(f"               Score: {score:.2f}, Reason: {reason}", "warning")
                     validation_failures.append({
                         'sermon_id': sermon_id,
@@ -907,7 +940,9 @@ def validate_and_regenerate_descriptions(
                 # Save the new description locally
                 sermon_dir = find_sermon_dir(validator.output_dir, sermon_id)
                 if not sermon_dir:
-                    console_print(f"      ❌ Could not find sermon directory for {sermon_id}", "error")
+                    console_print(
+                        f"      ❌ Could not find sermon directory for {sermon_id}", "error"
+                    )
                     failed_regeneration += 1
                     continue
                 description_file = get_file_path(sermon_dir, "description")
@@ -937,7 +972,9 @@ def validate_and_regenerate_descriptions(
                 console_print(f"      ✅ Updated description for sermon {sermon_id}", "success")
 
             except Exception as e:
-                console_print(f"      ❌ Failed to regenerate description for {sermon_id}: {e}", "error")
+                console_print(
+                    f"      ❌ Failed to regenerate description for {sermon_id}: {e}", "error"
+                )
                 failed_regeneration += 1
 
     return {
@@ -1035,13 +1072,13 @@ def upload_media_file(sermon_id: str, file_path: str,
 def generate_title(transcript: str, speaker_name: str = None, event_type: str = None,
                   bible_text: str = None) -> str:
     """Generate a sermon title using the LLM based on transcript content.
-    
+
     Args:
         transcript: The sermon transcript
         speaker_name: Name of the speaker (optional)
         event_type: Type of event (optional)
         bible_text: Bible reference (optional)
-        
+
     Returns:
         Generated title string
     """
@@ -1059,9 +1096,13 @@ def generate_title(transcript: str, speaker_name: str = None, event_type: str = 
     tmpl = _get_prompt_template("title", context=context, transcript=transcript[:1000])
     if tmpl:
         system_prompt, user_prompt = tmpl
-        messages = [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}]
+        messages = [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': user_prompt},
+        ]
     else:
-        prompt = f"""You are a sermon title generator. Create a compelling, descriptive title for this sermon.
+        prompt = f"""You are a sermon title generator.
+Create a compelling, descriptive title for this sermon.
 
 {context}
 
@@ -1129,9 +1170,13 @@ def generate_short_display_title(full_title: str) -> str:
     tmpl = _get_prompt_template("short_title", full_title=full_title)
     if tmpl:
         system_prompt, user_prompt = tmpl
-        messages = [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}]
+        messages = [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': user_prompt},
+        ]
     else:
-        prompt = f"""Shorten this sermon title to a concise version (maximum 30 characters, STRICT LIMIT).
+        prompt = f"""Shorten this sermon title to a concise version
+(maximum 30 characters, STRICT LIMIT).
 Keep the core meaning but make it brief. No quotes, no explanation, just the shortened title.
 
 Original title: {full_title}
@@ -1145,7 +1190,9 @@ Shortened title (max 30 chars):"""
         if len(short_title) > 30:
             short_title = short_title[:27] + "..."
         if short_title:
-            logger.debug("Generated short display title (%d chars): %s", len(short_title), short_title)
+            logger.debug(
+                "Generated short display title (%d chars): %s", len(short_title), short_title
+            )
             return short_title
     except Exception as e:
         logger.warning("Short title generation failed: %s", e)
@@ -1227,7 +1274,7 @@ def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
                          series_id: int | None = None,
                          display_title: str = None) -> str:
     """Create a new sermon via the SermonAudio API.
-    
+
     Args:
         title: Full sermon title (max 85 chars)
         speaker_name: Name of the speaker (max 50 chars)
@@ -1241,7 +1288,7 @@ def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
         series_id: Numeric series ID (optional; the API only accepts seriesID)
         display_title: Short display title (max 30 chars, optional). If not provided,
                        generated from full title by truncation.
-        
+
     Returns:
         Created sermon ID if successful, None if failed
     """
@@ -1307,7 +1354,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       whisper_model: str = "large",
                       transcription_backend: str = "whisper_local",
                       use_clean_audio: bool = False,
-                      clean_audio_script: str = "~/Documents/Repositories/deepfilternet/clean-audio.py",
+                      clean_audio_script: str = (
+                          "~/Documents/Repositories/deepfilternet/clean-audio.py"
+                      ),
                       clean_audio_device: str = "auto",
                       generate_short_title: bool = False,
                       enhancement_method: str | None = None,
@@ -1330,9 +1379,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         hashtags: Hashtags/keywords (optional, will be generated if not provided)
         dry_run: If True, process but don't upload
         skip_transcription: If True, skip audio transcription for faster processing
-        skip_audio: If True, skip audio enhancement (use file as-is, e.g. already cleaned in kdenlive)
+        skip_audio: If True, skip audio enhancement (use file as-is, e.g.
+            already cleaned in kdenlive)
         whisper_model: Whisper model size for transcription
-        progress_callback: Optional callable(progress_pct: float, message: str) for progress reporting
+        progress_callback: Optional callable(progress_pct: float, message: str)
+            for progress reporting
 
     Returns:
         Dict with keys: success, sermon_id, title, description, hashtags,
@@ -1434,8 +1485,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
     _report(5, f"Loaded audio file: {audio_path.name}")
 
     temp_dir = None
-    import tempfile as _tempfile
     import subprocess as _subprocess
+    import tempfile as _tempfile
     try:
         # Step 1: Process the audio (or skip if requested)
         if skip_audio:
@@ -1473,7 +1524,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         _report(14, "Audio extraction failed, using original file")
 
                 processor = AudioProcessor(
-                    enhancement_method=enhancement_method or config.get('audio_enhancement_method', 'deepfilternet')
+                    enhancement_method=(
+                        enhancement_method
+                        or config.get('audio_enhancement_method', 'deepfilternet')
+                    )
                 )
                 if enhancement_method == "custom" and custom_repo and custom_file:
                     processor.config['clear_custom_repo'] = custom_repo
@@ -1543,14 +1597,26 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             else:
                 _report(35, f"Starting transcription ({whisper_model} model)...")
                 try:
-                    transcript = transcribe(str(enhanced_audio_path), model_size=whisper_model, config=config,
-                                            backend_override=transcription_backend,
-                                            progress_callback=_report)
+                    transcript = transcribe(
+                        str(enhanced_audio_path),
+                        model_size=whisper_model,
+                        config=config,
+                        backend_override=transcription_backend,
+                        progress_callback=_report,
+                    )
                     if not transcript:
-                        _report(45, "First transcription attempt produced no result, retrying with original audio...")
-                        transcript = transcribe(str(audio_path), model_size=whisper_model, config=config,
-                                                backend_override=transcription_backend,
-                                                progress_callback=_report)
+                        _report(
+                            45,
+                            "First transcription attempt produced no result, "
+                            "retrying with original audio...",
+                        )
+                        transcript = transcribe(
+                            str(audio_path),
+                            model_size=whisper_model,
+                            config=config,
+                            backend_override=transcription_backend,
+                            progress_callback=_report,
+                        )
                 except Exception as e:
                     logger.warning("Transcription failed: %s", e)
                     transcript = ""
@@ -1623,7 +1689,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 description += f" from {event_type} on {recorded_date}."
 
             if not hashtags:
-                base_tags = ["#sermon", f"#{speaker_name.replace(' ', '')}", f"#{event_type.replace(' ', '').replace('-', '')}"]
+                base_tags = [
+                    "#sermon",
+                    f"#{speaker_name.replace(' ', '')}",
+                    f"#{event_type.replace(' ', '').replace('-', '')}",
+                ]
                 if bible_text:
                     book = bible_text.split()[0] if bible_text else ""
                     if book:
@@ -1663,13 +1733,18 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             console_print(f"  Upload type: {upload_type}")
             if short_display_title:
                 console_print(f"  Display Title: {short_display_title}")
-            console_print(f"  Transcript: {len(transcript)} characters" if transcript else "  Transcript: None")
+            console_print(
+                f"  Transcript: {len(transcript)} characters"
+                if transcript else "  Transcript: None"
+            )
 
             # Save dry run results for visibility in the Library page
             import re
             import uuid
             safe_title = re.sub(r'[^a-zA-Z0-9]+', '_', (title or 'Untitled').strip().lower())[:40]
-            safe_speaker = re.sub(r'[^a-zA-Z0-9]+', '_', (speaker_name or 'Unknown').strip().lower())[:20]
+            safe_speaker = re.sub(
+                r'[^a-zA-Z0-9]+', '_', (speaker_name or 'Unknown').strip().lower()
+            )[:20]
             safe_date = (recorded_date or 'nodate').replace('-', '')
             sermon_id = f"draft_{safe_speaker}_{safe_date}_{safe_title}_{uuid.uuid4().hex[:8]}"
             result['sermon_id'] = sermon_id
@@ -1683,6 +1758,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             # Copy processed file to output directory
             import shutil
+
             from src.sermon_paths import build_output_filename
 
             ext = Path(audio_path).suffix
@@ -1747,8 +1823,13 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 repo = SermonRepository()
                 duration = 0
                 try:
-                    import subprocess, json as _json
-                    r = subprocess.run(['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', str(enhanced_audio_path)], capture_output=True, text=True, timeout=30)
+                    import json as _json
+                    import subprocess
+                    r = subprocess.run(
+                        ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format',
+                         str(enhanced_audio_path)],
+                        capture_output=True, text=True, timeout=30,
+                    )
                     if r.returncode == 0:
                         info = _json.loads(r.stdout)
                         duration = float(info.get('format', {}).get('duration', 0))
@@ -1777,7 +1858,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         'hashtags': hashtags or '',
                     },
                 })
-                console_print(f"💾 Dry run sermon saved to local database (status: draft)")
+                console_print("💾 Dry run sermon saved to local database (status: draft)")
             except Exception as e:
                 logger.warning(f"Failed to save dry run sermon to local database: {e}")
 
@@ -1830,7 +1911,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         upload_success = upload_media_file(sermon_id, str(final_upload_path), upload_type)
 
         if upload_success:
-            console_print(f"✅ Successfully created and uploaded {media_label} for sermon {sermon_id}")
+            console_print(
+                f"✅ Successfully created and uploaded {media_label} for sermon {sermon_id}"
+            )
             _report(95, f"{media_label.capitalize()} uploaded successfully")
 
             # Create local output directory
@@ -1843,6 +1926,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             # Copy processed file to output directory
             import shutil
+
             from src.sermon_paths import build_output_filename
 
             ext = Path(audio_path).suffix
@@ -1906,8 +1990,13 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 repo = SermonRepository()
                 duration = 0
                 try:
-                    import subprocess, json
-                    r = subprocess.run(['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', str(enhanced_audio_path)], capture_output=True, text=True, timeout=30)
+                    import json
+                    import subprocess
+                    r = subprocess.run(
+                        ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format',
+                         str(enhanced_audio_path)],
+                        capture_output=True, text=True, timeout=30,
+                    )
                     if r.returncode == 0:
                         info = json.loads(r.stdout)
                         duration = float(info.get('format', {}).get('duration', 0))
@@ -1936,7 +2025,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         'hashtags': hashtags or '',
                     },
                 })
-                console_print(f"💾 Sermon saved to local database")
+                console_print("💾 Sermon saved to local database")
             except Exception as e:
                 logger.warning(f"Failed to save sermon to local database: {e}")
 
@@ -2038,7 +2127,9 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
             fallback_dir = find_sermon_dir(output_root, dry_run_id)
             if fallback_dir:
                 for f in fallback_dir.iterdir():
-                    if f.suffix.lower() in ('.mp3', '.wav', '.mp4', '.m4a', '.ogg', '.flac', '.mov', '.mkv', '.webm'):
+                    if f.suffix.lower() in (
+                        '.mp3', '.wav', '.mp4', '.m4a', '.ogg', '.flac', '.mov', '.mkv', '.webm'
+                    ):
                         audio_path_str = str(f)
                         break
         if not audio_path_str or not Path(audio_path_str).exists():
@@ -2146,7 +2237,9 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
             output_root = Path(__file__).parent / output_root
         old_output_dir = find_sermon_dir(output_root, dry_run_id)
         if old_output_dir and old_output_dir.exists():
-            new_output_dir = get_sermon_dir(output_root, speaker_name, series_title, title, new_sermon_id)
+            new_output_dir = get_sermon_dir(
+                output_root, speaker_name, series_title, title, new_sermon_id
+            )
             if old_output_dir != new_output_dir:
                 import shutil
                 shutil.copytree(str(old_output_dir), str(new_output_dir), dirs_exist_ok=True)
@@ -2233,7 +2326,9 @@ def _clean_llm_thinking_response(response: str) -> str:
     has_thinking = any(indicator.lower() in response.lower() for indicator in thinking_indicators)
 
     if has_thinking:
-        logger.debug("Detected thinking patterns in LLM response, attempting cleanup with second LLM call")
+        logger.debug(
+            "Detected thinking patterns in LLM response, attempting cleanup with second LLM call"
+        )
 
         # Try to use LLM to extract just the description
         cleanup_prompt = (
@@ -2263,7 +2358,10 @@ def _clean_llm_thinking_response(response: str) -> str:
                                 len(response), len(cleaned_response))
                     return cleaned_response
                 else:
-                    logger.debug("LLM cleanup still contains thinking patterns, falling back to regex cleanup")
+                    logger.debug(
+                        "LLM cleanup still contains thinking patterns, "
+                        "falling back to regex cleanup"
+                    )
             else:
                 logger.debug("LLM cleanup didn't reduce length, falling back to regex cleanup")
 
@@ -2295,8 +2393,11 @@ def _regex_cleanup_thinking(response: str) -> str:
             if start_idx > 0:  # Make sure it's not at the very beginning
                 result = response[start_idx:].strip()
                 if len(result) > 100:  # Make sure we have substantial content
-                    logger.debug("Found transition phrase, cleaned response (original: %d chars, cleaned: %d chars)",
-                                len(response), len(result))
+                    logger.debug(
+                        "Found transition phrase, cleaned response "
+                        "(original: %d chars, cleaned: %d chars)",
+                        len(response), len(result),
+                    )
                     return result
 
     # Try splitting by sentences and look for the actual content
@@ -2311,7 +2412,9 @@ def _regex_cleanup_thinking(response: str) -> str:
     # Look for the transition from thinking to actual content
     for i, sentence in enumerate(sentences):
         # Check if this sentence contains thinking indicators
-        has_thinking = any(indicator.lower() in sentence.lower() for indicator in thinking_indicators)
+        has_thinking = any(
+            indicator.lower() in sentence.lower() for indicator in thinking_indicators
+        )
 
         # If we find a sentence that doesn't have thinking and is substantial
         if not has_thinking and len(sentence) > 30:
@@ -2361,9 +2464,11 @@ def generate_summary(
 
     # Build speaker instruction
     speaker_instruction = (
-        f"- The speaker is Pastor {speaker_name}. You MUST begin the description with 'Pastor {speaker_name} teaches on...' or 'Pastor {speaker_name} taught from...'.\n"
+        f"- The speaker is Pastor {speaker_name}. You MUST begin the description with "
+        f"'Pastor {speaker_name} teaches on...' or 'Pastor {speaker_name} taught from...'.\n"
         if speaker_name
-        else "- Identify the primary speaker from the transcript and refer to them as 'Pastor [Name]'. You MUST begin the description with 'Pastor [Name] teaches on...'.\n"
+        else "- Identify the primary speaker from the transcript and refer to them as "
+        "'Pastor [Name]'. You MUST begin the description with 'Pastor [Name] teaches on...'.\n"
     )
 
     tmpl = _get_prompt_template("description",
@@ -2372,12 +2477,16 @@ def generate_summary(
                                 speaker_instruction=speaker_instruction)
     if tmpl:
         system_prompt, user_prompt = tmpl
-        messages = [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}]
+        messages = [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': user_prompt},
+        ]
     else:
         prompt = (
             f"You are a {role_desc}. Read the following {body_desc} transcript and write a single, "
             f"concise description of the main message and application. Focus on what "
-            f"the speaker wanted the audience to understand, believe, or do. Avoid generic statements; "
+            f"the speaker wanted the audience to understand, believe, or do. "
+            f"Avoid generic statements; "
             f"emphasize unique focus.\n\nTranscript:\n{transcript}\n\nGuidelines:\n"
             f"- Maximum 1600 characters (STRICT LIMIT - API will reject longer text)\n"
             f"- One paragraph format\n"
@@ -2386,11 +2495,13 @@ def generate_summary(
             "- Do not prefix with 'Summary:'\n- If incomplete, infer likely main message\n"
             "- Keep under 1600 characters or the upload will fail\n"
             "- Use the actual speaker name, not placeholder text\n"
-            "- Include specific scripture references, source material, and concrete examples from the transcript\n"
+            "- Include specific scripture references, source material, and concrete "
+            "examples from the transcript\n"
             "- Mention the specific doctrines, rules, or texts the speaker expounded\n"
             "- Describe the practical application the speaker gave\n"
             "- IMPORTANT: Return ONLY the final summary paragraph. Do not include any reasoning, "
-            "thinking process, explanations, or commentary. Start directly with the summary content."
+            "thinking process, explanations, or commentary. "
+            "Start directly with the summary content."
         )
         messages = [{'role': 'user', 'content': prompt}]
     try:
@@ -2432,10 +2543,14 @@ def verify_hashtags(initial_hashtags: str, original_text: str) -> str:
                                 original_text=original_text[:200])
     if tmpl:
         system_prompt, user_prompt = tmpl
-        messages = [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}]
+        messages = [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': user_prompt},
+        ]
     else:
         verification_prompt = (
-            "You are a hashtag validator. Your job is to extract ONLY valid hashtags from the input below. "
+            "You are a hashtag validator. Your job is to extract ONLY valid hashtags "
+            "from the input below. "
             "Rules:\n"
             "1. Output ONLY hashtags (words starting with #)\n"
             "2. Remove any comments, explanations, or non-hashtag text\n"
@@ -2494,7 +2609,10 @@ def generate_hashtags(text: str) -> str:
     tmpl = _get_prompt_template("hashtags", text=text)
     if tmpl:
         system_prompt, user_prompt = tmpl
-        messages = [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': user_prompt}]
+        messages = [
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': user_prompt},
+        ]
     else:
         prompt = (
             "Generate 5-10 highly relevant, search-friendly hashtags (<=150 chars total) for this "
@@ -2527,9 +2645,6 @@ def generate_hashtags(text: str) -> str:
     except Exception as e:  # pragma: no cover
         logger.error("LLM hashtag generation failed: %s", e)
         return "#faith #hope #worship #christian #jesus"
-    except Exception as e:  # pragma: no cover
-        logger.error("LLM hashtag generation failed: %s", e)
-        return "#faith #hope #worship #christian #jesus"
 
 
 def generate_validated_summary(
@@ -2539,7 +2654,7 @@ def generate_validated_summary(
 ) -> tuple[str, dict]:
     """
     Generate a sermon summary with validation through smaller model.
-    
+
     Returns:
         Tuple of (final_summary, validation_info)
         validation_info contains details about the validation process
@@ -2810,7 +2925,10 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                 if not processing_success:
                     logger.warning("Audio processing issues; continuing with original audio")
                 elif qa_processing_info:
-                    logger.info(f"Q&A processing: {qa_processing_info.get('total_segments', 0)} segments detected")
+                    logger.info(
+                        f"Q&A processing: "
+                        f"{qa_processing_info.get('total_segments', 0)} segments detected"
+                    )
 
             except Exception as e:
                 logger.error("Audio processing failed: %s", e)
@@ -2875,13 +2993,23 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                         INSERT OR REPLACE INTO sermon_content
                         (sermon_id, transcript_text, description, hashtags, updated_at)
                         VALUES (?, ?, ?, ?, ?)
-                    """, (sermon_id, transcript or '', summary or '', hashtags or '', str(dt.datetime.now())))
+                    """, (
+                        sermon_id, transcript or '', summary or '', hashtags or '',
+                        str(dt.datetime.now())
+                    ))
                     conn.execute("DELETE FROM sermon_search WHERE sermon_id = ?", (sermon_id,))
                     conn.execute("""
                         INSERT INTO sermon_search
                         (sermon_id, title, speaker, transcript_text, description, hashtags)
                         VALUES (?, ?, ?, ?, ?, ?)
-                    """, (sermon_id, sermon_name or '', speaker_name or '', transcript or '', summary or '', hashtags or ''))
+                    """, (
+                        sermon_id,
+                        sermon_name or '',
+                        speaker_name or '',
+                        transcript or '',
+                        summary or '',
+                        hashtags or '',
+                    ))
                     conn.commit()
                 logger.debug("Dry-run: saved generated content to database")
             except Exception as e:
@@ -2953,7 +3081,9 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
             else:
                 video_hls_url = video_choice.stream_url
                 logger.info("Downloading sermon video from HLS: %s", video_hls_url[:120])
-                downloaded_video = os.path.join(sermon_dir, FILENAMES.get("temp_video", "video_source.mp4"))
+                downloaded_video = os.path.join(
+                    sermon_dir, FILENAMES.get("temp_video", "video_source.mp4")
+                )
                 # ffmpeg pulls the MP4 from the HLS playlist
                 dl_cmd = [
                     "ffmpeg", "-y", "-loglevel", "error",
@@ -2966,7 +3096,9 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                             downloaded_video,
                             os.path.getsize(downloaded_video) // (1024 * 1024))
 
-                muxed_video = os.path.join(sermon_dir, FILENAMES.get("enhanced_video", "video_enhanced.mp4"))
+                muxed_video = os.path.join(
+                    sermon_dir, FILENAMES.get("enhanced_video", "video_enhanced.mp4")
+                )
                 mux_cmd = [
                     "ffmpeg", "-y", "-loglevel", "error",
                     "-i", downloaded_video,
@@ -3025,10 +3157,20 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                 'duration': int(getattr(details, 'durationSeconds', 0) or 0),
                 'status': 'processed' if not DRY_RUN else 'pending',
                 'file_paths': {
-                    'processed_audio': output_audio if output_audio and os.path.exists(output_audio) else None,
-                    'original_audio': original_audio_path if 'original_audio_path' in locals() and original_audio_path and os.path.exists(original_audio_path) else None,
-                    'transcript': str(get_file_path(sermon_dir, "transcript")) if transcript else None,
-                    'description': str(get_file_path(sermon_dir, "description")) if summary else None,
+                    'processed_audio': (
+                        output_audio if output_audio and os.path.exists(output_audio) else None
+                    ),
+                    'original_audio': (
+                        original_audio_path
+                        if 'original_audio_path' in locals() and original_audio_path
+                        and os.path.exists(original_audio_path) else None
+                    ),
+                    'transcript': (
+                        str(get_file_path(sermon_dir, "transcript")) if transcript else None
+                    ),
+                    'description': (
+                        str(get_file_path(sermon_dir, "description")) if summary else None
+                    ),
                     'hashtags': str(get_file_path(sermon_dir, "hashtags")) if hashtags else None
                 },
                 'processing_info': {
@@ -3036,8 +3178,12 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                     'noise_reduction_applied': AUDIO_PARAMS.get('noise_reduction', False),
                     'normalization_applied': AUDIO_PARAMS.get('normalize', False),
                     'qa_normalization_applied': qa_processing_info is not None,
-                    'qa_segments_count': qa_processing_info.get('total_segments', 0) if qa_processing_info else 0,
-                    'qa_segments': qa_processing_info.get('qa_segments', []) if qa_processing_info else [],
+                    'qa_segments_count': (
+                        qa_processing_info.get('total_segments', 0) if qa_processing_info else 0
+                    ),
+                    'qa_segments': (
+                        qa_processing_info.get('qa_segments', []) if qa_processing_info else []
+                    ),
                     'processing_duration': None,  # Could be tracked with timing
                     'quality_score': None,  # Could be calculated from processing metrics
                     'processing_logs': qa_processing_info if qa_processing_info else {}
@@ -3064,7 +3210,10 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
             if success:
                 logger.debug("Sermon data saved to database successfully")
                 if qa_processing_info and qa_processing_info.get('total_segments', 0) > 0:
-                    logger.info(f"💾 Saved Q&A processing info: {qa_processing_info['total_segments']} segments")
+                    logger.info(
+                        f"💾 Saved Q&A processing info: "
+                        f"{qa_processing_info['total_segments']} segments"
+                    )
             else:
                 logger.warning("Failed to save sermon data to database")
 
@@ -3205,10 +3354,10 @@ def search_broadcaster_sermons(start_date: str, end_date: str, max_results: int 
 def get_broadcaster_pastors(limit: int = 500) -> list[str]:
     """
     Retrieve a list of distinct pastors/speakers from the broadcaster's sermons.
-    
+
     Args:
         limit: Maximum number of sermons to fetch for analysis (default: 500)
-        
+
     Returns:
         Sorted list of unique speaker names
     """
@@ -3258,7 +3407,7 @@ def get_broadcaster_pastors(limit: int = 500) -> list[str]:
                 logger.error(f"Error fetching sermon data: {e}")
                 break
 
-        speaker_list = sorted(list(speakers))
+        speaker_list = sorted(speakers)
         logger.debug(f"Found {len(speaker_list)} unique pastors")
         return speaker_list
 
@@ -3270,10 +3419,10 @@ def get_broadcaster_pastors(limit: int = 500) -> list[str]:
 def get_broadcaster_event_types(limit: int = 500) -> list[str]:
     """
     Retrieve a list of distinct event types from the broadcaster's sermons.
-    
+
     Args:
         limit: Maximum number of sermons to fetch for analysis (default: 500)
-        
+
     Returns:
         Sorted list of unique event types
     """
@@ -3321,7 +3470,7 @@ def get_broadcaster_event_types(limit: int = 500) -> list[str]:
                 logger.error(f"Error fetching sermon data: {e}")
                 break
 
-        event_list = sorted(list(event_types))
+        event_list = sorted(event_types)
         logger.debug(f"Found {len(event_list)} unique event types")
         return event_list
 
@@ -3624,7 +3773,7 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
     Handles different subcommands:
     - new-sermon: Create new sermon from audio file
     - sermon-update: Update existing sermons with audio processing
-    - metadata-update: Update only metadata for existing sermons  
+    - metadata-update: Update only metadata for existing sermons
     - validation: Validate sermon descriptions
     - list: List sermons without processing
     """
@@ -3688,11 +3837,15 @@ def handle_new_sermon(args):
         hashtags=args.hashtags,
         dry_run=args.dry_run,
         skip_transcription=args.skip_transcription,
-        skip_audio=getattr(args, 'skip_audio', False) or getattr(args, 'skip_audio_processing', False),
+        skip_audio=(
+            getattr(args, 'skip_audio', False) or getattr(args, 'skip_audio_processing', False)
+        ),
         whisper_model=args.whisper_model,
         transcription_backend=getattr(args, 'transcription_backend', 'whisper_local'),
         use_clean_audio=getattr(args, 'use_clean_audio', False),
-        clean_audio_script=getattr(args, 'clean_audio_script', '~/Documents/Repositories/deepfilternet/clean-audio.py'),
+        clean_audio_script=getattr(
+            args, 'clean_audio_script', '~/Documents/Repositories/deepfilternet/clean-audio.py'
+        ),
         clean_audio_device=getattr(args, 'clean_audio_device', 'auto'),
     )
 
@@ -3742,12 +3895,16 @@ def handle_validation(args):
         validator = DescriptionValidator(config)
 
         if not llm_manager.validator_provider:
-            console_print("⚠️  No validator LLM configured, using primary provider for validation", "warning")
+            console_print(
+                "⚠️  No validator LLM configured, using primary provider for validation", "warning"
+            )
 
         # Parse sermon IDs if provided
         validation_sermon_ids = None
         if args.validation_sermon_ids:
-            validation_sermon_ids = [sid.strip() for sid in args.validation_sermon_ids.split(',') if sid.strip()]
+            validation_sermon_ids = [
+                sid.strip() for sid in args.validation_sermon_ids.split(',') if sid.strip()
+            ]
             console_print(f"🎯 Validating {len(validation_sermon_ids)} specific sermons")
 
         # Run validation
@@ -3780,7 +3937,9 @@ def handle_validation(args):
 
             if args.export_validation_json:
                 validator.export_to_json(results, summary, args.export_validation_json)
-                console_print(f"📊 Detailed validation results exported to {args.export_validation_json}")
+                console_print(
+                    f"📊 Detailed validation results exported to {args.export_validation_json}"
+                )
 
         console_print("✅ Validation Complete!")
 
@@ -3808,7 +3967,7 @@ def handle_original_processing(args):
 
     # Create orchestrator and filter instances
     orchestrator = ProcessingOrchestrator(config, console_print)
-    sermon_filter = SermonFilter(config)
+    SermonFilter(config)
 
     # Validate processing requirements
     issues = orchestrator.validate_processing_requirements(processing_options, validation_options)

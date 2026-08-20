@@ -1,12 +1,12 @@
 import datetime
 import json
+import logging
+import os
 import subprocess
 import sys
 import tempfile
-import os
-from pathlib import Path
-import logging
 import time as _time
+from pathlib import Path
 
 import streamlit as st
 
@@ -15,7 +15,7 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "ui"))
 sys.path.insert(0, str(project_root / "src"))
 
-from ui.sermon_metadata import (
+from ui.sermon_metadata import (  # noqa: E402
     create_event_type_selectbox,
     create_pastor_selectbox,
     create_series_selectbox,
@@ -60,7 +60,10 @@ def _show_upload_section():
         with col2:
             st.metric("File Type", uploaded_file.type)
         with col3:
-            name = uploaded_file.name[:20] + "..." if len(uploaded_file.name) > 20 else uploaded_file.name
+            name = (
+                uploaded_file.name[:20] + "..."
+                if len(uploaded_file.name) > 20 else uploaded_file.name
+            )
             st.metric("File Name", name)
         with col4:
             duration = _get_media_duration(uploaded_file)
@@ -92,19 +95,25 @@ def _show_metadata_section():
 
     with col1:
         speaker_name = create_pastor_selectbox("Speaker *", key="speaker_name")
-        recorded_date = st.date_input("Recording Date *", key="recorded_date", value=datetime.date.today())
+        recorded_date = st.date_input(
+            "Recording Date *", key="recorded_date", value=datetime.date.today()
+        )
         event_type = create_event_type_selectbox("Event Type *", key="event_type")
 
     with col2:
-        bible_text = st.text_input("Bible Text", key="bible_text", placeholder="John 3:16-17")
-        title = st.text_input("Sermon Title", key="sermon_title", placeholder="Leave blank for AI generation")
-        subtitle = st.text_input("Subtitle", key="sermon_subtitle", placeholder="Additional context")
+        st.text_input("Bible Text", key="bible_text", placeholder="John 3:16-17")
+        st.text_input(
+            "Sermon Title", key="sermon_title", placeholder="Leave blank for AI generation"
+        )
+        st.text_input("Subtitle", key="sermon_subtitle", placeholder="Additional context")
         series = create_series_selectbox("Series", key="sermon_series")
         st.session_state.sermon_series = series
 
-    description = st.text_area("Description", key="sermon_description",
-                               placeholder="Leave blank for AI generation from transcript", height=80)
-    hashtags = st.text_input("Hashtags", key="sermon_hashtags",
+    st.text_area(
+        "Description", key="sermon_description",
+        placeholder="Leave blank for AI generation from transcript", height=80,
+    )
+    st.text_input("Hashtags", key="sermon_hashtags",
                              placeholder="Leave blank for AI generation (e.g., #faith #grace)")
 
     if speaker_name and recorded_date and event_type:
@@ -129,10 +138,15 @@ def _show_processing_section():
                 "Method", key="enhancement_method",
                 options=["deepfilternet", "clear-natural", "clear-studio", "custom", "none"],
                 index=0,
-                help="DeepFilterNet: standard (best for speech). Clear-Natural: gentler. Clear-Studio: aggressive. Custom: any HF ONNX model."
+                help=(
+                    "DeepFilterNet: standard (best for speech). Clear-Natural: gentler. "
+                    "Clear-Studio: aggressive. Custom: any HF ONNX model."
+                )
             )
             if enhancement_method == "custom":
-                st.text_input("HF Repo (e.g. tonythethompson/DeepFilterNet3-ONNX)", key="custom_repo")
+                st.text_input(
+                    "HF Repo (e.g. tonythethompson/DeepFilterNet3-ONNX)", key="custom_repo"
+                )
                 st.text_input("ONNX filename (e.g. model.onnx)", key="custom_file")
 
     with col2:
@@ -160,8 +174,11 @@ def _show_processing_section():
             else:
                 st.selectbox(
                     "Model", key="whisper_model_local",
-                    options=["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en",
-                             "large", "large-v2", "large-v3", "large-v3-turbo"],
+                    options=[
+                        "tiny", "tiny.en", "base", "base.en", "small", "small.en",
+                        "medium", "medium.en", "large", "large-v2", "large-v3",
+                        "large-v3-turbo",
+                    ],
                     index=8,
                     help="Balance between speed and quality. .en models are English-only (faster)."
                 )
@@ -258,9 +275,15 @@ def _show_start_section():
         st.write(f"• Date: {st.session_state.get('recorded_date', 'N/A')}")
     with col2:
         st.markdown("**Processing Settings:**")
-        st.write(f"• Enhance Audio: {'Yes' if st.session_state.get('enhance_audio', True) else 'No'}")
+        st.write(
+            f"• Enhance Audio: "
+            f"{'Yes' if st.session_state.get('enhance_audio', True) else 'No'}"
+        )
         st.write(f"• Transcribe: {'Yes' if st.session_state.get('transcribe', True) else 'No'}")
-        st.write(f"• AI Metadata: {'Yes' if st.session_state.get('generate_description', True) else 'No'}")
+        st.write(
+            f"• AI Metadata: "
+            f"{'Yes' if st.session_state.get('generate_description', True) else 'No'}"
+        )
         st.write(f"• Dry Run: {'Yes' if st.session_state.get('dry_run', False) else 'No'}")
 
     start_col, reset_col = st.columns(2)
@@ -299,7 +322,9 @@ def _get_media_duration(uploaded_file):
     if cache_key in st.session_state:
         return st.session_state[cache_key]
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp:
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=Path(uploaded_file.name).suffix
+        ) as tmp:
             tmp.write(uploaded_file.getvalue())
             tmp_path = tmp.name
         result = subprocess.run(
@@ -341,7 +366,9 @@ def start_enhanced_processing():
             return
 
         if not st.session_state.get('metadata_complete', False):
-            st.error("❌ Required metadata incomplete. Please fill in speaker, date, and event type.")
+            st.error(
+                "❌ Required metadata incomplete. Please fill in speaker, date, and event type."
+            )
             return
 
         uploaded_file = st.session_state.get('uploaded_file')
@@ -351,7 +378,9 @@ def start_enhanced_processing():
 
         # upload_dir config key overrides the TMPDIR-backed default so long
         # jobs don't fill a small RAM disk.
-        upload_dir = Path(config.get('upload_dir') or (Path(tempfile.gettempdir()) / "sermon_uploads"))
+        upload_dir = Path(
+            config.get('upload_dir') or (Path(tempfile.gettempdir()) / "sermon_uploads")
+        )
         upload_dir.mkdir(parents=True, exist_ok=True)
         safe_name = Path(uploaded_file.name).name
         saved_path = upload_dir / f"{int(_time.time() * 1000)}_{safe_name}"
@@ -388,7 +417,9 @@ def start_enhanced_processing():
         if backend == 'whisper_openai':
             whisper_model = st.session_state.get('whisper_model_openai', 'whisper-1')
         elif backend == 'whisper_openrouter':
-            whisper_model = st.session_state.get('whisper_model_openrouter', 'openai/whisper-large-v3')
+            whisper_model = st.session_state.get(
+                'whisper_model_openrouter', 'openai/whisper-large-v3'
+            )
         else:
             whisper_model = st.session_state.get('whisper_model_local', 'large')
 
@@ -397,7 +428,10 @@ def start_enhanced_processing():
             'recorded_date': recorded_date,
             'event_type': event_type,
             'bible_text': st.session_state.get('bible_text'),
-            'title': None if st.session_state.get('generate_title', True) else (st.session_state.get('sermon_title') or None),
+            'title': (
+                None if st.session_state.get('generate_title', True)
+                else (st.session_state.get('sermon_title') or None)
+            ),
             'subtitle': st.session_state.get('sermon_subtitle') or None,
             'series_title': st.session_state.get('sermon_series') or None,
             'series_id': st.session_state.get('sermon_series_id'),

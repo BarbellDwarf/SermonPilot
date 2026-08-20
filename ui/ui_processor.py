@@ -20,7 +20,7 @@ src_dir = ui_dir.parent / 'src'
 sys.path.insert(0, str(src_dir))
 sys.path.insert(0, str(ui_dir.parent))
 
-from database import get_db
+from database import get_db  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +60,11 @@ class UIProcessor:
                         progress_callback: Callable | None = None) -> dict:
         """
         Validate sermons with real-time progress updates
-        
+
         Args:
             sermon_ids: List of sermon IDs to validate
             progress_callback: Optional callback for progress updates
-            
+
         Returns:
             Validation results summary
         """
@@ -173,7 +173,7 @@ class UIProcessor:
     def process_sermon_async(self, sermon_id: str, options: dict) -> None:
         """
         Process a single sermon asynchronously with progress tracking
-        
+
         Args:
             sermon_id: Sermon ID to process
             options: Processing options dictionary
@@ -256,7 +256,7 @@ def get_processor() -> UIProcessor:
 def show_validation_progress(sermon_ids: list[str]):
     """
     Show real-time validation progress in Streamlit
-    
+
     Args:
         sermon_ids: List of sermon IDs being validated
     """

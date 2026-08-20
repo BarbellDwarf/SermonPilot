@@ -66,16 +66,25 @@ class CLIParser:
         new_sermon.add_argument('--bible-text', help='Bible reference text')
         new_sermon.add_argument('--title', help='Sermon title (will be generated if not provided)')
         new_sermon.add_argument('--subtitle', help='Sermon subtitle')
-        new_sermon.add_argument('--description', help='Sermon description (will be generated if not provided)')
-        new_sermon.add_argument('--hashtags', help='Hashtags/keywords (will be generated if not provided)')
+        new_sermon.add_argument(
+            '--description', help='Sermon description (will be generated if not provided)'
+        )
+        new_sermon.add_argument(
+            '--hashtags', help='Hashtags/keywords (will be generated if not provided)'
+        )
         new_sermon.add_argument('--series', dest='series_title', help='Series name')
 
         # Processing options
         new_sermon.add_argument('--skip-transcription', action='store_true',
                                help='Skip transcription generation')
-        new_sermon.add_argument('--skip-audio-processing', '--skip-audio', dest='skip_audio_processing',
-                               action='store_true',
-                               help='Skip audio enhancement (use uploaded file as-is, e.g. already cleaned in kdenlive)')
+        new_sermon.add_argument(
+            '--skip-audio-processing', '--skip-audio', dest='skip_audio_processing',
+            action='store_true',
+            help=(
+                'Skip audio enhancement (use uploaded file as-is, '
+                'e.g. already cleaned in kdenlive)'
+            ),
+        )
         new_sermon.add_argument('--whisper-model', dest='whisper_model', default='base',
                                choices=['tiny', 'base', 'small', 'medium', 'large'],
                                help='Whisper model size for local transcription (default: base)')
@@ -84,7 +93,10 @@ class CLIParser:
                                choices=['whisper_local', 'whisper_openai', 'whisper_openrouter'],
                                help='Transcription backend (default: whisper_local)')
         new_sermon.add_argument('--clean-audio', dest='use_clean_audio', action='store_true',
-                               help='Use external clean-audio.py for preprocessing (overlapping chunk enhancement)')
+                               help=(
+                                   'Use external clean-audio.py for preprocessing '
+                                   '(overlapping chunk enhancement)'
+                               ))
         new_sermon.add_argument('--clean-audio-script', dest='clean_audio_script',
                                default='~/Documents/Repositories/deepfilternet/clean-audio.py',
                                help='Path to clean-audio.py script')
@@ -191,7 +203,9 @@ class CLIParser:
         # Basic filters
         parser.add_argument('--sermon-id', help='Process specific sermon by ID')
         parser.add_argument('--since-days', type=int, help='Process sermons from last N days')
-        parser.add_argument('--limit', type=int, default=10, help='Maximum number of sermons to process')
+        parser.add_argument(
+            '--limit', type=int, default=10, help='Maximum number of sermons to process'
+        )
 
         # Date filters
         parser.add_argument('--year', type=int, help='Filter by specific year')
@@ -235,7 +249,7 @@ def confirm(prompt: str, auto_yes: bool) -> bool:
 
 def parse_years(years_str: str) -> list[int]:
     """Parse years string into list of years.
-    
+
     Supports formats like:
     - "2023" -> [2023]
     - "2022-2024" -> [2022, 2023, 2024]
