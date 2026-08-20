@@ -5,8 +5,8 @@
 This is a **comprehensive sermon processing pipeline** with multiple interfaces:
 
 1. **`sermon_updater.py`** - CLI orchestrator that fetches sermons from SermonAudio API, coordinates processing, and uploads results
-2. **`audio_processing.py`** - Audio enhancement engine with multiple AI models (DeepFilterNet, Resemble Enhance, SpeechBrain) and fallback mechanisms  
-3. **`llm_manager.py`** - Multi-provider LLM abstraction (OpenAI-compatible APIs, Ollama) with primary/fallback pattern
+2. **`src/audio_processing.py`** - Audio enhancement engine with DeepFilterNet and Clear (ONNX) models and fallback mechanisms  
+3. **`src/llm_manager.py`** - Multi-provider LLM abstraction (OpenAI-compatible APIs, Ollama) with primary/fallback pattern
 4. **`streamlit_app.py`** - Modern web interface for intuitive interaction and analytics
 5. **Analytics & RAG System** - AI-powered insights and natural language queries over sermon data
 
@@ -17,7 +17,7 @@ This is a **comprehensive sermon processing pipeline** with multiple interfaces:
 ### Configuration-Driven Everything
 
 - `config.yaml` is the single source of truth for all components
-- **Legacy migration**: `migrate_legacy_config()` in `llm_manager.py` handles backward compatibility
+- **Legacy migration**: applied automatically on config load in `src/core/config.py` (`_migrate_legacy_config`); `migrate_legacy_config()` in `src/llm_manager.py` handles LLM-specific legacy formats
 - **Debug mode**: `debug: true/false` controls all verbose output across components
 - **Provider switching**: LLM providers configured via nested `llm.primary/fallback` structure
 
@@ -33,13 +33,13 @@ processor = AudioProcessor(enhancement_method="deepfilternet")
 
 ### Graceful Degradation Chain
 
-**Audio**: AI enhancement → CLI fallback → basic pydub processing  
+**Audio**: AI enhancement → basic processing without AI  
 **LLM**: Primary provider → Fallback provider → Hard failure  
 **Models**: GPU → CPU → Skip processing
 
 ### Test-First Development
 
-- **All tests in `tests/` directory** - never put test files elsewhere
+- **All tests in `tests/` directory** - never put test files elsewhere (the suite is being re-enabled as part of the v1.6.0 review)
 - **Documentation in `docs/` directory** - never put docs in root or other locations
 - **Audio tests require `tests/sample_audio.mp3`** - gracefully skip if missing
 - **Live API tests** marked with `@pytest.mark.network @pytest.mark.live`
@@ -73,11 +73,8 @@ streamlit run streamlit_app.py           # Launch web interface
 # Test setup first
 python tests/test_setup.py
 
-# Test individual components  
-python tests/test_llm_manager.py        # LLM provider switching
-python tests/test_audio_upscaling.py    # Audio pipeline
-python tests/test_real_sermon_deepfilternet.py  # End-to-end with real data
-python test_implementation.py          # Test all new UI components
+# Run the test suite (tests/ is being re-enabled as part of the v1.6.0 review)
+pytest
 
 # Run specific test categories
 pytest -v -m "not live"    # Skip live API tests
@@ -109,17 +106,17 @@ python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}')"
 
 ### Audio Processing Integration Points
 
-- **Enhancement methods**: `"clear"`, `"deepfilternet"`, `"none"`
+- **Enhancement methods**: `"deepfilternet"`, `"clear-natural"`, `"clear-studio"`, `"custom"`, `"none"`
 - **Device detection**: Auto GPU/CPU selection in `AudioProcessor.__init__()`
 - **Chunking strategy**: Dynamic based on available memory and audio duration
-- **Upscaling pipeline**: AI enhancement → traditional resampling → fallback
+- **Enhancement pipeline**: AI enhancement → fallback to basic processing
 
 ### LLM Provider Configuration
 
 ```yaml
 llm:
   primary:
-    provider: "openai"  # or "ollama"
+    provider: "openai"  # or "ollama", "anthropic", "xai", "google", "groq"
     openai:
       base_url: "https://api.x.ai/v1"  # xAI, Anthropic, etc.
       api_key: "..."
@@ -171,7 +168,6 @@ llm:
 
 - **Large audio files**: Automatic chunking based on available memory
 - **Model initialization**: Cached after first load, device-aware placement
-- **API rate limits**: Built-in throttling for SermonAudio calls
 - **Memory management**: Monitor usage with `psutil`, clean up models between runs
 
 ## Key Files for Understanding Context
@@ -182,13 +178,12 @@ llm:
 - `ui/rag_system.py` - Vector database and retrieval system
 - `ui/performance_monitor.py` - Real-time system monitoring
 - `ui/sermonaudio_analytics.py` - SermonAudio data provider
-- `tests/ENHANCEMENT_MODEL_TESTING_RESULTS.md` - Model performance benchmarks
 - `docs/LLM_Configuration_Guide.md` - Provider setup examples
 - `docs/ANALYTICS.md` - Analytics features documentation
 - `docs/RAG_SYSTEM.md` - RAG technical documentation
 - `docs/PERFORMANCE_MONITORING.md` - Performance monitoring guide
 - `pyproject.toml` - Dependencies and tooling config (UV primary)
-- `requirements.txt` - Runtime dependencies (sync with pyproject.toml)
+- `requirements/requirements.txt` - Runtime dependencies (sync with pyproject.toml)
 - `ui/requirements-ui.txt` - Additional web interface dependencies
 - `uv.lock` - UV lockfile for reproducible builds
 
@@ -197,5 +192,5 @@ llm:
 - **Import order matters**: Audio ML libraries can conflict - use context managers to suppress warnings
 - **Windows path handling**: Use `Path` objects, test both forward/backslashes  
 - **Model downloads**: First run downloads GBs of data - warn users and cache properly
-- **Config migration**: Always call `migrate_legacy_config()` when loading config
+- **Config migration**: applied automatically by `src/core/config.py` on load; no manual call needed
 - **Test isolation**: Audio tests must not require external resources - skip gracefully
