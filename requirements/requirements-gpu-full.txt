@@ -49,7 +49,7 @@ transformers>=4.30.0           # Hugging Face transformers
 # fairscale>=0.4.13      # Facebook's model parallelism
 
 # Memory optimization and profiling
-memory-profiler>=0.60.0  # Memory usage profiling
+memory-profiler>=0.61.0  # Memory usage profiling
 
 # Enhanced AI models for audio processing
 speechbrain>=0.5.14      # GPU-accelerated speech processing
