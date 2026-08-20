@@ -861,7 +861,7 @@ def display_sermon_list(filtered_sermons, all_sermons):
         with cols[3]:
             dur = sermon.get('duration', '')
             if dur:
-                st.caption(f"⏱ {dur}")
+                st.caption(f"⏱ {_format_duration(dur)}")
         with cols[4]:
             if st.button("→", key=f"sel_{sid}", help="View details"):
                 st.session_state.selected_sermon = sermon
@@ -884,6 +884,10 @@ def _format_duration(seconds):
     """Convert seconds to HH:MM:SS or MM:SS"""
     if not seconds:
         return None
+    try:
+        seconds = float(seconds)
+    except (TypeError, ValueError):
+        return str(seconds)
     hours, remainder = divmod(seconds, 3600)
     minutes, secs = divmod(remainder, 60)
     if hours > 0:
@@ -1070,7 +1074,7 @@ def display_sermon_details(sermon):
         st.text(f"🎤 Speaker: {speaker_name}")
         st.text(f"📅 Date: {_format_date(display_data.get('recorded_date'))}")
         st.text(f"📍 Church: {display_data.get('church_name', 'Unknown')}")
-        st.text(f"⏱️ Duration: {display_data.get('duration', 'Unknown')}")
+        st.text(f"⏱️ Duration: {_format_duration(display_data.get('duration')) or 'Unknown'}")
     with col2:
         series_title = display_data.get('series_title', 'None')
         if isinstance(series_title, dict):
