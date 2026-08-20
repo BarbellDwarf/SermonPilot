@@ -251,12 +251,10 @@ def show_llm_settings():
         current_provider = primary_config.get('provider', 'ollama')
         if current_provider not in provider_options:
             current_provider = 'openai'
-        provider_index = provider_options.index(current_provider)
 
         primary_provider = st.selectbox(
             "Primary Provider",
             options=provider_options,
-            index=provider_index,
             key="primary_provider"
         )
 
@@ -283,7 +281,6 @@ def show_llm_settings():
     with col1:
         fallback_enabled = st.checkbox(
             "Enable Fallback Provider",
-            value=fallback_config.get('enabled', True),
             key="fallback_enabled"
         )
 
@@ -293,12 +290,9 @@ def show_llm_settings():
             current_fallback_provider = fallback_config.get('provider', 'openai')
             if current_fallback_provider not in provider_options:
                 current_fallback_provider = 'openai'
-            fallback_provider_index = provider_options.index(current_fallback_provider)
-
             fallback_provider = st.selectbox(
                 "Fallback Provider",
                 options=provider_options,
-                index=fallback_provider_index,
                 key="fallback_provider"
             )
 
@@ -319,7 +313,6 @@ def show_llm_settings():
 
     validator_enabled = st.checkbox(
         "Enable Validation Provider",
-        value=validator_config.get('enabled', False),
         help="Use smaller model for description validation",
         key="validator_enabled"
     )
@@ -332,12 +325,9 @@ def show_llm_settings():
             current_validator_provider = validator_config.get('provider', 'ollama')
             if current_validator_provider not in provider_options:
                 current_validator_provider = 'openai'
-            validator_provider_index = provider_options.index(current_validator_provider)
-
             validator_provider = st.selectbox(
                 "Validator Provider",
                 options=provider_options,
-                index=validator_provider_index,
                 key="validator_provider"
             )
 
@@ -361,7 +351,6 @@ def show_ollama_settings(label, config, key_prefix):
     with col1:
         host = st.text_input(
             f"{label} Ollama Host",
-            value=config.get('host', 'http://localhost:11434'),
             key=f"{key_prefix}_ollama_host"
         )
 
@@ -399,23 +388,15 @@ def show_ollama_settings(label, config, key_prefix):
         cached_models = st.session_state.get(f"{key_prefix}_ollama_models", [])
 
         if cached_models:
-            current_model = config.get('model', 'llama3')
-            try:
-                model_index = cached_models.index(current_model)
-            except ValueError:
-                model_index = 0 if cached_models else None
-
             model = st.selectbox(
                 f"{label} Ollama Model",
                 options=cached_models,
-                index=model_index,
                 key=f"{key_prefix}_ollama_model",
                 help="Select from available Ollama models"
             )
         else:
             model = st.text_input(
                 f"{label} Ollama Model",
-                value=config.get('model', 'llama3'),
                 key=f"{key_prefix}_ollama_model",
                 help="Enter model name (click Refresh to see available models)"
             )
@@ -426,33 +407,27 @@ def show_openai_settings(label, config, key_prefix):
     stored_preset = config.get('preset', 'OpenAI')
     if stored_preset not in preset_names:
         stored_preset = 'OpenAI'
-    preset_index = preset_names.index(stored_preset)
 
     selected_preset = st.selectbox(
         f"{label} API Type",
         options=preset_names,
-        index=preset_index,
         key=f"{key_prefix}_openai_preset",
         help="Select the OpenAI-compatible API provider"
     )
 
     preset = OPENAI_PRESETS[selected_preset]
 
-    default_base_url = config.get('base_url', '') or preset['base_url']
-
     col1, col2 = st.columns(2)
 
     with col1:
         api_key = st.text_input(
             f"{label} API Key",
-            value=config.get('api_key', ''),
             type="password",
             key=f"{key_prefix}_openai_key"
         )
 
         base_url = st.text_input(
             f"{label} Base URL",
-            value=default_base_url,
             placeholder=preset['base_url'] or "https://api.openai.com/v1",
             help=f"Base URL for {selected_preset} API",
             key=f"{key_prefix}_openai_url"
@@ -486,23 +461,15 @@ def show_openai_settings(label, config, key_prefix):
         if cached_models:
             model_options = cached_models[:20]
 
-        current_model = config.get('model', preset['models'][0])
         if model_options and len(model_options) > 1:
-            try:
-                model_index = model_options.index(current_model)
-            except ValueError:
-                model_index = 0
-
             model = st.selectbox(
                 f"{label} Model",
                 options=model_options,
-                index=model_index,
                 key=f"{key_prefix}_openai_model"
             )
         else:
             model = st.text_input(
                 f"{label} Model",
-                value=current_model,
                 key=f"{key_prefix}_openai_model"
             )
 
@@ -513,7 +480,6 @@ def show_anthropic_settings(label, config, key_prefix):
     with col1:
         api_key = st.text_input(
             f"{label} API Key",
-            value=config.get('api_key', ''),
             type="password",
             key=f"{key_prefix}_anthropic_key",
             help="Your Anthropic API key (sk-ant-...)"
@@ -554,24 +520,16 @@ def show_anthropic_settings(label, config, key_prefix):
             model_options = cached_models
 
         # Model selection
-        current_model = config.get('model', 'claude-3-5-sonnet-20241022')
         if model_options and len(model_options) > 1:
-            try:
-                model_index = model_options.index(current_model)
-            except ValueError:
-                model_index = 0
-
             model = st.selectbox(
                 f"{label} Model",
                 options=model_options,
-                index=model_index,
                 key=f"{key_prefix}_anthropic_model",
                 help="Select from available Claude models"
             )
         else:
             model = st.text_input(
                 f"{label} Model",
-                value=current_model,
                 key=f"{key_prefix}_anthropic_model",
                 help="Enter model name or click 'Load Models' to see available options"
             )
@@ -597,7 +555,6 @@ def show_google_settings(label, config, key_prefix):
     with col1:
         api_key = st.text_input(
             f"{label} API Key",
-            value=config.get('api_key', ''),
             type="password",
             key=f"{key_prefix}_google_key",
             help="Your Google AI Studio API key"
@@ -636,24 +593,16 @@ def show_google_settings(label, config, key_prefix):
             model_options = cached_models
 
         # Model selection
-        current_model = config.get('model', 'gemini-1.5-flash')
         if model_options and len(model_options) > 1:
-            try:
-                model_index = model_options.index(current_model)
-            except ValueError:
-                model_index = 0
-
             model = st.selectbox(
                 f"{label} Model",
                 options=model_options,
-                index=model_index,
                 key=f"{key_prefix}_google_model",
                 help="Select from available Gemini models"
             )
         else:
             model = st.text_input(
                 f"{label} Model",
-                value=current_model,
                 key=f"{key_prefix}_google_model",
                 help="Enter model name or click 'Load Models' to see available options"
             )
@@ -692,16 +641,10 @@ def show_embedding_settings():
 
     with col1:
         provider_options = ["sentence_transformers", "openai", "ollama"]
-        current_provider = primary_config.get('provider', 'sentence_transformers')
-        try:
-            provider_index = provider_options.index(current_provider)
-        except ValueError:
-            provider_index = 0  # Default to sentence_transformers if unknown provider
 
         primary_provider = st.selectbox(
             "Primary Embedding Provider",
             options=provider_options,
-            index=provider_index,
             key="primary_embedding_provider",
             help="Choose the primary embedding provider for vector search"
         )
@@ -836,16 +779,9 @@ def show_sentence_transformers_settings(label, config, key_prefix):
             "paraphrase-multilingual-MiniLM-L12-v2"  # 384D - Multilingual
         ]
         
-        current_model = config.get('model', 'all-MiniLM-L6-v2')
-        try:
-            model_index = model_options.index(current_model)
-        except ValueError:
-            model_index = 0
-            
         model = st.selectbox(
             f"{label} Model",
             options=model_options,
-            index=model_index,
             key=f"{key_prefix}_st_model",
             help="Select from available sentence transformer models"
         )
@@ -873,7 +809,6 @@ def show_openai_embedding_settings(label, config, key_prefix):
     with col1:
         api_key = st.text_input(
             f"{label} API Key",
-            value=config.get('api_key', ''),
             type="password",
             key=f"{key_prefix}_openai_embedding_key",
             help="Your OpenAI API key"
@@ -881,7 +816,6 @@ def show_openai_embedding_settings(label, config, key_prefix):
         
         base_url = st.text_input(
             f"{label} Base URL",
-            value=config.get('base_url', 'https://api.openai.com/v1'),
             key=f"{key_prefix}_openai_embedding_url",
             help="Base URL for OpenAI-compatible embedding API"
         )
@@ -893,16 +827,9 @@ def show_openai_embedding_settings(label, config, key_prefix):
             "text-embedding-ada-002"   # 1536D - Legacy model
         ]
         
-        current_model = config.get('model', 'text-embedding-3-small')
-        try:
-            model_index = model_options.index(current_model)
-        except ValueError:
-            model_index = 0
-            
         model = st.selectbox(
             f"{label} Model",
             options=model_options,
-            index=model_index,
             key=f"{key_prefix}_openai_embedding_model",
             help="Select from available OpenAI embedding models"
         )
@@ -925,7 +852,6 @@ def show_ollama_embedding_settings(label, config, key_prefix):
     with col1:
         host = st.text_input(
             f"{label} Ollama Host",
-            value=config.get('host', 'http://localhost:11434'),
             key=f"{key_prefix}_ollama_embedding_host",
             help="Ollama server host URL"
         )
@@ -962,24 +888,16 @@ def show_ollama_embedding_settings(label, config, key_prefix):
         
         available_models = cached_models if cached_models else default_models
         
-        current_model = config.get('model', 'nomic-embed-text')
-        try:
-            model_index = available_models.index(current_model)
-        except ValueError:
-            model_index = 0 if available_models else None
-            
         if available_models:
             model = st.selectbox(
                 f"{label} Model",
                 options=available_models,
-                index=model_index,
                 key=f"{key_prefix}_ollama_embedding_model",
                 help="Select from available Ollama embedding models"
             )
         else:
             model = st.text_input(
                 f"{label} Model",
-                value=current_model,
                 key=f"{key_prefix}_ollama_embedding_model",
                 help="Enter embedding model name (click Refresh to see available models)"
             )

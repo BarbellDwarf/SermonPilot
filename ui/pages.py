@@ -1,6 +1,6 @@
 import streamlit as st
 
-dashboard = st.Page("ui/ui_pages/dashboard.py", title="Dashboard", icon="📊")
+dashboard = st.Page("ui/ui_pages/dashboard.py", title="Dashboard", icon="📊", url_path="dashboard")
 new_sermon = st.Page("ui/ui_pages/new_sermon_enhanced.py", title="New Sermon", icon="🎵")
 batch_update = st.Page("ui/ui_pages/batch_update.py", title="Batch Update", icon="🔄")
 validation = st.Page("ui/ui_pages/validation.py", title="Validation", icon="✅")

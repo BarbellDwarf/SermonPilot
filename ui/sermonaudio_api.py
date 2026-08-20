@@ -185,10 +185,17 @@ class SermonAudioAPI:
             api_series = sermon_updater.get_broadcaster_series()
             
             if api_series:
-                for series_name in api_series:
+                for series_item in api_series:
+                    if isinstance(series_item, dict):
+                        series_name = series_item.get('name', '')
+                        series_id = series_item.get('seriesID')
+                    else:
+                        series_name = str(series_item)
+                        series_id = None
                     series.append({
                         'id': series_name,
                         'name': series_name,
+                        'seriesID': series_id,
                         'description': '',
                         'sermonCount': 0
                     })

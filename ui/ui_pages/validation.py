@@ -413,8 +413,15 @@ def start_background_validation(scope: str, options: dict):
 
                 if processed_dir.exists():
                     from src.sermon_paths import discover_sermons
+
+                    def _sermon_id_from_dir(sermon_dir):
+                        meta = read_metadata(sermon_dir)
+                        if meta:
+                            return meta.get("sermon_id") or meta.get("sermonID") or sermon_dir.name
+                        return sermon_dir.name
+
                     sermon_dirs = [d.name for d in discover_sermons(output_dir)]
-                    sermon_ids = [read_metadata(d).get("sermon_id", d.name) for d in discover_sermons(output_dir)]
+                    sermon_ids = [_sermon_id_from_dir(d) for d in discover_sermons(output_dir)]
 
                     if not sermon_ids:
                         st.info("✅ No processed sermons found in local directory!")
