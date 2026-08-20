@@ -26,22 +26,22 @@ logger = logging.getLogger(__name__)
 
 
 def show_new_sermon_enhanced():
-    st.markdown('<div class="main-header">🎵 New Sermon</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">New Sermon</div>', unsafe_allow_html=True)
 
     feedback = st.session_state.pop('form_feedback', None)
     if feedback:
         st.success(feedback)
 
     if not st.session_state.config:
-        st.error("❌ Configuration not loaded. Please check the Settings page first.")
+        st.error("Configuration not loaded. Please check the Settings page first.")
         return
 
     _show_start_section()
-    with st.expander("1️⃣ Upload Audio/Video File", expanded=True):
+    with st.expander("1. Upload Audio/Video File", expanded=True):
         _show_upload_section()
-    with st.expander("2️⃣ Sermon Metadata", expanded=False):
+    with st.expander("2. Sermon Metadata", expanded=False):
         _show_metadata_section()
-    with st.expander("3️⃣ Processing Options", expanded=False):
+    with st.expander("3. Processing Options", expanded=False):
         _show_processing_section()
     _sync_start_section_state()
 
@@ -72,11 +72,11 @@ def _show_upload_section():
             if duration:
                 st.metric("Duration", f"{duration:.1f} min")
             else:
-                st.metric("Duration", "\u23F1\uFE0F")
+                st.metric("Duration", "Unknown")
 
         max_preview_size = 100 * 1024 * 1024
         if uploaded_file.size <= max_preview_size:
-            with st.expander("▶️ Preview", expanded=False):
+            with st.expander("Preview", expanded=False):
                 try:
                     video_exts = ('.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v')
                     if any(uploaded_file.name.lower().endswith(e) for e in video_exts):
@@ -86,7 +86,7 @@ def _show_upload_section():
                 except Exception as e:
                     st.warning(f"Could not preview file: {e}")
         else:
-            st.info(f"ℹ️ Preview skipped for files over {max_preview_size // (1024*1024)} MB")
+            st.info(f"Preview skipped for files over {max_preview_size // (1024*1024)} MB")
 
 
 def _show_metadata_section():
@@ -117,10 +117,10 @@ def _show_metadata_section():
                              placeholder="Leave blank for AI generation (e.g., #faith #grace)")
 
     if speaker_name and recorded_date and event_type:
-        st.success("✅ Required metadata complete")
+        st.success("Required metadata complete")
         st.session_state.metadata_complete = True
     else:
-        st.warning("⚠️ Please fill in all required fields (marked with *)")
+        st.warning("Please fill in all required fields (marked with *)")
         st.session_state.metadata_complete = False
 
 
@@ -220,7 +220,7 @@ def _show_openai_whisper_ui():
     base_url = openai_cfg.get('base_url', '') or os.environ.get('OPENAI_BASE_URL', 'https://api.openai.com/v1')
 
     if api_key:
-        if st.button("🔄 Load Available Models", key="load_whisper_models"):
+        if st.button("Load Available Models", key="load_whisper_models"):
             try:
                 from openai import OpenAI
                 client = OpenAI(api_key=api_key, base_url=base_url)
@@ -267,16 +267,16 @@ def _show_openrouter_whisper_ui():
 
 
 def _show_start_section():
-    st.markdown("### ▶️ Start Processing")
+    st.markdown("### Start Processing")
 
     has_file, has_metadata = _start_section_state()
     st.session_state['_start_state'] = (has_file, has_metadata)
 
     if not has_file:
-        st.warning("⚠️ Please upload a file in section 1")
+        st.warning("Please upload a file in section 1")
         return
     if not has_metadata:
-        st.warning("⚠️ Please complete required metadata in section 2")
+        st.warning("Please complete required metadata in section 2")
         return
 
     col1, col2 = st.columns(2)
@@ -301,10 +301,10 @@ def _show_start_section():
 
     start_col, reset_col = st.columns(2)
     with start_col:
-        if st.button("▶️ Start Processing", type="primary", use_container_width=True):
+        if st.button("Start Processing", type="primary", use_container_width=True):
             start_enhanced_processing()
     with reset_col:
-        if st.button("🔄 Reset All", use_container_width=True):
+        if st.button("Reset All", use_container_width=True):
             reset_enhanced_form()
 
     job_id = st.session_state.get('current_sermon_job_id')
@@ -322,9 +322,8 @@ def _show_start_section():
     elif active_job and active_job.status == JobStatus.COMPLETED:
         _show_enhanced_processing_results(active_job)
     elif active_job and active_job.status in [JobStatus.CANCELLED, JobStatus.FAILED]:
-        icon = "🚫" if active_job.status == JobStatus.CANCELLED else "🔴"
         label = "Cancelled" if active_job.status == JobStatus.CANCELLED else "Failed"
-        st.warning(f"{icon} Job {label}")
+        st.warning(f"Job {label}")
         if st.button("Clear", key="clear_cancelled_job"):
             st.session_state.current_sermon_job_id = None
             st.rerun()
@@ -400,24 +399,24 @@ def start_enhanced_processing():
 
         config = st.session_state.get('config', {})
         if not config:
-            st.error("❌ No configuration loaded. Please check the Settings page first.")
+            st.error("No configuration loaded. Please check the Settings page first.")
             return
 
         required_fields = ['api_key', 'broadcaster_id']
         missing_fields = [field for field in required_fields if not config.get(field)]
         if missing_fields:
-            st.error(f"❌ Configuration is missing required fields: {', '.join(missing_fields)}")
+            st.error(f"Configuration is missing required fields: {', '.join(missing_fields)}")
             return
 
         if not st.session_state.get('metadata_complete', False):
             st.error(
-                "❌ Required metadata incomplete. Please fill in speaker, date, and event type."
+                "Required metadata incomplete. Please fill in speaker, date, and event type."
             )
             return
 
         uploaded_file = st.session_state.get('uploaded_file')
         if uploaded_file is None:
-            st.error("❌ No file uploaded.")
+            st.error("No file uploaded.")
             return
 
         # upload_dir config key overrides the TMPDIR-backed default so long
@@ -446,7 +445,7 @@ def start_enhanced_processing():
         if not event_type:
             missing_form_fields.append('Event Type')
         if missing_form_fields:
-            st.error(f"❌ Missing required fields: {', '.join(missing_form_fields)}")
+            st.error(f"Missing required fields: {', '.join(missing_form_fields)}")
             return
 
         enhance_audio = st.session_state.get('enhance_audio', True)
@@ -510,12 +509,12 @@ def start_enhanced_processing():
 
         st.session_state.current_sermon_job_id = job_id
         st.session_state.form_feedback = (
-            f"✅ Sermon processing job created! Job ID: {job_id[:8]}. "
+            f"Sermon processing job created! Job ID: {job_id[:8]}. "
             "Monitor progress below."
         )
 
     except Exception as e:
-        st.error(f"❌ Failed to start sermon processing job: {e}")
+        st.error(f"Failed to start sermon processing job: {e}")
         logger.exception("Failed to start processing")
 
 
@@ -538,26 +537,21 @@ def reset_enhanced_form():
         if key in st.session_state:
             del st.session_state[key]
 
-    st.session_state.form_feedback = "✅ Form reset successfully!"
+    st.session_state.form_feedback = "Form reset successfully!"
     st.rerun()
 
 
 def _show_enhanced_processing_progress(job):
-    st.markdown("#### 🔄 Processing Progress")
+    st.markdown("#### Processing Progress")
     from job_queue import JobStatus
 
     st.progress(job.progress / 100.0)
 
-    status_colors = {
-        JobStatus.QUEUED: "🔵", JobStatus.RUNNING: "🟡", JobStatus.COMPLETED: "🟢",
-        JobStatus.FAILED: "🔴", JobStatus.CANCELLED: "⚫", JobStatus.PAUSED: "🟠"
-    }
-    status_icon = status_colors.get(job.status, "❓")
-    st.text(f"{status_icon} Status: {job.status.value.title()}")
+    st.text(f"Status: {job.status.value.title()}")
     st.text(f"Progress: {job.progress:.1f}%")
 
     if job.logs:
-        with st.expander("📋 Recent Activity", expanded=True):
+        with st.expander("Recent Activity", expanded=True):
             for log in job.logs[-5:]:
                 st.text(log)
 
@@ -572,18 +566,18 @@ def _show_enhanced_processing_progress(job):
 
 def _show_enhanced_processing_results(job):
     if not job.result or not job.result.success:
-        st.error("❌ Processing failed")
+        st.error("Processing failed")
         if job.result and job.result.error:
             st.error(f"Error: {job.result.error}")
         return
 
     results = job.result.data
     if not results:
-        st.warning("⚠️ No results data available")
+        st.warning("No results data available")
         return
 
-    st.markdown("#### ✅ Processing Results")
-    st.success("✅ Processing completed successfully!")
+    st.markdown("#### Processing Results")
+    st.success("Processing completed successfully!")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -605,7 +599,7 @@ def _show_enhanced_processing_results(job):
     sermon_id = results.get('sermon_id')
     if sermon_id:
         sermon_url = f"https://www.sermonaudio.com/sermoninfo.asp?SID={sermon_id}"
-        st.markdown(f"[🎧 View on SermonAudio]({sermon_url})")
+        st.markdown(f"[View on SermonAudio]({sermon_url})")
 
     if results.get('description'):
         st.markdown("**Generated Description:**")

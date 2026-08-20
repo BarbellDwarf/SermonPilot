@@ -35,10 +35,10 @@ def _parse_validated_at(value: Any) -> dt.datetime | None:
 
 def show_validation():
     """Main validation interface"""
-    st.markdown('<div class="main-header">✅ Validation</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Validation</div>', unsafe_allow_html=True)
 
     if not st.session_state.config:
-        st.error("❌ Configuration not loaded. Please check the Settings page first.")
+        st.error("Configuration not loaded. Please check the Settings page first.")
         return
 
     flash = st.session_state.pop('validation_flash', None)
@@ -47,11 +47,11 @@ def show_validation():
 
     # Validation tabs
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📊 Quality Metrics",
-        "❌ Failed Descriptions",
-        "🔄 Batch Validation",
-        "📈 Trends",
-        "📝 Manual Review"
+        "Quality Metrics",
+        "Failed Descriptions",
+        "Batch Validation",
+        "Trends",
+        "Manual Review"
     ])
 
     with tab1:
@@ -71,7 +71,7 @@ def show_validation():
 
 def show_quality_metrics():
     """Display validation metrics and quality scores"""
-    st.markdown("### 📊 Quality Metrics Overview")
+    st.markdown("### Quality Metrics Overview")
 
     try:
         from ui_processor import get_processor
@@ -82,7 +82,7 @@ def show_quality_metrics():
 
         if not validation_results:
             st.info(
-                "📊 No validation data available yet. Run some validations to see metrics here."
+                "No validation data available yet. Run some validations to see metrics here."
             )
             return
 
@@ -130,7 +130,7 @@ def show_quality_metrics():
             )
 
         # Recent validation results
-        st.markdown("#### 📋 Recent Validation Results")
+        st.markdown("#### Recent Validation Results")
 
         if validation_results:
             # Show most recent results
@@ -142,7 +142,7 @@ def show_quality_metrics():
             for result in recent_results:
                 results_data.append({
                     'Sermon ID': result.get('sermon_id', 'Unknown'),
-                    'Status': '✅ Pass' if result.get('is_valid', False) else '❌ Fail',
+                    'Status': 'Pass' if result.get('is_valid', False) else 'Fail',
                     'Score': f"{result.get('score', 0):.2f}/1.0",
                     'Reason': (
                         result.get('reason', 'No reason provided')[:50] + '...'
@@ -167,12 +167,12 @@ def show_quality_metrics():
             st.info("No validation results to display")
 
     except Exception as e:
-        st.error(f"❌ Error loading validation metrics: {e}")
-        st.info("📊 No validation data available. Run some validations to see metrics here.")
+        st.error(f"Error loading validation metrics: {e}")
+        st.info("No validation data available. Run some validations to see metrics here.")
 
 def show_failed_descriptions():
     """Show descriptions that failed validation"""
-    st.markdown("### ❌ Failed Descriptions")
+    st.markdown("### Failed Descriptions")
 
     try:
         from ui_processor import get_processor
@@ -183,7 +183,7 @@ def show_failed_descriptions():
         failed_results = [r for r in all_results if not r.get('is_valid', True)]
 
         if not failed_results:
-            st.success("🎉 No failed descriptions found! All validated sermons passed.")
+            st.success("No failed descriptions found! All validated sermons passed.")
             return
 
         # Summary stats
@@ -253,7 +253,7 @@ def show_failed_descriptions():
             filtered_results = [r for r in filtered_results if 0.6 <= r.get('score', 1.0) < 0.8]
 
         # Display failed descriptions
-        st.markdown("#### 📋 Failed Descriptions List")
+        st.markdown("#### Failed Descriptions List")
 
         if not filtered_results:
             st.info("No failed descriptions match the current filters.")
@@ -264,7 +264,7 @@ def show_failed_descriptions():
             score = result.get('score', 0.0)
             reason = result.get('reason', 'No reason provided')
 
-            priority = "🔴 High" if score < 0.4 else "🟡 Medium" if score < 0.6 else "🟠 Low"
+            priority = "High" if score < 0.4 else "Medium" if score < 0.6 else "Low"
 
             with st.expander(f"{priority} - Sermon {sermon_id} (Score: {score:.2f}/1.0)"):
 
@@ -294,11 +294,11 @@ def show_failed_descriptions():
                     col_a, col_b = st.columns(2)
 
                     with col_a:
-                        if st.button("🔄 Regenerate", key=f"regen_{sermon_id}_{i}"):
+                        if st.button("Regenerate", key=f"regen_{sermon_id}_{i}"):
                             regenerate_description(sermon_id)
 
                     with col_b:
-                        if st.button("👤 Manual Review", key=f"manual_{sermon_id}_{i}"):
+                        if st.button("Manual Review", key=f"manual_{sermon_id}_{i}"):
                             mark_for_manual_review(sermon_id)
 
         if len(filtered_results) > 10:
@@ -308,32 +308,32 @@ def show_failed_descriptions():
             )
 
         # Bulk actions
-        st.markdown("#### 🔄 Bulk Actions")
+        st.markdown("#### Bulk Actions")
 
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            if st.button("🔄 Regenerate All High Priority", type="primary"):
+            if st.button("Regenerate All High Priority", type="primary"):
                 regenerate_high_priority()
 
         with col2:
-            if st.button("📧 Export Failed List"):
+            if st.button("Export Failed List"):
                 export_failed_list()
 
         with col3:
-            if st.button("📊 Generate Report"):
+            if st.button("Generate Report"):
                 generate_validation_report()
 
     except Exception as e:
-        st.error(f"❌ Error loading failed descriptions: {e}")
+        st.error(f"Error loading failed descriptions: {e}")
         st.info("No failed descriptions data available.")
 
 def show_batch_validation():
     """Real batch validation interface with progress tracking"""
-    st.markdown("### 🔄 Batch Validation")
+    st.markdown("### Batch Validation")
 
     # Validation scope selection
-    st.markdown("#### 📋 Select Validation Scope")
+    st.markdown("#### Select Validation Scope")
 
     col1, col2 = st.columns(2)
 
@@ -358,7 +358,7 @@ def show_batch_validation():
             )
 
     # Validation options
-    st.markdown("#### ⚙️ Validation Options")
+    st.markdown("#### Validation Options")
 
     col1, col2, col3 = st.columns(3)
 
@@ -384,7 +384,7 @@ def show_batch_validation():
         )
 
     # Start validation button
-    if st.button("🚀 Start Validation", type="primary", width='stretch'):
+    if st.button("Start Validation", type="primary", width='stretch'):
         start_background_validation(validation_scope, {
             'regenerate_failed': regenerate_failed,
             'dry_run': dry_run,
@@ -394,7 +394,7 @@ def show_batch_validation():
         })
 
     # Show current validation status
-    st.markdown("#### 📊 Current Validation Status")
+    st.markdown("#### Current Validation Status")
     show_current_validation_status()
 
 
@@ -416,7 +416,7 @@ def start_background_validation(scope: str, options: dict):
                     sermon_ids = [id.strip() for id in ids_input.split('\n') if id.strip()]
 
             if not sermon_ids:
-                st.error("❌ Please provide sermon IDs to validate")
+                st.error("Please provide sermon IDs to validate")
                 return
 
         elif scope == "Recent Sermons (Last 30 days)":
@@ -445,11 +445,11 @@ def start_background_validation(scope: str, options: dict):
                 ]
 
                 if not sermon_ids:
-                    st.info("✅ No recent sermons found!")
+                    st.info("No recent sermons found!")
                     return
 
             except Exception as e:
-                st.error(f"❌ Failed to fetch recent sermons: {e}")
+                st.error(f"Failed to fetch recent sermons: {e}")
                 return
 
         elif scope == "All Processed Sermons":
@@ -473,14 +473,14 @@ def start_background_validation(scope: str, options: dict):
                     sermon_ids = [_sermon_id_from_dir(d) for d in discover_sermons(output_dir)]
 
                     if not sermon_ids:
-                        st.info("✅ No processed sermons found in local directory!")
+                        st.info("No processed sermons found in local directory!")
                         return
                 else:
-                    st.error(f"❌ Processed sermons directory not found: {processed_dir}")
+                    st.error(f"Processed sermons directory not found: {processed_dir}")
                     return
 
             except Exception as e:
-                st.error(f"❌ Failed to scan processed sermons: {e}")
+                st.error(f"Failed to scan processed sermons: {e}")
                 return
 
         elif scope == "Failed Descriptions Only":
@@ -496,14 +496,14 @@ def start_background_validation(scope: str, options: dict):
                 ]
 
                 if not sermon_ids:
-                    st.info("✅ No previously failed descriptions found!")
+                    st.info("No previously failed descriptions found!")
                     return
             except Exception as e:
-                st.error(f"❌ Failed to get failed descriptions: {e}")
+                st.error(f"Failed to get failed descriptions: {e}")
                 return
 
         if not sermon_ids:
-            st.error("❌ No sermons found for validation")
+            st.error("No sermons found for validation")
             return
 
         # Create validation job
@@ -518,9 +518,9 @@ def start_background_validation(scope: str, options: dict):
         # Get current configuration from session state
         config = st.session_state.get('config', {})
         if not config:
-            st.error("❌ No configuration loaded. Please check the Settings page first.")
+            st.error("No configuration loaded. Please check the Settings page first.")
             st.info(
-                "💡 Try going to Settings → Configuration and saving your settings, "
+                "Try going to Settings → Configuration and saving your settings, "
                 "then return to this page."
             )
             return
@@ -529,7 +529,7 @@ def start_background_validation(scope: str, options: dict):
         required_fields = ['api_key', 'broadcaster_id']
         missing_fields = [field for field in required_fields if not config.get(field)]
         if missing_fields:
-            st.error(f"❌ Configuration is missing required fields: {', '.join(missing_fields)}")
+            st.error(f"Configuration is missing required fields: {', '.join(missing_fields)}")
             st.info(
                 "Please go to Settings → Configuration and ensure all required fields "
                 "are filled out."
@@ -549,18 +549,18 @@ def start_background_validation(scope: str, options: dict):
             priority=7  # High priority for validation jobs
         )
 
-        st.success(f"✅ Validation job created! Job ID: {job_id[:8]}")
+        st.success(f"Validation job created! Job ID: {job_id[:8]}")
         st.info(
-            f"🔍 Validating {len(sermon_ids)} sermons in the background. "
+            f"Validating {len(sermon_ids)} sermons in the background. "
             "You can monitor progress on the Jobs page."
         )
 
         # Add button to go to jobs page
-        if st.button("📊 View Job Progress", type="secondary"):
+        if st.button("View Job Progress", type="secondary"):
             st.switch_page(jobs)
 
     except Exception as e:
-        st.error(f"❌ Failed to start validation job: {e}")
+        st.error(f"Failed to start validation job: {e}")
 
 
 def show_current_validation_status():
@@ -574,7 +574,7 @@ def show_current_validation_status():
         validation_status = processor.get_processing_status(operation='validation')
 
         if validation_status:
-            st.markdown("##### 🔄 Active Validations")
+            st.markdown("##### Active Validations")
 
             for item in validation_status[:5]:  # Show recent 5
                 col1, col2, col3, col4 = st.columns([2, 1, 2, 2])
@@ -585,13 +585,7 @@ def show_current_validation_status():
                     st.text(f"Sermon {item.get('sermon_id', 'Unknown')}")
 
                 with col2:
-                    status_icon = {
-                        'processing': '🟡',
-                        'completed': '🟢',
-                        'failed': '🔴',
-                        'starting': '🔵'
-                    }.get(item_status, '⚪')
-                    st.text(f"{status_icon} {item_status}")
+                    st.text(item_status)
 
                 with col3:
                     if item_status == 'processing':
@@ -619,7 +613,7 @@ def show_current_validation_status():
 
         # Show recent validation results if available
         if 'last_validation_results' in st.session_state:
-            st.markdown("##### 📊 Latest Validation Results")
+            st.markdown("##### Latest Validation Results")
             results = st.session_state['last_validation_results']
 
             total = results.get('total', 0)
@@ -646,15 +640,15 @@ def show_current_validation_status():
             # Show detailed results
             details = results.get('details') or []
             if details:
-                st.markdown("##### 📋 Detailed Results")
+                st.markdown("##### Detailed Results")
 
                 details_df = []
                 for detail in details:
                     details_df.append({
                         'Sermon ID': detail.get('sermon_id', 'Unknown'),
                         'Status': (
-                            '✅ Valid' if detail.get('is_valid')
-                            else '❌ Invalid' if 'is_valid' in detail else '⚠️ Error'
+                            'Valid' if detail.get('is_valid')
+                            else 'Invalid' if 'is_valid' in detail else 'Error'
                         ),
                         'Score': (
                             f"{detail.get('score', 0):.2f}" if 'score' in detail else 'N/A'
@@ -668,7 +662,7 @@ def show_current_validation_status():
                     st.dataframe(df, width='stretch')
 
                     # Clear results button
-                    if st.button("🗑️ Clear Results"):
+                    if st.button("Clear Results"):
                         del st.session_state['last_validation_results']
                         st.rerun()
 
@@ -677,7 +671,7 @@ def show_current_validation_status():
 
 def show_validation_trends():
     """Show validation trends and historical data"""
-    st.markdown("### 📈 Validation Trends")
+    st.markdown("### Validation Trends")
 
     try:
         from ui_processor import get_processor
@@ -688,7 +682,7 @@ def show_validation_trends():
 
         if not all_results:
             st.info(
-                "📈 No validation trend data available yet. "
+                "No validation trend data available yet. "
                 "Run validations over time to see trends here."
             )
             return
@@ -730,7 +724,7 @@ def show_validation_trends():
                 avg_score = 0
 
             # Display summary statistics
-            st.markdown("#### 📊 Statistical Summary")
+            st.markdown("#### Statistical Summary")
 
             col1, col2, col3, col4 = st.columns(4)
 
@@ -756,7 +750,7 @@ def show_validation_trends():
                     st.metric("Lowest Score", f"{min_score:.2f}")
 
             # Score distribution
-            st.markdown("#### 📊 Score Distribution")
+            st.markdown("#### Score Distribution")
 
             scores = [r.get('score', 0) for r in filtered_results]
 
@@ -770,19 +764,19 @@ def show_validation_trends():
                 col1, col2, col3, col4 = st.columns(4)
 
                 with col1:
-                    st.metric("🟢 Excellent (≥0.8)", excellent, f"{excellent/total_count*100:.1f}%")
+                    st.metric("Excellent (≥0.8)", excellent, f"{excellent/total_count*100:.1f}%")
 
                 with col2:
-                    st.metric("🟡 Good (0.6-0.8)", good, f"{good/total_count*100:.1f}%")
+                    st.metric("Good (0.6-0.8)", good, f"{good/total_count*100:.1f}%")
 
                 with col3:
-                    st.metric("🟠 Fair (0.4-0.6)", fair, f"{fair/total_count*100:.1f}%")
+                    st.metric("Fair (0.4-0.6)", fair, f"{fair/total_count*100:.1f}%")
 
                 with col4:
-                    st.metric("🔴 Poor (<0.4)", poor, f"{poor/total_count*100:.1f}%")
+                    st.metric("Poor (<0.4)", poor, f"{poor/total_count*100:.1f}%")
 
                 # Show recent validation activity
-                st.markdown("#### 📋 Recent Validation Activity")
+                st.markdown("#### Recent Validation Activity")
 
                 # Show last 20 validations
                 recent_validations = (
@@ -795,7 +789,7 @@ def show_validation_trends():
                     activity_data.append({
                         'Sermon ID': result.get('sermon_id', 'Unknown'),
                         'Score': f"{result.get('score', 0):.2f}",
-                        'Status': '✅ Valid' if result.get('is_valid', False) else '❌ Invalid',
+                        'Status': 'Valid' if result.get('is_valid', False) else 'Invalid',
                         'Date': validated.strftime('%Y-%m-%d') if validated else 'Unknown'
                     })
 
@@ -809,8 +803,8 @@ def show_validation_trends():
             st.info(f"No validation data available for {period}")
 
     except Exception as e:
-        st.error(f"❌ Error loading validation trends: {e}")
-        st.info("📈 No trend data available. Run validations over time to see trends here.")
+        st.error(f"Error loading validation trends: {e}")
+        st.info("No trend data available. Run validations over time to see trends here.")
 
 def regenerate_description(sermon_id):
     """Submit a regeneration job for a specific sermon"""
@@ -818,7 +812,7 @@ def regenerate_description(sermon_id):
         from job_queue import JobType, get_job_queue
         config = st.session_state.get('config', {})
         if not config:
-            st.error("❌ No configuration loaded")
+            st.error("No configuration loaded")
             return
         job_queue = get_job_queue()
         job_id = job_queue.add_job(
@@ -832,9 +826,9 @@ def regenerate_description(sermon_id):
             },
             priority=7
         )
-        st.success(f"✅ Regeneration job created: {job_id[:8]}")
+        st.success(f"Regeneration job created: {job_id[:8]}")
     except Exception as e:
-        st.error(f"❌ Failed to create regeneration job: {e}")
+        st.error(f"Failed to create regeneration job: {e}")
 
 def mark_for_manual_review(sermon_id):
     """Mark sermon for manual review and navigate to library"""
@@ -852,7 +846,7 @@ def mark_for_manual_review(sermon_id):
         )
         st.switch_page("ui/ui_pages/library.py")
     except Exception as e:
-        st.error(f"❌ Error marking for manual review: {e}")
+        st.error(f"Error marking for manual review: {e}")
 
 def regenerate_high_priority():
     """Submit a batch regeneration job for all high-priority failures"""
@@ -872,7 +866,7 @@ def regenerate_high_priority():
             return
         config = st.session_state.get('config', {})
         if not config:
-            st.error("❌ No configuration loaded")
+            st.error("No configuration loaded")
             return
         job_queue = get_job_queue()
         job_id = job_queue.add_job(
@@ -886,9 +880,9 @@ def regenerate_high_priority():
             },
             priority=8
         )
-        st.success(f"✅ Bulk regeneration job created: {job_id[:8]} for {len(failed_ids)} sermons")
+        st.success(f"Bulk regeneration job created: {job_id[:8]} for {len(failed_ids)} sermons")
     except Exception as e:
-        st.error(f"❌ Failed to create bulk regeneration job: {e}")
+        st.error(f"Failed to create bulk regeneration job: {e}")
 
 def export_failed_list():
     """Export list of failed descriptions as CSV"""
@@ -911,14 +905,14 @@ def export_failed_list():
                 str(r.get('validated_at', ''))[:10]
             ])
         st.download_button(
-            "📥 Download CSV",
+            "Download CSV",
             data=output.getvalue(),
             file_name=f"failed_descriptions_{dt.datetime.now().strftime('%Y%m%d')}.csv",
             mime="text/csv",
             key="dl_failed_csv"
         )
     except Exception as e:
-        st.error(f"❌ Error exporting failed list: {e}")
+        st.error(f"Error exporting failed list: {e}")
 
 def generate_validation_report():
     """Generate a validation report as downloadable JSON"""
@@ -956,7 +950,7 @@ def generate_validation_report():
         }
         report_json = json.dumps(report, indent=2)
         st.download_button(
-            "📥 Download Report (JSON)",
+            "Download Report (JSON)",
             data=report_json,
             file_name=f"validation_report_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
             mime="application/json",
@@ -964,11 +958,11 @@ def generate_validation_report():
         )
         st.json(report)
     except Exception as e:
-        st.error(f"❌ Error generating report: {e}")
+        st.error(f"Error generating report: {e}")
 
 def show_manual_review():
     """Display and manage the manual review queue"""
-    st.markdown("### 📝 Manual Review Queue")
+    st.markdown("### Manual Review Queue")
 
     try:
         from database import get_db
@@ -998,7 +992,6 @@ def show_manual_review():
             review_status = review.get('status') or 'pending'
             review_id = review.get('id', i)
             with st.expander(
-                f"{'🟡' if review_status == 'pending' else '🟢'} "
                 f"Sermon {review.get('sermon_id', 'Unknown')} — {review_status.title()}"
             ):
                 col1, col2 = st.columns([3, 1])
@@ -1010,7 +1003,7 @@ def show_manual_review():
                 with col2:
                     sid = review.get('sermon_id', 'Unknown')
                     st.markdown("**Actions:**")
-                    if st.button("🔍 Open in Library", key=f"open_review_{review_id}"):
+                    if st.button("Open in Library", key=f"open_review_{review_id}"):
                         from database import SermonRepository
                         repo = SermonRepository()
                         sermon = repo.get_sermon(sid)
@@ -1018,12 +1011,12 @@ def show_manual_review():
                             st.session_state.selected_sermon = sermon
                         st.switch_page("ui/ui_pages/library.py")
                     if review_status == 'pending':
-                        if st.button("✅ Mark Reviewed", key=f"mark_reviewed_{review_id}"):
+                        if st.button("Mark Reviewed", key=f"mark_reviewed_{review_id}"):
                             db.update_manual_review_status(review_id, 'reviewed')
                             st.rerun()
 
     except Exception as e:
-        st.error(f"❌ Error loading manual review queue: {e}")
+        st.error(f"Error loading manual review queue: {e}")
         st.info("Manual review queue requires database setup.")
 
 

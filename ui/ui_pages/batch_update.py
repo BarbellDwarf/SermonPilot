@@ -27,17 +27,17 @@ from sermon_metadata import (
 
 def show_batch_update():
     """Main batch processing interface."""
-    st.markdown('<div class="main-header">🔄 Batch Update</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Batch Update</div>', unsafe_allow_html=True)
 
     if not st.session_state.config:
-        st.error("❌ Configuration not loaded. Please check the Settings page first.")
+        st.error("Configuration not loaded. Please check the Settings page first.")
         return
 
     tab1, tab2, tab3, tab4 = st.tabs([
-        "🔍 Filter & Select",
-        "⚙️ Processing Options",
-        "▶️ Execute Batch",
-        "📊 Results",
+        "Filter & Select",
+        "Processing Options",
+        "Execute Batch",
+        "Results",
     ])
 
     with tab1:
@@ -55,7 +55,7 @@ def show_batch_update():
 
 def show_filter_and_select():
     """Sermon filtering and selection interface."""
-    st.markdown("### 🔍 Filter Sermons")
+    st.markdown("### Filter Sermons")
 
     show_metadata_refresh_section()
 
@@ -110,7 +110,7 @@ def show_filter_and_select():
             key="batch_content_filter",
         )
 
-    with st.expander("🔧 Advanced Filters"):
+    with st.expander("Advanced Filters"):
         col1, col2 = st.columns(2)
 
         with col1:
@@ -135,7 +135,7 @@ def show_filter_and_select():
     col1, col2, col3 = st.columns([2, 1, 1])
 
     with col1:
-        if st.button("🔍 Search Sermons", type="primary", width="stretch"):
+        if st.button("Search Sermons", type="primary", width="stretch"):
             search_sermons()
 
     with col2:
@@ -150,7 +150,7 @@ def show_filter_and_select():
     with col3:
         export_csv = sermon_list_csv()
         st.download_button(
-            "📥 Export List",
+            "Export List",
             data=export_csv or "",
             file_name="sermon_search_results.csv",
             mime="text/csv",
@@ -163,9 +163,9 @@ def show_filter_and_select():
 
 def show_batch_processing_options():
     """Show batch processing configuration."""
-    st.markdown("### ⚙️ Batch Processing Configuration")
+    st.markdown("### Batch Processing Configuration")
 
-    st.markdown("#### 🎯 Processing Scope")
+    st.markdown("#### Processing Scope")
 
     col1, col2 = st.columns(2)
 
@@ -197,7 +197,7 @@ def show_batch_processing_options():
             help="Run quality validation on generated content",
         )
 
-    st.markdown("#### ⚙️ Processing Options")
+    st.markdown("#### Processing Options")
 
     col1, col2 = st.columns(2)
 
@@ -227,14 +227,14 @@ def show_batch_processing_options():
             help="Save backup copies of original metadata",
         )
 
-    st.markdown("#### 📚 Series Assignment")
+    st.markdown("#### Series Assignment")
     create_series_selectbox(
         "Series (optional)",
         key="batch_series",
         help="Assign the selected sermons to a series",
     )
 
-    st.markdown("#### 🔄 Execution Settings")
+    st.markdown("#### Execution Settings")
 
     col1, col2, col3 = st.columns(3)
 
@@ -272,17 +272,17 @@ def show_batch_processing_options():
 
 def show_execute_batch():
     """Show batch execution controls."""
-    st.markdown("### ▶️ Execute Batch Processing")
+    st.markdown("### Execute Batch Processing")
 
     selected_sermons = st.session_state.get("selected_sermons", [])
 
     if not selected_sermons:
         st.warning(
-            "⚠️ No sermons selected. Please go to Filter & Select tab to choose sermons."
+            "No sermons selected. Please go to Filter & Select tab to choose sermons."
         )
         return
 
-    st.markdown("#### 📋 Execution Summary")
+    st.markdown("#### Execution Summary")
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -308,7 +308,7 @@ def show_execute_batch():
             "Dry Run" if st.session_state.get("batch_dry_run") else "Live",
         )
 
-    st.markdown("#### 🎮 Processing Controls")
+    st.markdown("#### Processing Controls")
 
     job_id = st.session_state.get("current_batch_job_id")
     active_job = None
@@ -329,14 +329,14 @@ def show_execute_batch():
                 ]
         except Exception as e:
             st.session_state.current_batch_job_id = None
-            st.warning(f"⚠️ Could not check job status: {str(e)}")
+            st.warning(f"Could not check job status: {str(e)}")
             active_job = None
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
         if st.button(
-            "▶️ Start Batch",
+            "Start Batch",
             type="primary",
             width="stretch",
             disabled=is_job_running,
@@ -344,11 +344,11 @@ def show_execute_batch():
             start_batch_processing()
 
     with col2:
-        if st.button("⏹️ Cancel Job", width="stretch", disabled=not is_job_running):
+        if st.button("Cancel Job", width="stretch", disabled=not is_job_running):
             cancel_batch_processing()
 
     with col3:
-        if st.button("🔄 Reset Queue", width="stretch"):
+        if st.button("Reset Queue", width="stretch"):
             reset_batch_queue()
 
     if active_job:
@@ -357,7 +357,7 @@ def show_execute_batch():
 
 def show_batch_results():
     """Display batch processing results."""
-    st.markdown("### 📊 Batch Processing Results")
+    st.markdown("### Batch Processing Results")
 
     results = collect_batch_results()
 
@@ -384,7 +384,7 @@ def show_batch_results():
     with col3:
         st.metric("Failed", error_count, f"{error_count / len(results) * 100:.1f}%")
 
-    st.markdown("#### 📋 Detailed Results")
+    st.markdown("#### Detailed Results")
 
     df_results = build_results_frame(results)
 
@@ -409,7 +409,7 @@ def show_batch_results():
 
     with col1:
         st.download_button(
-            "📥 Export Results (CSV)",
+            "Export Results (CSV)",
             data=df_results.to_csv(index=False),
             file_name="batch_results.csv",
             mime="text/csv",
@@ -418,7 +418,7 @@ def show_batch_results():
 
     with col2:
         st.download_button(
-            "📄 Generate Report",
+            "Generate Report",
             data=build_batch_report(df_results),
             file_name="batch_report.md",
             mime="text/markdown",
@@ -452,7 +452,7 @@ def search_sermons():
         elif speaker_filter_custom:
             speaker_filter = speaker_filter_custom
 
-        with st.spinner("🔍 Searching SermonAudio..."):
+        with st.spinner("Searching SermonAudio..."):
             progress_bar = st.progress(0)
             progress_bar.progress(0.2)
 
@@ -510,10 +510,10 @@ def search_sermons():
         st.session_state.search_results = filtered_sermons
         st.session_state.selected_sermons = []
         st.session_state.pop("batch_selection_editor", None)
-        st.success(f"✅ Found {len(filtered_sermons)} matching sermons")
+        st.success(f"Found {len(filtered_sermons)} matching sermons")
 
     except Exception as e:
-        st.error(f"❌ Error searching sermons: {str(e)}")
+        st.error(f"Error searching sermons: {str(e)}")
         st.session_state.search_results = []
         st.session_state.selected_sermons = []
         st.session_state.pop("batch_selection_editor", None)
@@ -526,7 +526,7 @@ def show_search_results():
     if not search_results:
         return
 
-    st.markdown("#### 📋 Search Results")
+    st.markdown("#### Search Results")
 
     df = pd.DataFrame(search_results)
     selected_ids = {
@@ -573,7 +573,7 @@ def show_search_results():
     st.session_state.selected_sermons = selected
 
     if selected:
-        st.success(f"✅ {len(selected)} sermons selected for processing")
+        st.success(f"{len(selected)} sermons selected for processing")
     else:
         st.caption("No sermons selected")
 
@@ -585,14 +585,14 @@ def start_batch_processing():
 
         selected_sermons = st.session_state.get("selected_sermons", [])
         if not selected_sermons:
-            st.error("❌ No sermons selected for batch processing")
+            st.error("No sermons selected for batch processing")
             return
 
         config = st.session_state.get("config", {})
         if not config:
-            st.error("❌ No configuration loaded. Please check the Settings page first.")
+            st.error("No configuration loaded. Please check the Settings page first.")
             st.info(
-                "💡 Try going to Settings → Configuration and saving your settings, "
+                "Try going to Settings → Configuration and saving your settings, "
                 "then return to this page."
             )
             return
@@ -601,7 +601,7 @@ def start_batch_processing():
         missing_fields = [field for field in required_fields if not config.get(field)]
         if missing_fields:
             st.error(
-                f"❌ Configuration is missing required fields: {', '.join(missing_fields)}"
+                f"Configuration is missing required fields: {', '.join(missing_fields)}"
             )
             st.info(
                 "Please go to Settings → Configuration and ensure all required fields "
@@ -622,7 +622,7 @@ def start_batch_processing():
 
         if not any(actions.values()):
             st.error(
-                "❌ No processing actions selected. "
+                "No processing actions selected. "
                 "Please select at least one action to perform."
             )
             return
@@ -656,24 +656,24 @@ def start_batch_processing():
 
         st.session_state.current_batch_job_id = job_id
 
-        st.success(f"✅ Batch processing job created! Job ID: {job_id[:8]}")
+        st.success(f"Batch processing job created! Job ID: {job_id[:8]}")
         st.info(
-            f"🔍 Processing {len(sermon_ids)} sermons in the background. "
+            f"Processing {len(sermon_ids)} sermons in the background. "
             "You can monitor progress on the Jobs page."
         )
 
-        if st.button("📊 View Job Progress", type="secondary"):
+        if st.button("View Job Progress", type="secondary"):
             st.switch_page(jobs)
 
     except Exception as e:
-        st.error(f"❌ Failed to start batch processing job: {e}")
+        st.error(f"Failed to start batch processing job: {e}")
 
 
 def cancel_batch_processing():
     """Cancel the active batch processing job."""
     job_id = st.session_state.get("current_batch_job_id")
     if not job_id:
-        st.warning("⚠️ No active batch processing job found")
+        st.warning("No active batch processing job found")
         return
 
     try:
@@ -682,11 +682,11 @@ def cancel_batch_processing():
         job_queue = get_job_queue()
         if job_queue.cancel_job(job_id):
             st.session_state.current_batch_job_id = None
-            st.warning("⏹️ Batch processing job cancelled")
+            st.warning("Batch processing job cancelled")
         else:
-            st.warning("⚠️ Could not cancel job (may not be running)")
+            st.warning("Could not cancel job (may not be running)")
     except Exception as e:
-        st.error(f"❌ Failed to cancel job: {e}")
+        st.error(f"Failed to cancel job: {e}")
 
 
 def reset_batch_queue():
@@ -701,17 +701,17 @@ def reset_batch_queue():
             if job and job.status in [JobStatus.QUEUED, JobStatus.RUNNING]:
                 job_queue.cancel_job(job_id)
         except Exception as e:
-            st.error(f"❌ Failed to cancel active job: {e}")
+            st.error(f"Failed to cancel active job: {e}")
 
     st.session_state.current_batch_job_id = None
     st.session_state.selected_sermons = []
     st.session_state.pop("batch_selection_editor", None)
-    st.success("🔄 Batch queue reset")
+    st.success("Batch queue reset")
 
 
 def show_batch_progress():
     """Show real-time batch processing progress from the job queue."""
-    st.markdown("#### 🔄 Processing Progress")
+    st.markdown("#### Processing Progress")
 
     job_id = st.session_state.get("current_batch_job_id")
     if not job_id:
@@ -725,27 +725,17 @@ def show_batch_progress():
         job = job_queue.get_job(job_id)
 
         if not job:
-            st.warning("⚠️ Batch processing job not found")
+            st.warning("Batch processing job not found")
             st.session_state.current_batch_job_id = None
             return
 
         st.progress(job.progress / 100.0)
 
-        status_colors = {
-            JobStatus.QUEUED: "🔵",
-            JobStatus.RUNNING: "🟡",
-            JobStatus.COMPLETED: "🟢",
-            JobStatus.FAILED: "🔴",
-            JobStatus.CANCELLED: "⚫",
-            JobStatus.PAUSED: "🟠",
-        }
-
-        status_icon = status_colors.get(job.status, "❓")
-        st.text(f"{status_icon} Status: {job.status.value.title()}")
+        st.text(f"Status: {job.status.value.title()}")
         st.text(f"Progress: {job.progress:.1f}%")
 
         if job.logs:
-            with st.expander("📋 Recent Activity", expanded=False):
+            with st.expander("Recent Activity", expanded=False):
                 for log in job.logs[-5:]:
                     st.text(log)
 
@@ -755,7 +745,7 @@ def show_batch_progress():
                 st.rerun()
 
     except Exception as e:
-        st.error(f"❌ Error checking job progress: {e}")
+        st.error(f"Error checking job progress: {e}")
         st.session_state.current_batch_job_id = None
 
 
@@ -798,7 +788,7 @@ def build_results_frame(results: list[dict[str, Any]]) -> pd.DataFrame:
         })
     df = pd.DataFrame(rows)
     df["Status"] = df["status"].apply(
-        lambda x: "✅ Success" if x == "success" else "❌ Error"
+        lambda x: "Success" if x == "success" else "Error"
     )
     return df
 
