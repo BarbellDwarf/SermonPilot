@@ -164,7 +164,7 @@ class SermonDatabase:
                     file_size INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (sermon_id, file_type),
-                    FOREIGN KEY (sermon_id) REFERENCES sermons(id)
+                    FOREIGN KEY (sermon_id) REFERENCES sermons(id) ON DELETE CASCADE
                 )
             """)
 
@@ -181,7 +181,7 @@ class SermonDatabase:
                     quality_score REAL,
                     processing_logs TEXT,
                     processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (sermon_id) REFERENCES sermons(id)
+                    FOREIGN KEY (sermon_id) REFERENCES sermons(id) ON DELETE CASCADE
                 )
             """)
 
@@ -198,7 +198,7 @@ class SermonDatabase:
                     gain_applied REAL,
                     speaker_id INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (sermon_id) REFERENCES sermons(id)
+                    FOREIGN KEY (sermon_id) REFERENCES sermons(id) ON DELETE CASCADE
                 )
             """)
 
@@ -212,11 +212,21 @@ class SermonDatabase:
                     key_topics TEXT,
                     summary TEXT,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (sermon_id) REFERENCES sermons(id)
+                    FOREIGN KEY (sermon_id) REFERENCES sermons(id) ON DELETE CASCADE
                 )
             """)
 
             # Create full-text search virtual table
+            fts_cols = [
+                row['name'] for row in conn.execute("PRAGMA table_info(sermon_search)")
+            ]
+            expected_fts_cols = [
+                'sermon_id', 'title', 'speaker', 'transcript_text', 'description',
+                'hashtags', 'key_topics', 'summary',
+            ]
+            rebuild_fts = bool(fts_cols) and fts_cols != expected_fts_cols
+            if rebuild_fts:
+                conn.execute("DROP TABLE sermon_search")
             conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS sermon_search USING fts5(
                     sermon_id,
@@ -225,9 +235,20 @@ class SermonDatabase:
                     transcript_text,
                     description,
                     hashtags,
-                    content='sermon_content'
+                    key_topics,
+                    summary
                 )
             """)
+            if rebuild_fts:
+                conn.execute("""
+                    INSERT INTO sermon_search
+                        (sermon_id, title, speaker, transcript_text, description, hashtags,
+                         key_topics, summary)
+                    SELECT s.id, s.title, s.speaker, sc.transcript_text, sc.description,
+                           sc.hashtags, sc.key_topics, sc.summary
+                    FROM sermons s
+                    LEFT JOIN sermon_content sc ON s.id = sc.sermon_id
+                """)
 
             # Upload information table
             conn.execute("""
@@ -237,7 +258,7 @@ class SermonDatabase:
                     upload_date TIMESTAMP,
                     upload_status TEXT,
                     upload_message TEXT,
-                    FOREIGN KEY (sermon_id) REFERENCES sermons(id)
+                    FOREIGN KEY (sermon_id) REFERENCES sermons(id) ON DELETE CASCADE
                 )
             """)
 
@@ -272,7 +293,7 @@ class SermonDatabase:
                     error_message TEXT,
                     request_data TEXT,
                     response_data TEXT,
-                    FOREIGN KEY (sermon_id) REFERENCES sermons(id)
+                    FOREIGN KEY (sermon_id) REFERENCES sermons(id) ON DELETE CASCADE
                 )
             """)
 
@@ -294,6 +315,7 @@ class SermonDatabase:
         """Get database connection with automatic cleanup"""
         conn = sqlite3.connect(self.db_path, timeout=30.0)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
         try:
             yield conn
         finally:
@@ -679,12 +701,79 @@ def get_db() -> SermonDatabase:
     return _db
 
 
+def _fts_snippet_case() -> str:
+    """Build a CASE expression that picks the first column containing a match."""
+    cols = (3, 4, 5, 6, 7, 1, 2)
+    whens = []
+    for col in cols:
+        snippet = f"snippet(sermon_search, {col}, '<mark>', '</mark>', '...', 32)"
+        whens.append(f"WHEN instr({snippet}, '<mark>') > 0 THEN {snippet}")
+    fallback = "snippet(sermon_search, 3, '<mark>', '</mark>', '...', 32)"
+    return "CASE " + " ".join(whens) + f" ELSE {fallback} END"
+
+
+def _like_snippet(row: sqlite3.Row, query_text: str) -> str:
+    """Build a highlighted excerpt from the first column matching the query."""
+    needle = query_text.lower()
+    for col in ('transcript_text', 'description', 'hashtags', 'key_topics', 'summary',
+                'title', 'speaker'):
+        value = row[col]
+        if not value:
+            continue
+        text = str(value)
+        idx = text.lower().find(needle)
+        if idx < 0:
+            continue
+        radius = 32
+        start = max(0, idx - radius)
+        end = min(len(text), idx + len(needle) + radius)
+        prefix = '...' if start > 0 else ''
+        suffix = '...' if end < len(text) else ''
+        matched = text[idx:idx + len(needle)]
+        return (
+            prefix + text[start:idx] + f'<mark>{matched}</mark>'
+            + text[idx + len(needle):end] + suffix
+        )
+    return ''
+
+
 class SermonRepository:
     """Repository for managing sermon records with Q&A information"""
 
     def __init__(self, db: SermonDatabase = None):
         """Initialize repository with database connection"""
         self.db = db or get_db()
+
+    def _rebuild_fts_row(self, conn: sqlite3.Connection, sermon_id: str) -> None:
+        """Rebuild the FTS row for a sermon from current sermons/sermon_content data."""
+        row = conn.execute("""
+            SELECT s.title, s.speaker, sc.transcript_text, sc.description, sc.hashtags,
+                   sc.key_topics, sc.summary
+            FROM sermons s
+            LEFT JOIN sermon_content sc ON s.id = sc.sermon_id
+            WHERE s.id = ?
+        """, (sermon_id,)).fetchone()
+        if row is None:
+            return
+        conn.execute("DELETE FROM sermon_search WHERE sermon_id = ?", (sermon_id,))
+        conn.execute("""
+            INSERT INTO sermon_search
+            (sermon_id, title, speaker, transcript_text, description, hashtags,
+             key_topics, summary)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            sermon_id, row['title'], row['speaker'], row['transcript_text'],
+            row['description'], row['hashtags'], row['key_topics'], row['summary'],
+        ))
+
+    def get_sermon_files(self, sermon_id: str) -> list[dict[str, Any]]:
+        """Get file records for a sermon"""
+        with self.db.get_connection() as conn:
+            rows = conn.execute("""
+                SELECT file_type, file_path, file_size FROM sermon_files
+                WHERE sermon_id = ?
+            """, (sermon_id,)).fetchall()
+            return [dict(row) for row in rows]
 
     def save_sermon(self, sermon_data: dict[str, Any]) -> bool:
         """
@@ -699,11 +788,24 @@ class SermonRepository:
         try:
             with self.db.get_connection() as conn:
                 conn.execute("""
-                    INSERT OR REPLACE INTO sermons
+                    INSERT INTO sermons
                     (id, title, subtitle, speaker, recorded_date, event_type, bible_text,
                      series_title, scripture_reference, description, duration, status,
-                     updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        title = excluded.title,
+                        subtitle = excluded.subtitle,
+                        speaker = excluded.speaker,
+                        recorded_date = excluded.recorded_date,
+                        event_type = excluded.event_type,
+                        bible_text = excluded.bible_text,
+                        series_title = excluded.series_title,
+                        scripture_reference = excluded.scripture_reference,
+                        description = excluded.description,
+                        duration = excluded.duration,
+                        status = excluded.status,
+                        updated_at = excluded.updated_at
                 """, (
                     sermon_data.get('id'),
                     sermon_data.get('title'),
@@ -805,19 +907,8 @@ class SermonRepository:
                         content.get('summary')
                     ))
 
-                    # Update full-text search index
-                    conn.execute("""
-                        INSERT OR REPLACE INTO sermon_search
-                        (sermon_id, title, speaker, transcript_text, description, hashtags)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (
-                        sermon_data.get('id'),
-                        sermon_data.get('title'),
-                        sermon_data.get('speaker'),
-                        content.get('transcript_text'),
-                        content.get('description'),
-                        content.get('hashtags')
-                    ))
+                # Rebuild full-text search index (always, so title/speaker are searchable)
+                self._rebuild_fts_row(conn, sermon_data.get('id'))
 
                 # Save upload information
                 upload_info = sermon_data.get('upload_info', {})
@@ -909,6 +1000,9 @@ class SermonRepository:
                 conn.execute("DELETE FROM sermon_files WHERE sermon_id = ?", (sermon_id,))
                 conn.execute("DELETE FROM upload_info WHERE sermon_id = ?", (sermon_id,))
                 conn.execute("DELETE FROM processing_status WHERE sermon_id = ?", (sermon_id,))
+                conn.execute("DELETE FROM validation_results WHERE sermon_id = ?", (sermon_id,))
+                conn.execute("DELETE FROM manual_review WHERE sermon_id = ?", (sermon_id,))
+                conn.execute("DELETE FROM llm_api_usage WHERE sermon_id = ?", (sermon_id,))
                 conn.execute("DELETE FROM sermon_search WHERE sermon_id = ?", (sermon_id,))
 
                 # Delete main sermon record
@@ -928,7 +1022,7 @@ class SermonRepository:
             with self.db.get_connection() as conn:
                 sermon_cols = ('title', 'subtitle', 'speaker', 'event_type', 'recorded_date',
                                'bible_text', 'series_title', 'description', 'scripture_reference',
-                               'church_name', 'is_favorite', 'notes')
+                               'church_name', 'is_favorite', 'notes', 'status', 'duration')
                 set_parts = []
                 params = []
                 for col in sermon_cols:
@@ -943,40 +1037,23 @@ class SermonRepository:
                         UPDATE sermons SET {', '.join(set_parts)} WHERE id = ?
                     """, params)
 
-                if 'description' in metadata:
-                    conn.execute("""
-                        UPDATE sermon_content SET description = ? WHERE sermon_id = ?
-                    """, (metadata['description'], sermon_id))
+                content_cols = ('description', 'hashtags', 'transcript_text')
+                content_updates = [c for c in content_cols if c in metadata]
+                if content_updates:
+                    placeholders = ", ".join(["?" for _ in content_updates])
+                    set_expr = ", ".join(f"{c} = excluded.{c}" for c in content_updates)
+                    conn.execute(f"""
+                        INSERT INTO sermon_content
+                        (sermon_id, {', '.join(content_updates)}, updated_at)
+                        VALUES (?, {placeholders}, ?)
+                        ON CONFLICT(sermon_id) DO UPDATE SET
+                            {set_expr},
+                            updated_at = excluded.updated_at
+                    """, [sermon_id] + [metadata[c] for c in content_updates]
+                         + [datetime.datetime.now()])
 
-                fts_cols = {'title', 'speaker', 'description', 'hashtags', 'transcript_text'}
-                cols_in_update = fts_cols & metadata.keys()
-                if cols_in_update:
-                    existing = conn.execute(
-                        "SELECT s.title, s.speaker, sc.transcript_text, "
-                        "COALESCE(sc.description, s.description) AS description, sc.hashtags "
-                        "FROM sermons s "
-                        "LEFT JOIN sermon_content sc ON s.id = sc.sermon_id "
-                        "WHERE s.id = ?",
-                        (sermon_id,)
-                    ).fetchone()
-                    fts_title = metadata.get('title') or (existing[0] if existing else '')
-                    fts_speaker = metadata.get('speaker') or (existing[1] if existing else '')
-                    fts_transcript = (
-                        metadata.get('transcript_text') or (existing[2] if existing else '')
-                    )
-                    fts_description = (
-                        metadata.get('description') or (existing[3] if existing else '')
-                    )
-                    fts_hashtags = metadata.get('hashtags') or (existing[4] if existing else '')
-                    conn.execute("DELETE FROM sermon_search WHERE sermon_id = ?", (sermon_id,))
-                    conn.execute("""
-                        INSERT INTO sermon_search
-                        (sermon_id, title, speaker, transcript_text, description, hashtags)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (
-                        sermon_id, fts_title, fts_speaker, fts_transcript,
-                        fts_description, fts_hashtags,
-                    ))
+                if set_parts or content_updates:
+                    self._rebuild_fts_row(conn, sermon_id)
 
                 conn.commit()
                 logger.info(f"Successfully updated metadata for sermon {sermon_id}")
@@ -1053,11 +1130,11 @@ class SermonRepository:
         with self.db.get_connection() as conn:
             # Try FTS search first, fall back to LIKE search if FTS fails
             try:
-                search_results = conn.execute("""
+                search_results = conn.execute(f"""
                     SELECT sermon_id,
                            title,
                            speaker,
-                           snippet(sermon_search, 2, '<mark>', '</mark>', '...', 32) as snippet,
+                           {_fts_snippet_case()} as snippet,
                            rank
                     FROM sermon_search
                     WHERE sermon_search MATCH ?
@@ -1066,23 +1143,36 @@ class SermonRepository:
                 """, (query_text, limit)).fetchall()
             except Exception:
                 # Fallback to simple LIKE search if FTS fails
-                search_results = conn.execute("""
-                    SELECT sc.sermon_id,
+                like_rows = conn.execute("""
+                    SELECT s.id as sermon_id,
                            s.title,
                            s.speaker,
-                           '' as snippet,
+                           sc.transcript_text,
+                           sc.description,
+                           sc.hashtags,
+                           sc.key_topics,
+                           sc.summary,
                            1 as rank
-                    FROM sermon_content sc
-                    JOIN sermons s ON sc.sermon_id = s.id
+                    FROM sermons s
+                    LEFT JOIN sermon_content sc ON s.id = sc.sermon_id
                     WHERE sc.transcript_text LIKE ?
                        OR sc.description LIKE ?
+                       OR sc.hashtags LIKE ?
+                       OR sc.key_topics LIKE ?
+                       OR sc.summary LIKE ?
                        OR s.title LIKE ?
                        OR s.speaker LIKE ?
                     LIMIT ?
                 """, (
-                    f'%{query_text}%', f'%{query_text}%', f'%{query_text}%', f'%{query_text}%',
-                    limit,
+                    f'%{query_text}%', f'%{query_text}%', f'%{query_text}%',
+                    f'%{query_text}%', f'%{query_text}%', f'%{query_text}%',
+                    f'%{query_text}%', limit,
                 )).fetchall()
+                search_results = []
+                for row in like_rows:
+                    result = dict(row)
+                    result['snippet'] = _like_snippet(row, query_text)
+                    search_results.append(result)
 
             # Get full sermon data for results
             sermon_ids = [row['sermon_id'] for row in search_results]
@@ -1143,45 +1233,24 @@ class SermonRepository:
                 content_updates = {k: v for k, v in updates.items() if k in content_fields}
 
                 if content_updates:
-                    # Check if content record exists
-                    existing = conn.execute(
-                        "SELECT sermon_id FROM sermon_content WHERE sermon_id = ?",
-                        (sermon_id,),
-                    ).fetchone()
+                    cols = [
+                        'transcript_text' if field == 'transcript' else field
+                        for field in content_updates
+                    ]
+                    placeholders = ", ".join(["?" for _ in cols])
+                    set_expr = ", ".join(f"{c} = excluded.{c}" for c in cols)
+                    conn.execute(f"""
+                        INSERT INTO sermon_content
+                        (sermon_id, {', '.join(cols)}, updated_at)
+                        VALUES (?, {placeholders}, ?)
+                        ON CONFLICT(sermon_id) DO UPDATE SET
+                            {set_expr},
+                            updated_at = excluded.updated_at
+                    """, [sermon_id] + list(content_updates.values())
+                         + [datetime.datetime.now()])
 
-                    if existing:
-                        # Update existing content
-                        content_set_clauses = []
-                        content_params = []
-
-                        for field, value in content_updates.items():
-                            if field == 'transcript':
-                                content_set_clauses.append("transcript_text = ?")
-                            else:
-                                content_set_clauses.append(f"{field} = ?")
-                            content_params.append(value)
-
-                        if content_set_clauses:
-                            content_set_clauses.append("updated_at = ?")
-                            content_params.append(datetime.datetime.now())
-                            content_params.append(sermon_id)
-
-                            content_query = (
-                                f"UPDATE sermon_content SET "
-                                f"{', '.join(content_set_clauses)} WHERE sermon_id = ?"
-                            )
-                            conn.execute(content_query, content_params)
-                    else:
-                        # Create new content record
-                        transcript_text = content_updates.get('transcript', '')
-                        description = content_updates.get('description', '')
-                        hashtags = content_updates.get('hashtags', '')
-
-                        conn.execute("""
-                            INSERT INTO sermon_content
-                            (sermon_id, transcript_text, description, hashtags)
-                            VALUES (?, ?, ?, ?)
-                        """, (sermon_id, transcript_text, description, hashtags))
+                if set_clauses or content_updates:
+                    self._rebuild_fts_row(conn, sermon_id)
 
                 conn.commit()
                 return True
