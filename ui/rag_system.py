@@ -84,7 +84,7 @@ class SermonAnalyticsRAG:
 
                 # Check for dimension mismatch
                 if stored_dimensions and str(current_dimensions) != str(stored_dimensions):
-                    logger.warning("🔄 EMBEDDING MODEL CHANGED DETECTED!")
+                    logger.warning("EMBEDDING MODEL CHANGED DETECTED!")
                     logger.warning(
                         f"   Previous: {stored_provider}/{stored_model} ({stored_dimensions}D)"
                     )
@@ -93,16 +93,16 @@ class SermonAnalyticsRAG:
                         f"({current_dimensions}D)"
                     )
                     logger.warning(
-                        f"   ⚠️  Dimension mismatch detected: {stored_dimensions}D → "
+                        f"   Dimension mismatch detected: {stored_dimensions}D → "
                         f"{current_dimensions}D"
                     )
                     logger.warning(
-                        "   🗑️  Automatically resetting vector database to prevent conflicts..."
+                        "   Automatically resetting vector database to prevent conflicts..."
                     )
 
                     # Delete the incompatible collection
                     self.client.delete_collection(name=collection_name)
-                    logger.info("   ✅ Old vector database cleared successfully")
+                    logger.info("   Old vector database cleared successfully")
 
                     # Create new collection with correct dimensions
                     self.collection = self.client.create_collection(
@@ -119,10 +119,10 @@ class SermonAnalyticsRAG:
                         }
                     )
                     logger.info(
-                        f"   🆕 New vector database created with {current_dimensions}D embeddings"
+                        f"   New vector database created with {current_dimensions}D embeddings"
                     )
                     logger.info(
-                        "   ℹ️  The analytics chat system will need to re-index any existing data"
+                        "   The analytics chat system will need to re-index any existing data"
                     )
 
                 elif (
@@ -130,13 +130,13 @@ class SermonAnalyticsRAG:
                     or stored_model != current_provider['model']
                 ):
                     # Same dimensions but different provider/model - update metadata but keep data
-                    logger.info("🔄 Embedding provider/model changed (same dimensions)")
+                    logger.info("Embedding provider/model changed (same dimensions)")
                     logger.info(f"   Previous: {stored_provider}/{stored_model}")
                     logger.info(
                         f"   Current:  {current_provider['provider']}/{current_provider['model']}"
                     )
                     logger.info(
-                        f"   ✅ Keeping existing data (dimensions unchanged: {current_dimensions}D)"
+                        f"   Keeping existing data (dimensions unchanged: {current_dimensions}D)"
                     )
 
                     self.collection = existing_collection
@@ -150,7 +150,7 @@ class SermonAnalyticsRAG:
                 else:
                     # Same provider and dimensions - use existing collection
                     logger.info(
-                        f"✅ Using existing vector database ({current_dimensions}D embeddings)"
+                        f"Using existing vector database ({current_dimensions}D embeddings)"
                     )
                     self.collection = existing_collection
 
@@ -196,7 +196,7 @@ class SermonAnalyticsRAG:
 
             # Delete the incompatible collection
             self.client.delete_collection(name=collection_name)
-            logger.info("   ✅ Deleted incompatible vector database")
+            logger.info("   Deleted incompatible vector database")
 
             # Create new collection with correct dimensions
             self.collection = self.client.create_collection(
@@ -213,7 +213,7 @@ class SermonAnalyticsRAG:
                 }
             )
             logger.info(
-                f"   🆕 Created new vector database with {current_dimensions}D embeddings"
+                f"   Created new vector database with {current_dimensions}D embeddings"
             )
 
         except Exception as e:
@@ -261,7 +261,7 @@ class SermonAnalyticsRAG:
 
             # Check if this is a dimension mismatch error
             if "expecting embedding with dimension" in error_msg:
-                logger.warning("🔄 DIMENSION MISMATCH DETECTED during data insertion!")
+                logger.warning("DIMENSION MISMATCH DETECTED during data insertion!")
                 logger.warning(f"   Error: {error_msg}")
 
                 # Extract expected and actual dimensions from error message
@@ -275,7 +275,7 @@ class SermonAnalyticsRAG:
                     logger.warning(f"   Expected: {expected_dim}D, Got: {actual_dim}D")
 
                 logger.warning(
-                    "   🗑️  Automatically resetting vector database to fix dimension mismatch..."
+                    "   Automatically resetting vector database to fix dimension mismatch..."
                 )
 
                 try:
@@ -283,7 +283,7 @@ class SermonAnalyticsRAG:
                     self._reset_database_for_dimension_mismatch()
 
                     # Retry the operation
-                    logger.info("   🔄 Retrying data insertion with reset database...")
+                    logger.info("   Retrying data insertion with reset database...")
                     self.collection.add(
                         documents=documents,
                         embeddings=embeddings,
@@ -292,14 +292,14 @@ class SermonAnalyticsRAG:
                     )
 
                     logger.info(
-                        f"   ✅ Successfully added {len(documents)} analytics records "
+                        f"   Successfully added {len(documents)} analytics records "
                         "after database reset"
                     )
                     return
 
                 except Exception as retry_error:
                     logger.error(
-                        f"   ✗ Failed to add data even after database reset: {retry_error}"
+                        f"   Failed to add data even after database reset: {retry_error}"
                     )
                     raise RuntimeError(
                         f"Database reset failed to resolve dimension mismatch: {retry_error}"
@@ -422,16 +422,16 @@ class SermonAnalyticsRAG:
 
             # Check if this is a dimension mismatch error
             if "expecting embedding with dimension" in error_msg:
-                logger.warning("🔄 DIMENSION MISMATCH DETECTED during query!")
+                logger.warning("DIMENSION MISMATCH DETECTED during query!")
                 logger.warning(f"   Error: {error_msg}")
                 logger.warning(
-                    "   🗑️  Database reset is needed. Please reinitialize the RAG system."
+                    "   Database reset is needed. Please reinitialize the RAG system."
                 )
 
                 return {
                     'question': question,
                     'answer': (
-                        "⚠️ The vector database has a dimension mismatch and needs to be reset. "
+                        "The vector database has a dimension mismatch and needs to be reset. "
                         "This usually happens when the embedding model is changed. "
                         "Please refresh the page or restart the application to automatically fix "
                         "this."

@@ -13,7 +13,6 @@ class ProcessingModeSelector:
             'standard': {
                 'name': 'Standard Processing',
                 'description': 'Balanced noise reduction and enhancement for typical recordings',
-                'icon': '🎯',
                 'settings': {
                     'noise_reduction_strength': 0.6,
                     'enable_amplification': True,
@@ -32,7 +31,6 @@ class ProcessingModeSelector:
                 'description': (
                     'Gentle processing that preserves Q&A segments and audience questions'
                 ),
-                'icon': '❓',
                 'settings': {
                     'noise_reduction_strength': 0.3,
                     'enable_amplification': True,
@@ -48,7 +46,6 @@ class ProcessingModeSelector:
             'lecture_mode': {
                 'name': 'Lecture Mode',
                 'description': 'Optimized for clear speech with minimal interruptions',
-                'icon': '🎓',
                 'settings': {
                     'noise_reduction_strength': 0.7,
                     'enable_amplification': True,
@@ -63,7 +60,6 @@ class ProcessingModeSelector:
             'gentle_enhancement': {
                 'name': 'Gentle Enhancement',
                 'description': 'Minimal processing for high-quality recordings',
-                'icon': '🌿',
                 'settings': {
                     'noise_reduction_strength': 0.2,
                     'enable_amplification': True,
@@ -80,7 +76,6 @@ class ProcessingModeSelector:
             'aggressive_cleanup': {
                 'name': 'Aggressive Cleanup',
                 'description': 'Strong noise reduction for challenging recordings',
-                'icon': '🔧',
                 'settings': {
                     'noise_reduction_strength': 0.8,
                     'enable_amplification': True,
@@ -97,7 +92,6 @@ class ProcessingModeSelector:
             'custom': {
                 'name': 'Custom Settings',
                 'description': 'Manually configure all processing options',
-                'icon': '⚙️',
                 'settings': {},
                 'use_cases': [
                     'Specific requirements', 'Fine-tuned control', 'Experimental processing',
@@ -112,7 +106,7 @@ class ProcessingModeSelector:
         Returns:
             Dictionary containing selected mode and settings
         """
-        st.subheader("🎛️ Audio Processing Mode")
+        st.subheader("Audio Processing Mode")
 
         # Mode selection with visual cards
         selected_mode = self._render_mode_cards()
@@ -124,7 +118,7 @@ class ProcessingModeSelector:
         mode_info = self.modes[selected_mode]
 
         # Show mode description and use cases
-        with st.expander(f"ℹ️ About {mode_info['name']}", expanded=False):
+        with st.expander(f"About {mode_info['name']}", expanded=False):
             st.write(mode_info['description'])
             if 'use_cases' in mode_info:
                 st.write("**Best for:**")
@@ -165,7 +159,7 @@ class ProcessingModeSelector:
                 with cols[j]:
                     # Create a card-like button
                     if st.button(
-                        f"{mode['icon']} {mode['name']}",
+                        mode['name'],
                         key=f"mode_{mode_key}",
                         help=mode['description'],
                         width='stretch'
@@ -184,7 +178,7 @@ class ProcessingModeSelector:
         mode_info = self.modes[mode]
         settings = mode_info['settings'].copy()
 
-        st.subheader(f"⚙️ {mode_info['name']} Settings")
+        st.subheader(f"{mode_info['name']} Settings")
 
         # Show current settings
         with st.expander("Current Settings", expanded=False):
@@ -198,7 +192,7 @@ class ProcessingModeSelector:
 
     def _render_custom_settings(self) -> dict[str, Any]:
         """Render custom settings interface."""
-        st.subheader("⚙️ Custom Processing Settings")
+        st.subheader("Custom Processing Settings")
 
         settings = {}
 
@@ -376,7 +370,7 @@ class ProcessingModeSelector:
                 for key, value in category_settings.items():
                     display_key = key.replace('_', ' ').title()
                     if isinstance(value, bool):
-                        status = "✅ Enabled" if value else "❌ Disabled"
+                        status = "Enabled" if value else "Disabled"
                         st.write(f"• {display_key}: {status}")
                     elif isinstance(value, (int, float)):
                         if 'db' in key.lower():
@@ -388,7 +382,7 @@ class ProcessingModeSelector:
 
     def _render_processing_preview(self, mode: str, settings: dict[str, Any]):
         """Render a preview of what processing will be applied."""
-        st.subheader("🔍 Processing Preview")
+        st.subheader("Processing Preview")
 
         # Estimate processing intensity
         intensity = self._calculate_processing_intensity(settings)

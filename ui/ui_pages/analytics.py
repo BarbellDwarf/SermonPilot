@@ -19,27 +19,27 @@ except ImportError:
 
 def show_analytics():
     """Main analytics interface"""
-    st.markdown('<div class="main-header">📈 Analytics</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Analytics</div>', unsafe_allow_html=True)
 
     if not st.session_state.config:
-        st.error("❌ Configuration not loaded. Please check the Settings page first.")
+        st.error("Configuration not loaded. Please check the Settings page first.")
         return
 
     # Analytics tabs
     if ANALYTICS_CHAT_AVAILABLE:
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "📊 Processing Metrics",
-            "📝 Content Analysis",
-            "💰 Cost Tracking",
-            "⚡ Performance",
-            "🎙️ SermonAudio Analytics"
+            "Processing Metrics",
+            "Content Analysis",
+            "Cost Tracking",
+            "Performance",
+            "SermonAudio Analytics"
         ])
     else:
         tab1, tab2, tab3, tab4 = st.tabs([
-            "📊 Processing Metrics",
-            "📝 Content Analysis",
-            "💰 Cost Tracking",
-            "⚡ Performance"
+            "Processing Metrics",
+            "Content Analysis",
+            "Cost Tracking",
+            "Performance"
         ])
 
     with tab1:
@@ -57,10 +57,10 @@ def show_analytics():
     # SermonAudio Analytics tab (if available)
     if ANALYTICS_CHAT_AVAILABLE:
         with tab5:
-            st.markdown("### 🎙️ SermonAudio Analytics")
+            st.markdown("### SermonAudio Analytics")
 
             # Create sub-tabs for different views
-            data_tab, chat_tab = st.tabs(["📊 Data View", "💬 Chat Interface"])
+            data_tab, chat_tab = st.tabs(["Data View", "Chat Interface"])
 
             with data_tab:
                 show_sermonaudio_data_view()
@@ -74,7 +74,7 @@ def show_analytics():
 
 def show_processing_metrics():
     """Processing statistics and success rates"""
-    st.markdown("### 📊 Processing Metrics")
+    st.markdown("### Processing Metrics")
 
     # Time range selector
     col1, col2 = st.columns([2, 1])
@@ -88,7 +88,7 @@ def show_processing_metrics():
 
     with col2:
         if st.button(
-            "🔄 Refresh Data", help="Clear cached analytics and reload from the database"
+            "Refresh Data", help="Clear cached analytics and reload from the database"
         ):
             st.cache_data.clear()
             st.rerun()
@@ -112,13 +112,13 @@ def show_processing_metrics():
 
 def show_content_analysis():
     """Show content analysis and speaker metrics"""
-    st.markdown("### 📝 Content Analysis")
+    st.markdown("### Content Analysis")
 
     # Get content data
     content_data = get_real_content_data()
 
     # Speaker activity
-    st.markdown("#### 👤 Speaker Activity")
+    st.markdown("#### Speaker Activity")
 
     speaker_stats = content_data.get('speaker_stats', [])
 
@@ -149,7 +149,7 @@ def show_content_analysis():
             st.info("No speaker data available")
 
     # Event type distribution
-    st.markdown("#### 📅 Event Type Distribution")
+    st.markdown("#### Event Type Distribution")
 
     event_data = content_data.get('event_types', [])
 
@@ -188,7 +188,7 @@ def show_content_analysis():
             st.info("No quality metrics available yet")
 
     # Content quality trends
-    st.markdown("#### ✅ Content Quality Trends")
+    st.markdown("#### Content Quality Trends")
 
     quality_data = content_data.get('quality_trends', [])
 
@@ -209,13 +209,13 @@ def show_content_analysis():
 
 def show_cost_tracking():
     """LLM API usage and cost analysis"""
-    st.markdown("### 💰 Cost Tracking")
+    st.markdown("### Cost Tracking")
 
     # Cost summary
     cost_data = get_real_cost_data()
 
     # Current month summary
-    st.markdown("#### 📊 Current Month Summary")
+    st.markdown("#### Current Month Summary")
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -260,7 +260,7 @@ def show_cost_tracking():
         )
 
     # Provider breakdown
-    st.markdown("#### 🤖 Provider Usage Breakdown")
+    st.markdown("#### Provider Usage Breakdown")
 
     provider_data = cost_data['provider_breakdown']
 
@@ -304,7 +304,7 @@ def show_cost_tracking():
             st.info("Cost tracking not yet available")
 
     # Model usage details
-    st.markdown("#### 🔧 Model Usage Details")
+    st.markdown("#### Model Usage Details")
 
     model_data = cost_data['model_usage']
     df_models = pd.DataFrame(model_data)
@@ -324,13 +324,13 @@ def show_cost_tracking():
 
 def show_performance_metrics():
     """System performance and optimization metrics"""
-    st.markdown("### ⚡ Performance Metrics")
+    st.markdown("### Performance Metrics")
 
     # Performance summary
     perf_data = get_real_performance_data()
 
     # System health
-    st.markdown("#### 🔍 System Health")
+    st.markdown("#### System Health")
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -378,7 +378,7 @@ def show_performance_metrics():
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("#### ⏱️ Processing Time Distribution")
+        st.markdown("#### Processing Time Distribution")
 
         # Use real performance data if available
         perf_data = get_real_performance_data()
@@ -407,7 +407,7 @@ def show_performance_metrics():
             st.info("No processing time data available yet")
 
     with col2:
-        st.markdown("#### 🔄 Processing Steps Performance")
+        st.markdown("#### Processing Steps Performance")
 
         step_data = perf_data['step_performance']
         df_steps = pd.DataFrame(step_data)
@@ -425,7 +425,7 @@ def show_performance_metrics():
         )
 
     # Resource usage
-    st.markdown("#### 💻 Resource Usage")
+    st.markdown("#### Resource Usage")
 
     resource_data = perf_data['resource_usage']
 
@@ -444,15 +444,12 @@ def show_performance_metrics():
         st.metric("GPU Memory", f"{resource_data.get('gpu_memory', 0):.1f}%")
 
     # Optimization recommendations
-    st.markdown("#### 💡 Optimization Recommendations")
+    st.markdown("#### Optimization Recommendations")
 
     recommendations = perf_data['recommendations']
 
     for rec in recommendations:
-        priority_color = {"High": "🔴", "Medium": "🟡", "Low": "🟢"}
-        icon = priority_color.get(rec['priority'], "🔵")
-
-        with st.expander(f"{icon} {rec['title']} ({rec['priority']} Priority)"):
+        with st.expander(f"{rec['title']} ({rec['priority']} Priority)"):
             st.write(rec['description'])
             st.write(f"**Impact:** {rec['impact']}")
             st.write(f"**Effort:** {rec['effort']}")
@@ -473,7 +470,7 @@ def _period_delta(current: float, previous: float, fmt: str) -> str | None:
 
 def show_key_metrics(metrics_data):
     """Display key processing metrics"""
-    st.markdown("#### 📊 Key Metrics")
+    st.markdown("#### Key Metrics")
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -523,7 +520,7 @@ def show_key_metrics(metrics_data):
 
 def show_success_rate_chart(metrics_data):
     """Show success rate over time"""
-    st.markdown("#### ✅ Success Rate Trend")
+    st.markdown("#### Success Rate Trend")
 
     if metrics_data.get('trend_data'):
         df = pd.DataFrame(metrics_data['trend_data'])
@@ -536,7 +533,7 @@ def show_success_rate_chart(metrics_data):
 
 def show_processing_volume_chart(metrics_data):
     """Show processing volume over time"""
-    st.markdown("#### 📈 Processing Volume")
+    st.markdown("#### Processing Volume")
 
     if metrics_data.get('volume_data'):
         df = pd.DataFrame(metrics_data['volume_data'])
@@ -549,7 +546,7 @@ def show_processing_volume_chart(metrics_data):
 
 def show_error_types_chart(metrics_data):
     """Show error type distribution"""
-    st.markdown("#### ❌ Error Types")
+    st.markdown("#### Error Types")
 
     if metrics_data.get('error_data'):
         df = pd.DataFrame(metrics_data['error_data'])
@@ -558,13 +555,13 @@ def show_error_types_chart(metrics_data):
         else:
             st.info("Insufficient error data for chart")
     elif metrics_data.get('total_errors', 0) == 0:
-        st.info("No errors recorded — great job! 🎉")
+        st.info("No errors recorded — great job!")
     else:
         st.info("No detailed error breakdown available yet")
 
 def show_processing_time_trend(metrics_data):
     """Show processing time trend"""
-    st.markdown("#### ⏱️ Processing Time Trend")
+    st.markdown("#### Processing Time Trend")
 
     if metrics_data.get('time_trend_data'):
         df = pd.DataFrame(metrics_data['time_trend_data'])
@@ -703,7 +700,7 @@ def get_real_content_data():
         event_list = []
 
         if not validated_sermon_ids:
-            st.info("💡 No validated or processed sermons found. Process some sermons first!")
+            st.info("No validated or processed sermons found. Process some sermons first!")
             # Use fallback data from processing status or create basic data
             if processing_data:
                 speaker_list = [{
@@ -825,8 +822,8 @@ def get_real_content_data():
 
     except Exception as e:
         # Show the actual error for debugging
-        st.error(f"🚫 ERROR in get_real_content_data: {str(e)}")
-        st.write(f"🔍 Exception type: {type(e).__name__}")
+        st.error(f"ERROR in get_real_content_data: {str(e)}")
+        st.write(f"Exception type: {type(e).__name__}")
         import traceback
         st.code(traceback.format_exc())
 
@@ -1045,7 +1042,7 @@ def get_validated_sermon_ids(db):
         conn.close()
 
     except Exception as e:
-        st.warning(f"⚠️ Error accessing database: {str(e)}")
+        st.warning(f"Error accessing database: {str(e)}")
 
     return list(filter(None, validated_ids))  # Remove None values
 
@@ -1118,7 +1115,7 @@ def get_sermon_analytics_batch(sermon_updater, sermon_ids):
 
             except Exception as e:
                 # Skip individual sermon if there's an error
-                st.warning(f"⚠️ Could not fetch data for sermon {sermon_id}: {str(e)}")
+                st.warning(f"Could not fetch data for sermon {sermon_id}: {str(e)}")
                 continue
 
     progress_bar.empty()
@@ -1165,11 +1162,11 @@ def get_sermon_analytics_batch(sermon_updater, sermon_ids):
 
 def show_sermonaudio_data_view():
     """Display SermonAudio analytics data in tables and charts"""
-    st.markdown("#### 📊 SermonAudio Data Overview")
+    st.markdown("#### SermonAudio Data Overview")
 
     # Show API limitation notice for views
     st.info("""
-    📝 **Note about View Data**: The SermonAudio API v2 does not provide play/view counts
+    **Note about View Data**: The SermonAudio API v2 does not provide play/view counts
     through the public API.
     View data shows as 0 due to this API limitation. Download counts and other metrics are accurate.
     """)
@@ -1190,12 +1187,12 @@ def show_sermonaudio_data_view():
 
         # Show credential status
         if not api_key or not broadcaster_id:
-            st.warning("⚠️ SermonAudio credentials not configured. Data will be mock/demo only.")
+            st.warning("SermonAudio credentials not configured. Data will be mock/demo only.")
         else:
-            st.info(f"📡 Connected to SermonAudio for broadcaster: {broadcaster_id[:8]}...")
+            st.info(f"Connected to SermonAudio for broadcaster: {broadcaster_id[:8]}...")
 
         # Data filtering options
-        st.markdown("#### 🔧 Data Options")
+        st.markdown("#### Data Options")
         col1, col2, col3 = st.columns([2, 1, 1])
 
         # Initialize default values
@@ -1203,7 +1200,7 @@ def show_sermonaudio_data_view():
         end_date = datetime.datetime.now().date()
 
         with col1:
-            use_date_range = st.checkbox("📅 Use Date Range", help="Filter sermons by date range")
+            use_date_range = st.checkbox("Use Date Range", help="Filter sermons by date range")
             if use_date_range:
                 col_start, col_end = st.columns(2)
                 with col_start:
@@ -1221,21 +1218,21 @@ def show_sermonaudio_data_view():
 
         with col2:
             fetch_all = st.checkbox(
-                "📊 Fetch All Data",
+                "Fetch All Data",
                 help="Fetch all available sermons (may take longer)",
                 value=False
             )
 
         with col3:
             if fetch_all:
-                st.info("⚠️ May take longer")
+                st.info("May take longer")
             else:
-                st.info("📊 Limited to 100 sermons")
+                st.info("Limited to 100 sermons")
 
         # Load data button
         col1, col2, col3 = st.columns([1, 1, 2])
         with col1:
-            if st.button("🔄 Load Data", help="Load SermonAudio analytics data"):
+            if st.button("Load Data", help="Load SermonAudio analytics data"):
                 with st.spinner("Loading SermonAudio data..."):
                     # Prepare parameters
                     date_range = None
@@ -1257,17 +1254,17 @@ def show_sermonaudio_data_view():
                     all_info = " (all available)" if fetch_all else ""
                     if analytics.using_mock_data:
                         st.warning(
-                            "⚠️ Could not load live data from SermonAudio. "
+                            "Could not load live data from SermonAudio. "
                             "Showing fallback data instead. Check your API credentials "
                             "and network connection."
                         )
                     else:
                         st.success(
-                            f"✅ Data loaded successfully! {count} sermons{date_info}{all_info}"
+                            f"Data loaded successfully! {count} sermons{date_info}{all_info}"
                         )
 
         with col2:
-            if st.button("📥 Export Data", help="Export data to CSV"):
+            if st.button("Export Data", help="Export data to CSV"):
                 if st.session_state.get('analytics_data'):
                     import pandas as pd
                     df = pd.DataFrame(st.session_state.analytics_data)
@@ -1281,7 +1278,7 @@ def show_sermonaudio_data_view():
 
         with col3:
             if st.session_state.get('analytics_data'):
-                st.info(f"📊 Currently showing {len(st.session_state.analytics_data)} sermons")
+                st.info(f"Currently showing {len(st.session_state.analytics_data)} sermons")
 
         # Display data if available
         if st.session_state.get('analytics_data'):
@@ -1289,12 +1286,12 @@ def show_sermonaudio_data_view():
 
             if st.session_state.get('analytics_using_mock'):
                 st.warning(
-                    "⚠️ Showing fallback data: the SermonAudio API request failed. "
+                    "Showing fallback data: the SermonAudio API request failed. "
                     "The metrics below are not live analytics."
                 )
 
             # Summary metrics
-            st.markdown("#### 📈 Key Metrics")
+            st.markdown("#### Key Metrics")
             col1, col2, col3, col4 = st.columns(4)
 
             total_sermons = len(analytics_data)
@@ -1312,7 +1309,7 @@ def show_sermonaudio_data_view():
                 st.metric("Total Likes", f"{total_likes:,}")
 
             # Top performers
-            st.markdown("#### 🏆 Top Performing Sermons")
+            st.markdown("#### Top Performing Sermons")
 
             # Sort by views
             sorted_by_views = sorted(
@@ -1339,21 +1336,21 @@ def show_sermonaudio_data_view():
             col1, col2 = st.columns(2)
 
             with col1:
-                st.markdown("##### 📊 Views Distribution")
+                st.markdown("##### Views Distribution")
                 if 'views' in df.columns:
                     st.bar_chart(df.set_index('title')['views'].head(10))
                 else:
                     st.info("Views data not available")
 
             with col2:
-                st.markdown("##### 📥 Downloads Distribution")
+                st.markdown("##### Downloads Distribution")
                 if 'downloads' in df.columns:
                     st.bar_chart(df.set_index('title')['downloads'].head(10))
                 else:
                     st.info("Downloads data not available")
 
             # Speaker analysis
-            st.markdown("#### 👨‍🏫 Speaker Analytics")
+            st.markdown("#### Speaker Analytics")
 
             # Group by speaker
             try:
@@ -1388,17 +1385,17 @@ def show_sermonaudio_data_view():
                 st.dataframe(speaker_df, width='stretch')
 
             except Exception as e:
-                st.error(f"❌ Error processing speaker data: {e}")
+                st.error(f"Error processing speaker data: {e}")
                 st.write("Raw speaker data for debugging:")
                 sample_speakers = [item.get('speaker', 'N/A') for item in analytics_data[:3]]
                 st.write(sample_speakers)
 
             # Raw data view
-            with st.expander("🔍 View Raw Data"):
+            with st.expander("View Raw Data"):
                 st.dataframe(df, width='stretch', hide_index=True)
 
         else:
-            st.info("📄 No SermonAudio data loaded. Click 'Load Data' to fetch analytics.")
+            st.info("No SermonAudio data loaded. Click 'Load Data' to fetch analytics.")
             st.markdown("""
             **Available Data:**
             - Sermon titles and descriptions
@@ -1410,9 +1407,9 @@ def show_sermonaudio_data_view():
             """)
 
     except Exception as e:
-        st.error(f"❌ Error loading SermonAudio data: {e}")
+        st.error(f"Error loading SermonAudio data: {e}")
         st.info(
-            "💡 This feature requires proper SermonAudio API configuration "
+            "This feature requires proper SermonAudio API configuration "
             "or will show mock data for demonstration."
         )
 
