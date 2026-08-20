@@ -16,7 +16,7 @@ project_root = ui_dir.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "src"))
 
-from job_queue import Job, JobResult, JobStatus, JobType  # noqa: E402
+from job_queue import Job, JobCancelledError, JobResult, JobStatus, JobType  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,10 @@ def execute_validation_job(job: Job) -> JobResult:
                 error="Missing sermon_ids parameter"
             )
 
+        if job.cancelled or job.status == JobStatus.CANCELLED:
+            job.add_log("Validation cancelled by user")
+            raise JobCancelledError("Job cancelled by user")
+
         job.update_progress(20, f"Starting validation of {len(sermon_ids)} sermons...")
 
         # Import validation components
@@ -76,6 +80,10 @@ def execute_validation_job(job: Job) -> JobResult:
 
         # Process each sermon
         for i, sermon_id in enumerate(sermon_ids):
+            if job.cancelled or job.status == JobStatus.CANCELLED:
+                job.add_log("Validation cancelled by user")
+                raise JobCancelledError("Job cancelled by user")
+
             try:
                 progress = 20 + (i / len(sermon_ids)) * 70  # 20-90% for processing
                 job.update_progress(
@@ -173,6 +181,8 @@ def execute_validation_job(job: Job) -> JobResult:
             data=results
         )
 
+    except JobCancelledError:
+        raise
     except Exception as e:
         error_msg = f"Validation job failed: {str(e)}"
         job.add_log(f"❌ {error_msg}")
@@ -200,6 +210,10 @@ def execute_sermon_import_job(job: Job) -> JobResult:
                 message="No processed sermons directory specified",
                 error="Missing processed_sermons_dir parameter"
             )
+
+        if job.cancelled or job.status == JobStatus.CANCELLED:
+            job.add_log("Sermon import cancelled by user")
+            raise JobCancelledError("Job cancelled by user")
 
         job.update_progress(
             20, f"Scanning processed sermons directory... (force_reimport={force_reimport})"
@@ -235,6 +249,10 @@ def execute_sermon_import_job(job: Job) -> JobResult:
 
         # Process each sermon folder
         for i, sermon_id in enumerate(sermon_folders):
+            if job.cancelled or job.status == JobStatus.CANCELLED:
+                job.add_log("Sermon import cancelled by user")
+                raise JobCancelledError("Job cancelled by user")
+
             try:
                 progress = 40 + (i / len(sermon_folders)) * 50  # 40-90% for processing
                 job.update_progress(
@@ -293,6 +311,8 @@ def execute_sermon_import_job(job: Job) -> JobResult:
             data=results
         )
 
+    except JobCancelledError:
+        raise
     except Exception as e:
         error_msg = f"Import job failed: {str(e)}"
         job.add_log(f"❌ {error_msg}")
@@ -319,6 +339,9 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
         - config: full config dict (used to set globals in sermon_updater)
     """
     try:
+        if job.cancelled or job.status == JobStatus.CANCELLED:
+            raise JobCancelledError("Job cancelled by user")
+
         job.update_progress(5, "Initializing sermon processing...")
 
         form_data = job.parameters.get('form_data') or {}
@@ -360,6 +383,8 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
 
         # Progress callback that updates the job
         def progress_cb(pct, msg):
+            if job.cancelled or job.status == JobStatus.CANCELLED:
+                raise JobCancelledError("Job cancelled by user")
             try:
                 job.update_progress(pct, msg)
             except Exception:
@@ -419,6 +444,8 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
                 data=result,
             )
 
+    except JobCancelledError:
+        raise
     except Exception as e:
         error_msg = f"Sermon processing job failed: {e}"
         job.add_log(f"❌ {error_msg}")
@@ -453,6 +480,10 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                 error="Missing config parameter"
             )
 
+        if job.cancelled or job.status == JobStatus.CANCELLED:
+            job.add_log("Batch processing cancelled by user")
+            raise JobCancelledError("Job cancelled by user")
+
         job.update_progress(20, f"Starting batch processing of {len(sermon_ids)} sermons...")
 
         results = {
@@ -474,12 +505,11 @@ def execute_batch_processing_job(job: Job) -> JobResult:
 
         # Process each sermon
         for i, sermon_id in enumerate(sermon_ids):
-            try:
-                # Check if job was cancelled
-                if job.status == JobStatus.CANCELLED:
-                    job.add_log("Batch processing cancelled by user")
-                    break
+            if job.cancelled or job.status == JobStatus.CANCELLED:
+                job.add_log("Batch processing cancelled by user")
+                raise JobCancelledError("Job cancelled by user")
 
+            try:
                 progress = 20 + (i / len(sermon_ids)) * 70  # 20-90% for processing
                 job.update_progress(
                     progress, f"Processing sermon {sermon_id} ({i+1}/{len(sermon_ids)})"
@@ -578,6 +608,8 @@ def execute_batch_processing_job(job: Job) -> JobResult:
             data=results
         )
 
+    except JobCancelledError:
+        raise
     except Exception as e:
         error_msg = f"Batch processing job failed: {str(e)}"
         job.add_log(f"❌ {error_msg}")
@@ -609,6 +641,10 @@ def execute_metadata_update_job(job: Job) -> JobResult:
                 error="Missing config parameter"
             )
 
+        if job.cancelled or job.status == JobStatus.CANCELLED:
+            job.add_log("Metadata update cancelled by user")
+            raise JobCancelledError("Job cancelled by user")
+
         job.update_progress(10, f"Starting metadata update for {len(sermon_ids)} sermons...")
 
         from pathlib import Path
@@ -625,6 +661,10 @@ def execute_metadata_update_job(job: Job) -> JobResult:
         }
 
         for i, sermon_id in enumerate(sermon_ids):
+            if job.cancelled or job.status == JobStatus.CANCELLED:
+                job.add_log("Metadata update cancelled by user")
+                raise JobCancelledError("Job cancelled by user")
+
             try:
                 progress = 10 + (i / len(sermon_ids)) * 80
                 job.update_progress(
@@ -655,6 +695,8 @@ def execute_metadata_update_job(job: Job) -> JobResult:
 
         return JobResult(success=True, message=summary, data=results)
 
+    except JobCancelledError:
+        raise
     except Exception as e:
         error_msg = f"Metadata update job failed: {str(e)}"
         job.add_log(f"❌ {error_msg}")
