@@ -9,7 +9,7 @@ soundfile>=0.12.1
 librosa>=0.10.1
 
 # PyTorch ecosystem (single pin, same floor as pyproject)
-torch>=2.6.0
+torch>=2.12.1+cpu
 torchaudio>=2.6.0
 
 # DeepFilterNet model (imports as 'df')

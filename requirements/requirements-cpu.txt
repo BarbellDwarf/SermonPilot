@@ -8,5 +8,5 @@
 -r requirements.txt
 
 # Per-index overrides for the torch family (single pin, same floor as pyproject)
-torch==2.6.0+cpu
+torch==2.12.1+cpu
 torchaudio==2.6.0+cpu
