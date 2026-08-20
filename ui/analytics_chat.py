@@ -108,7 +108,7 @@ class AnalyticsChatInterface:
         if refresh_button:
             with st.spinner("Refreshing analytics data..."):
                 self.initialize_rag_system(force_refresh=True)
-                st.success("Data refreshed!")
+                st.toast("Data refreshed")
                 st.rerun()
 
         # Handle message sending
@@ -213,9 +213,9 @@ class AnalyticsChatInterface:
             try:
                 stats = self.rag_system.get_collection_stats()
                 if 'error' not in stats:
-                    st.sidebar.subheader("📈 Data Status")
-                    st.sidebar.metric("Total Sermons", stats.get('total_documents', 0))
-                    st.sidebar.write(f"Last updated: {stats.get('last_updated', 'Unknown')[:19]}")
+                    st.markdown("#### 📈 Data Status")
+                    st.metric("Total Sermons", stats.get('total_documents', 0))
+                    st.write(f"Last updated: {stats.get('last_updated', 'Unknown')[:19]}")
             except Exception as e:
                 logger.error(f"Failed to get collection stats: {e}")
 
@@ -244,9 +244,7 @@ class AnalyticsChatInterface:
 
     def render_chat_settings(self):
         """Render chat settings and configuration"""
-        with st.sidebar:
-            st.subheader("🔧 Chat Settings")
-
+        with st.expander("🔧 Chat Settings", expanded=False):
             # RAG system settings
             if st.button("Reset Chat System", key="reset_rag"):
                 if self.rag_system:
@@ -254,7 +252,7 @@ class AnalyticsChatInterface:
                         self.rag_system.clear_collection()
                         st.session_state.rag_initialized = False
                         st.session_state.analytics_data = []
-                        st.success("Chat system reset!")
+                        st.toast("Chat system reset")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed to reset: {e}")
@@ -264,7 +262,7 @@ class AnalyticsChatInterface:
                 self._download_chat_history()
 
             # Embedding provider information
-            st.subheader("🔧 Embedding Provider")
+            st.markdown("#### 🔧 Embedding Provider")
             if self.rag_system:
                 try:
                     provider_info = self.rag_system.get_embedding_provider_info()
@@ -408,7 +406,7 @@ class AnalyticsChatInterface:
 
                                     if embedding_models:
                                         count = len(embedding_models)
-                                        st.success(f"Found {count} embedding models")
+                                        st.toast(f"Found {count} embedding models")
                                         # Store in session state to persist across reruns
                                         st.session_state.available_ollama_embedding_models = (
                                             embedding_models
@@ -427,16 +425,15 @@ class AnalyticsChatInterface:
                     if 'available_ollama_embedding_models' in st.session_state:
                         available_models = st.session_state.available_ollama_embedding_models
                         if available_models:
-                            with st.expander("📋 Available Ollama Models", expanded=False):
-                                st.write("**Embedding Models:**")
-                                for model in sorted(available_models):
-                                    dimensions = 768  # default
-                                    if 'large' in model.lower():
-                                        dimensions = 1024
-                                    elif 'small' in model.lower():
-                                        dimensions = 384
+                            st.write("**Embedding Models Available Locally:**")
+                            for model in sorted(available_models):
+                                dimensions = 768  # default
+                                if 'large' in model.lower():
+                                    dimensions = 1024
+                                elif 'small' in model.lower():
+                                    dimensions = 384
 
-                                    st.write(f"• **{model}** ({dimensions}D) - Available locally")
+                                st.write(f"• **{model}** ({dimensions}D) - Available locally")
                         else:
                             st.info(
                                 "No embedding models found. "
@@ -480,7 +477,7 @@ class AnalyticsChatInterface:
                                 # Switch the embedding provider
                                 success = self.rag_system.switch_embedding_provider(new_config)
                                 if success:
-                                    st.success(f"Successfully switched to {selected_model}!")
+                                    st.toast(f"Switched to {selected_model}")
                                     st.rerun()
                                 else:
                                     st.error(f"Failed to switch to {selected_model}")
