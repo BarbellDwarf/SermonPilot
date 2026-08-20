@@ -635,6 +635,8 @@ class AudioProcessor:
         if processed_chunk.ndim == 2 and processed_chunk.shape[0] == 1:
             processed_chunk = processed_chunk[0]
 
+        processed_chunk = self._sanitize_enhanced_output(processed_chunk)
+
         # Peak normalisation instead of hard clipping
         peak = np.abs(processed_chunk).max()
         if peak > 1.0:
@@ -682,31 +684,54 @@ class AudioProcessor:
             return audio_data
 
     def _pre_process_audio(self, audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
-        """Pre-process audio before DeepFilterNet: noise gate, gentle limiter.
+        """Pre-process audio before DeepFilterNet.
 
-        Mirrors the Audacity "Sermon Edit" macro pattern minimally — reduces
-        low-level noise and tames hard peaks without boosting overall level.
-        DeepFilterNet handles noise suppression; over-boosting here causes staticky
-        peaks.
+        Disabled by default: the legacy noise gate attenuated the speech body
+        of sermon recordings, and DeepFilterNet then suppressed the gated
+        signal further. When enabled via the preprocess_noise_gate config key,
+        applies a gentle peak limiter that only clamps samples above -3 dBFS
+        without scaling the rest of the signal.
         """
+        if not self.config.get("preprocess_noise_gate", False):
+            return audio_data
+
         data = audio_data.astype(np.float64)
 
         rms = np.sqrt(np.mean(data ** 2))
         if rms == 0:
             return audio_data
 
-        # 1 — Noise gate: reduce quiet sections by 12 dB
+        # Legacy noise gate: reduce quiet sections by 12 dB
         gate_threshold = rms * 0.08
         gate_mask = np.abs(data) < gate_threshold
         data[gate_mask] *= 0.25
 
-        # 2 — Gentle peak reduction: only clamp extreme outliers above -3 dBFS
+        # Gentle peak reduction: only clamp extreme outliers above -3 dBFS
         limit = 10 ** (-3.0 / 20.0)
-        peak = np.abs(data).max()
-        if peak > limit:
-            data = data * (limit / peak)
+        data = np.clip(data, -limit, limit)
 
         return data.astype(np.float32)
+
+    def _sanitize_enhanced_output(self, audio_data: np.ndarray) -> np.ndarray:
+        """Replace non-finite samples from enhancement with safe values."""
+        non_finite_count = int(np.count_nonzero(~np.isfinite(audio_data)))
+        if non_finite_count > 0:
+            logger.warning(
+                f"Enhancement produced {non_finite_count} non-finite samples, "
+                f"replacing with safe values"
+            )
+            return np.nan_to_num(audio_data, nan=0.0, posinf=1.0, neginf=-1.0)
+        return audio_data
+
+    def _output_is_destroyed(self, output_audio: np.ndarray, input_audio: np.ndarray) -> bool:
+        """Detect enhancement results that are far quieter than the input."""
+        epsilon = 1e-12
+        input_rms = np.sqrt(np.mean(np.square(input_audio.astype(np.float64))))
+        output_rms = np.sqrt(np.mean(np.square(output_audio.astype(np.float64))))
+        if input_rms <= epsilon:
+            return False
+        rms_drop_db = 20.0 * np.log10((output_rms + epsilon) / (input_rms + epsilon))
+        return rms_drop_db < -10.0
 
     def _apply_deepfilternet(self, audio_data: np.ndarray, sample_rate: int, size_threshold: int = None) -> np.ndarray:
         """Apply DeepFilterNet noise reduction.
@@ -720,9 +745,10 @@ class AudioProcessor:
 
         logger.info(f"Processing audio with DeepFilterNet (length: {len(audio_data)} samples, sr={sample_rate} Hz)")
 
-        # Pre-process: noise gate, gentle limiting
-        logger.info("Pre-processing audio before DeepFilterNet (noise gate, limiting)")
-        audio_data = self._pre_process_audio(audio_data, sample_rate)
+        # Pre-process: legacy noise gate and gentle limiting (off by default)
+        if self.config.get("preprocess_noise_gate", False):
+            logger.info("Pre-processing audio before DeepFilterNet (legacy noise gate enabled)")
+            audio_data = self._pre_process_audio(audio_data, sample_rate)
 
         # Resample entire audio to 48 kHz — DeepFilterNet's native rate
         if sample_rate != 48000:
@@ -736,6 +762,8 @@ class AudioProcessor:
                 audio_data = audio_data[0]
             sample_rate = 48000
             logger.info(f"Resampled to {sample_rate} Hz, length: {len(audio_data)} samples")
+
+        input_48k = audio_data.copy()
 
         try:
             # Use dynamic chunk size based on available memory
@@ -776,6 +804,15 @@ class AudioProcessor:
                     result = processed_tensor
                 if result.ndim == 2 and result.shape[0] == 1:
                     result = result[0]
+
+            result = self._sanitize_enhanced_output(result)
+
+            if self._output_is_destroyed(result, input_48k):
+                logger.warning(
+                    "DeepFilterNet output RMS is more than 10 dB below input RMS, "
+                    "returning input audio instead of the ruined result"
+                )
+                result = input_48k
 
             # Resample result back to original sample rate
             if original_sample_rate != 48000:
@@ -862,8 +899,10 @@ class AudioProcessor:
         """
         logger.info(f"Normalizing audio to {target_level} dB")
 
-        # Calculate current RMS level
-        rms = np.sqrt(np.mean(audio_data ** 2))
+        # Compute RMS from a float64 copy: squaring the live float32 buffer
+        # can corrupt it in place for very large arrays, ruining the audio.
+        audio_64 = audio_data.astype(np.float64)
+        rms = np.sqrt(np.mean(np.square(audio_64)))
 
         # Avoid log of zero
         if rms == 0:
@@ -877,7 +916,39 @@ class AudioProcessor:
         # Apply gain
         return self.amplify_audio(audio_data, gain_db)
 
+    def deess_high_shelves(self, audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
+        """
+        Gentle de-esser: high-shelf cut above ~6 kHz to smooth harsh sibilants
+        ('rough S' sounds) that DeepFilterNet can leave behind. Uses an FFT
+        magnitude response so the vocal body below the shelf is untouched.
 
+        Config keys (defaults shown):
+            deess_hf_db:   shelf attenuation in dB above the corner (default -3.0)
+            deess_hf_freq: shelf corner frequency in Hz (default 6000)
+        """
+        cutoff_hz = float(self.config.get("deess_hf_freq", 6000))
+        gain_db = float(self.config.get("deess_hf_db", -3.0))
+        if gain_db >= 0 or cutoff_hz <= 0:
+            return audio_data
+
+        logger.info(f"Applying gentle de-esser high shelf: {gain_db:.1f} dB above {cutoff_hz:.0f} Hz")
+        audio_64 = audio_data.astype(np.float64)
+        spectrum = np.fft.rfft(audio_64)
+        freqs = np.fft.rfftfreq(len(audio_64), 1.0 / sample_rate)
+
+        gain = np.ones_like(freqs, dtype=np.float64)
+        above = freqs > cutoff_hz
+        gain[above] = 10.0 ** (gain_db / 20.0)
+        # smooth the transition over about an octave below the corner
+        transition = (freqs <= cutoff_hz) & (freqs > cutoff_hz * 0.5)
+        t = (freqs[transition] - cutoff_hz * 0.5) / (cutoff_hz * 0.5)
+        gain[transition] = 10.0 ** ((gain_db * t ** 2) / 20.0)
+
+        result = np.fft.irfft(spectrum * gain, n=len(audio_64))
+        peak = np.abs(result).max()
+        if peak > 1.0:
+            result = result / peak
+        return result.astype(np.float32)
 
     def process_sermon_audio(self, input_path: str, output_path: str,
                            noise_reduction: bool = True,
@@ -976,6 +1047,9 @@ class AudioProcessor:
                 audio_data = self.normalize_audio(audio_data, target_level_db)
             elif amplify:
                 audio_data = self.amplify_audio(audio_data, gain_db)
+
+            # Step 3b: Gentle de-esser (high-shelf) to smooth harsh sibilants
+            audio_data = self.deess_high_shelves(audio_data, sample_rate)
 
             # Step 4: Final peak normalization before saving
             audio_data = peak_normalize(audio_data, peak_db=-1.0)
