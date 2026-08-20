@@ -9,20 +9,59 @@ import sys
 from pathlib import Path
 
 import streamlit as st
-from ui.pages import jobs, library
 import yaml
 
 OPENAI_PRESETS = {
-    "OpenAI": {"base_url": "", "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]},
-    "Azure OpenAI": {"base_url": "https://YOUR_RESOURCE.openai.azure.com", "models": ["gpt-4o", "gpt-4o-mini", "gpt-4"]},
-    "Groq": {"base_url": "https://api.groq.com/openai/v1", "models": ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]},
-    "OpenRouter": {"base_url": "https://openrouter.ai/api/v1", "models": ["openai/gpt-4o", "openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "google/gemini-2.0-flash-exp"]},
+    "OpenAI": {
+        "base_url": "",
+        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+    },
+    "Azure OpenAI": {
+        "base_url": "https://YOUR_RESOURCE.openai.azure.com",
+        "models": ["gpt-4o", "gpt-4o-mini", "gpt-4"],
+    },
+    "Groq": {
+        "base_url": "https://api.groq.com/openai/v1",
+        "models": [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-70b-versatile",
+            "llama-3.1-8b-instant",
+            "mixtral-8x7b-32768",
+        ],
+    },
+    "OpenRouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "models": [
+            "openai/gpt-4o",
+            "openai/gpt-4o-mini",
+            "anthropic/claude-3.5-sonnet",
+            "google/gemini-2.0-flash-exp",
+        ],
+    },
     "xAI": {"base_url": "https://api.x.ai/v1", "models": ["grok-beta", "grok-2-1212"]},
-    "DeepSeek": {"base_url": "https://api.deepseek.com", "models": ["deepseek-chat", "deepseek-reasoner"]},
-    "Together AI": {"base_url": "https://api.together.xyz/v1", "models": ["mistralai/Mixtral-8x22B-Instruct-v0.1", "meta-llama/Llama-3.3-70B-Instruct-Turbo"]},
+    "DeepSeek": {
+        "base_url": "https://api.deepseek.com",
+        "models": ["deepseek-chat", "deepseek-reasoner"],
+    },
+    "Together AI": {
+        "base_url": "https://api.together.xyz/v1",
+        "models": [
+            "mistralai/Mixtral-8x22B-Instruct-v0.1",
+            "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+        ],
+    },
     "Perplexity": {"base_url": "https://api.perplexity.ai", "models": ["sonar-pro", "sonar"]},
-    "Fireworks AI": {"base_url": "https://api.fireworks.ai/inference/v1", "models": ["accounts/fireworks/models/llama-v3p3-70b-instruct", "accounts/fireworks/models/llama-v3p1-8b-instruct"]},
-    "Anyscale": {"base_url": "https://api.endpoints.anyscale.com/v1", "models": ["meta-llama/Meta-Llama-3.1-70B-Instruct"]},
+    "Fireworks AI": {
+        "base_url": "https://api.fireworks.ai/inference/v1",
+        "models": [
+            "accounts/fireworks/models/llama-v3p3-70b-instruct",
+            "accounts/fireworks/models/llama-v3p1-8b-instruct",
+        ],
+    },
+    "Anyscale": {
+        "base_url": "https://api.endpoints.anyscale.com/v1",
+        "models": ["meta-llama/Meta-Llama-3.1-70B-Instruct"],
+    },
 }
 
 
@@ -172,7 +211,9 @@ def initialize_llm_session_state(llm_config):
 
     # Initialize fallback provider-specific session state
     if st.session_state.fallback_enabled:
-        initialize_provider_session_state(fallback_config, st.session_state.fallback_provider, 'fallback')
+        initialize_provider_session_state(
+            fallback_config, st.session_state.fallback_provider, 'fallback'
+        )
 
     # Validator provider settings
     validator_config = llm_config.get('validator', {})
@@ -183,7 +224,9 @@ def initialize_llm_session_state(llm_config):
 
     # Initialize validator provider-specific session state
     if st.session_state.validator_enabled:
-        initialize_provider_session_state(validator_config, st.session_state.validator_provider, 'validator')
+        initialize_provider_session_state(
+            validator_config, st.session_state.validator_provider, 'validator'
+        )
 
 def initialize_provider_session_state(provider_config, provider_type, key_prefix):
     """Initialize provider-specific session state values from config"""
@@ -207,19 +250,25 @@ def initialize_provider_session_state(provider_config, provider_type, key_prefix
             if f'{key_prefix}_openai_url' not in st.session_state:
                 st.session_state[f'{key_prefix}_openai_url'] = settings.get('base_url', '')
             if f'{key_prefix}_openai_model' not in st.session_state:
-                st.session_state[f'{key_prefix}_openai_model'] = settings.get('model', 'gpt-4o-mini')
+                st.session_state[f'{key_prefix}_openai_model'] = settings.get(
+                    'model', 'gpt-4o-mini'
+                )
 
         elif provider_type == 'anthropic':
             if f'{key_prefix}_anthropic_key' not in st.session_state:
                 st.session_state[f'{key_prefix}_anthropic_key'] = settings.get('api_key', '')
             if f'{key_prefix}_anthropic_model' not in st.session_state:
-                st.session_state[f'{key_prefix}_anthropic_model'] = settings.get('model', 'claude-3-5-sonnet-20241022')
+                st.session_state[f'{key_prefix}_anthropic_model'] = settings.get(
+                    'model', 'claude-3-5-sonnet-20241022'
+                )
 
         elif provider_type == 'google':
             if f'{key_prefix}_google_key' not in st.session_state:
                 st.session_state[f'{key_prefix}_google_key'] = settings.get('api_key', '')
             if f'{key_prefix}_google_model' not in st.session_state:
-                st.session_state[f'{key_prefix}_google_model'] = settings.get('model', 'gemini-1.5-flash')
+                st.session_state[f'{key_prefix}_google_model'] = settings.get(
+                    'model', 'gemini-1.5-flash'
+                )
 
         # Clear cached models when API key changes
         if provider_type in ['openai', 'anthropic', 'google']:
@@ -365,7 +414,9 @@ def show_ollama_settings(label, config, key_prefix):
     with col2:
         # Auto-refresh models when host changes or button clicked
         available_models = []
-        refresh_clicked = st.button(f"🔄 Refresh {label} Models", key=f"{key_prefix}_refresh_models")
+        refresh_clicked = st.button(
+            f"🔄 Refresh {label} Models", key=f"{key_prefix}_refresh_models"
+        )
 
         if refresh_clicked or not st.session_state.get(f"{key_prefix}_ollama_models"):
             try:
@@ -388,14 +439,14 @@ def show_ollama_settings(label, config, key_prefix):
         cached_models = st.session_state.get(f"{key_prefix}_ollama_models", [])
 
         if cached_models:
-            model = st.selectbox(
+            st.selectbox(
                 f"{label} Ollama Model",
                 options=cached_models,
                 key=f"{key_prefix}_ollama_model",
                 help="Select from available Ollama models"
             )
         else:
-            model = st.text_input(
+            st.text_input(
                 f"{label} Ollama Model",
                 key=f"{key_prefix}_ollama_model",
                 help="Enter model name (click Refresh to see available models)"
@@ -462,13 +513,13 @@ def show_openai_settings(label, config, key_prefix):
             model_options = cached_models[:20]
 
         if model_options and len(model_options) > 1:
-            model = st.selectbox(
+            st.selectbox(
                 f"{label} Model",
                 options=model_options,
                 key=f"{key_prefix}_openai_model"
             )
         else:
-            model = st.text_input(
+            st.text_input(
                 f"{label} Model",
                 key=f"{key_prefix}_openai_model"
             )
@@ -496,7 +547,9 @@ def show_anthropic_settings(label, config, key_prefix):
             'claude-3-haiku-20240307'
         ]
 
-        if api_key and st.button(f"🔄 Load {label} Models", key=f"{key_prefix}_load_anthropic_models"):
+        if api_key and st.button(
+            f"🔄 Load {label} Models", key=f"{key_prefix}_load_anthropic_models"
+        ):
             try:
                 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
                 from llm_manager import AnthropicProvider
@@ -541,7 +594,7 @@ def show_anthropic_settings(label, config, key_prefix):
                 from llm_manager import AnthropicProvider
 
                 provider = AnthropicProvider({'api_key': api_key, 'model': model})
-                test_response = provider.chat([{"role": "user", "content": "Hello, this is a test."}])
+                provider.chat([{"role": "user", "content": "Hello, this is a test."}])
                 st.success("✅ Anthropic connection successful!")
             except Exception as e:
                 st.error(f"❌ Connection failed: {e}")
@@ -614,17 +667,23 @@ def show_google_settings(label, config, key_prefix):
                 from llm_manager import GoogleProvider
 
                 provider = GoogleProvider({'api_key': api_key, 'model': model})
-                test_response = provider.chat([{"role": "user", "content": "Hello, this is a test."}])
+                provider.chat([{"role": "user", "content": "Hello, this is a test."}])
                 st.success("✅ Google AI connection successful!")
             except Exception as e:
                 st.error(f"❌ Connection failed: {e}")
 
-    st.info("💡 Google AI endpoint (https://generativelanguage.googleapis.com/v1beta) is automatically configured")
+    st.info(
+        "💡 Google AI endpoint (https://generativelanguage.googleapis.com/v1beta) "
+        "is automatically configured"
+    )
 
 def show_embedding_settings():
     """Embedding provider configuration for RAG system"""
     st.markdown("### 🧠 Embedding Provider Configuration")
-    st.markdown("Configure embedding providers for the RAG (Retrieval-Augmented Generation) system used in analytics.")
+    st.markdown(
+        "Configure embedding providers for the RAG (Retrieval-Augmented Generation) "
+        "system used in analytics."
+    )
 
     config = st.session_state.get('config') or {}
     embeddings_config = config.get('embeddings', {})
@@ -655,7 +714,9 @@ def show_embedding_settings():
 
     # Provider-specific settings
     if primary_provider == "sentence_transformers":
-        show_sentence_transformers_settings("Primary", primary_config.get('sentence_transformers', {}), "primary")
+        show_sentence_transformers_settings(
+            "Primary", primary_config.get('sentence_transformers', {}), "primary"
+        )
     elif primary_provider == "openai":
         show_openai_embedding_settings("Primary", primary_config.get('openai', {}), "primary")
     elif primary_provider == "ollama":
@@ -663,7 +724,10 @@ def show_embedding_settings():
 
     # Fallback Providers
     st.markdown("#### 🥈 Fallback Embedding Providers")
-    st.markdown("Configure multiple fallback providers that will be tried in order if the primary provider fails.")
+    st.markdown(
+        "Configure multiple fallback providers that will be tried in order "
+        "if the primary provider fails."
+    )
 
     fallback_config = embeddings_config.get('fallback', [])
 
@@ -672,13 +736,13 @@ def show_embedding_settings():
         st.markdown("**Current Fallback Providers:**")
         for i, fallback in enumerate(fallback_config):
             col1, col2, col3 = st.columns([2, 2, 1])
-            
+
             with col1:
                 st.write(f"{i+1}. **{fallback.get('provider', 'unknown')}**")
-            
+
             with col2:
                 st.write(f"Model: `{fallback.get('model', 'default')}`")
-            
+
             with col3:
                 if st.button("🗑️", key=f"remove_fallback_{i}", help="Remove this fallback provider"):
                     fallback_config.pop(i)
@@ -686,27 +750,42 @@ def show_embedding_settings():
 
     # Add new fallback provider
     st.markdown("**Add New Fallback Provider:**")
-    
+
     col1, col2, col3 = st.columns([2, 2, 1])
-    
+
     with col1:
         new_fallback_provider = st.selectbox(
             "Provider Type",
             options=["sentence_transformers", "openai", "ollama"],
             key="new_fallback_provider"
         )
-    
+
     with col2:
         if new_fallback_provider == "sentence_transformers":
-            model_options = ["all-MiniLM-L6-v2", "all-mpnet-base-v2", "all-distilroberta-v1", "paraphrase-multilingual-MiniLM-L12-v2"]
-            new_fallback_model = st.selectbox("Model", options=model_options, key="new_fallback_st_model")
+            model_options = [
+                "all-MiniLM-L6-v2", "all-mpnet-base-v2", "all-distilroberta-v1",
+                "paraphrase-multilingual-MiniLM-L12-v2",
+            ]
+            new_fallback_model = st.selectbox(
+                "Model", options=model_options, key="new_fallback_st_model"
+            )
         elif new_fallback_provider == "openai":
-            model_options = ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"]
-            new_fallback_model = st.selectbox("Model", options=model_options, key="new_fallback_openai_model")
+            model_options = [
+                "text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002",
+            ]
+            new_fallback_model = st.selectbox(
+                "Model", options=model_options, key="new_fallback_openai_model"
+            )
         elif new_fallback_provider == "ollama":
-            model_options = ["nomic-embed-text", "mxbai-embed-large", "snowflake-arctic-embed:s", "snowflake-arctic-embed:m", "snowflake-arctic-embed:l"]
-            new_fallback_model = st.selectbox("Model", options=model_options, key="new_fallback_ollama_model")
-    
+            model_options = [
+                "nomic-embed-text", "mxbai-embed-large",
+                "snowflake-arctic-embed:s", "snowflake-arctic-embed:m",
+                "snowflake-arctic-embed:l",
+            ]
+            new_fallback_model = st.selectbox(
+                "Model", options=model_options, key="new_fallback_ollama_model"
+            )
+
     with col3:
         if st.button("➕ Add", key="add_fallback_provider"):
             new_fallback = {
@@ -725,7 +804,11 @@ def show_embedding_settings():
                 st.warning("This provider and model combination already exists")
 
     # Info about hash fallback
-    st.info("💡 **Hash-based Fallback**: A hash-based embedding provider is automatically added as the final fallback to ensure the system works offline without any external dependencies.")
+    st.info(
+        "💡 **Hash-based Fallback**: A hash-based embedding provider is automatically "
+        "added as the final fallback to ensure the system works offline without any "
+        "external dependencies."
+    )
 
     # Save button
     if st.button("💾 Save Embedding Settings", type="primary"):
@@ -733,44 +816,54 @@ def show_embedding_settings():
 
 def initialize_embedding_session_state(embeddings_config):
     """Initialize session state values from embedding config if not already set"""
-    
+
     # Primary provider settings
     primary_config = embeddings_config.get('primary', {})
     if 'primary_embedding_provider' not in st.session_state:
-        st.session_state.primary_embedding_provider = primary_config.get('provider', 'sentence_transformers')
-    
+        st.session_state.primary_embedding_provider = primary_config.get(
+            'provider', 'sentence_transformers'
+        )
+
     # Initialize primary provider-specific session state
-    initialize_embedding_provider_session_state(primary_config, st.session_state.primary_embedding_provider, 'primary')
+    initialize_embedding_provider_session_state(
+        primary_config, st.session_state.primary_embedding_provider, 'primary'
+    )
 
 def initialize_embedding_provider_session_state(provider_config, provider_type, key_prefix):
     """Initialize embedding provider-specific session state values from config"""
     if provider_type in provider_config:
         settings = provider_config[provider_type]
-        
+
         if provider_type == 'sentence_transformers':
             if f'{key_prefix}_st_model' not in st.session_state:
-                st.session_state[f'{key_prefix}_st_model'] = settings.get('model', 'all-MiniLM-L6-v2')
-                
+                st.session_state[f'{key_prefix}_st_model'] = settings.get(
+                    'model', 'all-MiniLM-L6-v2'
+                )
+
         elif provider_type == 'openai':
             if f'{key_prefix}_openai_embedding_key' not in st.session_state:
                 st.session_state[f'{key_prefix}_openai_embedding_key'] = settings.get('api_key', '')
             if f'{key_prefix}_openai_embedding_url' not in st.session_state:
                 st.session_state[f'{key_prefix}_openai_embedding_url'] = settings.get('base_url', 'https://api.openai.com/v1')
             if f'{key_prefix}_openai_embedding_model' not in st.session_state:
-                st.session_state[f'{key_prefix}_openai_embedding_model'] = settings.get('model', 'text-embedding-3-small')
-                
+                st.session_state[f'{key_prefix}_openai_embedding_model'] = settings.get(
+                    'model', 'text-embedding-3-small'
+                )
+
         elif provider_type == 'ollama':
             if f'{key_prefix}_ollama_embedding_host' not in st.session_state:
                 st.session_state[f'{key_prefix}_ollama_embedding_host'] = settings.get('host', 'http://localhost:11434')
             if f'{key_prefix}_ollama_embedding_model' not in st.session_state:
-                st.session_state[f'{key_prefix}_ollama_embedding_model'] = settings.get('model', 'nomic-embed-text')
+                st.session_state[f'{key_prefix}_ollama_embedding_model'] = settings.get(
+                    'model', 'nomic-embed-text'
+                )
 
 def show_sentence_transformers_settings(label, config, key_prefix):
     """Show Sentence Transformers embedding settings"""
     st.markdown(f"**{label} Sentence Transformers Configuration**")
-    
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
         model_options = [
             "all-MiniLM-L6-v2",      # 384D - Fast, good quality (default)
@@ -778,102 +871,104 @@ def show_sentence_transformers_settings(label, config, key_prefix):
             "all-distilroberta-v1",  # 768D - Good balance
             "paraphrase-multilingual-MiniLM-L12-v2"  # 384D - Multilingual
         ]
-        
+
         model = st.selectbox(
             f"{label} Model",
             options=model_options,
             key=f"{key_prefix}_st_model",
             help="Select from available sentence transformer models"
         )
-    
+
     with col2:
         # Show model info
         model_info = {
             "all-MiniLM-L6-v2": "384D • Fast • Good quality",
-            "all-mpnet-base-v2": "768D • Higher quality • Slower", 
+            "all-mpnet-base-v2": "768D • Higher quality • Slower",
             "all-distilroberta-v1": "768D • Good balance",
             "paraphrase-multilingual-MiniLM-L12-v2": "384D • Multilingual"
         }
-        
+
         st.info(f"**Model Info:** {model_info.get(model, 'Local sentence transformer model')}")
-        
+
         if st.button(f"📥 Download {label} Model", key=f"{key_prefix}_download_st"):
             download_sentence_transformer_model(model)
 
 def show_openai_embedding_settings(label, config, key_prefix):
     """Show OpenAI embedding settings"""
     st.markdown(f"**{label} OpenAI Embeddings Configuration**")
-    
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
-        api_key = st.text_input(
+        st.text_input(
             f"{label} API Key",
             type="password",
             key=f"{key_prefix}_openai_embedding_key",
             help="Your OpenAI API key"
         )
-        
-        base_url = st.text_input(
+
+        st.text_input(
             f"{label} Base URL",
             key=f"{key_prefix}_openai_embedding_url",
             help="Base URL for OpenAI-compatible embedding API"
         )
-    
+
     with col2:
         model_options = [
             "text-embedding-3-small",  # 1536D - Fast, cost-effective
             "text-embedding-3-large",  # 3072D - Highest quality
             "text-embedding-ada-002"   # 1536D - Legacy model
         ]
-        
+
         model = st.selectbox(
             f"{label} Model",
             options=model_options,
             key=f"{key_prefix}_openai_embedding_model",
             help="Select from available OpenAI embedding models"
         )
-        
+
         # Show model info
         model_info = {
             "text-embedding-3-small": "1536D • Fast • Cost-effective",
             "text-embedding-3-large": "3072D • Highest quality",
             "text-embedding-ada-002": "1536D • Legacy model"
         }
-        
+
         st.info(f"**Model Info:** {model_info.get(model, 'OpenAI embedding model')}")
 
 def show_ollama_embedding_settings(label, config, key_prefix):
     """Show Ollama embedding settings with model refresh"""
     st.markdown(f"**{label} Ollama Embeddings Configuration**")
-    
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
         host = st.text_input(
             f"{label} Ollama Host",
             key=f"{key_prefix}_ollama_embedding_host",
             help="Ollama server host URL"
         )
-    
+
     with col2:
         # Auto-refresh models when host changes or button clicked
-        refresh_clicked = st.button(f"🔄 Refresh {label} Models", key=f"{key_prefix}_refresh_embedding_models")
-        
+        refresh_clicked = st.button(
+            f"🔄 Refresh {label} Models", key=f"{key_prefix}_refresh_embedding_models"
+        )
+
         if refresh_clicked or not st.session_state.get(f"{key_prefix}_ollama_embedding_models"):
             try:
                 # Import here to avoid issues if not installed
                 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
                 from llm_manager import OllamaProvider
-                
+
                 ollama_provider = OllamaProvider({'host': host})
                 available_models = ollama_provider.list_models()
-                
+
                 # Filter for embedding models
                 embedding_models = [m for m in available_models if 'embed' in m.lower()]
-                
+
                 st.session_state[f"{key_prefix}_ollama_embedding_models"] = embedding_models
-                
+
                 if embedding_models:
                     st.success(f"Found {len(embedding_models)} embedding models")
                 else:
@@ -881,13 +976,17 @@ def show_ollama_embedding_settings(label, config, key_prefix):
             except Exception as e:
                 st.error(f"Failed to fetch models: {e}")
                 st.info(f"Make sure Ollama is running at {host}")
-        
+
         # Get cached models if available
         cached_models = st.session_state.get(f"{key_prefix}_ollama_embedding_models", [])
-        default_models = ["nomic-embed-text", "mxbai-embed-large", "snowflake-arctic-embed:s", "snowflake-arctic-embed:m", "snowflake-arctic-embed:l"]
-        
+        default_models = [
+            "nomic-embed-text", "mxbai-embed-large",
+            "snowflake-arctic-embed:s", "snowflake-arctic-embed:m",
+            "snowflake-arctic-embed:l",
+        ]
+
         available_models = cached_models if cached_models else default_models
-        
+
         if available_models:
             model = st.selectbox(
                 f"{label} Model",
@@ -901,16 +1000,16 @@ def show_ollama_embedding_settings(label, config, key_prefix):
                 key=f"{key_prefix}_ollama_embedding_model",
                 help="Enter embedding model name (click Refresh to see available models)"
             )
-        
+
         # Show model info if known
         model_info = {
             "nomic-embed-text": "768D • General purpose embedding",
             "mxbai-embed-large": "1024D • High quality embedding",
             "snowflake-arctic-embed:s": "384D • Small, fast embedding",
-            "snowflake-arctic-embed:m": "768D • Medium quality embedding", 
+            "snowflake-arctic-embed:m": "768D • Medium quality embedding",
             "snowflake-arctic-embed:l": "1024D • Large, high quality"
         }
-        
+
         if model in model_info:
             st.info(f"**Model Info:** {model_info[model]}")
 
@@ -932,26 +1031,28 @@ def test_embedding_provider(provider, config):
             # Import the embedding manager
             sys.path.insert(0, str(Path(__file__).parent))
             from embedding_manager import EmbeddingManager
-            
+
             test_config = {
                 'primary': {
                     'provider': provider,
                     provider: config
                 }
             }
-            
+
             embedding_manager = EmbeddingManager(test_config)
-            
+
             # Test with a simple sentence
             test_text = "This is a test sentence for embedding generation."
             embeddings = embedding_manager.get_embeddings([test_text])
-            
+
             if embeddings and len(embeddings) == 1 and len(embeddings[0]) > 0:
                 dimensions = len(embeddings[0])
-                st.success(f"✅ {provider.title()} provider working! Generated {dimensions}D embedding.")
+                st.success(
+                    f"✅ {provider.title()} provider working! Generated {dimensions}D embedding."
+                )
             else:
                 st.error(f"❌ {provider.title()} provider test failed - no embeddings generated")
-                
+
     except Exception as e:
         st.error(f"❌ {provider.title()} provider test failed: {e}")
 
@@ -959,25 +1060,25 @@ def save_embedding_settings():
     """Save embedding settings to configuration"""
     if not st.session_state.get('config'):
         st.session_state.config = {}
-    
+
     # Initialize embeddings config if it doesn't exist
     if 'embeddings' not in st.session_state.config:
         st.session_state.config['embeddings'] = {}
-    
+
     embeddings_config = st.session_state.config['embeddings']
-    
+
     # Save Primary Provider Settings
     primary_provider = st.session_state.get('primary_embedding_provider', 'sentence_transformers')
     if 'primary' not in embeddings_config:
         embeddings_config['primary'] = {}
     embeddings_config['primary']['provider'] = primary_provider
-    
+
     # Save primary provider-specific settings
     save_embedding_provider_settings(embeddings_config['primary'], primary_provider, 'primary')
-    
+
     # Save fallback providers (if they exist in the session)
     # Note: Fallback providers are managed through the UI directly modifying the config
-    
+
     # Save to file
     if save_config_to_file(st.session_state.config):
         st.success("✅ Embedding settings saved and configuration reloaded!")
@@ -986,27 +1087,29 @@ def save_embedding_provider_settings(provider_config, provider_type, key_prefix)
     """Save embedding provider-specific settings from session state"""
     if provider_type not in provider_config:
         provider_config[provider_type] = {}
-    
+
     provider_settings = provider_config[provider_type]
-    
+
     if provider_type == 'sentence_transformers':
         model = st.session_state.get(f'{key_prefix}_st_model', 'all-MiniLM-L6-v2')
         provider_settings['model'] = model
-        
+
     elif provider_type == 'openai':
         api_key = st.session_state.get(f'{key_prefix}_openai_embedding_key', '')
         base_url = st.session_state.get(f'{key_prefix}_openai_embedding_url', 'https://api.openai.com/v1')
-        model = st.session_state.get(f'{key_prefix}_openai_embedding_model', 'text-embedding-3-small')
-        
+        model = st.session_state.get(
+            f'{key_prefix}_openai_embedding_model', 'text-embedding-3-small'
+        )
+
         if api_key:
             provider_settings['api_key'] = api_key
         provider_settings['base_url'] = base_url
         provider_settings['model'] = model
-        
+
     elif provider_type == 'ollama':
         host = st.session_state.get(f'{key_prefix}_ollama_embedding_host', 'http://localhost:11434')
         model = st.session_state.get(f'{key_prefix}_ollama_embedding_model', 'nomic-embed-text')
-        
+
         provider_settings['host'] = host
         provider_settings['model'] = model
 
@@ -1027,7 +1130,11 @@ def show_audio_settings():
         "Audio Enhancement Method",
         options=methods,
         index=index,
-        help="DeepFilterNet: standard (best for speech). Clear-Natural: gentler noise suppression. Clear-Studio: aggressive, podcast-ready. Custom: point to any ONNX model on HuggingFace."
+        help=(
+            "DeepFilterNet: standard (best for speech). Clear-Natural: gentler noise "
+            "suppression. Clear-Studio: aggressive, podcast-ready. Custom: point to any "
+            "ONNX model on HuggingFace."
+        )
     )
 
     if enhancement_method == "custom":
@@ -1112,7 +1219,10 @@ def show_transcription_settings():
         "whisper_openrouter": "OpenRouter Whisper API",
     }
     current_backend = transcription_cfg.get('backend', 'faster_whisper_local')
-    current_index = backend_options.index(current_backend) if current_backend in backend_options else 0
+    current_index = (
+        backend_options.index(current_backend)
+        if current_backend in backend_options else 0
+    )
     backend_key = st.selectbox(
         "Transcription Backend",
         options=backend_options,
@@ -1128,12 +1238,15 @@ def show_transcription_settings():
         col1, col2 = st.columns(2)
 
         with col1:
+            model_options = [
+                "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium",
+                "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo",
+            ]
             local_model = st.selectbox(
                 "Model",
-                options=["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo"],
-                index=["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo"].index(
-                    local_cfg.get('model', 'base')
-                ) if local_cfg.get('model', 'base') in ["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo"] else 2,
+                options=model_options,
+                index=model_options.index(local_cfg.get('model', 'base'))
+                if local_cfg.get('model', 'base') in model_options else 2,
                 help="Model size. Larger = better accuracy but slower"
             )
             device = st.selectbox(
@@ -1147,7 +1260,9 @@ def show_transcription_settings():
             compute_type = st.selectbox(
                 "Compute Type",
                 options=["float16", "float32", "int8_float16", "int8"],
-                index=["float16", "float32", "int8_float16", "int8"].index(local_cfg.get('compute_type', 'float16')),
+                index=["float16", "float32", "int8_float16", "int8"].index(
+                    local_cfg.get('compute_type', 'float16')
+                ),
                 help="Floating point precision for the model"
             )
             language = st.text_input(
@@ -1157,7 +1272,9 @@ def show_transcription_settings():
             )
 
         if st.button("💾 Save Local Transcription Settings", type="primary"):
-            save_transcription_settings(backend_key, local_model, device, compute_type, language, None, None, None)
+            save_transcription_settings(
+                backend_key, local_model, device, compute_type, language, None, None, None
+            )
 
     elif backend_key == "whisper_openai":
         openai_cfg = transcription_cfg.get('whisper_openai', {})
@@ -1186,7 +1303,9 @@ def show_transcription_settings():
             )
 
         if st.button("💾 Save OpenAI Transcription Settings", type="primary"):
-            save_transcription_settings(backend_key, None, None, None, None, api_key, base_url, model)
+            save_transcription_settings(
+                backend_key, None, None, None, None, api_key, base_url, model
+            )
 
     elif backend_key == "whisper_openrouter":
         or_cfg = transcription_cfg.get('whisper_openrouter', {})
@@ -1215,9 +1334,13 @@ def show_transcription_settings():
             )
 
         if st.button("💾 Save OpenRouter Transcription Settings", type="primary"):
-            save_transcription_settings(backend_key, None, None, None, None, api_key, base_url, model)
+            save_transcription_settings(
+                backend_key, None, None, None, None, api_key, base_url, model
+            )
 
-def save_transcription_settings(backend, local_model, device, compute_type, language, api_key, base_url, model):
+def save_transcription_settings(
+    backend, local_model, device, compute_type, language, api_key, base_url, model
+):
     """Save transcription settings to configuration"""
     if not st.session_state.get('config'):
         st.session_state.config = {}
@@ -1303,19 +1426,19 @@ def show_validation_settings():
     with col1:
         st.markdown("**Description Settings:**")
 
-        desc_update_missing = st.checkbox(
+        st.checkbox(
             "Update if Missing",
             value=desc_config.get('update_if_missing', True),
             key="desc_update_missing"
         )
 
-        desc_update_minimal = st.checkbox(
+        st.checkbox(
             "Update if Minimal",
             value=desc_config.get('update_if_minimal', True),
             key="desc_update_minimal"
         )
 
-        desc_min_length = st.number_input(
+        st.number_input(
             "Min Length Threshold",
             value=desc_config.get('min_length_threshold', 50),
             min_value=10,
@@ -1328,19 +1451,19 @@ def show_validation_settings():
 
         hashtag_config = metadata_config.get('hashtags', {})
 
-        hash_update_missing = st.checkbox(
+        st.checkbox(
             "Update if Missing",
             value=hashtag_config.get('update_if_missing', True),
             key="hash_update_missing"
         )
 
-        hash_update_minimal = st.checkbox(
+        st.checkbox(
             "Update if Minimal",
             value=hashtag_config.get('update_if_minimal', True),
             key="hash_update_minimal"
         )
 
-        hash_min_length = st.number_input(
+        st.number_input(
             "Min Length Threshold",
             value=hashtag_config.get('min_length_threshold', 10),
             min_value=5,
@@ -1376,15 +1499,15 @@ def show_prompt_templates():
     for key, label in template_names.items():
         tmpl = templates.get(key, {})
         with st.expander(f"{'✅' if tmpl.get('enabled', True) else '⏸️'} {label}", expanded=False):
-            enabled = st.checkbox("Enabled", value=tmpl.get('enabled', True), key=f"pt_{key}_enabled")
-            system_prompt = st.text_area(
+            st.checkbox("Enabled", value=tmpl.get('enabled', True), key=f"pt_{key}_enabled")
+            st.text_area(
                 "System Prompt",
                 value=tmpl.get('system', ''),
                 height=60,
                 key=f"pt_{key}_system",
                 help="System-level instruction for the LLM. Leave empty to omit."
             )
-            user_prompt = st.text_area(
+            st.text_area(
                 "User Prompt",
                 value=tmpl.get('user', ''),
                 height=200,
@@ -1498,9 +1621,10 @@ def show_yaml_backup_restore():
 def show_sql_config_management():
     """SQL-based config management editor, import/export, history"""
     from ui.ui_pages.config_management import (
-        show_config_editor, show_import_export, show_config_history,
-        show_database_management,
-        SQL_CONFIG_AVAILABLE
+        SQL_CONFIG_AVAILABLE,
+        show_config_editor,
+        show_config_history,
+        show_import_export,
     )
 
     if not SQL_CONFIG_AVAILABLE:

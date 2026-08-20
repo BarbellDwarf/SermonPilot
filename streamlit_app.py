@@ -45,9 +45,18 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "src"))
 sys.path.insert(0, str(ui_dir))
 
-from ui.pages import (dashboard, new_sermon, batch_update, validation,
-                       jobs, sermon_import, library, analytics, settings)
-from ui.shared_navigation import render_sidebar_extras
+from ui.pages import (  # noqa: E402
+    analytics,
+    batch_update,
+    dashboard,
+    jobs,
+    library,
+    new_sermon,
+    sermon_import,
+    settings,
+    validation,
+)
+from ui.shared_navigation import render_sidebar_extras  # noqa: E402
 
 # Configure Streamlit page
 st.set_page_config(
@@ -71,13 +80,13 @@ st.markdown("""
         --text-color: #f1f5f9;
         --border-color: rgba(16, 185, 129, 0.3);
     }
-    
+
     [data-theme="light"] {
         --background-color: rgba(16, 185, 129, 0.1);
         --text-color: #334155;
         --border-color: rgba(16, 185, 129, 0.2);
     }
-    
+
     /* Auto-detect dark mode */
     @media (prefers-color-scheme: dark) {
         :root {
@@ -86,7 +95,7 @@ st.markdown("""
             --border-color: rgba(16, 185, 129, 0.3);
         }
     }
-    
+
     @media (prefers-color-scheme: light) {
         :root {
             --background-color: rgba(16, 185, 129, 0.1);
@@ -94,7 +103,7 @@ st.markdown("""
             --border-color: rgba(16, 185, 129, 0.2);
         }
     }
-    
+
     .main-header {
         font-size: 2.5rem;
         font-weight: bold;
@@ -102,7 +111,7 @@ st.markdown("""
         margin-bottom: 1rem;
         text-align: center;
     }
-    
+
     .status-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 1rem;
@@ -110,7 +119,7 @@ st.markdown("""
         color: white;
         margin: 0.5rem 0;
     }
-    
+
     .metric-card {
         background: white;
         padding: 1rem;
@@ -118,22 +127,22 @@ st.markdown("""
         border: 1px solid #e5e7eb;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
-    
+
     .success-text {
         color: #10b981;
         font-weight: bold;
     }
-    
+
     .error-text {
         color: #ef4444;
         font-weight: bold;
     }
-    
+
     .warning-text {
         color: #f59e0b;
         font-weight: bold;
     }
-    
+
 </style>
 """, unsafe_allow_html=True)
 
