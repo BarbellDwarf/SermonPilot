@@ -353,10 +353,15 @@ class LLMManager:
 
             # Check if fallback provider has required configuration
             try:
-                if fallback_provider_type in ['openai', 'anthropic', 'xai', 'google', 'groq', 'openrouter']:
+                if fallback_provider_type in [
+                    'openai', 'anthropic', 'xai', 'google', 'groq', 'openrouter'
+                ]:
                     # These providers require an API key
                     if not fallback_provider_config.get('api_key'):
-                        logger.info(f"Fallback provider {fallback_provider_type} disabled: no API key configured")
+                        logger.info(
+                            f"Fallback provider {fallback_provider_type} disabled: "
+                            "no API key configured"
+                        )
                         self.fallback_provider = None
                     else:
                         self.fallback_provider = self._create_provider(
@@ -435,12 +440,12 @@ class LLMManager:
             Exception: If both primary and fallback providers fail
         """
         start_time = time.time()
-        
+
         if self.primary_provider:
             try:
                 response = self.primary_provider.chat(messages)
                 duration_ms = int((time.time() - start_time) * 1000)
-                
+
                 # Log the successful API usage
                 self._log_api_usage(
                     provider=self._get_provider_name(self.primary_provider),
@@ -452,12 +457,12 @@ class LLMManager:
                     sermon_id=sermon_id,
                     status="success"
                 )
-                
+
                 logger.info(f"Primary provider succeeded: {type(self.primary_provider).__name__}")
                 return response
             except Exception as e:
                 logger.warning(f"Primary provider failed: {e}")
-                
+
                 # Log the failed API usage
                 duration_ms = int((time.time() - start_time) * 1000)
                 self._log_api_usage(
@@ -477,7 +482,7 @@ class LLMManager:
             try:
                 response = self.fallback_provider.chat(messages)
                 duration_ms = int((time.time() - start_time) * 1000)
-                
+
                 # Log the successful fallback API usage
                 self._log_api_usage(
                     provider=self._get_provider_name(self.fallback_provider),
@@ -489,12 +494,12 @@ class LLMManager:
                     sermon_id=sermon_id,
                     status="success"
                 )
-                
+
                 logger.info(f"Fallback provider succeeded: {type(self.fallback_provider).__name__}")
                 return response
             except Exception as e:
                 logger.error(f"Fallback provider failed: {e}")
-                
+
                 # Log the failed fallback API usage
                 duration_ms = int((time.time() - start_time) * 1000)
                 self._log_api_usage(
@@ -532,7 +537,9 @@ class LLMManager:
         """Rough token estimation (4 chars per token for English)"""
         return len(text) // 4
 
-    def _estimate_cost(self, provider_name: str, model: str, input_tokens: int, output_tokens: int) -> float:
+    def _estimate_cost(
+        self, provider_name: str, model: str, input_tokens: int, output_tokens: int
+    ) -> float:
         """Estimate cost based on provider and model"""
         # Simple cost estimation - in reality this would be more sophisticated
         cost_per_1k_tokens = {
@@ -565,13 +572,15 @@ class LLMManager:
             },
             'ollama': {}  # Ollama is free for local models
         }
-        
+
         if provider_name.lower() == 'ollama':
             return 0.0
-            
+
         provider_costs = cost_per_1k_tokens.get(provider_name.lower(), {})
-        cost_per_token = provider_costs.get(model.lower(), 0.001) / 1000  # Default to $0.001 per 1k tokens
-        
+        cost_per_token = (
+            provider_costs.get(model.lower(), 0.001) / 1000  # Default to $0.001 per 1k tokens
+        )
+
         return (input_tokens + output_tokens) * cost_per_token
 
     def _log_api_usage(self, provider: str, model: str, messages: list, response: str,
@@ -580,16 +589,16 @@ class LLMManager:
         """Log API usage to database for cost tracking"""
         if not DATABASE_AVAILABLE:
             return
-            
+
         try:
             # Calculate tokens
             input_text = " ".join([msg.get('content', '') for msg in messages])
             input_tokens = self._estimate_tokens(input_text)
             output_tokens = self._estimate_tokens(response)
-            
+
             # Estimate cost
             cost = self._estimate_cost(provider, model, input_tokens, output_tokens)
-            
+
             # Get database instance and log usage
             db = get_db()
             db.log_llm_api_usage(
@@ -606,18 +615,20 @@ class LLMManager:
                 request_data=str(messages)[:1000] if messages else None,  # Truncate for storage
                 response_data=response[:1000] if response else None  # Truncate for storage
             )
-            
+
         except Exception as e:
-            logger.debug(f"Failed to log API usage: {e}")  # Don't let logging errors break the main flow
+            logger.debug(
+                f"Failed to log API usage: {e}"  # Don't let logging errors break the main flow
+            )
 
     def validate_description(self, description: str, criteria: list[str]) -> tuple[bool, str]:
         """
         Validate a description using the validator model.
-        
+
         Args:
             description: The description to validate
             criteria: List of validation criteria
-            
+
         Returns:
             Tuple of (is_valid, reason)
         """
@@ -640,12 +651,12 @@ class LLMManager:
         try:
             # Use the centralized chat method to ensure API usage logging
             messages = [{'role': 'user', 'content': validation_prompt}]
-            
+
             # For validation calls, we'll directly call the validator provider but log the usage
             start_time = time.time()
             response = self.validator_provider.chat(messages)
             duration_ms = int((time.time() - start_time) * 1000)
-            
+
             # Log the API usage for validation
             self._log_api_usage(
                 provider=self._get_provider_name(self.validator_provider),
@@ -672,10 +683,13 @@ class LLMManager:
 
         except Exception as e:
             logger.warning(f"Description validation failed: {e}")
-            
+
             # Try to log the failed validation attempt
             try:
-                duration_ms = int((time.time() - start_time) * 1000) if 'start_time' in locals() else 0
+                duration_ms = (
+                    int((time.time() - start_time) * 1000)
+                    if 'start_time' in locals() else 0
+                )
                 self._log_api_usage(
                     provider=self._get_provider_name(self.validator_provider),
                     model=self._get_provider_model(self.validator_provider),
@@ -689,7 +703,7 @@ class LLMManager:
                 )
             except Exception as log_error:
                 logger.debug(f"Failed to log validation error: {log_error}")
-            
+
             return True, f"Validation error: {e}"  # Default to approved on error
 
     def get_provider_info(self) -> dict[str, Any]:

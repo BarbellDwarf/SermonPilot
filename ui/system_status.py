@@ -31,7 +31,7 @@ try:
 except ImportError:
     sermonaudio_available = False
 
-from database import SermonRepository
+from database import SermonRepository  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,10 @@ class SystemStatusManager:
                     return {
                         'status': 'ok',
                         'message': 'API connected and authenticated',
-                        'details': f'Successfully connected to SermonAudio API ({sermon_count} sermons available)',
+                        'details': (
+                            f'Successfully connected to SermonAudio API '
+                            f'({sermon_count} sermons available)'
+                        ),
                         'timestamp': datetime.now()
                     }
                 elif response.status_code == 401:
@@ -280,7 +283,11 @@ class SystemStatusManager:
                     return {
                         'status': 'warning',
                         'message': f'{provider_type.title()} model not found',
-                        'details': f'Model "{model}" not available. Available: {", ".join(model_names[:3])}{"..." if len(model_names) > 3 else ""}',
+                        'details': (
+                            f'Model "{model}" not available. Available: '
+                            f'{", ".join(model_names[:3])}'
+                            f'{"..." if len(model_names) > 3 else ""}'
+                        ),
                         'timestamp': datetime.now()
                     }
             else:
@@ -351,8 +358,9 @@ class SystemStatusManager:
                     # newer torchaudio versions removed.
                     from audio_processing import _ensure_torchaudio_backend_compat
                     _ensure_torchaudio_backend_compat()
-                    import df  # DeepFilterNet pip package provides 'df' module
-                    from df import enhance as _df_enhance, init_df as _df_init
+                    import df  # noqa: F401  # DeepFilterNet pip package provides 'df' module
+                    from df import enhance as _df_enhance  # noqa: F401
+                    from df import init_df as _df_init  # noqa: F401
                     return {
                         'status': 'ok',
                         'message': 'DeepFilterNet ready',
@@ -369,8 +377,8 @@ class SystemStatusManager:
 
             elif method in ('clear-studio', 'clear-natural', 'custom'):
                 try:
-                    import onnxruntime
-                    from huggingface_hub import hf_hub_download
+                    import onnxruntime  # noqa: F401
+                    from huggingface_hub import hf_hub_download  # noqa: F401
                     return {
                         'status': 'ok',
                         'message': f'Clear ({method}) ready',
@@ -436,7 +444,10 @@ class SystemStatusManager:
             total, used, free = shutil.disk_usage(output_dir)
             free_gb = free / (1024 * 1024 * 1024)
 
-            details = f"{local_count} sermons, {audio_files} audio files, {total_size_gb:.1f}GB used, {free_gb:.1f}GB free"
+            details = (
+                f"{local_count} sermons, {audio_files} audio files, "
+                f"{total_size_gb:.1f}GB used, {free_gb:.1f}GB free"
+            )
 
             if free_gb < 1.0:  # Less than 1GB free
                 status = 'warning'
@@ -527,13 +538,11 @@ class SystemStatusManager:
             memory_percent = memory.percent
 
             # GPU availability (if CUDA available)
-            gpu_available = False
             gpu_info = "Not available"
 
             try:
                 import torch
                 if torch.cuda.is_available():
-                    gpu_available = True
                     gpu_count = torch.cuda.device_count()
                     gpu_name = torch.cuda.get_device_name(0) if gpu_count > 0 else "Unknown"
                     gpu_info = f"{gpu_count} GPU(s) - {gpu_name}"

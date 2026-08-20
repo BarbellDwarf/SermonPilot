@@ -1,10 +1,8 @@
 # docker/wait_for_services.py
-import time
 import os
-import sys
-import urllib.request
+import time
 import urllib.error
-from typing import List, Tuple
+import urllib.request
 
 
 def wait_for_service(host: str, port: int, timeout: int = 120) -> bool:
@@ -25,7 +23,7 @@ def wait_for_service(host: str, port: int, timeout: int = 120) -> bool:
     return False
 
 
-def check_required_services() -> List[Tuple[str, bool]]:
+def check_required_services() -> list[tuple[str, bool]]:
     """Check all required external services."""
     services = []
 
