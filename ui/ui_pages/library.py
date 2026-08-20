@@ -623,7 +623,8 @@ def show_library():
             st.markdown("### Sermons")
             if list_truncated:
                 st.info("Showing first 1000 sermons. Use search or filters to narrow results.")
-            display_sermon_list(filtered_sermons, sermons)
+            with st.container(key="sermon_list"):
+                display_sermon_list(filtered_sermons, sermons)
 
         with col_detail:
             if st.session_state.selected_sermon:
@@ -825,7 +826,7 @@ def display_sermon_list(filtered_sermons, all_sermons):
     end_idx = min(start_idx + items_per_page, len(filtered_sermons))
     page_sermons = filtered_sermons[start_idx:end_idx]
 
-    header_cols = st.columns([0.25, 1.5, 4.2, 1.4, 1.2])
+    header_cols = st.columns([0.25, 1.5, 4.2, 1.4, 1.2], vertical_alignment="center")
     with header_cols[2]:
         st.caption("Title · Speaker · Date")
     with header_cols[3]:
@@ -835,7 +836,7 @@ def display_sermon_list(filtered_sermons, all_sermons):
         sid = sermon['id']
         is_selected = sid in st.session_state.selected_sermon_ids
 
-        cols = st.columns([0.25, 1.5, 4.2, 1.4, 1.2])
+        cols = st.columns([0.25, 1.5, 4.2, 1.4, 1.2], vertical_alignment="center")
         with cols[0]:
             checked = st.checkbox("Select", value=is_selected, key=f"bulk_{sid}",
                                   label_visibility="collapsed",
@@ -848,18 +849,32 @@ def display_sermon_list(filtered_sermons, all_sermons):
                 st.rerun()
         with cols[1]:
             status = sermon.get('status', 'unknown')
-            status_label = (
-                "Processed" if status in ['completed', 'processed']
-                else "Processing" if status == 'processing' else "Error"
+            if status in ('completed', 'processed'):
+                status_cls, status_label = 'status-ok', 'Processed'
+            elif status == 'processing':
+                status_cls, status_label = 'status-progress', 'Processing'
+            elif status in ('failed', 'error'):
+                status_cls, status_label = 'status-error', 'Error'
+            else:
+                status_cls, status_label = 'status-neutral', status.capitalize()
+            st.markdown(
+                f'<span class="{status_cls}">{status_label}</span>',
+                unsafe_allow_html=True,
             )
-            st.caption(status_label)
         with cols[2]:
             title = sermon.get('title', 'Untitled')
             speaker = sermon.get('speaker', '')
             date = _format_date(sermon.get('recorded_date'))
-            st.markdown(f"**{title}**")
-            if speaker or date:
-                st.caption(f"{speaker} · {date}")
+            safe_title = title.replace(chr(34), "&quot;")
+            st.markdown(
+                f'<span class="sermon-title" title="{safe_title}">{title}</span>',
+                unsafe_allow_html=True,
+            )
+            meta = f"{speaker} · {date}" if (speaker or date) else "\u00a0"
+            st.markdown(
+                f'<span class="sermon-meta">{meta}</span>',
+                unsafe_allow_html=True,
+            )
         with cols[3]:
             dur = sermon.get('duration', '')
             if dur:
