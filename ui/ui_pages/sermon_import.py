@@ -1,7 +1,40 @@
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import streamlit as st
+
+from ui.pages import jobs
+
+
+def _render_flash() -> None:
+    messages: list[tuple[str, str]] = st.session_state.pop('import_flash', [])
+    for kind, message in messages:
+        if kind == 'success':
+            st.success(message)
+        elif kind == 'error':
+            st.error(message)
+        else:
+            st.info(message)
+
+
+def _run_fallback_import(
+    import_fn: Callable[[], tuple[int, int, list[str]]], missing_count: int
+) -> list[tuple[str, str]]:
+    with st.spinner(f"Importing {missing_count} sermons..."):
+        successful, failed, failed_ids = import_fn()
+        messages: list[tuple[str, str]] = []
+        if successful > 0:
+            messages.append(("success", f"✅ Successfully imported {successful} sermons!"))
+        if failed > 0:
+            messages.append(("error", f"❌ Failed to import {failed} sermons"))
+            if failed_ids:
+                messages.append(("info", "Failed sermon IDs:"))
+                for failed_id in failed_ids[:5]:
+                    messages.append(("info", f"• {failed_id}"))
+                if len(failed_ids) > 5:
+                    messages.append(("info", f"• ... and {len(failed_ids) - 5} more"))
+        return messages
 
 
 def show_sermon_import():
@@ -9,6 +42,7 @@ def show_sermon_import():
     st.markdown(
         "Scan the processed_sermons folder and import any missing sermons into the database."
     )
+    _render_flash()
 
     try:
         sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -43,10 +77,14 @@ def show_sermon_import():
                         with st.spinner(f"Importing sermon {sermon_id}..."):
                             success = import_single_sermon(sermon_id)
                             if success:
-                                st.success(f"✅ Successfully imported sermon {sermon_id}")
-                                st.rerun()
+                                st.session_state.import_flash = [
+                                    ("success", f"✅ Successfully imported sermon {sermon_id}")
+                                ]
                             else:
-                                st.error(f"❌ Failed to import sermon {sermon_id}")
+                                st.session_state.import_flash = [
+                                    ("error", f"❌ Failed to import sermon {sermon_id}")
+                                ]
+                            st.rerun()
 
             st.divider()
             st.markdown("#### 🚀 Bulk Import")
@@ -77,34 +115,40 @@ def show_sermon_import():
                                 priority=6
                             )
 
-                            st.success(f"✅ Import job started! Job ID: {job_id[:8]}")
-                            st.info(
-                                f"📥 Importing {status['missing_from_database']} sermons "
-                                "in the background. Monitor progress on the Jobs page."
-                            )
-
-                            if st.button("📊 View Job Progress", type="secondary"):
-                                st.switch_page("jobs")
-
+                            st.session_state.import_job_id = job_id
+                            st.session_state.import_flash = [
+                                ("success", f"✅ Import job started! Job ID: {job_id[:8]}"),
+                                (
+                                    "info",
+                                    f"📥 Importing {status['missing_from_database']} sermons "
+                                    "in the background. Monitor progress on the Jobs page.",
+                                ),
+                            ]
+                            st.rerun()
                         except Exception as e:
-                            st.error(f"❌ Failed to start import job: {e}")
-                            with st.spinner(
-                                f"Importing {status['missing_from_database']} sermons..."
-                            ):
-                                successful, failed, failed_ids = import_missing_sermons()
-                                if successful > 0:
-                                    st.success(f"✅ Successfully imported {successful} sermons!")
-                                if failed > 0:
-                                    st.error(f"❌ Failed to import {failed} sermons")
-                                    if failed_ids:
-                                        st.write("Failed sermon IDs:")
-                                        for failed_id in failed_ids[:5]:
-                                            st.write(f"• {failed_id}")
-                                        if len(failed_ids) > 5:
-                                            st.write(f"• ... and {len(failed_ids) - 5} more")
-                                st.rerun()
+                            messages: list[tuple[str, str]] = [
+                                ("error", f"❌ Failed to start import job: {e}")
+                            ]
+                            messages.extend(
+                                _run_fallback_import(
+                                    import_missing_sermons, status['missing_from_database']
+                                )
+                            )
+                            st.session_state.import_flash = messages
+                            st.rerun()
                     else:
                         st.info("No missing sermons to import")
+
+                if st.session_state.get('import_job_id'):
+                    from job_queue import JobStatus, get_job_queue
+                    job = get_job_queue().get_job(st.session_state.import_job_id)
+                    if job and job.status not in (
+                        JobStatus.COMPLETED,
+                        JobStatus.FAILED,
+                        JobStatus.CANCELLED,
+                    ):
+                        if st.button("📊 View Job Progress", type="secondary"):
+                            st.switch_page(jobs)
 
             with col2:
                 st.markdown("**🔄 Force Re-import Options**")
