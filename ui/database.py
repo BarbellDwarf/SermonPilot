@@ -9,12 +9,28 @@ and enable containerization.
 import datetime
 import json
 import logging
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_database_url(db_path: str) -> str:
+    """Parse a DATABASE_URL value into a filesystem path.
+
+    sqlite:///data/app.db resolves to the absolute path /data/app.db
+    (standard sqlite URI semantics); plain paths are used as-is.
+    """
+    if db_path.startswith("sqlite:///"):
+        remainder = db_path[len("sqlite:///"):]
+        if not remainder.startswith("/"):
+            remainder = "/" + remainder
+        return remainder
+    return db_path
+
 
 class SermonDatabase:
     """SQLite database for sermon metadata and processing status"""
@@ -23,10 +39,8 @@ class SermonDatabase:
         """Initialize database connection"""
         if db_path is None:
             db_path = os.environ.get("DATABASE_URL", "sermon_processor.db")
-            # Strip sqlite:/// prefix if present (from docker-compose env)
-            if db_path.startswith("sqlite:///"):
-                db_path = db_path[len("sqlite:///"):]
-        self.db_path = Path(db_path)
+        self.db_path = Path(_resolve_database_url(db_path))
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.init_database()
 
     def init_database(self):
@@ -296,17 +310,48 @@ class SermonDatabase:
             """, (key, json.dumps(data), datetime.datetime.now(), expires_at))
             conn.commit()
 
-    def get_cached_metadata(self, key: str) -> list[str] | None:
-        """Get cached metadata if not expired"""
+    @staticmethod
+    def _parse_db_timestamp(value: Any) -> datetime.datetime | None:
+        """Parse a timestamp stored by sqlite3, tolerating space and T separators."""
+        if value is None:
+            return None
+        try:
+            return datetime.datetime.fromisoformat(str(value).replace(" ", "T", 1))
+        except ValueError:
+            return None
+
+    def get_cached_metadata_info(self, key: str) -> dict[str, Any] | None:
+        """Get a metadata cache row with its freshness info, or None if never cached.
+
+        Returns a dict with 'data', 'last_updated', 'expires_at' and 'is_stale'
+        keys. Expired rows are still returned so callers can keep using them.
+        """
         with self.get_connection() as conn:
             row = conn.execute("""
-                SELECT data FROM metadata_cache 
-                WHERE key = ? AND expires_at > ?
-            """, (key, datetime.datetime.now())).fetchone()
+                SELECT data, last_updated, expires_at FROM metadata_cache
+                WHERE key = ?
+            """, (key,)).fetchone()
 
-            if row:
-                return json.loads(row['data'])
+            if row is None:
+                return None
+
+            expires_at = self._parse_db_timestamp(row['expires_at'])
+            is_stale = expires_at is not None and expires_at <= datetime.datetime.now()
+            return {
+                'data': json.loads(row['data']),
+                'last_updated': self._parse_db_timestamp(row['last_updated']),
+                'expires_at': expires_at,
+                'is_stale': is_stale,
+            }
+
+    def get_cached_metadata(self, key: str, allow_stale: bool = False) -> list[str] | None:
+        """Get cached metadata, or None if missing or (unless allow_stale) expired."""
+        info = self.get_cached_metadata_info(key)
+        if info is None:
             return None
+        if info['is_stale'] and not allow_stale:
+            return None
+        return info['data']
 
     def save_config(self, config: dict) -> None:
         """Save full config dict to database (survives reboots)."""
@@ -611,14 +656,16 @@ def get_db() -> SermonDatabase:
     """Get global database instance"""
     global _db
     if _db is None:
-        # Store database in data directory if it exists, otherwise current directory
-        data_dir = Path("data")
-        if data_dir.exists():
-            db_path = data_dir / "sermon_processor.db"
+        if os.environ.get("DATABASE_URL"):
+            _db = SermonDatabase()
         else:
-            db_path = Path("sermon_processor.db")
-
-        _db = SermonDatabase(str(db_path))
+            # Store database in data directory if it exists, otherwise current directory
+            data_dir = Path("data")
+            if data_dir.exists():
+                db_path = str(data_dir / "sermon_processor.db")
+            else:
+                db_path = "sermon_processor.db"
+            _db = SermonDatabase(db_path)
     return _db
 
 
@@ -928,7 +975,6 @@ class SermonRepository:
                        pi.qa_normalization_applied,
                        pi.enhancement_method,
                        ui.upload_status,
-                       sc.transcript_text AS transcript,
                        sc.description,
                        sc.hashtags,
                        sc.key_topics,
