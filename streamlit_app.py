@@ -135,10 +135,11 @@ st.markdown("""
     }
 
     .main-header {
-        font-size: 2.5rem;
+        font-size: 2.25rem;
+        line-height: 1.3;
         font-weight: bold;
         color: var(--header-color);
-        margin-bottom: 1rem;
+        margin: 0 0 1rem;
         text-align: center;
     }
 
@@ -204,7 +205,7 @@ st.markdown("""
 
     /* Pull the page content up under the header bar */
     [data-testid="stMainBlockContainer"] {
-        padding-top: 1.5rem;
+        padding-top: 3.75rem;
     }
 
     /* Sidebar: divide the nav from the status and actions sections */
@@ -212,12 +213,6 @@ st.markdown("""
         border-bottom: 1px solid var(--surface-border);
         padding-bottom: 0.75rem;
         margin-bottom: 0.25rem;
-    }
-
-    [data-testid="stSidebar"] [data-testid="stExpander"] {
-        border-top: 1px solid var(--surface-border);
-        margin-top: 0.5rem;
-        padding-top: 0.5rem;
     }
 
     [data-testid="stSidebar"] h3 {
