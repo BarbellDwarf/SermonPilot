@@ -6,9 +6,47 @@ API calls; no network traffic and no real credentials are involved.
 
 from __future__ import annotations
 
+import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 import sermon_updater as su
+
+
+class _FakeDb:
+    """In-memory SQLite mirroring the tables publish_dry_run_sermon touches."""
+
+    def __init__(self) -> None:
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.executescript(
+            """
+            CREATE TABLE sermons (
+                id TEXT PRIMARY KEY, title TEXT, subtitle TEXT, speaker TEXT,
+                recorded_date TEXT, event_type TEXT, bible_text TEXT,
+                series_title TEXT, scripture_reference TEXT, description TEXT,
+                duration INTEGER, status TEXT, updated_at TEXT
+            );
+            CREATE TABLE sermon_files (
+                sermon_id TEXT, file_type TEXT, file_path TEXT, file_size INTEGER
+            );
+            CREATE TABLE sermon_content (
+                sermon_id TEXT, transcript_text TEXT, description TEXT,
+                hashtags TEXT, key_topics TEXT, summary TEXT
+            );
+            CREATE TABLE sermon_search (
+                sermon_id TEXT, title TEXT, speaker TEXT, transcript_text TEXT,
+                description TEXT, hashtags TEXT
+            );
+            CREATE TABLE qa_segments (sermon_id TEXT);
+            CREATE TABLE processing_info (sermon_id TEXT);
+            CREATE TABLE upload_info (sermon_id TEXT);
+            CREATE TABLE processing_status (sermon_id TEXT);
+            """
+        )
+
+    @contextmanager
+    def get_connection(self):
+        yield self.conn
 
 
 def _fake_repo(audio_path: Path):
@@ -16,6 +54,7 @@ def _fake_repo(audio_path: Path):
         def __init__(self) -> None:
             self.saved = None
             self.deleted = None
+            self.db = _FakeDb()
 
         def get_sermon(self, sermon_id: str) -> dict:
             return {
@@ -48,6 +87,11 @@ def test_publish_dry_run_sermon_creates_and_uploads(tmp_path: Path, monkeypatch)
     import ui.database as db
 
     fake_repo = _fake_repo(audio_file)
+    fake_repo.db.conn.execute(
+        "INSERT INTO sermons (id, title, status) VALUES (?, ?, ?)",
+        ("draft_test", "Test Title", "draft"),
+    )
+    fake_repo.db.conn.commit()
     monkeypatch.setattr(db, "SermonRepository", lambda: fake_repo)
     monkeypatch.setattr(su, "config", {"output_directory": str(tmp_path / "output")})
     monkeypatch.setattr(su, "resolve_speaker_id", lambda name: None)
@@ -60,9 +104,15 @@ def test_publish_dry_run_sermon_creates_and_uploads(tmp_path: Path, monkeypatch)
     assert result["success"] is True
     assert result["sermon_id"] == "12345"
     assert result["error"] is None
-    assert fake_repo.saved["id"] == "12345"
-    assert fake_repo.saved["status"] == "processed"
-    assert fake_repo.deleted == "draft_test"
+    row = fake_repo.db.conn.execute(
+        "SELECT id, status FROM sermons WHERE id = ?", ("12345",)
+    ).fetchone()
+    assert row is not None
+    assert row[1] == "processed"
+    draft_count = fake_repo.db.conn.execute(
+        "SELECT COUNT(*) FROM sermons WHERE id = ?", ("draft_test",)
+    ).fetchone()[0]
+    assert draft_count == 0
 
 
 def test_publish_dry_run_sermon_create_failure(tmp_path: Path, monkeypatch) -> None:
