@@ -105,14 +105,6 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
         database_available = False
         SermonRepository = None
 
-    # Import enhanced audio processor
-    try:
-        from enhanced_audio_processor import EnhancedAudioProcessor
-        enhanced_processor_available = True
-    except ImportError:
-        enhanced_processor_available = False
-        EnhancedAudioProcessor = None
-
 # Guard module-level prints to avoid noise when importing as a library
 _is_cli = __name__ == '__main__'
 
@@ -161,9 +153,10 @@ config_manager = ConfigManager(CONFIG_PATH)
 # Validate required settings
 missing_settings = config_manager.validate_required_settings()
 if missing_settings:
-    print(f"[FATAL] Missing required configuration settings: {', '.join(missing_settings)}")
-    print(f"Please check your config file: {CONFIG_PATH}")
-    sys.exit(1)
+    raise RuntimeError(
+        f"[FATAL] Missing required configuration settings: {', '.join(missing_settings)}. "
+        f"Please check your config file: {CONFIG_PATH}"
+    )
 
 # For backward compatibility, provide config dict
 config = config_manager.get_raw_config()
@@ -407,11 +400,12 @@ def needs_audio_processing(config: dict, skip_audio: bool = False) -> bool:
 
 
 def get_api_headers() -> dict[str, str]:
-    key = SERMON_AUDIO_API_KEY
+    key = SERMON_AUDIO_API_KEY or os.environ.get('SERMONAUDIO_API_KEY', '')
     if not key:
-        key = config_manager.get('api_key') if 'config_manager' in dir() else None
-    if not key:
-        key = os.environ.get('SERMONAUDIO_API_KEY', '')
+        raise ValueError(
+            "SermonAudio API key is not configured. Set 'api_key' in config.yaml "
+            "or the SERMONAUDIO_API_KEY environment variable."
+        )
     return {'X-Api-Key': key, 'Content-Type': 'application/json'}
 
 
@@ -629,7 +623,7 @@ Guidelines:
     def _validate_local_sermon(self, sermon_dir: Path) -> ValidationResult | None:
         """Validate a single local sermon directory."""
         meta = read_metadata(sermon_dir)
-        sermon_id = meta.get("sermon_id", sermon_dir.name) if meta else sermon_dir.name
+        sermon_id = (meta.get("sermon_id") or meta.get("sermonID")) or sermon_dir.name if meta else sermon_dir.name
         description_file = get_file_path(sermon_dir, "description")
 
         if not description_file.exists():
@@ -911,8 +905,12 @@ def validate_and_regenerate_descriptions(
                       f"({len(new_description)} chars, score: {score:.2f})")
 
                 # Save the new description locally
-                sermon_dir = Path(validator.output_dir) / sermon_id
-                description_file = sermon_dir / f"{sermon_id}_description.txt"
+                sermon_dir = find_sermon_dir(validator.output_dir, sermon_id)
+                if not sermon_dir:
+                    console_print(f"      ❌ Could not find sermon directory for {sermon_id}", "error")
+                    failed_regeneration += 1
+                    continue
+                description_file = get_file_path(sermon_dir, "description")
 
                 if description_file.exists():
                     # Backup old description
@@ -953,13 +951,15 @@ def validate_and_regenerate_descriptions(
 
 
 def update_sermon_metadata(sermon_id: str, description: str, hashtags: str | list[str],
-                          series_title: str = None) -> bool:
+                          series_title: str = None, series_id: int | None = None) -> bool:
     url = BASE_URL + f'node/sermons/{sermon_id}'
     headers = get_api_headers()
     keywords = hashtags if isinstance(hashtags, str) else ','.join(hashtags)
     payload = {'moreInfoText': description, 'keywords': keywords}
-    if series_title:
-        payload['seriesTitle'] = series_title[:100]
+    if series_id is None and series_title:
+        series_id = resolve_series_id(series_title)
+    if series_id is not None:
+        payload['seriesID'] = series_id
     resp = requests.patch(url, headers=headers, json=payload, timeout=60)
     logger.debug("Update sermon status: %d", resp.status_code)
     if resp.status_code not in (200, 204):
@@ -1002,7 +1002,7 @@ def upload_media_file(sermon_id: str, file_path: str,
     """Upload a media file (audio or video) to SermonAudio.
 
     POSTs to /v2/media with the given uploadType to get an upload URL,
-    then PUTs the file to that URL.
+    then POSTs the file to that URL.
     """
     logger.debug("Uploading media for sermon %s from %s (type=%s)",
                  sermon_id, file_path, upload_type)
@@ -1153,60 +1153,6 @@ Shortened title (max 30 chars):"""
     return full_title[:27] + "..." if len(full_title) > 30 else full_title
 
 
-def transcribe_audio(audio_path: str, model_size: str = "base") -> str:
-    """Transcribe audio file using OpenAI Whisper.
-    
-    Args:
-        audio_path: Path to audio file
-        model_size: Whisper model size ("tiny", "base", "small", "medium", "large")
-        
-    Returns:
-        Transcribed text if successful, empty string if failed
-    """
-    try:
-        import warnings
-
-        import whisper
-
-        logger.info("Starting audio transcription with Whisper...")
-        console_print("🎙️  Transcribing audio...")
-
-        # Suppress warnings during model loading
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            try:
-                model = whisper.load_model(model_size)
-            except Exception as e:
-                if "connection" in str(e).lower() or "network" in str(e).lower():
-                    logger.warning("Network error loading Whisper model, trying smaller model")
-                    console_print("⚠️  Network issues with model download, trying 'tiny' model...")
-                    model = whisper.load_model("tiny")
-                else:
-                    raise e
-
-        # Transcribe the audio
-        result = model.transcribe(audio_path)
-        transcript = result["text"].strip()
-
-        logger.info("Transcription completed (%d characters)", len(transcript))
-        console_print(f"✅ Transcription completed ({len(transcript)} characters)")
-
-        return transcript
-
-    except ImportError:
-        logger.warning("Whisper not available for transcription")
-        console_print("⚠️  Whisper not available - skipping transcription")
-        return ""
-    except Exception as e:
-        if "connection" in str(e).lower() or "network" in str(e).lower() or "address" in str(e).lower():
-            logger.warning("Network error during transcription, skipping: %s", e)
-            console_print("⚠️  Network error - skipping transcription")
-        else:
-            logger.error("Transcription failed: %s", e)
-            console_print(f"❌ Transcription failed: {e}")
-        return ""
-
-
 def parse_bible_reference(text: str | None) -> dict | None:
     """Parse a bible reference string into structured fields.
 
@@ -1278,7 +1224,7 @@ def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
                          event_type: str = "Sunday Service", bible_text: str = None,
                          subtitle: str = None, description: str = None,
                          hashtags: str = None, speaker_id: int | None = None,
-                         series_title: str = None,
+                         series_id: int | None = None,
                          display_title: str = None) -> str:
     """Create a new sermon via the SermonAudio API.
     
@@ -1292,7 +1238,7 @@ def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
         description: Sermon description (optional)
         hashtags: Hashtags/keywords (optional)
         speaker_id: Numeric speaker ID (optional, preferred over speaker_name)
-        series_title: Series name (optional)
+        series_id: Numeric series ID (optional; the API only accepts seriesID)
         display_title: Short display title (max 30 chars, optional). If not provided,
                        generated from full title by truncation.
         
@@ -1325,8 +1271,8 @@ def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
         payload['moreInfoText'] = description
     if hashtags:
         payload['keywords'] = hashtags
-    if series_title:
-        payload['seriesTitle'] = series_title[:100]
+    if series_id is not None:
+        payload['seriesID'] = series_id
 
     # Use provided display_title or generate from full title
     if display_title:
@@ -1367,6 +1313,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       enhancement_method: str | None = None,
                       custom_repo: str | None = None,
                       custom_file: str | None = None,
+                      series_id: int | None = None,
+                      config: dict | None = None,
                       progress_callback=None) -> dict:
     """Process a new sermon from audio file with automatic metadata generation.
 
@@ -1396,6 +1344,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 progress_callback(progress, msg)
             except Exception:
                 pass
+
+    if config is None:
+        config = globals().get('config') or {}
+    if series_id is None and series_title:
+        series_id = resolve_series_id(series_title)
 
     result = {
         'success': False,
@@ -1494,8 +1447,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             console_print("🎵 Processing audio...")
             _report(10, "Initializing audio processor...")
             if audio_processor_available:
-                # Create temporary output directory (absolute path)
-                temp_dir = Path(_tempfile.gettempdir()) / "sermon_processing"
+                # Create temporary output directory (absolute path).
+                # processing_temp_dir config key overrides the TMPDIR-backed
+                # default so long jobs don't fill a small RAM disk.
+                temp_root = config.get('processing_temp_dir') or _tempfile.gettempdir()
+                temp_dir = Path(temp_root) / "sermon_processing"
                 temp_dir.mkdir(parents=True, exist_ok=True)
 
                 # For video inputs, extract audio to WAV first
@@ -1578,20 +1534,27 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         # Step 2: Transcribe audio for metadata generation
         transcript = ""
         if (not title or not description or not hashtags) and not skip_transcription:
-            _report(35, f"Starting transcription ({whisper_model} model)...")
-            try:
-                transcript = transcribe(str(enhanced_audio_path), model_size=whisper_model, config=config,
-                                        backend_override=transcription_backend,
-                                        progress_callback=_report)
-                if not transcript:
-                    _report(45, "First transcription attempt produced no result, retrying with original audio...")
-                    transcript = transcribe(str(audio_path), model_size=whisper_model, config=config,
+            transcript = _reuse_existing_transcript(
+                original_input_path, speaker_name, series_title, title, config
+            )
+            if transcript:
+                console_print(f"♻️ Reusing existing transcript ({len(transcript)} characters)")
+                _report(55, f"Reusing existing transcript ({len(transcript)} characters)")
+            else:
+                _report(35, f"Starting transcription ({whisper_model} model)...")
+                try:
+                    transcript = transcribe(str(enhanced_audio_path), model_size=whisper_model, config=config,
                                             backend_override=transcription_backend,
                                             progress_callback=_report)
-            except Exception as e:
-                logger.warning("Transcription failed: %s", e)
-                transcript = ""
-            _report(55, f"Transcription complete: {len(transcript)} characters")
+                    if not transcript:
+                        _report(45, "First transcription attempt produced no result, retrying with original audio...")
+                        transcript = transcribe(str(audio_path), model_size=whisper_model, config=config,
+                                                backend_override=transcription_backend,
+                                                progress_callback=_report)
+                except Exception as e:
+                    logger.warning("Transcription failed: %s", e)
+                    transcript = ""
+                _report(55, f"Transcription complete: {len(transcript)} characters")
         elif skip_transcription:
             console_print("⏭️  Skipping transcription (--skip-transcription enabled)")
             _report(55, "Skipped transcription")
@@ -1704,10 +1667,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             # Save dry run results for visibility in the Library page
             import re
+            import uuid
             safe_title = re.sub(r'[^a-zA-Z0-9]+', '_', (title or 'Untitled').strip().lower())[:40]
             safe_speaker = re.sub(r'[^a-zA-Z0-9]+', '_', (speaker_name or 'Unknown').strip().lower())[:20]
             safe_date = (recorded_date or 'nodate').replace('-', '')
-            sermon_id = f"draft_{safe_speaker}_{safe_date}_{safe_title}"
+            sermon_id = f"draft_{safe_speaker}_{safe_date}_{safe_title}_{uuid.uuid4().hex[:8]}"
             result['sermon_id'] = sermon_id
 
             output_root = Path(config.get('output_directory', 'processed_sermons'))
@@ -1750,6 +1714,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             # Save metadata
             metadata = {
+                'sermon_id': sermon_id,
                 'sermonID': sermon_id,
                 'title': title,
                 'speaker': speaker_name,
@@ -1842,7 +1807,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             description=description,
             hashtags=hashtags,
             speaker_id=speaker_id,
-            series_title=series_title,
+            series_id=series_id,
             display_title=short_display_title,
         )
 
@@ -1855,18 +1820,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         _report(90, f"Created sermon: {sermon_id}")
 
         # The API ignores seriesTitle during creation, so PATCH it after
-        if series_title:
-            try:
-                patch_url = BASE_URL + f'node/sermons/{sermon_id}'
-                patch_headers = get_api_headers()
-                patch_resp = requests.patch(patch_url, headers=patch_headers,
-                                            json={'seriesTitle': series_title[:100]}, timeout=30)
-                if patch_resp.status_code in (200, 204):
-                    logger.info("Series set via PATCH: %s", series_title[:100])
-                else:
-                    logger.warning("Failed to PATCH series: %d", patch_resp.status_code)
-            except Exception as e:
-                logger.warning("Error PATCHing series: %s", e)
+        if series_id is not None:
+            set_sermon_series(sermon_id, series_id)
 
         # Step 5: Upload the media (audio or video)
         media_label = "video" if upload_type == "original-video" else "audio"
@@ -1916,6 +1871,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             # Save metadata
             metadata = {
+                'sermon_id': sermon_id,
                 'sermonID': sermon_id,
                 'title': title,
                 'speaker': speaker_name,
@@ -2065,6 +2021,7 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
         bible_text = sermon_data.get('bible_text') or sermon_data.get('scripture_reference') or ''
         subtitle = sermon_data.get('subtitle', '') or ''
         series_title = sermon_data.get('series_title', '') or ''
+        series_id = resolve_series_id(series_title) if series_title else None
 
         content = sermon_data.get('content', {}) or {}
         description = content.get('description', '') or sermon_data.get('description', '') or ''
@@ -2106,7 +2063,7 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
             description=description or None,
             hashtags=hashtags or None,
             speaker_id=speaker_id,
-            series_title=series_title,
+            series_id=series_id,
         )
 
         if not new_sermon_id:
@@ -2116,18 +2073,8 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
         console_print(f"✅ Sermon created with ID: {new_sermon_id}")
 
         # The API ignores seriesTitle during creation, so PATCH it after
-        if series_title:
-            try:
-                patch_url = BASE_URL + f'node/sermons/{new_sermon_id}'
-                patch_headers = get_api_headers()
-                patch_resp = requests.patch(patch_url, headers=patch_headers,
-                                            json={'seriesTitle': series_title[:100]}, timeout=30)
-                if patch_resp.status_code in (200, 204):
-                    logger.info("Series set via PATCH: %s", series_title[:100])
-                else:
-                    logger.warning("Failed to PATCH series: %d", patch_resp.status_code)
-            except Exception as e:
-                logger.warning("Error PATCHing series: %s", e)
+        if series_id is not None:
+            set_sermon_series(new_sermon_id, series_id)
 
         # Determine upload type from metadata.json (stored during dry run)
         upload_type = "original-audio"
@@ -2683,7 +2630,11 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                          output_dir: str = None, save_original_audio: bool = None,
                          save_transcript: bool = None,
                          transcription_backend: str = None,
-                         audio_file: str = None):
+                         audio_file: str = None,
+                         series_id: int | None = None,
+                         config: dict | None = None):
+    if config is None:
+        config = globals().get('config') or {}
     logger.debug(f"Processing sermon_id={sermon_id}")
     details = Node.get_sermon(sermon_id)
     speaker_name = None
@@ -2713,7 +2664,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
         needs_hash_update = False
 
     # Skip entirely if nothing to do
-    if not (needs_desc_update or needs_hash_update or needs_audio):
+    if not (needs_desc_update or needs_hash_update or needs_audio) and series_id is None:
         logger.info("No processing needed for sermon %s - skipping", sermon_id)
         return {"action": "skipped", "reason": "No updates needed - adequate content exists"}
 
@@ -2958,6 +2909,12 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
         except Exception as e:  # pragma: no cover
             logger.error("Metadata update error: %s", e)
 
+    # Apply the selected series via numeric seriesID
+    if series_id is not None:
+        if not verbose:
+            print("   📚 Setting series...")
+        set_sermon_series(sermon_id, series_id)
+
     # Upload audio if we processed it
     if needs_audio and output_audio and os.path.exists(output_audio):
         if not verbose:
@@ -3176,8 +3133,73 @@ def get_sermons_in_date_range(start_date, end_date):
     return all_sermons
 
 
-def get_sermons_in_year(year):
-    return get_sermons_in_date_range(f"{year}-01-01", f"{year}-12-31")
+def search_broadcaster_sermons(start_date: str, end_date: str, max_results: int = 100,
+                               speaker_filter: str = None,
+                               event_type_filter: str = None) -> list[dict[str, Any]]:
+    """Search the broadcaster's sermons with full metadata for batch filtering.
+
+    Returns dicts with sermon_id, title, speaker, date, event_type,
+    has_description, has_hashtags, has_audio, has_transcript and duration
+    (minutes) keys.
+    """
+    try:
+        start_dt = dt.datetime.strptime(start_date, "%Y-%m-%d")
+        end_dt = dt.datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+    except ValueError:
+        logger.error("Invalid date range; expected YYYY-MM-DD")
+        return []
+    params = {
+        'broadcasterID': SERMON_AUDIO_BROADCASTER_ID,
+        'preachedAfterTimestamp': int(start_dt.timestamp()),
+        'preachedBeforeTimestamp': int(end_dt.timestamp()),
+        'pageSize': 100,
+        'page': 1,
+        'cache': 'true',
+        'lite': 'false'
+    }
+    headers = get_api_headers()
+    url = f"{BASE_URL}node/sermons"
+    sermons = []
+    while len(sermons) < max_results:
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=60)
+            if r.status_code != 200:
+                break
+            data = r.json()
+            results = data.get('results', [])
+            if not results:
+                break
+            for s in results:
+                speaker_info = s.get('speaker') or {}
+                speaker_name = speaker_info.get('displayName') or ''
+                if speaker_filter and speaker_filter.lower() not in speaker_name.lower():
+                    continue
+                if event_type_filter and event_type_filter != s.get('eventType'):
+                    continue
+                media = s.get('media') or {}
+                audio = media.get('audio') or []
+                duration_sec = s.get('audioDurationSeconds') or 0
+                sermons.append({
+                    'sermon_id': s.get('sermonID'),
+                    'title': s.get('displayTitle', 'Untitled'),
+                    'speaker': speaker_name or 'Unknown',
+                    'date': s.get('preachDate', ''),
+                    'event_type': s.get('eventType', ''),
+                    'has_description': bool((s.get('moreInfoText') or '').strip()),
+                    'has_hashtags': bool((s.get('keywords') or '').strip()),
+                    'has_audio': bool(audio),
+                    'has_transcript': bool(s.get('transcript')),
+                    'duration': float(duration_sec) / 60.0,
+                })
+                if len(sermons) >= max_results:
+                    break
+            if not data.get('next') or len(sermons) >= max_results:
+                break
+            params['page'] += 1
+        except Exception as e:
+            logger.error("Error searching sermons: %s", e)
+            break
+    return sermons
 
 
 def get_broadcaster_pastors(limit: int = 500) -> list[str]:
@@ -3308,15 +3330,18 @@ def get_broadcaster_event_types(limit: int = 500) -> list[str]:
         return []
 
 
-def get_broadcaster_series(limit: int = 500) -> list[str]:
+_SERIES_BY_NAME: dict[str, int | None] = {}
+
+
+def get_broadcaster_series(limit: int = 500) -> list[dict[str, Any]]:
     """
-    Retrieve a list of distinct series from the broadcaster's sermons.
-    
+    Retrieve the broadcaster's series with their numeric IDs.
+
     Args:
         limit: Maximum number of sermons to fetch for analysis (default: 500)
-        
+
     Returns:
-        Sorted list of unique series names
+        Sorted list of dicts with 'name' (str) and 'seriesID' (int or None) keys.
     """
     try:
         params = {
@@ -3326,7 +3351,7 @@ def get_broadcaster_series(limit: int = 500) -> list[str]:
         }
         headers = get_api_headers()
         url = f"{BASE_URL}node/sermons"
-        series_names = set()
+        series_by_name: dict[str, int | None] = {}
         fetched_count = 0
 
         logger.debug(f"Fetching series from broadcaster's sermons (limit: {limit})")
@@ -3345,22 +3370,17 @@ def get_broadcaster_series(limit: int = 500) -> list[str]:
                     break
 
                 for sermon in results:
-                    # Check for series information in various possible fields
                     series_info = sermon.get('series')
-                    if series_info:
-                        if isinstance(series_info, dict):
-                            series_name = series_info.get('displayName') or series_info.get('name')
-                        else:
-                            series_name = str(series_info)
-
+                    if isinstance(series_info, dict):
+                        series_name = series_info.get('displayName') or series_info.get('name')
+                        series_id = series_info.get('seriesID') or series_info.get('id')
+                        if series_id is not None:
+                            try:
+                                series_id = int(series_id)
+                            except (TypeError, ValueError):
+                                series_id = None
                         if series_name and series_name.strip():
-                            series_names.add(series_name.strip())
-
-                    # Also check subtitle field which sometimes contains series info
-                    subtitle = sermon.get('subtitle')
-                    if subtitle and subtitle.strip() and len(subtitle.strip()) > 3:
-                        # Only include if it looks like a series name (not too short)
-                        series_names.add(subtitle.strip())
+                            series_by_name[series_name.strip()] = series_id
 
                     fetched_count += 1
 
@@ -3376,7 +3396,12 @@ def get_broadcaster_series(limit: int = 500) -> list[str]:
                 logger.error(f"Error fetching sermon data: {e}")
                 break
 
-        series_list = sorted(list(series_names))
+        series_list = [
+            {'name': name, 'seriesID': series_id}
+            for name, series_id in sorted(series_by_name.items())
+        ]
+        _SERIES_BY_NAME.clear()
+        _SERIES_BY_NAME.update(series_by_name)
         logger.debug(f"Found {len(series_list)} unique series")
         return series_list
 
@@ -3385,29 +3410,56 @@ def get_broadcaster_series(limit: int = 500) -> list[str]:
         return []
 
 
-def process_year(year, no_upload=False):
-    """Legacy bulk processor. Prefer cli_main() with --year for new code."""
-    sermons = get_sermons_in_year(year)
-    if not sermons:
-        logger.warning("No sermons found for year")
-        return
-    if input(f"Process all {len(sermons)} sermons from {year}? (y/N): ").lower() != 'y':
-        return
-    for s in sermons:
-        process_single_sermon(s['sermonID'], no_upload=no_upload, output_dir=None,
-                             save_original_audio=None, save_transcript=None)
+def resolve_series_id(series_name: str) -> int | None:
+    """Resolve a series name to its numeric SermonAudio seriesID."""
+    if not series_name:
+        return None
+    if series_name in _SERIES_BY_NAME:
+        return _SERIES_BY_NAME[series_name]
+    try:
+        get_broadcaster_series()
+    except Exception as e:
+        logger.warning("Failed to refresh series list: %s", e)
+    return _SERIES_BY_NAME.get(series_name)
 
 
-def process_date_range(start_date, end_date, no_upload=False):
-    sermons = get_sermons_in_date_range(start_date, end_date)
-    if not sermons:
-        logger.warning("No sermons found in date range")
-        return
-    if input(f"Process all {len(sermons)} sermons? (y/N): ").lower() != 'y':
-        return
-    for s in sermons:
-        process_single_sermon(s['sermonID'], no_upload=no_upload, output_dir=None,
-                             save_original_audio=None, save_transcript=None)
+def set_sermon_series(sermon_id: str, series_id: int) -> bool:
+    """PATCH a sermon's series by numeric seriesID."""
+    try:
+        patch_url = BASE_URL + f'node/sermons/{sermon_id}'
+        patch_headers = get_api_headers()
+        patch_resp = requests.patch(patch_url, headers=patch_headers,
+                                    json={'seriesID': series_id}, timeout=30)
+        if patch_resp.status_code in (200, 204):
+            logger.info("Series set via PATCH: %s", series_id)
+            return True
+        logger.warning("Failed to PATCH series: %d", patch_resp.status_code)
+    except Exception as e:
+        logger.warning("Error PATCHing series: %s", e)
+    return False
+
+
+def _reuse_existing_transcript(input_path: Path, speaker_name: str, series_title: str,
+                               title: str, config: dict) -> str:
+    """Load a saved transcript when the source file is unchanged.
+
+    Reuses only when transcript.txt exists in the sermon output dir and its
+    mtime is newer than the input file's mtime, so stale transcripts are
+    never reused.
+    """
+    try:
+        output_root = Path(config.get('output_directory', 'processed_sermons'))
+        if not output_root.is_absolute():
+            output_root = Path(__file__).parent / output_root
+        reuse_dir = get_sermon_dir(output_root, speaker_name, series_title, title, "reuse")
+        transcript_path = get_file_path(reuse_dir, "transcript")
+        if (transcript_path.exists()
+                and transcript_path.stat().st_mtime > input_path.stat().st_mtime):
+            logger.info("Reusing existing transcript: %s", transcript_path)
+            return transcript_path.read_text(encoding='utf-8')
+    except Exception as e:
+        logger.debug("Transcript reuse check failed: %s", e)
+    return ""
 
 
 @dataclass
@@ -3566,181 +3618,6 @@ def fetch_sermons(params: dict[str, Any], max_results: int | None = None) -> lis
     return sermons
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        description=(
-            "SermonPilot - Process, create, and manage sermons with AI-powered enhancement. "
-            "Use subcommands for different operations."
-        ),
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-
-    # Global options that apply to all subcommands
-    p.add_argument('--config', default=CONFIG_PATH, help='Alternate config file')
-    p.add_argument('-v', '--verbose', action='store_true', help='Verbose debug output')
-    p.add_argument('--dry-run', action='store_true', help='Skip remote updates')
-    p.add_argument('--auto-yes', action='store_true', help='Skip confirmation prompts')
-
-    # Create subcommands
-    subparsers = p.add_subparsers(dest='command', help='Available commands')
-
-    # NEW SERMON subcommand
-    new_sermon = subparsers.add_parser(
-        'new-sermon',
-        help='Create a new sermon from audio file',
-        description='Process an audio file and create a new sermon with AI-generated metadata'
-    )
-    new_sermon.add_argument('audio_file', help='Path to audio file')
-    new_sermon.add_argument('--speaker', required=True, help='Speaker name')
-    new_sermon.add_argument('--date', required=True, help='Recording date (YYYY-MM-DD)')
-    new_sermon.add_argument('--event-type', default='Sunday Service', help='Event type')
-    new_sermon.add_argument('--bible-text', help='Bible reference text')
-    new_sermon.add_argument('--title', help='Sermon title (will be generated if not provided)')
-    new_sermon.add_argument('--subtitle', help='Sermon subtitle')
-    new_sermon.add_argument('--description', help='Sermon description (will be generated if not provided)')
-    new_sermon.add_argument('--hashtags', help='Hashtags/keywords (will be generated if not provided)')
-    new_sermon.add_argument('--series', dest='series_title', help='Series name')
-    new_sermon.add_argument('--skip-transcription', action='store_true',
-                          help='Skip audio transcription (faster but less accurate metadata)')
-    new_sermon.add_argument('--skip-audio', '--skip-audio-processing', dest='skip_audio',
-                          action='store_true',
-                          help='Skip audio enhancement (use file as-is, e.g. already cleaned in kdenlive)')
-    new_sermon.add_argument('--whisper-model', default='base',
-                          choices=['tiny', 'base', 'small', 'medium', 'large'],
-                          help='Whisper model size for transcription (default: base)')
-    new_sermon.add_argument('--transcription-backend', default='whisper_local',
-                          choices=['whisper_local', 'whisper_openai'],
-                          help='Transcription backend: local Whisper or OpenAI API (default: whisper_local)')
-
-    # SERMON UPDATE subcommand
-    update_sermon = subparsers.add_parser(
-        'sermon-update',
-        help='Update existing sermons',
-        description='Process existing sermons with audio enhancement and metadata updates'
-    )
-    update_sermon.add_argument('--sermon-id', help='Process a single sermon ID')
-    update_sermon.add_argument('--limit', type=int, help='Max sermons to process')
-    update_sermon.add_argument('--since-days', type=int, help='Preached after N days ago')
-    update_sermon.add_argument('--date-range', nargs=2, metavar=('START', 'END'),
-                              help='Date range YYYY-MM-DD YYYY-MM-DD')
-    update_sermon.add_argument('--year', type=int, help='Process entire year')
-    update_sermon.add_argument('--years', help='Multiple years: 2021,2023 or 2020-2022')
-    update_sermon.add_argument('--no-upload', action='store_true', help='Skip upload')
-    update_sermon.add_argument('--output-dir', help='Directory to store processed files')
-    update_sermon.add_argument('--save-original-audio', action='store_true',
-                              help='Save original audio')
-    update_sermon.add_argument('--no-save-original-audio', action='store_true',
-                              help='Skip saving original audio')
-    update_sermon.add_argument('--save-transcript', action='store_true',
-                              help='Save transcript as text file')
-    update_sermon.add_argument('--no-save-transcript', action='store_true',
-                              help='Skip saving transcript')
-
-    # Add filter arguments to sermon-update
-    filt = update_sermon.add_argument_group('Sermon Filters')
-    for cli_name, (_api, kind, help_txt) in SERMON_FILTER_ARG_MAP.items():
-        arg = f"--{cli_name.replace('_', '-')}"
-        if kind in ('flag', 'negflag'):
-            filt.add_argument(arg, action='store_true', help=help_txt)
-        else:
-            numeric_names = {
-                'page','page_size','chapter','chapter_end','verse','verse_end','year','month','day',
-                'speaker_id','collection_id','audio_min_duration','audio_max_duration'
-            }
-            typ = (
-                int if (kind is int or 'duration' in cli_name or cli_name in numeric_names)
-                else str
-            )
-            filt.add_argument(arg, type=typ, help=help_txt)
-
-    # METADATA UPDATE subcommand
-    metadata_update = subparsers.add_parser(
-        'metadata-update',
-        help='Update only metadata for existing sermons',
-        description='Update descriptions and hashtags with AI validation, skip audio processing'
-    )
-    metadata_update.add_argument('--sermon-id', help='Process a single sermon ID')
-    metadata_update.add_argument('--limit', type=int, help='Max sermons to process')
-    metadata_update.add_argument('--since-days', type=int, help='Preached after N days ago')
-    metadata_update.add_argument('--date-range', nargs=2, metavar=('START', 'END'),
-                                help='Date range YYYY-MM-DD YYYY-MM-DD')
-    metadata_update.add_argument('--year', type=int, help='Process entire year')
-    metadata_update.add_argument('--years', help='Multiple years: 2021,2023 or 2020-2022')
-    metadata_update.add_argument('--force-description', action='store_true',
-                                help='Force update description even if exists')
-    metadata_update.add_argument('--force-hashtags', action='store_true',
-                                help='Force update hashtags even if exists')
-
-    # Add filter arguments to metadata-update
-    meta_filt = metadata_update.add_argument_group('Sermon Filters')
-    for cli_name, (_api, kind, help_txt) in SERMON_FILTER_ARG_MAP.items():
-        arg = f"--{cli_name.replace('_', '-')}"
-        if kind in ('flag', 'negflag'):
-            meta_filt.add_argument(arg, action='store_true', help=help_txt)
-        else:
-            numeric_names = {
-                'page','page_size','chapter','chapter_end','verse','verse_end','year','month','day',
-                'speaker_id','collection_id','audio_min_duration','audio_max_duration'
-            }
-            typ = (
-                int if (kind is int or 'duration' in cli_name or cli_name in numeric_names)
-                else str
-            )
-            meta_filt.add_argument(arg, type=typ, help=help_txt)
-
-    # VALIDATION subcommand
-    validation = subparsers.add_parser(
-        'validation',
-        help='Validate sermon descriptions',
-        description='Validate existing descriptions and optionally regenerate poor quality ones'
-    )
-    validation.add_argument('--validate-descriptions', action='store_true',
-                           help='Validate existing descriptions without processing sermons')
-    validation.add_argument('--validate-and-regenerate', action='store_true',
-                           help='Validate descriptions and regenerate those that fail')
-    validation.add_argument('--validation-report', action='store_true',
-                           help='Generate detailed validation report')
-    validation.add_argument('--export-validation-csv', type=str, metavar='FILENAME',
-                           help='Export validation results to CSV file')
-    validation.add_argument('--export-validation-json', type=str, metavar='FILENAME',
-                           help='Export detailed validation results to JSON file')
-    validation.add_argument('--validation-sermon-ids', type=str,
-                           help='Comma-separated sermon IDs for validation')
-    validation.add_argument('--limit', type=int, help='Max sermons to validate')
-
-    # LIST subcommand
-    list_sermons = subparsers.add_parser(
-        'list',
-        help='List sermons without processing',
-        description='Search and list sermons based on filters'
-    )
-    list_sermons.add_argument('--limit', type=int, help='Max sermons to list')
-    list_sermons.add_argument('--since-days', type=int, help='Preached after N days ago')
-    list_sermons.add_argument('--date-range', nargs=2, metavar=('START', 'END'),
-                             help='Date range YYYY-MM-DD YYYY-MM-DD')
-    list_sermons.add_argument('--year', type=int, help='List entire year')
-    list_sermons.add_argument('--years', help='Multiple years: 2021,2023 or 2020-2022')
-
-    # Add filter arguments to list
-    list_filt = list_sermons.add_argument_group('Sermon Filters')
-    for cli_name, (_api, kind, help_txt) in SERMON_FILTER_ARG_MAP.items():
-        arg = f"--{cli_name.replace('_', '-')}"
-        if kind in ('flag', 'negflag'):
-            list_filt.add_argument(arg, action='store_true', help=help_txt)
-        else:
-            numeric_names = {
-                'page','page_size','chapter','chapter_end','verse','verse_end','year','month','day',
-                'speaker_id','collection_id','audio_min_duration','audio_max_duration'
-            }
-            typ = (
-                int if (kind is int or 'duration' in cli_name or cli_name in numeric_names)
-                else str
-            )
-            list_filt.add_argument(arg, type=typ, help=help_txt)
-
-    return p
-
-
 def cli_main(argv: Iterable[str] | None = None):  # orchestration
     """CLI entry point with subcommand support.
 
@@ -3870,34 +3747,40 @@ def handle_validation(args):
         # Parse sermon IDs if provided
         validation_sermon_ids = None
         if args.validation_sermon_ids:
-            validation_sermon_ids = [id.strip() for id in args.validation_sermon_ids.split(',') if id.strip()]
+            validation_sermon_ids = [sid.strip() for sid in args.validation_sermon_ids.split(',') if sid.strip()]
             console_print(f"🎯 Validating {len(validation_sermon_ids)} specific sermons")
 
         # Run validation
         if args.validate_and_regenerate:
             console_print("🔍 Validating descriptions and regenerating failed ones...")
-            results = validator.validate_and_regenerate_descriptions(
+            results = validate_and_regenerate_descriptions(
+                validator=validator,
                 sermon_ids=validation_sermon_ids,
-                limit=getattr(args, 'limit', None)
+                regenerate_failed=True,
+                dry_run=args.dry_run,
+                upload_to_sermonaudio=True,
+            )
+            # results is a dict: {'validated', 'regenerated', 'failed', ...}
+            console_print(
+                f"📊 Validated {results.get('validated', 0)}, "
+                f"regenerated {results.get('regenerated', 0)}, "
+                f"failed {results.get('failed', 0)}"
             )
         else:
             console_print("🔍 Validating descriptions...")
-            results = validator.validate_descriptions(
-                sermon_ids=validation_sermon_ids,
-                limit=getattr(args, 'limit', None)
-            )
+            results = validator.validate_local_sermons(validation_sermon_ids)
+            summary = validator.generate_summary(results)
 
-        # Export results if requested
-        if args.export_validation_csv:
-            validator.export_results_csv(results, args.export_validation_csv)
-            console_print(f"📊 Validation results exported to {args.export_validation_csv}")
+            if args.validation_report:
+                validator.print_detailed_report(results, summary)
 
-        if args.export_validation_json:
-            validator.export_results_json(results, args.export_validation_json)
-            console_print(f"📊 Detailed validation results exported to {args.export_validation_json}")
+            if args.export_validation_csv:
+                validator.export_to_csv(results, args.export_validation_csv)
+                console_print(f"📊 Validation results exported to {args.export_validation_csv}")
 
-        if args.validation_report:
-            validator.print_validation_report(results)
+            if args.export_validation_json:
+                validator.export_to_json(results, summary, args.export_validation_json)
+                console_print(f"📊 Detailed validation results exported to {args.export_validation_json}")
 
         console_print("✅ Validation Complete!")
 
@@ -4208,268 +4091,7 @@ def handle_original_processing(args):
                 reason = attempt['reason']
                 console_print(f"      {provider}: {reason}", "info")
 
-        # Display result summary for single sermon processing
-        if result:
-            if result.get("action") == "skipped":
-                console_print(f"⏭️  Skipped: {result.get('reason', 'No updates needed')}", "info")
-            elif result.get("action") == "processed":
-                completed = result.get("completed", [])
-                if completed:
-                    actions_text = ", ".join(completed)
-                    console_print(f"✅ Completed: Updated {actions_text}", "success")
-                else:
-                    console_print("✅ Processing completed", "success")
-
         return
-
-    # Year shortcut -> preached_year (pure filter) so --limit & other filters apply
-    if args.year:
-        if not hasattr(args, 'preached_year') or args.preached_year in (None, 0):
-            args.preached_year = args.year
-        logger.debug(f"Using --year {args.year} as preached_year filter (respects --limit)")
-
-    # Multi-year support: --years accepts comma separated and/or single range (e.g. 2020-2022)
-    multi_years: list[int] = []
-    if getattr(args, 'years', None):
-        parts = [p.strip() for p in args.years.split(',') if p.strip()]
-        for p in parts:
-            if '-' in p:
-                try:
-                    a, b = p.split('-', 1)
-                    start_y = int(a)
-                    end_y = int(b)
-                    if start_y > end_y:
-                        start_y, end_y = end_y, start_y
-                    multi_years.extend(range(start_y, end_y + 1))
-                except ValueError:
-                    logger.warning("Invalid year range: %s", p)
-            else:
-                try:
-                    multi_years.append(int(p))
-                except ValueError:
-                    print(f"[WARN] Invalid year: {p}")
-        # Deduplicate & sort
-        multi_years = sorted(set(multi_years))
-        if multi_years:
-            logger.debug(f"Multi-year filter parsed: {multi_years}")
-            # Remove single-year preached_year if present to avoid conflict
-            if hasattr(args, 'preached_year'):
-                args.preached_year = None
-
-    params = build_sermon_query_params(args)
-    params.setdefault('broadcasterID', SERMON_AUDIO_BROADCASTER_ID)
-
-    # Only set default time filter if no explicit time/year filters AND not using multi-year
-    filter_keys = ('preachedAfterTimestamp', 'preachedBeforeTimestamp', 'year')
-    has_time_or_year_filter = any(k in params for k in filter_keys)
-    if not multi_years and not has_time_or_year_filter:
-        after = dt.datetime.utcnow() - dt.timedelta(days=30)
-        params['preachedAfterTimestamp'] = int(after.timestamp())
-        params.setdefault('cache', 'true')
-
-    # If multi-year list requested, perform separate queries per year and merge.
-    if multi_years:
-        combined: list[SermonLite] = []
-        for y in multi_years:
-            y_params = params.copy()
-            y_params['year'] = y
-            logger.debug(f"Fetching year {y} with params: {y_params}")
-            batch = fetch_sermons(y_params, max_results=None)
-            combined.extend(batch)
-            if args.limit and len(combined) >= args.limit:
-                combined = combined[:args.limit]
-                break
-        sermons = combined
-    else:
-        sermons = fetch_sermons(params, max_results=args.limit)
-    if not sermons:
-        print('No sermons matched filters.')
-        return
-
-    print(f"Matched {len(sermons)} sermons:")
-    for s in sermons:
-        print(
-            f"  {s.preachDate} | {s.sermonID} | {s.displayTitle} | "
-            f"{s.speakerName or '-'} | {s.eventType or '-'}"
-        )
-
-    if args.list_only:
-        return
-
-    if not confirm(f"Process {len(sermons)} sermons?", args.auto_yes):
-        console_print('Cancelled')
-        return
-
-    # Handle metadata-only and skip-audio flags for batch processing
-    skip_audio = args.metadata_only or args.skip_audio
-
-    # Determine save_original_audio setting
-    if args.no_save_original_audio:
-        save_original_audio = False
-    elif args.save_original_audio:
-        save_original_audio = True
-    else:
-        save_original_audio = None  # Use config default
-
-    # Determine save_transcript setting
-    if args.no_save_transcript:
-        save_transcript = False
-    elif args.save_transcript:
-        save_transcript = True
-    else:
-        save_transcript = None  # Use config default
-
-    # Show processing summary and settings
-    console_print(f"🎯 Processing {len(sermons)} sermons...")
-    if args.dry_run:
-        console_print("🔍 DRY RUN MODE - No changes will be made", "warning")
-    if args.no_upload:
-        console_print("📁 NO UPLOAD MODE - Audio will not be uploaded", "warning")
-
-    # Show processing settings summary
-    settings_info = []
-    if skip_audio:
-        settings_info.append("⚙️ Metadata only (no audio processing)")
-    else:
-        settings_info.append("⚙️ Full processing (metadata + audio)")
-
-    # LLM provider info
-    provider_info = llm_manager.get_provider_info()
-    if provider_info['primary']:
-        primary = provider_info['primary']
-        llm_text = f"LLM: {primary['type'].title()}/{primary['model']}"
-        if provider_info['fallback']:
-            fallback = provider_info['fallback']
-            llm_text += f" (fallback: {fallback['type'].title()}/{fallback['model']})"
-        settings_info.append(llm_text)
-
-    # Output directory
-    output_path = args.output_dir or config.get('output_directory', 'processed_sermons')
-    settings_info.append(f"Output: {output_path}")
-
-    # File saving options
-    save_opts = []
-    original_audio_enabled = (save_original_audio or
-                             (save_original_audio is None and
-                              config.get('save_original_audio', True)))
-    if original_audio_enabled:
-        save_opts.append("original audio")
-    transcript_enabled = (save_transcript or
-                         (save_transcript is None and
-                          config.get('save_transcript', False)))
-    if transcript_enabled:
-        save_opts.append("transcript")
-    if save_opts:
-        settings_info.append(f"Saving: {', '.join(save_opts)}")
-
-    # Display settings
-    for setting in settings_info:
-        console_print(f"   {setting}")
-    console_print("")  # Extra line for readability
-
-    success = 0
-    errors = 0
-    needs_review = []  # Track sermons that need manual review
-    validation_stats = {
-        'approved_primary': 0,
-        'approved_fallback': 0,
-        'needs_review': 0,
-        'no_validation': 0
-    }
-
-    # Process each sermon with individual progress updates
-    for idx, s in enumerate(sermons, 1):
-        if not args.verbose:
-            console_print(f"[{idx}/{len(sermons)}] Processing: {s.displayTitle}")
-        try:
-            result = process_single_sermon(
-                s.sermonID,
-                no_upload=args.no_upload or args.dry_run,
-                verbose=args.verbose,
-                skip_audio=skip_audio,
-                force_description=args.force_description,
-                force_hashtags=args.force_hashtags,
-                no_metadata=args.no_metadata,
-                output_dir=args.output_dir,
-                save_original_audio=save_original_audio,
-                save_transcript=save_transcript
-            )
-            success += 1
-
-            # Track validation results for summary
-            if result and result.get("validation_info"):
-                val_info = result["validation_info"]
-                status = val_info.get('final_status', 'unknown')
-                if status in validation_stats:
-                    validation_stats[status] += 1
-                if val_info.get('needs_review'):
-                    needs_review.append({
-                        'id': s.sermonID,
-                        'title': s.displayTitle,
-                        'validation_attempts': val_info.get('validation_attempts', [])
-                    })
-
-            # Display meaningful completion message based on what was done
-            if not args.verbose:
-                if result and result.get("action") == "skipped":
-                    reason = result.get('reason', 'No updates needed')
-                    msg = f"[{idx}/{len(sermons)}] ⏭️  Skipped: {s.displayTitle} - {reason}"
-                    console_print(msg, "info")
-                elif result and result.get("action") == "processed":
-                    completed = result.get("completed", [])
-                    if completed:
-                        actions_text = ", ".join(completed)
-                        msg = (f"[{idx}/{len(sermons)}] ✅ Updated: {s.displayTitle} - "
-                               f"{actions_text}")
-                        console_print(msg, "success")
-                    else:
-                        msg = f"[{idx}/{len(sermons)}] ✅ Completed: {s.displayTitle}"
-                        console_print(msg, "success")
-                else:
-                    msg = f"[{idx}/{len(sermons)}] ✅ Completed: {s.displayTitle}"
-                    console_print(msg, "success")
-        except Exception as e:  # pragma: no cover
-            errors += 1
-            error_msg = f"[{idx}/{len(sermons)}] ❌ Error: {s.displayTitle} - {e}"
-            if args.verbose:
-                console_print(error_msg, "error")
-                traceback.print_exc()
-            else:
-                console_print(error_msg, "error")
-        time.sleep(1)
-
-    # Final summary
-    if success > 0:
-        console_print(f"✅ Completed successfully: {success} sermons", "success")
-    if errors > 0:
-        console_print(f"❌ Errors encountered: {errors} sermons", "error")
-    else:
-        console_print("🎉 All sermons processed without errors!", "success")
-
-    # Validation summary
-    total_validated = sum(validation_stats.values())
-    if total_validated > 0:
-        console_print("\n📋 Description Validation Summary:", "info")
-        if validation_stats['approved_primary'] > 0:
-            count = validation_stats['approved_primary']
-            console_print(f"   ✅ Approved (Primary): {count}", "success")
-        if validation_stats['approved_fallback'] > 0:
-            count = validation_stats['approved_fallback']
-            console_print(f"   ✅ Approved (Fallback): {count}", "success")
-        if validation_stats['no_validation'] > 0:
-            console_print(f"   ℹ️  No Validation: {validation_stats['no_validation']}", "info")
-        if validation_stats['needs_review'] > 0:
-            console_print(f"   ⚠️  Needs Review: {validation_stats['needs_review']}", "warning")
-
-    # Manual review items
-    if needs_review:
-        console_print("\n⚠️  Sermons requiring manual review:", "warning")
-        for item in needs_review:
-            console_print(f"   📝 {item['title']} (ID: {item['id']})", "warning")
-            for attempt in item['validation_attempts']:
-                provider = attempt['provider'].title()
-                reason = attempt['reason']
-                console_print(f"      {provider}: {reason}", "info")
 
 
 if __name__ == '__main__':  # pragma: no cover
