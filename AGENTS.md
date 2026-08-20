@@ -106,14 +106,23 @@ Direct commits to `master` are **not allowed**. Every change must go through a b
 3. **Commit the version bump** — `git add pyproject.toml && git commit -m "Bump version X.Y.Z -> X.Y.Z+1"`
 4. **Push the branch** — `git push origin release/vX.Y.Z`
 5. **Create a PR** — `gh pr create --base master --head release/vX.Y.Z --title "Release vX.Y.Z" --body "Version bump and changelog"`
-6. **After PR is merged, tag the release** — `git checkout master && git pull && git tag -a vX.Y.Z -m "vX.Y.Z: short description" && git push origin vX.Y.Z`
-7. **Create a GitHub Release with release notes** — `gh release create vX.Y.Z --title "vX.Y.Z" --notes "Summary of changes, new features, bug fixes, and upgrade notes."`
+6. **Merge the release PR** — the release workflow (`.github/workflows/release.yml`) creates the annotated tag `vX.Y.Z` automatically after the merge when the version is not yet tagged
+7. **Publish the release draft** — the workflow drafts the GitHub Release with auto-generated notes; once the Docker build finishes, publish the draft in the GitHub UI (or `gh release edit vX.Y.Z --draft=false`)
 8. **Delete the release branch** — `git branch -d release/vX.Y.Z && git push origin --delete release/vX.Y.Z`
+
+### Release Automation
+
+- `.github/workflows/release.yml` covers the release flow end to end:
+  - **On release PRs** (branch `release/vX.Y.Z`, touching `pyproject.toml`): fails unless the version is a valid `MAJOR.MINOR.PATCH` bump above the latest tag, the tag does not exist yet, and the branch name matches the version
+  - **On merge to master**: creates the annotated tag `vX.Y.Z` when the pyproject.toml version is not yet tagged
+  - **On tag push**: validates the tag against `pyproject.toml`, then drafts the GitHub Release with auto-generated notes
+- The tag push triggers `.github/workflows/docker-build.yml` (tags `v*`) to build and push the `cuda`/`rocm`/`cpu` images from the tag; the release draft is published manually after the build succeeds
+- The checks exist so a merged version bump can never ship untagged again
 
 ### Tag Naming
 - Tags must start with `v` followed by the version: `v1.5.3`, `v1.6.0`, etc.
 - The tag message should be a one-line summary of changes
-- Tags trigger the CI workflow to build and push Docker images to GHCR
+- Tags trigger the release workflow to validate the version and draft the GitHub Release, and the Docker workflow to build and push images to GHCR
 
 ### Branch Naming
 - Release branches: `release/vX.Y.Z`
