@@ -18,14 +18,14 @@ logger = logging.getLogger(__name__)
 class EnhancedAudioProcessor:
     """
     Enhanced audio processing with Q&A normalization as specified in requirements.
-    
+
     Provides the exact API interface shown in the specification comments.
     """
 
     def __init__(self, config: dict[str, Any]):
         """
         Initialize enhanced audio processor with configuration.
-        
+
         Args:
             config: Complete configuration dictionary
         """
@@ -45,16 +45,21 @@ class EnhancedAudioProcessor:
         enhancement_method = audio_config.get('enhancement_method', 'clear')
         self.audio_processor = AudioProcessor(enhancement_method=enhancement_method, config=config)
 
-        logger.info(f"Enhanced AudioProcessor initialized with Q&A normalization: {self.qa_normalizer is not None}")
+        logger.info(
+            f"Enhanced AudioProcessor initialized with Q&A normalization: "
+            f"{self.qa_normalizer is not None}"
+        )
 
-    def process_sermon_audio(self, audio_file: str, metadata: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    def process_sermon_audio(
+        self, audio_file: str, metadata: dict[str, Any]
+    ) -> tuple[str, dict[str, Any]]:
         """
         Process sermon audio with comprehensive Q&A normalization and enhancement.
-        
+
         Args:
             audio_file: Path to input audio file
             metadata: Sermon metadata for processing context
-            
+
         Returns:
             Tuple of (output_file_path, processing_log)
         """
@@ -72,7 +77,9 @@ class EnhancedAudioProcessor:
                 normalized_audio, sample_rate = self.qa_normalizer.process_audio(audio_file)
 
                 # Save temporary normalized audio for further processing
-                temp_file = str(input_path.parent / f"{input_path.stem}_qa_normalized{input_path.suffix}")
+                temp_file = str(
+                    input_path.parent / f"{input_path.stem}_qa_normalized{input_path.suffix}"
+                )
                 import soundfile as sf
                 sf.write(temp_file, normalized_audio, sample_rate)
 
@@ -131,10 +138,10 @@ class EnhancedAudioProcessor:
     def get_quality_metrics(self, audio_file: str) -> dict[str, Any]:
         """
         Calculate audio quality metrics for the processed file.
-        
+
         Args:
             audio_file: Path to audio file
-            
+
         Returns:
             Dictionary of quality metrics
         """
@@ -176,7 +183,9 @@ class EnhancedAudioProcessor:
                 'dynamic_range_db': float(peak_db - rms_db),
                 'duration_seconds': len(audio_data) / sample_rate,
                 'sample_rate': sample_rate,
-                'quality_score': min(10.0, max(0.0, (snr_estimate + 20) / 5))  # Rough quality score 0-10
+                'quality_score': (
+                    min(10.0, max(0.0, (snr_estimate + 20) / 5))  # Rough quality score 0-10
+                )
             }
 
         except Exception as e:
@@ -191,10 +200,10 @@ class EnhancedAudioProcessor:
 def create_enhanced_processor(config: dict[str, Any]) -> EnhancedAudioProcessor:
     """
     Create an enhanced audio processor with the given configuration.
-    
+
     Args:
         config: Configuration dictionary
-        
+
     Returns:
         Configured EnhancedAudioProcessor instance
     """

@@ -253,6 +253,7 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
         """Initialize Ollama client."""
         try:
             import os
+
             import ollama
 
             # Set environment variable for Ollama host
@@ -324,7 +325,7 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
             embeddings: list[list[float]] = []
             for text in texts:
                 response = self.client.embed(model=self.model_name, input=text)
-                
+
                 # Handle different response formats
                 if isinstance(response, dict):
                     if "embedding" in response and isinstance(response["embedding"], list):
@@ -357,15 +358,26 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
                                 if "embedding" in response:
                                     embeddings.append(response["embedding"])
                                 elif "embeddings" in response:
-                                    embeddings.append(response["embeddings"][0] if response["embeddings"] else [])
+                                    embeddings.append(
+                                        response["embeddings"][0]
+                                        if response["embeddings"] else []
+                                    )
                                 else:
-                                    raise ValueError(f"No embedding data found in response")
+                                    raise ValueError("No embedding data found in response")
                             else:
-                                raise ValueError(f"Unexpected response type from Ollama: {type(response)}")
+                                raise ValueError(
+                                    f"Unexpected response type from Ollama: {type(response)}"
+                                )
                         except Exception as e:
                             logger.error(f"Failed to extract embedding from response: {e}")
-                            logger.error(f"Response type: {type(response)}, attributes: {dir(response) if hasattr(response, '__dict__') else 'no __dict__'}")
-                            raise ValueError(f"Cannot extract embedding from Ollama response: {type(response)}")
+                            logger.error(
+                                "Response type: %s, attributes: %s",
+                                type(response),
+                                dir(response) if hasattr(response, '__dict__') else 'no __dict__',
+                            )
+                            raise ValueError(
+                                f"Cannot extract embedding from Ollama response: {type(response)}"
+                            ) from e
 
             return embeddings
 
