@@ -64,7 +64,9 @@ jobs:
 
   credential-scan:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    # Trufflehog's BASE/HEAD scan needs two distinct commits; on pushes to
+    # master (base == head) it errors out. PRs are where the scan has value.
+    if: github.event_name == 'pull_request'
 
     steps:
     - name: Checkout code
