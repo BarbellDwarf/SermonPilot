@@ -11,9 +11,6 @@ config.yaml
 secrets/
 .secrets/
 
-# Test files (not for distribution)
-tests/
-
 # Processing Output
 processed_sermons/
 processed_sermons/*
