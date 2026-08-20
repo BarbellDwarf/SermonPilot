@@ -8,13 +8,13 @@ scipy>=1.11.4
 soundfile>=0.12.1
 librosa>=0.10.1
 
-# PyTorch ecosystem
-torch>=2.1.1
-torchaudio>=2.1.1
+# PyTorch ecosystem (single pin, same floor as pyproject)
+torch>=2.6.0
+torchaudio>=2.6.0
 
 # DeepFilterNet model (imports as 'df')
 deepfilternet>=0.5.6
 
 # Optional: GPU acceleration for Windows
-# torch==2.1.1+cu121; sys_platform == "win32"
-# torchaudio==2.1.1+cu121; sys_platform == "win32"
+# torch==2.6.0+cu124; sys_platform == "win32"
+# torchaudio==2.6.0+cu124; sys_platform == "win32"

@@ -1,19 +1,15 @@
-# ROCm-enabled requirements for SermonPilot
+# ROCm-enabled PyTorch (ROCm 7.1 index)
 # Install with: uv pip install -r requirements/requirements-rocm.txt --index-strategy unsafe-best-match
+# Overrides the torch family from requirements.txt with ROCm builds.
 
-# Use PyTorch ROCm index (matches system ROCm 7.x; works on 7.0+)
 --extra-index-url https://download.pytorch.org/whl/rocm7.1
 
-# Core dependencies
+# Base runtime dependencies (mirror of pyproject.toml)
 -r requirements.txt
 
-# ROCm-specific PyTorch overrides (torch/torchaudio/torchvision are released independently)
+# Per-index overrides for the torch family (torch/torchaudio are released independently on ROCm)
 torch==2.12.1+rocm7.1
 torchaudio==2.11.0+rocm7.1
-torchvision==0.27.1+rocm7.1
-
-# DeepFilterNet DSP (Clear uses df.enhance + init_df for STFT/ERB features)
-deepfilternet>=0.5.6
 
 # Note: onnxruntime-rocm pip wheels are built against ROCm 6.4.2 ABI
 # (libhipblas.so.2, libamdhip64.so.6, symbol hipblasGemmStridedBatchedEx_v2)

@@ -1,11 +1,12 @@
-# CPU-only requirements (for servers without GPU or testing)
-# Install with: pip install -r requirements/requirements-cpu.txt
+# CPU-only PyTorch (CPU index)
+# Install with: uv pip install -r requirements/requirements-cpu.txt
+# Overrides the torch family from requirements.txt with CPU-only builds.
 
-# Use PyTorch CPU-only index
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-# Core dependencies  
+# Base runtime dependencies (mirror of pyproject.toml)
 -r requirements.txt
 
-# Note: This will install CPU-only versions of PyTorch
-# Performance will be significantly slower for AI enhancement models
+# Per-index overrides for the torch family (single pin, same floor as pyproject)
+torch==2.6.0+cpu
+torchaudio==2.6.0+cpu
