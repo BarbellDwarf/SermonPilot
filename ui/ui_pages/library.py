@@ -617,7 +617,7 @@ def show_library():
                 )
 
         # Main layout with two columns
-        col_list, col_detail = st.columns([2, 3])
+        col_list, col_detail = st.columns([3, 2])
 
         with col_list:
             st.markdown("### Sermons")
