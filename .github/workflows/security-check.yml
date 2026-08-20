@@ -112,14 +112,11 @@ jobs:
         ./osv-scanner scan "${args[@]}" --lockfile uv.lock
 
     - name: Run Bandit security linter
-      # B324 (weak MD5) is skipped: the two pre-existing findings are MD5 used
-      # to seed deterministic embeddings in ui/embedding_manager.py, not for
-      # security. The proper fix (usedforsecurity=False) is tracked outside
-      # this ticket. -lll fails the job on HIGH severity findings only; the
+      # -lll fails the job on HIGH severity findings only; the
       # pre-existing MEDIUM/LOW findings are reported in the artifact.
       run: |
         echo "🔒 Running Bandit security linter..."
-        bandit -r src/ ui/ sermon_updater.py streamlit_app.py -lll -s B324 -f json -o bandit_report.json
+        bandit -r src/ ui/ sermon_updater.py streamlit_app.py -lll -f json -o bandit_report.json
 
     - name: Upload Bandit report
       if: always()
