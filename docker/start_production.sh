@@ -19,12 +19,6 @@ trap cleanup SIGTERM SIGINT
 # Ensure persistent data directories exist
 mkdir -p /data /app/processed_sermons /app/logs
 
-# Wait for external dependencies (database if configured)
-if [ -n "$DATABASE_HOST" ]; then
-    echo "⏳ Waiting for external services..."
-    python /app/docker/wait_for_services.py
-fi
-
 # Initialize database if needed
 echo "🗄️ Initializing database..."
 python -c "
