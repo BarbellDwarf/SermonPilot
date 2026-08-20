@@ -22,6 +22,17 @@ if not is_authenticated():
     st.stop()
 
 
+def _status_class(label: str) -> str:
+    """Map a status label to its semantic CSS class"""
+    class_map = {
+        "OK": "status-ok",
+        "Warning": "status-warn",
+        "Error": "status-error",
+        "Processing": "status-progress",
+    }
+    return class_map.get(label, "status-neutral")
+
+
 def render_sidebar_extras():
     """Render system status and quick actions below the nav menu"""
     render_system_status()
@@ -74,9 +85,11 @@ def render_system_status():
                 if status_key in status_data:
                     status_info = status_data[status_key]
                     label = get_status_label(status_info["status"])
+                    label_cls = _status_class(label)
                     st.markdown(
-                        f"**{display_name}**: {label}  \n{status_info.get('message', '')}",
-                        unsafe_allow_html=False,
+                        f"**{display_name}**: <span class=\"{label_cls}\">{label}</span>"
+                        f"  \n{status_info.get('message', '')}",
+                        unsafe_allow_html=True,
                     )
 
     except Exception:
@@ -126,10 +139,12 @@ def render_detailed_status():
         with st.sidebar.expander("Full System Status", expanded=True):
             for status_key, status_info in status_data.items():
                 label = get_status_label(status_info["status"])
+                label_cls = _status_class(label)
                 display_name = status_key.replace("_", " ").title()
                 st.markdown(
-                    f"**{display_name}**: {label}  \n{status_info.get('message', '')}",
-                    unsafe_allow_html=False,
+                    f"**{display_name}**: <span class=\"{label_cls}\">{label}</span>"
+                    f"  \n{status_info.get('message', '')}",
+                    unsafe_allow_html=True,
                 )
     except Exception:
         st.sidebar.warning("Status unavailable")

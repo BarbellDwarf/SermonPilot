@@ -73,46 +73,77 @@ st.set_page_config(
 # Custom CSS for styling
 st.markdown("""
 <style>
-    /* Dark mode support for system health components */
+    /* Theme tokens: light is the default, dark overrides follow */
+    :root, [data-theme="light"] {
+        --header-color: #1e3a8a;
+        --surface-color: #ffffff;
+        --surface-border: #e5e7eb;
+        --muted-text: #475569;
+        --card-grad-a: #4f46e5;
+        --card-grad-b: #6d28d9;
+        --status-ok: #047857;
+        --status-warn: #b45309;
+        --status-error: #b91c1c;
+        --status-progress: #1d4ed8;
+        --status-neutral: #475569;
+    }
+
     [data-theme="dark"] {
-        --background-color: rgba(16, 185, 129, 0.15);
-        --text-color: #f1f5f9;
-        --border-color: rgba(16, 185, 129, 0.3);
+        --header-color: #93c5fd;
+        --surface-color: #141419;
+        --surface-border: rgba(255, 255, 255, 0.08);
+        --muted-text: #94a3b8;
+        --card-grad-a: #4338ca;
+        --card-grad-b: #5b21b6;
+        --status-ok: #34d399;
+        --status-warn: #fbbf24;
+        --status-error: #f87171;
+        --status-progress: #60a5fa;
+        --status-neutral: #94a3b8;
     }
 
-    [data-theme="light"] {
-        --background-color: rgba(16, 185, 129, 0.1);
-        --text-color: #334155;
-        --border-color: rgba(16, 185, 129, 0.2);
-    }
-
-    /* Auto-detect dark mode */
     @media (prefers-color-scheme: dark) {
         :root {
-            --background-color: rgba(16, 185, 129, 0.15);
-            --text-color: #f1f5f9;
-            --border-color: rgba(16, 185, 129, 0.3);
+            --header-color: #93c5fd;
+            --surface-color: #141419;
+            --surface-border: rgba(255, 255, 255, 0.08);
+            --muted-text: #94a3b8;
+            --card-grad-a: #4338ca;
+            --card-grad-b: #5b21b6;
+            --status-ok: #34d399;
+            --status-warn: #fbbf24;
+            --status-error: #f87171;
+            --status-progress: #60a5fa;
+            --status-neutral: #94a3b8;
         }
     }
 
     @media (prefers-color-scheme: light) {
         :root {
-            --background-color: rgba(16, 185, 129, 0.1);
-            --text-color: #334155;
-            --border-color: rgba(16, 185, 129, 0.2);
+            --header-color: #1e3a8a;
+            --surface-color: #ffffff;
+            --surface-border: #e5e7eb;
+            --muted-text: #475569;
+            --card-grad-a: #4f46e5;
+            --card-grad-b: #6d28d9;
+            --status-ok: #047857;
+            --status-warn: #b45309;
+            --status-error: #b91c1c;
+            --status-progress: #1d4ed8;
+            --status-neutral: #475569;
         }
     }
 
     .main-header {
         font-size: 2.5rem;
         font-weight: bold;
-        color: #1E3A8A;
+        color: var(--header-color);
         margin-bottom: 1rem;
         text-align: center;
     }
 
     .status-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, var(--card-grad-a) 0%, var(--card-grad-b) 100%);
         padding: 1rem;
         border-radius: 0.5rem;
         color: white;
@@ -120,26 +151,55 @@ st.markdown("""
     }
 
     .metric-card {
-        background: white;
+        background: var(--surface-color);
         padding: 1rem;
         border-radius: 0.5rem;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--surface-border);
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
     .success-text {
-        color: #10b981;
+        color: var(--status-ok);
         font-weight: bold;
     }
 
     .error-text {
-        color: #ef4444;
+        color: var(--status-error);
         font-weight: bold;
     }
 
     .warning-text {
-        color: #f59e0b;
+        color: var(--status-warn);
         font-weight: bold;
+    }
+
+    /* Status labels: one meaning per colour in both modes */
+    .status-ok { color: var(--status-ok); font-weight: 600; }
+    .status-warn { color: var(--status-warn); font-weight: 600; }
+    .status-error { color: var(--status-error); font-weight: 600; }
+    .status-progress { color: var(--status-progress); font-weight: 600; }
+    .status-neutral { color: var(--status-neutral); font-weight: 600; }
+
+    /* Library list rows: fixed slot model, one flexible title slot */
+    .sermon-title {
+        display: block;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sermon-meta {
+        color: var(--muted-text);
+        font-size: 0.85rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* Compact, even row rhythm inside the sermon list */
+    .st-key-sermon_list {
+        gap: 0.2rem;
     }
 
     /* Hide the Streamlit skills promo banner */
