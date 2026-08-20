@@ -42,7 +42,7 @@ llm:
   # Validation LLM settings (smaller model for description validation)
   validator:
     enabled: true
-    provider: "ollama"  # Options: "ollama", "openai"
+    provider: "ollama"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
     ollama:
       host: "http://localhost:11434"
       model: "gemma2:2b"  # Smaller, faster model for validation
@@ -90,7 +90,7 @@ metadata_processing:
 Validate all existing processed sermons:
 
 ```bash
-python description_validator.py --local-sermons
+python src/description_validator.py --local-sermons
 ```
 
 ### 2. Detailed Validation Report
@@ -98,7 +98,7 @@ python description_validator.py --local-sermons
 Get a comprehensive report with criteria performance:
 
 ```bash
-python description_validator.py --local-sermons --detailed-report
+python src/description_validator.py --local-sermons --detailed-report
 ```
 
 ### 3. Validate Specific Sermons
@@ -106,7 +106,7 @@ python description_validator.py --local-sermons --detailed-report
 Validate only specific sermon IDs:
 
 ```bash
-python description_validator.py --local-sermons --sermon-ids 123456789,987654321
+python src/description_validator.py --local-sermons --sermon-ids 123456789,987654321
 ```
 
 ### 4. Export Results for Analysis
@@ -114,28 +114,32 @@ python description_validator.py --local-sermons --sermon-ids 123456789,987654321
 Export validation results to CSV for spreadsheet analysis:
 
 ```bash
-python description_validator.py --local-sermons --export-csv validation_results.csv
+python src/description_validator.py --local-sermons --export-csv validation_results.csv
 ```
 
 Export detailed results to JSON:
 
 ```bash
-python description_validator.py --local-sermons --export-json detailed_results.json
+python src/description_validator.py --local-sermons --export-json detailed_results.json
 ```
 
 ### 5. Integrated Validation and Regeneration
 
-Use the integrated script to validate and automatically regenerate failed descriptions:
+Use the `validation` subcommand of the CLI to validate and automatically
+regenerate failed descriptions:
 
 ```bash
 # Validate all and regenerate failed descriptions
-python validate_descriptions.py --validate-all --regenerate-failed
+python sermon_updater.py validation --validate-and-regenerate
 
 # Dry run to see what would be regenerated
-python validate_descriptions.py --validate-all --regenerate-failed --dry-run
+python sermon_updater.py validation --validate-and-regenerate --dry-run
 
 # Validate recent sermons and regenerate
-python validate_descriptions.py --validate-recent --since-days 30 --regenerate-failed
+python sermon_updater.py validation --validate-descriptions --validation-report --since-days 30
+
+# Validate specific sermons
+python sermon_updater.py validation --validate-and-regenerate --validation-sermon-ids 123456789,987654321
 ```
 
 ## Understanding Validation Results
@@ -196,16 +200,19 @@ if validation_info['final_status'] == 'needs_review':
     print("⚠️ Description may need manual review")
 ```
 
+`final_status` is one of `no_validation` (validation disabled),
+`approved_primary`, `approved_fallback`, or `needs_review`.
+
 ### 2. Post-Processing Audit
 
 Run periodic audits of your sermon descriptions:
 
 ```bash
 # Weekly audit
-python validate_descriptions.py --validate-recent --since-days 7 --detailed-report
+python src/description_validator.py --local-sermons --since-days 7 --detailed-report
 
 # Monthly comprehensive check
-python validate_descriptions.py --validate-all --export-csv monthly_audit.csv
+python src/description_validator.py --local-sermons --export-csv monthly_audit.csv
 ```
 
 ### 3. Quality Improvement Workflow
@@ -226,7 +233,7 @@ python validate_descriptions.py --validate-all --export-csv monthly_audit.csv
 
 **"No sermons found to validate"**
 - Check that processed sermons exist in the `output_directory`
-- Verify description files exist (e.g., `123456789_description.txt`)
+- Verify description files exist in each sermon directory (e.g., `description.txt`)
 
 **"Validation always returns approved"**
 - Check that validation criteria are specific enough
@@ -252,14 +259,15 @@ python validate_descriptions.py --validate-all --export-csv monthly_audit.csv
 
 ## API Integration (Future Enhancement)
 
-The validation system is designed to support direct integration with the SermonAudio API:
+The validator is designed to support direct integration with the SermonAudio
+API. The CLI exposes an `--api-sermons` flag for this purpose:
 
-```python
-# Future feature - validate descriptions directly from API
-validator.validate_api_sermons(['123456789', '987654321'])
+```bash
+python src/description_validator.py --api-sermons --sermon-ids 123456789,987654321
 ```
 
-This would allow validation of descriptions without requiring local processing, useful for auditing descriptions that were manually entered.
+API validation is not yet implemented; the flag currently falls back to
+validating the local copies of the requested sermons.
 
 ## Best Practices
 
@@ -294,10 +302,10 @@ This would allow validation of descriptions without requiring local processing, 
 echo "Running weekly description validation..."
 
 # Validate recent sermons
-python validate_descriptions.py --validate-recent --since-days 7 --detailed-report
+python src/description_validator.py --local-sermons --since-days 7 --detailed-report
 
 # Export results for tracking
-python description_validator.py --local-sermons --export-csv "reports/validation_$(date +%Y%m%d).csv"
+python src/description_validator.py --local-sermons --export-csv "reports/validation_$(date +%Y%m%d).csv"
 
 echo "Validation complete!"
 ```
@@ -306,19 +314,19 @@ echo "Validation complete!"
 
 ```bash
 # 1. First, see what needs work
-python description_validator.py --local-sermons --detailed-report
+python src/description_validator.py --local-sermons --detailed-report
 
 # 2. Export for analysis
-python description_validator.py --local-sermons --export-csv all_descriptions.csv
+python src/description_validator.py --local-sermons --export-csv all_descriptions.csv
 
 # 3. Regenerate failed descriptions (dry run first)
-python validate_descriptions.py --validate-all --regenerate-failed --dry-run
+python sermon_updater.py validation --validate-and-regenerate --dry-run
 
 # 4. Actually regenerate
-python validate_descriptions.py --validate-all --regenerate-failed
+python sermon_updater.py validation --validate-and-regenerate
 
 # 5. Verify improvements
-python description_validator.py --local-sermons --detailed-report
+python src/description_validator.py --local-sermons --detailed-report
 ```
 
 ### Example 3: Custom Criteria Testing
@@ -340,7 +348,7 @@ metadata_processing:
 
 ```bash
 # Test the new criteria
-python description_validator.py --local-sermons --detailed-report
+python src/description_validator.py --local-sermons --detailed-report
 ```
 
 This comprehensive validation system helps ensure that your sermon descriptions consistently meet quality standards and provide value to your audience.

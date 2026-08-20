@@ -2,7 +2,9 @@
 
 ## Overview
 
-This guide helps you set up the SermonPilot with proper security configurations, including environment variables, credential management, and security validation tools.
+This guide helps you configure SermonPilot securely: environment variables,
+credential management, optional UI password protection, and the pre-commit
+credential scanner.
 
 ## Quick Setup
 
@@ -42,8 +44,8 @@ Copy and customize the configuration:
 # Copy the configuration template
 cp config/config.example.yaml config.yaml
 
-# The config.yaml file will automatically use your environment variables
-# No need to edit it manually - it references ${ENV_VAR_NAME} automatically
+# The config.yaml file references environment variables with ${VAR} syntax,
+# so secrets stay out of the repository
 ```
 
 ### 4. Security Validation
@@ -51,15 +53,13 @@ cp config/config.example.yaml config.yaml
 Validate your setup:
 
 ```bash
-# Check configuration security
+# Check configuration security and environment setup
 python src/secure_config.py
-
-# Run security scan
-# tools/ directory no longer exists
-
-# Validate overall security compliance
-# tools/ directory no longer exists
 ```
+
+This prints the status of your `.env` file, required variables, and
+`config.yaml`, then loads the configuration through the secure loader
+(`src/secure_config.py`), which fails on hardcoded credentials.
 
 ## Detailed Setup Instructions
 
@@ -73,15 +73,20 @@ See `.env.example` for the complete list of available environment variables. Key
 
 #### LLM Providers (Configure at least one)
 - `OPENAI_API_KEY` - OpenAI GPT models
-- `XAI_API_KEY` - xAI Grok models  
+- `XAI_API_KEY` - xAI Grok models
 - `ANTHROPIC_API_KEY` - Anthropic Claude models
 - `GROQ_API_KEY` - Groq fast inference
 - `GOOGLE_API_KEY` - Google Gemini models
+- `OPENROUTER_API_KEY` - OpenRouter models
 
 #### Local LLM (Alternative to API providers)
 - `OLLAMA_HOST` - Ollama server URL (default: http://localhost:11434)
-- `OLLAMA_PRIMARY_MODEL` - Primary model name
-- `OLLAMA_FALLBACK_MODEL` - Fallback model name
+
+#### UI Security (Optional)
+- `APP_PASSWORD` - require a password before the UI loads (leave empty for
+  local-only use without authentication)
+- `HOST_BIND` - bind address for the published port (default: 127.0.0.1;
+  use 0.0.0.0 only when `APP_PASSWORD` is set)
 
 ### Ollama Setup (Local LLM Alternative)
 
@@ -100,9 +105,10 @@ ollama pull gemma2:2b        # Fast validator model
 
 # Configure environment
 export OLLAMA_HOST=http://localhost:11434
-export OLLAMA_PRIMARY_MODEL=llama3.1:8b
-export OLLAMA_FALLBACK_MODEL=llama2
 ```
+
+Set the model names in `config.yaml` under `llm.primary.ollama.model` and
+`llm.validator.ollama.model` (or the `OLLAMA_MODEL` environment variable).
 
 ### Security Best Practices
 
@@ -110,20 +116,17 @@ export OLLAMA_FALLBACK_MODEL=llama2
 - ✅ **Never** commit `.env` files to version control
 - ✅ Use different API keys for development/production
 - ✅ Regularly rotate API keys
-- ✅ Use environment-specific configurations
+- ✅ Keep secrets out of `config.yaml`; reference them with `${VAR}` syntax
 
 #### 2. Development vs Production
 ```bash
 # Development
-DEBUG_MODE=true
+DEBUG=true
 DRY_RUN=true
-LOG_LEVEL=DEBUG
 
-# Production  
-DEBUG_MODE=false
+# Production
+DEBUG=false
 DRY_RUN=false
-LOG_LEVEL=INFO
-PRODUCTION_MODE=true
 ```
 
 #### 3. Pre-commit Security Hooks
@@ -142,13 +145,14 @@ git commit -m "test commit"  # Will scan for credentials
 ### Configuration Validation
 
 #### Automatic Validation
-The system automatically validates configuration on startup:
+The system validates the configuration on startup through the secure config
+loader, which performs environment variable substitution and rejects
+hardcoded credentials:
 
 ```python
 from src.secure_config import load_secure_config
 
-# This will validate security and substitute environment variables
-config = load_secure_config()
+config = load_secure_config()  # validates security and substitutes env vars
 ```
 
 #### Manual Validation
@@ -157,12 +161,6 @@ Run security checks manually:
 ```bash
 # Validate configuration security
 python src/secure_config.py
-
-# Scan for hardcoded credentials
-# tools/ directory no longer exists
-
-# Run comprehensive security tests
-# tools/ directory no longer exists
 ```
 
 ### Troubleshooting
@@ -180,9 +178,6 @@ echo "SERMONAUDIO_API_KEY=your-key-here" >> .env
 
 **"Hardcoded credentials detected"**
 ```bash
-# Find the specific violations
-# tools/ directory no longer exists --verbose
-
 # Replace hardcoded values with environment variables
 # Example: api_key: "sk-abc123" → api_key: "${OPENAI_API_KEY}"
 ```
@@ -213,53 +208,22 @@ cp config/config.example.yaml config.yaml
    api_key: "$OPENAI_API_KEY"
    ```
 
-### Advanced Security Features
-
-#### Docker Secrets (Production)
-For containerized deployments:
-
-```bash
-# Docker secrets directory
-export DOCKER_SECRETS_DIR=/run/secrets
-
-# Mount secrets as files
-docker run -v /host/secrets:/run/secrets sermon-processor
-```
-
-#### AWS Secrets Manager
-For cloud deployments:
-
-```bash
-export AWS_REGION=us-east-1
-export AWS_SECRETS_MANAGER_SECRET_NAME=sermon-processor-secrets
-```
-
-#### Security Audit Logging
-Enable security audit logging:
-
-```bash
-export SECURITY_AUDIT_ENABLED=true
-export SECURITY_AUDIT_LOG_PATH=logs/security_audit.log
-```
-
 ## Verification Checklist
 
 After setup, verify:
 
 - [ ] `.env` file exists with your credentials
 - [ ] `config.yaml` uses environment variables (`${VAR_NAME}` syntax)
-- [ ] Security validation passes: `# tools/ directory no longer exists`
-- [ ] Configuration loads successfully: `python src/secure_config.py`
-- [ ] No hardcoded credentials detected: `# tools/ directory no longer exists`
+- [ ] Security validation passes: `python src/secure_config.py`
 - [ ] Pre-commit hook installed and working
 - [ ] LLM provider connectivity verified
-- [ ] SermonAudio API connectivity verified
+- [ ] SermonAudio API connectivity verified: `python sermon_updater.py list --since-days 30`
 
 ## Next Steps
 
 Once security is configured:
 
-1. **Test the system**: Run `python sermon_updater.py --list-only` to test API connectivity
+1. **Test the system**: Run `python sermon_updater.py list --since-days 30` to test API connectivity
 2. **Configure audio processing**: Set up audio enhancement models
 3. **Set up web interface**: Run `streamlit run streamlit_app.py`
 4. **Process sermons**: Begin processing with proper security in place
@@ -267,8 +231,7 @@ Once security is configured:
 ## Support
 
 For security-related issues:
-- Review the security scanner output: `# tools/ directory no longer exists`
 - Check configuration validation: `python src/secure_config.py`
-- Run security compliance tests: `# tools/ directory no longer exists`
+- Review the project README and `docs/` for setup guidance
 
 For general setup issues, see the main README.md and documentation in the `docs/` directory.
