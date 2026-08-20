@@ -78,7 +78,7 @@ st.markdown("""
         --header-color: #1e3a8a;
         --surface-color: #ffffff;
         --surface-border: #e5e7eb;
-        --muted-text: #475569;
+        --muted-text: #64748b;
         --card-grad-a: #4f46e5;
         --card-grad-b: #6d28d9;
         --status-ok: #047857;
@@ -123,7 +123,7 @@ st.markdown("""
             --header-color: #1e3a8a;
             --surface-color: #ffffff;
             --surface-border: #e5e7eb;
-            --muted-text: #475569;
+            --muted-text: #64748b;
             --card-grad-a: #4f46e5;
             --card-grad-b: #6d28d9;
             --status-ok: #047857;
@@ -184,6 +184,7 @@ st.markdown("""
     /* Library list rows: fixed slot model, one flexible title slot */
     .sermon-title {
         display: block;
+        line-height: 1.3;
         font-weight: 600;
         white-space: nowrap;
         overflow: hidden;
@@ -192,7 +193,8 @@ st.markdown("""
 
     .sermon-meta {
         color: var(--muted-text);
-        font-size: 0.85rem;
+        font-size: 0.8rem;
+        margin-top: 0.15rem;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -208,11 +210,12 @@ st.markdown("""
         padding-top: 3.75rem;
     }
 
-    /* Sidebar: divide the nav from the status and actions sections */
-    [data-testid="stSidebarNav"] {
-        border-bottom: 1px solid var(--surface-border);
-        padding-bottom: 0.75rem;
-        margin-bottom: 0.25rem;
+    /* Sidebar: divide the nav from the status and actions sections.
+       Streamlit already renders a native nav separator; the expander's
+       own default borders would double up next to it. */
+    [data-testid="stSidebar"] [data-testid="stExpander"] > details,
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] {
+        border: none;
     }
 
     [data-testid="stSidebar"] h3 {
