@@ -15,6 +15,7 @@ Features:
 
 import json
 import logging
+import sys
 import threading
 import time
 import uuid
@@ -22,9 +23,39 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
+# Add project paths for imports
+ui_dir = Path(__file__).parent
+project_root = ui_dir.parent
+sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(project_root / "src"))
+sys.path.insert(0, str(ui_dir))
+
 logger = logging.getLogger(__name__)
+
+_SECRET_KEY_SUFFIXES = ('_key', '_token', '_secret', '_password', '_passwd')
+_SECRET_KEY_NAMES = frozenset({'password', 'passwd', 'token', 'secret', 'auth', 'authorization'})
+
+
+def _is_secret_key(key: str) -> bool:
+    """Return True if a parameter key should never be persisted."""
+    lowered = key.lower()
+    return lowered in _SECRET_KEY_NAMES or lowered.endswith(_SECRET_KEY_SUFFIXES)
+
+
+def _strip_secrets(value: Any) -> Any:
+    """Recursively remove secret keys from a nested structure."""
+    if isinstance(value, dict):
+        return {
+            key: _strip_secrets(item)
+            for key, item in value.items()
+            if not _is_secret_key(key)
+        }
+    if isinstance(value, list):
+        return [_strip_secrets(item) for item in value]
+    return value
 
 
 class JobType(Enum):
@@ -395,11 +426,18 @@ class JobQueue:
 
             return next_job
 
+    def _mark_cancelled(self, job: Job):
+        """Mark a job as cancelled and record its completion time."""
+        job.cancelled = True
+        job.status = JobStatus.CANCELLED
+        job.completed_at = datetime.now()
+
     def _execute_job(self, job: Job):
         """Execute a specific job"""
         try:
             if job.cancelled or job.status == JobStatus.CANCELLED:
                 job.add_log("Job was cancelled before execution")
+                self._mark_cancelled(job)
                 return
 
             job.add_log(f"Executing {job.type.value} job")
@@ -412,33 +450,42 @@ class JobQueue:
             # Execute the job
             result = executor(job)
 
-            if job.cancelled or job.status == JobStatus.CANCELLED:
-                job.add_log("Job was cancelled during execution")
-                return
+            with self._queue_lock:
+                if job.cancelled or job.status == JobStatus.CANCELLED:
+                    job.add_log("Job was cancelled during execution")
+                    self._mark_cancelled(job)
+                    return
 
-            # Update job with result
-            if result.success:
-                job.status = JobStatus.COMPLETED
-                job.progress = 100.0
-                job.add_log("Job completed successfully")
-            else:
-                job.status = JobStatus.FAILED
-                job.add_log(f"Job failed: {result.error or result.message}")
+                # Update job with result
+                if result.success:
+                    job.status = JobStatus.COMPLETED
+                    job.progress = 100.0
+                    job.add_log("Job completed successfully")
+                else:
+                    job.status = JobStatus.FAILED
+                    job.add_log(f"Job failed: {result.error or result.message}")
 
-            job.result = result
-            job.completed_at = datetime.now()
+                job.result = result
+                job.completed_at = datetime.now()
+
+        except JobCancelledError:
+            with self._queue_lock:
+                self._mark_cancelled(job)
+            job.add_log("Job cancelled by user")
 
         except Exception as e:
-            if job.cancelled or job.status == JobStatus.CANCELLED:
-                job.add_log(f"Job cancelled: {e}")
-                return
-            job.status = JobStatus.FAILED
-            job.result = JobResult(
-                success=False,
-                message="Job execution failed",
-                error=str(e)
-            )
-            job.completed_at = datetime.now()
+            with self._queue_lock:
+                if job.cancelled or job.status == JobStatus.CANCELLED:
+                    job.add_log(f"Job cancelled: {e}")
+                    self._mark_cancelled(job)
+                    return
+                job.status = JobStatus.FAILED
+                job.result = JobResult(
+                    success=False,
+                    message="Job execution failed",
+                    error=str(e)
+                )
+                job.completed_at = datetime.now()
             job.add_log(f"Job failed with exception: {e}")
             logger.error(f"Job {job.id} failed: {e}")
 
@@ -457,7 +504,9 @@ class JobQueue:
 
         try:
             with self.db.get_connection() as conn:
-                job.to_dict()
+                parameters_json = (
+                    json.dumps(_strip_secrets(job.parameters)) if job.parameters else None
+                )
                 conn.execute("""
                     INSERT OR REPLACE INTO background_jobs (
                         id, type, title, description, status, progress,
@@ -467,7 +516,7 @@ class JobQueue:
                 """, (
                     job.id, job.type.value, job.title, job.description,
                     job.status.value, job.progress,
-                    json.dumps(job.parameters) if job.parameters else None,
+                    parameters_json,
                     json.dumps(asdict(job.result)) if job.result else None,
                     json.dumps(job.logs) if job.logs else None,
                     job.created_at.isoformat() if job.created_at else None,
@@ -478,6 +527,7 @@ class JobQueue:
                 conn.commit()
         except Exception as e:
             logger.error(f"Failed to save job {job.id} to database: {e}")
+            job.add_log(f"Failed to save job to database: {e}")
 
     def _load_jobs_from_db(self):
         """Load existing jobs from database"""
