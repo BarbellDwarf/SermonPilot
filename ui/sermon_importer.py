@@ -2,7 +2,7 @@
 Sermon Importer - Scan processed_sermons folder and import missing sermons to database
 
 This module provides functionality to scan the processed_sermons directory
-and automatically import any sermons that exist as files but are missing 
+and automatically import any sermons that exist as files but are missing
 from the database.
 """
 
@@ -19,8 +19,9 @@ src_dir = ui_dir.parent / "src"
 sys.path.insert(0, str(ui_dir))
 sys.path.insert(0, str(src_dir))
 
-from database import SermonRepository
-from src.sermon_paths import discover_sermons, read_metadata, get_file_path, FILENAMES
+from database import SermonRepository  # noqa: E402
+
+from src.sermon_paths import FILENAMES, discover_sermons, read_metadata  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,9 @@ class SermonImporter:
         logger.info(f"Found {len(missing_sermons)} missing sermons in database")
         return missing_sermons
 
-    def extract_sermon_metadata(self, sermon_id: str, refresh_api_data: bool = False) -> dict[str, Any]:
+    def extract_sermon_metadata(
+        self, sermon_id: str, refresh_api_data: bool = False
+    ) -> dict[str, Any]:
         """Extract metadata from sermon files in the processed folder"""
         from src.sermon_paths import find_sermon_dir
         sermon_dir = find_sermon_dir(self.processed_sermons_dir, sermon_id)
@@ -113,7 +116,7 @@ class SermonImporter:
     def _process_sermon_file(self, file_path: Path, metadata: dict[str, Any]):
         """Process individual sermon file and extract relevant information"""
         file_name = file_path.name
-        sermon_id = metadata['id']
+        metadata['id']
 
         # Description file
         if file_name == FILENAMES["description"]:
@@ -186,7 +189,9 @@ class SermonImporter:
             except Exception as e:
                 logger.warning(f"Could not read Q&A segments {file_path}: {e}")
 
-    def _extract_api_metadata(self, sermon_id: str, metadata: dict[str, Any], refresh_api_data: bool = False):
+    def _extract_api_metadata(
+        self, sermon_id: str, metadata: dict[str, Any], refresh_api_data: bool = False
+    ):
         """Try to extract metadata from SermonAudio API data if available"""
         try:
             from src.sermon_paths import find_sermon_dir
@@ -232,7 +237,9 @@ class SermonImporter:
                 if 'speaker' in api_data:
                     speaker_data = api_data['speaker']
                     if isinstance(speaker_data, dict):
-                        metadata['speaker'] = speaker_data.get('displayName', speaker_data.get('name', 'Unknown'))
+                        metadata['speaker'] = speaker_data.get(
+                            'displayName', speaker_data.get('name', 'Unknown')
+                        )
                     else:
                         metadata['speaker'] = str(speaker_data)
                 elif 'preacher' in api_data:
@@ -253,7 +260,11 @@ class SermonImporter:
                 if 'moreInfoText' in api_data and not metadata['content'].get('description'):
                     metadata['content']['description'] = api_data['moreInfoText']
 
-                logger.info(f"Successfully extracted API metadata for sermon {sermon_id}: {metadata.get('title', 'No title')} by {metadata.get('speaker', 'Unknown')}")
+                logger.info(
+                    f"Successfully extracted API metadata for sermon {sermon_id}: "
+                    f"{metadata.get('title', 'No title')} by "
+                    f"{metadata.get('speaker', 'Unknown')}"
+                )
 
         except Exception as e:
             logger.debug(f"Could not extract API metadata for {sermon_id}: {e}")
@@ -335,7 +346,9 @@ class SermonImporter:
         try:
             # Clear cached API data if refresh requested
             if refresh_api_data:
-                api_cache_file = self.processed_sermons_dir / sermon_id / f"{sermon_id}_api_data.json"
+                api_cache_file = (
+                    self.processed_sermons_dir / sermon_id / f"{sermon_id}_api_data.json"
+                )
                 if api_cache_file.exists():
                     api_cache_file.unlink()
                     logger.info(f"Cleared cached API data for sermon {sermon_id}")
@@ -357,7 +370,7 @@ class SermonImporter:
     def import_missing_sermons(self) -> tuple[int, int, list[str]]:
         """
         Import all missing sermons from processed_sermons folder
-        
+
         Returns:
             Tuple of (successful_imports, failed_imports, failed_sermon_ids)
         """

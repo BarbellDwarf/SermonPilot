@@ -124,17 +124,17 @@ class SermonDatabase:
                 conn.execute("ALTER TABLE sermons ADD COLUMN series_title TEXT")
             except Exception:
                 pass  # Column already exists
-            
+
             try:
                 conn.execute("ALTER TABLE sermons ADD COLUMN scripture_reference TEXT")
             except Exception:
                 pass  # Column already exists
-            
+
             try:
                 conn.execute("ALTER TABLE sermons ADD COLUMN description TEXT")
             except Exception:
                 pass  # Column already exists
-            
+
             try:
                 conn.execute("ALTER TABLE sermons ADD COLUMN church_name TEXT")
             except Exception:
@@ -409,7 +409,7 @@ class SermonDatabase:
         with self.get_connection() as conn:
             # Check if record exists
             existing = conn.execute("""
-                SELECT id FROM processing_status 
+                SELECT id FROM processing_status
                 WHERE sermon_id = ? AND operation = ?
                 ORDER BY started_at DESC LIMIT 1
             """, (sermon_id, operation)).fetchone()
@@ -417,15 +417,17 @@ class SermonDatabase:
             if existing:
                 # Update existing record
                 conn.execute("""
-                    UPDATE processing_status 
+                    UPDATE processing_status
                     SET status = ?, progress = ?, message = ?, updated_at = ?,
-                        completed_at = CASE WHEN ? IN ('completed', 'failed') THEN ? ELSE completed_at END
+                        completed_at = (
+                            "CASE WHEN ? IN ('completed', 'failed') THEN ? ELSE completed_at END"
+                        )
                     WHERE id = ?
                 """, (status, progress, message, now, status, now, existing['id']))
             else:
                 # Create new record
                 conn.execute("""
-                    INSERT INTO processing_status 
+                    INSERT INTO processing_status
                     (sermon_id, operation, status, progress, message, started_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (sermon_id, operation, status, progress, message, now, now))
@@ -476,13 +478,19 @@ class SermonDatabase:
                 query = f"SELECT * FROM validation_results WHERE sermon_id IN ({placeholders})"
                 rows = conn.execute(query, sermon_ids).fetchall()
             else:
-                rows = conn.execute("SELECT * FROM validation_results ORDER BY validated_at DESC").fetchall()
+                rows = conn.execute(
+                    "SELECT * FROM validation_results ORDER BY validated_at DESC"
+                ).fetchall()
 
             results = []
             for row in rows:
                 result = dict(row)
-                result['criteria_met'] = json.loads(result['criteria_met']) if result.get('criteria_met') else []
-                result['criteria_failed'] = json.loads(result['criteria_failed']) if result.get('criteria_failed') else []
+                result['criteria_met'] = (
+                    json.loads(result['criteria_met']) if result.get('criteria_met') else []
+                )
+                result['criteria_failed'] = (
+                    json.loads(result['criteria_failed']) if result.get('criteria_failed') else []
+                )
                 results.append(result)
 
             return results
@@ -529,7 +537,9 @@ class SermonDatabase:
             conn.execute("DELETE FROM processing_status WHERE started_at < ?", (cutoff,))
 
             # Clean expired metadata cache
-            conn.execute("DELETE FROM metadata_cache WHERE expires_at < ?", (datetime.datetime.now(),))
+            conn.execute(
+                "DELETE FROM metadata_cache WHERE expires_at < ?", (datetime.datetime.now(),)
+            )
 
             conn.commit()
             logger.info("Cleaned up old database records")
@@ -542,7 +552,7 @@ class SermonDatabase:
                           request_data: str = None, response_data: str = None):
         """Log LLM API usage for cost tracking and analytics"""
         total_tokens = input_tokens + output_tokens
-        
+
         with self.get_connection() as conn:
             conn.execute("""
                 INSERT INTO llm_api_usage (
@@ -562,11 +572,11 @@ class SermonDatabase:
     def get_llm_usage_summary(self, days: int = 30):
         """Get LLM usage summary for the specified number of days"""
         cutoff = datetime.datetime.now() - datetime.timedelta(days=days)
-        
+
         with self.get_connection() as conn:
             # Total usage stats
             summary = conn.execute("""
-                SELECT 
+                SELECT
                     COUNT(*) as total_calls,
                     SUM(input_tokens) as total_input_tokens,
                     SUM(output_tokens) as total_output_tokens,
@@ -576,51 +586,51 @@ class SermonDatabase:
                     AVG(request_duration_ms) as avg_duration_ms,
                     SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful_calls,
                     SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) as failed_calls
-                FROM llm_api_usage 
+                FROM llm_api_usage
                 WHERE timestamp >= ?
             """, (cutoff,)).fetchone()
-            
+
             # Provider breakdown
             providers = conn.execute("""
-                SELECT 
+                SELECT
                     provider,
                     COUNT(*) as calls,
                     SUM(total_tokens) as tokens,
                     SUM(cost_usd) as cost
-                FROM llm_api_usage 
+                FROM llm_api_usage
                 WHERE timestamp >= ?
                 GROUP BY provider
                 ORDER BY cost DESC
             """, (cutoff,)).fetchall()
-            
+
             # Model breakdown
             models = conn.execute("""
-                SELECT 
+                SELECT
                     provider,
                     model,
                     COUNT(*) as calls,
                     SUM(total_tokens) as tokens,
                     SUM(cost_usd) as cost,
                     AVG(request_duration_ms) as avg_duration_ms
-                FROM llm_api_usage 
+                FROM llm_api_usage
                 WHERE timestamp >= ?
                 GROUP BY provider, model
                 ORDER BY cost DESC
             """, (cutoff,)).fetchall()
-            
+
             # Daily cost trends
             daily_costs = conn.execute("""
-                SELECT 
+                SELECT
                     DATE(timestamp) as date,
                     COUNT(*) as calls,
                     SUM(total_tokens) as tokens,
                     SUM(cost_usd) as daily_cost
-                FROM llm_api_usage 
+                FROM llm_api_usage
                 WHERE timestamp >= ?
                 GROUP BY DATE(timestamp)
                 ORDER BY date ASC
             """, (cutoff,)).fetchall()
-            
+
             return {
                 'summary': dict(summary) if summary else {},
                 'providers': [dict(row) for row in providers],
@@ -631,21 +641,21 @@ class SermonDatabase:
     def get_llm_usage_by_operation(self, days: int = 30):
         """Get LLM usage breakdown by operation type"""
         cutoff = datetime.datetime.now() - datetime.timedelta(days=days)
-        
+
         with self.get_connection() as conn:
             operations = conn.execute("""
-                SELECT 
+                SELECT
                     operation,
                     COUNT(*) as calls,
                     SUM(total_tokens) as tokens,
                     SUM(cost_usd) as cost,
                     AVG(request_duration_ms) as avg_duration_ms
-                FROM llm_api_usage 
+                FROM llm_api_usage
                 WHERE timestamp >= ?
                 GROUP BY operation
                 ORDER BY cost DESC
             """, (cutoff,)).fetchall()
-            
+
             return [dict(row) for row in operations]
 
 
@@ -679,18 +689,20 @@ class SermonRepository:
     def save_sermon(self, sermon_data: dict[str, Any]) -> bool:
         """
         Save a complete sermon record with all associated data.
-        
+
         Args:
             sermon_data: Dictionary containing sermon information
-            
+
         Returns:
             Success status
         """
         try:
             with self.db.get_connection() as conn:
                 conn.execute("""
-                    INSERT OR REPLACE INTO sermons 
-                    (id, title, subtitle, speaker, recorded_date, event_type, bible_text, series_title, scripture_reference, description, duration, status, updated_at)
+                    INSERT OR REPLACE INTO sermons
+                    (id, title, subtitle, speaker, recorded_date, event_type, bible_text,
+                     series_title, scripture_reference, description, duration, status,
+                     updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     sermon_data.get('id'),
@@ -725,7 +737,7 @@ class SermonRepository:
                             file_size = 0
 
                         conn.execute("""
-                            INSERT OR REPLACE INTO sermon_files 
+                            INSERT OR REPLACE INTO sermon_files
                             (sermon_id, file_type, file_path, file_size)
                             VALUES (?, ?, ?, ?)
                         """, (sermon_data.get('id'), file_type, str(file_path), file_size))
@@ -734,8 +746,8 @@ class SermonRepository:
                 processing_info = sermon_data.get('processing_info', {})
                 if processing_info:
                     conn.execute("""
-                        INSERT OR REPLACE INTO processing_info 
-                        (sermon_id, enhancement_method, noise_reduction_applied, 
+                        INSERT OR REPLACE INTO processing_info
+                        (sermon_id, enhancement_method, noise_reduction_applied,
                          normalization_applied, qa_normalization_applied, qa_segments_count,
                          processing_duration, quality_score, processing_logs)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -755,13 +767,15 @@ class SermonRepository:
                 qa_segments = processing_info.get('qa_segments', [])
                 if qa_segments:
                     # Clear existing segments for this sermon
-                    conn.execute("DELETE FROM qa_segments WHERE sermon_id = ?", (sermon_data.get('id'),))
+                    conn.execute(
+                        "DELETE FROM qa_segments WHERE sermon_id = ?", (sermon_data.get('id'),)
+                    )
 
                     # Insert new segments
                     for segment in qa_segments:
                         conn.execute("""
-                            INSERT INTO qa_segments 
-                            (sermon_id, start_time, end_time, segment_type, confidence, 
+                            INSERT INTO qa_segments
+                            (sermon_id, start_time, end_time, segment_type, confidence,
                              audio_level_db, gain_applied, speaker_id)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """, (
@@ -779,7 +793,7 @@ class SermonRepository:
                 content = sermon_data.get('content', {})
                 if content:
                     conn.execute("""
-                        INSERT OR REPLACE INTO sermon_content 
+                        INSERT OR REPLACE INTO sermon_content
                         (sermon_id, transcript_text, description, hashtags, key_topics, summary)
                         VALUES (?, ?, ?, ?, ?, ?)
                     """, (
@@ -793,7 +807,7 @@ class SermonRepository:
 
                     # Update full-text search index
                     conn.execute("""
-                        INSERT OR REPLACE INTO sermon_search 
+                        INSERT OR REPLACE INTO sermon_search
                         (sermon_id, title, speaker, transcript_text, description, hashtags)
                         VALUES (?, ?, ?, ?, ?, ?)
                     """, (
@@ -809,7 +823,7 @@ class SermonRepository:
                 upload_info = sermon_data.get('upload_info', {})
                 if upload_info:
                     conn.execute("""
-                        INSERT OR REPLACE INTO upload_info 
+                        INSERT OR REPLACE INTO upload_info
                         (sermon_id, sermonaudio_id, upload_date, upload_status, upload_message)
                         VALUES (?, ?, ?, ?, ?)
                     """, (
@@ -853,7 +867,9 @@ class SermonRepository:
             processing_info = None
             if proc_row:
                 processing_info = dict(proc_row)
-                processing_info['processing_logs'] = json.loads(processing_info.get('processing_logs') or '{}')
+                processing_info['processing_logs'] = json.loads(
+                    processing_info.get('processing_logs') or '{}'
+                )
                 sermon['processing_info'] = processing_info
 
             # Get Q&A segments
@@ -936,7 +952,8 @@ class SermonRepository:
                 cols_in_update = fts_cols & metadata.keys()
                 if cols_in_update:
                     existing = conn.execute(
-                        "SELECT s.title, s.speaker, sc.transcript_text, COALESCE(sc.description, s.description) AS description, sc.hashtags "
+                        "SELECT s.title, s.speaker, sc.transcript_text, "
+                        "COALESCE(sc.description, s.description) AS description, sc.hashtags "
                         "FROM sermons s "
                         "LEFT JOIN sermon_content sc ON s.id = sc.sermon_id "
                         "WHERE s.id = ?",
@@ -944,15 +961,22 @@ class SermonRepository:
                     ).fetchone()
                     fts_title = metadata.get('title') or (existing[0] if existing else '')
                     fts_speaker = metadata.get('speaker') or (existing[1] if existing else '')
-                    fts_transcript = metadata.get('transcript_text') or (existing[2] if existing else '')
-                    fts_description = metadata.get('description') or (existing[3] if existing else '')
+                    fts_transcript = (
+                        metadata.get('transcript_text') or (existing[2] if existing else '')
+                    )
+                    fts_description = (
+                        metadata.get('description') or (existing[3] if existing else '')
+                    )
                     fts_hashtags = metadata.get('hashtags') or (existing[4] if existing else '')
                     conn.execute("DELETE FROM sermon_search WHERE sermon_id = ?", (sermon_id,))
                     conn.execute("""
                         INSERT INTO sermon_search
                         (sermon_id, title, speaker, transcript_text, description, hashtags)
                         VALUES (?, ?, ?, ?, ?, ?)
-                    """, (sermon_id, fts_title, fts_speaker, fts_transcript, fts_description, fts_hashtags))
+                    """, (
+                        sermon_id, fts_title, fts_speaker, fts_transcript,
+                        fts_description, fts_hashtags,
+                    ))
 
                 conn.commit()
                 logger.info(f"Successfully updated metadata for sermon {sermon_id}")
@@ -1030,12 +1054,12 @@ class SermonRepository:
             # Try FTS search first, fall back to LIKE search if FTS fails
             try:
                 search_results = conn.execute("""
-                    SELECT sermon_id, 
+                    SELECT sermon_id,
                            title,
                            speaker,
                            snippet(sermon_search, 2, '<mark>', '</mark>', '...', 32) as snippet,
                            rank
-                    FROM sermon_search 
+                    FROM sermon_search
                     WHERE sermon_search MATCH ?
                     ORDER BY rank
                     LIMIT ?
@@ -1050,12 +1074,15 @@ class SermonRepository:
                            1 as rank
                     FROM sermon_content sc
                     JOIN sermons s ON sc.sermon_id = s.id
-                    WHERE sc.transcript_text LIKE ? 
+                    WHERE sc.transcript_text LIKE ?
                        OR sc.description LIKE ?
                        OR s.title LIKE ?
                        OR s.speaker LIKE ?
                     LIMIT ?
-                """, (f'%{query_text}%', f'%{query_text}%', f'%{query_text}%', f'%{query_text}%', limit)).fetchall()
+                """, (
+                    f'%{query_text}%', f'%{query_text}%', f'%{query_text}%', f'%{query_text}%',
+                    limit,
+                )).fetchall()
 
             # Get full sermon data for results
             sermon_ids = [row['sermon_id'] for row in search_results]
@@ -1064,7 +1091,7 @@ class SermonRepository:
 
             placeholders = ",".join(["?" for _ in sermon_ids])
             sermons = conn.execute(f"""
-                SELECT s.*, pi.qa_segments_count 
+                SELECT s.*, pi.qa_segments_count
                 FROM sermons s
                 LEFT JOIN processing_info pi ON s.id = pi.sermon_id
                 WHERE s.id IN ({placeholders})
@@ -1093,7 +1120,10 @@ class SermonRepository:
                 params = []
 
                 # Main sermon table fields
-                sermon_fields = ['title', 'speaker', 'recorded_date', 'event_type', 'bible_text', 'duration', 'status']
+                sermon_fields = [
+                    'title', 'speaker', 'recorded_date', 'event_type', 'bible_text',
+                    'duration', 'status',
+                ]
 
                 for field in sermon_fields:
                     if field in updates:
@@ -1114,7 +1144,10 @@ class SermonRepository:
 
                 if content_updates:
                     # Check if content record exists
-                    existing = conn.execute("SELECT sermon_id FROM sermon_content WHERE sermon_id = ?", (sermon_id,)).fetchone()
+                    existing = conn.execute(
+                        "SELECT sermon_id FROM sermon_content WHERE sermon_id = ?",
+                        (sermon_id,),
+                    ).fetchone()
 
                     if existing:
                         # Update existing content
@@ -1133,7 +1166,10 @@ class SermonRepository:
                             content_params.append(datetime.datetime.now())
                             content_params.append(sermon_id)
 
-                            content_query = f"UPDATE sermon_content SET {', '.join(content_set_clauses)} WHERE sermon_id = ?"
+                            content_query = (
+                                f"UPDATE sermon_content SET "
+                                f"{', '.join(content_set_clauses)} WHERE sermon_id = ?"
+                            )
                             conn.execute(content_query, content_params)
                     else:
                         # Create new content record
@@ -1142,7 +1178,7 @@ class SermonRepository:
                         hashtags = content_updates.get('hashtags', '')
 
                         conn.execute("""
-                            INSERT INTO sermon_content 
+                            INSERT INTO sermon_content
                             (sermon_id, transcript_text, description, hashtags)
                             VALUES (?, ?, ?, ?)
                         """, (sermon_id, transcript_text, description, hashtags))
@@ -1168,7 +1204,7 @@ class SermonRepository:
 
             # Average processing metrics
             avg_stats = conn.execute("""
-                SELECT 
+                SELECT
                     AVG(qa_segments_count) as avg_qa_segments,
                     AVG(processing_duration) as avg_processing_time,
                     AVG(quality_score) as avg_quality_score

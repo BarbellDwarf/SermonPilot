@@ -7,9 +7,7 @@ Includes Q&A audio normalization for automatically adjusting audience question l
 
 import logging
 import os
-import shutil
 import sys
-import tempfile
 import time
 import types
 import warnings
@@ -109,12 +107,15 @@ logger = logging.getLogger(__name__)
 class AudioProcessor:
     """Advanced audio processor for sermon audio enhancement with multiple AI models."""
 
-    def __init__(self, enhancement_method: str = "deepfilternet", config: dict[str, Any] | None = None):
+    def __init__(
+        self, enhancement_method: str = "deepfilternet",
+        config: dict[str, Any] | None = None,
+    ):
         """Initialize the audio processor with specified enhancement method.
-        
-        Note: Models are loaded lazily when first needed to avoid unnecessary 
+
+        Note: Models are loaded lazily when first needed to avoid unnecessary
         initialization during validation-only operations.
-        
+
         Args:
             enhancement_method: AI enhancement method to use
             config: Configuration dictionary for Q&A normalization and other settings
@@ -161,7 +162,10 @@ class AudioProcessor:
             )
             self.enhancement_method = "deepfilternet"
 
-        logger.info(f"AudioProcessor initialized with {self.enhancement_method} method (models will load on first use)")
+        logger.info(
+            f"AudioProcessor initialized with {self.enhancement_method} method "
+            "(models will load on first use)"
+        )
 
     def _ensure_models_initialized(self):
         """Ensure models are initialized before use. Called lazily on first processing."""
@@ -214,18 +218,28 @@ class AudioProcessor:
                     custom_repo = self.config.get('clear_custom_repo', '')
                     custom_file = self.config.get('clear_custom_file', '')
                     if not custom_repo or not custom_file:
-                        logger.error("Custom model requires clear_custom_repo and clear_custom_file in config")
+                        logger.error(
+                            "Custom model requires clear_custom_repo and "
+                            "clear_custom_file in config"
+                        )
                         self._fallback_to_basic()
                         return
                     self.clear_enhancer = ClearEnhancer(
                         device=clear_device, model_variant="natural",
                         custom_repo=custom_repo, custom_file=custom_file
                     )
-                    logger.info("Clear enhancer initialized with custom model: %s/%s", custom_repo, custom_file)
+                    logger.info(
+                        "Clear enhancer initialized with custom model: %s/%s",
+                        custom_repo, custom_file,
+                    )
                 else:
                     clear_variant = self.enhancement_method.replace("clear-", "")
-                    self.clear_enhancer = ClearEnhancer(device=clear_device, model_variant=clear_variant)
-                    logger.info("Clear enhancer initialized successfully (variant=%s)", clear_variant)
+                    self.clear_enhancer = ClearEnhancer(
+                        device=clear_device, model_variant=clear_variant
+                    )
+                    logger.info(
+                        "Clear enhancer initialized successfully (variant=%s)", clear_variant
+                    )
             except Exception as e:
                 logger.error(f"Failed to initialize Clear enhancer: {e}")
                 self._fallback_to_basic()
@@ -440,7 +454,10 @@ class AudioProcessor:
             else:
                 # Use large but stable chunks for longer audio
                 max_chunk_seconds = 300  # 5-minute chunks for stability
-                logger.info(f"Audio fits in VRAM but using {max_chunk_seconds}-sec chunks for stability (audio: {audio_duration_seconds/60:.0f} min).")
+                logger.info(
+                    f"Audio fits in VRAM but using {max_chunk_seconds}-sec chunks "
+                    f"for stability (audio: {audio_duration_seconds/60:.0f} min)."
+                )
         else:
             # Calculate optimal chunk size that fits in VRAM
             available_for_audio = effective_memory_gb - base_memory_gb
@@ -449,7 +466,9 @@ class AudioProcessor:
             # Cap chunks at reasonable sizes for stability
             max_chunk_seconds = min(max_chunk_minutes * 60, 300)  # Max 5 minutes for stability
 
-            logger.info(f"Using VRAM-optimized chunks: {max_chunk_seconds/60:.1f} minutes per chunk.")
+            logger.info(
+                f"Using VRAM-optimized chunks: {max_chunk_seconds/60:.1f} minutes per chunk."
+            )
 
         # Ensure minimum chunk size for quality
         max_chunk_seconds = max(30, max_chunk_seconds)  # At least 30 seconds
@@ -459,10 +478,18 @@ class AudioProcessor:
         # Don't chunk if entire audio fits in one chunk
         if chunk_samples >= audio_length:
             chunk_samples = audio_length
-            logger.info(f"Processing entire {audio_duration_minutes:.1f}-minute audio without chunking (fits in {effective_memory_gb:.1f}GB)")
+            logger.info(
+                f"Processing entire {audio_duration_minutes:.1f}-minute audio without "
+                f"chunking (fits in {effective_memory_gb:.1f}GB)"
+            )
         else:
-            logger.info(f"Dynamic chunking: {max_chunk_seconds:.1f}s chunks ({chunk_samples} samples)")
-            logger.info(f"Memory available: {effective_memory_gb:.1f}GB, estimated needed for full audio: {estimated_total_memory:.1f}GB")
+            logger.info(
+                f"Dynamic chunking: {max_chunk_seconds:.1f}s chunks ({chunk_samples} samples)"
+            )
+            logger.info(
+                f"Memory available: {effective_memory_gb:.1f}GB, estimated needed for "
+                f"full audio: {estimated_total_memory:.1f}GB"
+            )
 
         return chunk_samples
 
@@ -493,7 +520,10 @@ class AudioProcessor:
             gpu_reserved_before = 0.0
         system_memory_before = psutil.virtual_memory().used / (1024**3)
 
-        logger.info(f"🔍 MEMORY BEFORE CHUNKING: GPU {gpu_memory_before:.1f}GB allocated, {gpu_reserved_before:.1f}GB reserved, System {system_memory_before:.1f}GB used")
+        logger.info(
+            f"🔍 MEMORY BEFORE CHUNKING: GPU {gpu_memory_before:.1f}GB allocated, "
+            f"{gpu_reserved_before:.1f}GB reserved, System {system_memory_before:.1f}GB used"
+        )
 
         chunk_start_time = time.time()
 
@@ -513,7 +543,10 @@ class AudioProcessor:
 
         # Hann window for cross-fade
         fade_in = np.sin(np.pi * np.arange(overlap_samples) / (2 * overlap_samples)) ** 2
-        fade_out = np.sin(np.pi * (np.arange(overlap_samples) + overlap_samples) / (2 * overlap_samples)) ** 2
+        fade_out = (
+            np.sin(np.pi * (np.arange(overlap_samples) + overlap_samples) / (2 * overlap_samples))
+            ** 2
+        )
 
         for i in range(num_chunks):
             start = i * hop_size
@@ -542,12 +575,18 @@ class AudioProcessor:
                 # Ensure output length matches input chunk
                 proc_len = len(processed_chunk)
                 if proc_len < orig_len:
-                    logger.warning(f"Processed chunk shorter than input: input {orig_len}, output {proc_len}. Padding with zeros.")
+                    logger.warning(
+                        f"Processed chunk shorter than input: input {orig_len}, "
+                        f"output {proc_len}. Padding with zeros."
+                    )
                     padded = np.zeros(orig_len, dtype=processed_chunk.dtype)
                     padded[:proc_len] = processed_chunk
                     processed_chunk = padded
                 elif proc_len > orig_len:
-                    logger.warning(f"Processed chunk longer than input: input {orig_len}, output {proc_len}. Trimming.")
+                    logger.warning(
+                        f"Processed chunk longer than input: input {orig_len}, "
+                        f"output {proc_len}. Trimming."
+                    )
                     processed_chunk = processed_chunk[:orig_len]
 
                 # Peak normalisation per chunk instead of hard clip
@@ -601,10 +640,19 @@ class AudioProcessor:
             f"{gpu_reserved_after:.1f}GB reserved "
             f"({gpu_reserved_after-gpu_reserved_before:+.1f}GB)"
         )
-        logger.info(f"🔍 SYSTEM MEMORY: {system_memory_after:.1f}GB used ({system_memory_after-system_memory_before:+.1f}GB change)")
-        logger.info(f"⏱️  CHUNK PROCESSING TIME: {total_chunk_time:.1f}s for {num_chunks} chunks ({total_chunk_time/num_chunks:.1f}s per chunk)")
+        logger.info(
+            f"🔍 SYSTEM MEMORY: {system_memory_after:.1f}GB used "
+            f"({system_memory_after-system_memory_before:+.1f}GB change)"
+        )
+        logger.info(
+            f"⏱️  CHUNK PROCESSING TIME: {total_chunk_time:.1f}s for {num_chunks} chunks "
+            f"({total_chunk_time/num_chunks:.1f}s per chunk)"
+        )
 
-        logger.warning("AI chunked processing may cause artifacts at chunk boundaries. For best quality, try processing the whole file if memory allows.")
+        logger.warning(
+            "AI chunked processing may cause artifacts at chunk boundaries. "
+            "For best quality, try processing the whole file if memory allows."
+        )
         return output_audio
 
     def _process_chunk_deepfilternet(self, chunk: np.ndarray) -> np.ndarray:
@@ -669,7 +717,9 @@ class AudioProcessor:
 
         self._ensure_models_initialized()
 
-        logger.info(f"Processing audio with {self.enhancement_method} (length: {len(audio_data)} samples)")
+        logger.info(
+            f"Processing audio with {self.enhancement_method} (length: {len(audio_data)} samples)"
+        )
 
         # Route based on enhancement method
         if self.enhancement_method == "deepfilternet":
@@ -680,7 +730,10 @@ class AudioProcessor:
             logger.info("No enhancement requested, returning original audio")
             return audio_data
         else:
-            logger.warning(f"Unknown enhancement method: {self.enhancement_method}, falling back to no enhancement")
+            logger.warning(
+                f"Unknown enhancement method: {self.enhancement_method}, "
+                "falling back to no enhancement"
+            )
             return audio_data
 
     def _pre_process_audio(self, audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
@@ -733,7 +786,9 @@ class AudioProcessor:
         rms_drop_db = 20.0 * np.log10((output_rms + epsilon) / (input_rms + epsilon))
         return rms_drop_db < -10.0
 
-    def _apply_deepfilternet(self, audio_data: np.ndarray, sample_rate: int, size_threshold: int = None) -> np.ndarray:
+    def _apply_deepfilternet(
+        self, audio_data: np.ndarray, sample_rate: int, size_threshold: int = None
+    ) -> np.ndarray:
         """Apply DeepFilterNet noise reduction.
 
         Resamples the entire audio to 48 kHz upfront (DeepFilterNet's native
@@ -743,7 +798,10 @@ class AudioProcessor:
         start_time = time.time()
         original_sample_rate = sample_rate
 
-        logger.info(f"Processing audio with DeepFilterNet (length: {len(audio_data)} samples, sr={sample_rate} Hz)")
+        logger.info(
+            f"Processing audio with DeepFilterNet (length: {len(audio_data)} samples, "
+            f"sr={sample_rate} Hz)"
+        )
 
         # Pre-process: legacy noise gate and gentle limiting (off by default)
         if self.config.get("preprocess_noise_gate", False):
@@ -772,16 +830,24 @@ class AudioProcessor:
 
             if size_threshold is None or size_threshold > optimal_chunk_samples:
                 size_threshold = optimal_chunk_samples
-                logger.info(f"Set DeepFilterNet chunking threshold to {size_threshold} samples (dynamic {optimal_chunk_seconds:.1f}s chunks)")
+                logger.info(
+                    f"Set DeepFilterNet chunking threshold to {size_threshold} samples "
+                    f"(dynamic {optimal_chunk_seconds:.1f}s chunks)"
+                )
             # Process in chunks if file is large
             if len(audio_data) > size_threshold:
                 logger.info("Large audio file detected, processing in chunks")
                 chunk_start_time = time.time()
-                result = self.process_large_audio_in_chunks(audio_data, sample_rate, chunk_size_seconds=optimal_chunk_seconds)
+                result = self.process_large_audio_in_chunks(
+                    audio_data, sample_rate, chunk_size_seconds=optimal_chunk_seconds
+                )
                 chunk_end_time = time.time()
                 total_time = chunk_end_time - start_time
                 chunk_time = chunk_end_time - chunk_start_time
-                logger.info(f"⏱️  CHUNKED PROCESSING: Total time {total_time:.1f}s, Chunking overhead: {total_time - chunk_time:.1f}s")
+                logger.info(
+                    f"⏱️  CHUNKED PROCESSING: Total time {total_time:.1f}s, "
+                    f"Chunking overhead: {total_time - chunk_time:.1f}s"
+                )
             else:
                 # Process normally for smaller files
                 logger.info("Using DeepFilterNet for noise reduction")
@@ -839,7 +905,9 @@ class AudioProcessor:
                 if res_t.ndim == 1:
                     res_t = res_t.unsqueeze(0)
                 res_t = torchaudio.functional.resample(res_t, 48000, original_sample_rate)
-                audio_for_fallback = res_t.squeeze(0).numpy() if res_t.shape[0] == 1 else res_t.numpy()
+                audio_for_fallback = (
+                    res_t.squeeze(0).numpy() if res_t.shape[0] == 1 else res_t.numpy()
+                )
             try:
                 logger.info("Retrying DeepFilterNet with chunked processing")
                 chunk_seconds = 30
@@ -849,7 +917,10 @@ class AudioProcessor:
             except Exception as e2:
                 logger.error(f"DeepFilterNet chunked processing also failed: {e2}")
                 logger.warning("Falling back to custom noise reduction")
-                return self.custom_noise_reduction(audio_for_fallback if audio_for_fallback.ndim == 1 else audio_for_fallback[0], original_sample_rate, noise_reduction_amount=0.7)
+                return self.custom_noise_reduction(
+                    audio_for_fallback if audio_for_fallback.ndim == 1 else audio_for_fallback[0],
+                    original_sample_rate, noise_reduction_amount=0.7,
+                )
 
     def _apply_clear(self, audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
         """Apply Clear (desert-ant-labs) noise suppression."""
@@ -931,7 +1002,9 @@ class AudioProcessor:
         if gain_db >= 0 or cutoff_hz <= 0:
             return audio_data
 
-        logger.info(f"Applying gentle de-esser high shelf: {gain_db:.1f} dB above {cutoff_hz:.0f} Hz")
+        logger.info(
+            f"Applying gentle de-esser high shelf: {gain_db:.1f} dB above {cutoff_hz:.0f} Hz"
+        )
         audio_64 = audio_data.astype(np.float64)
         spectrum = np.fft.rfft(audio_64)
         freqs = np.fft.rfftfreq(len(audio_64), 1.0 / sample_rate)
@@ -957,9 +1030,11 @@ class AudioProcessor:
                            gain_db: float = 0.0,
                            target_level_db: float = -22.0,
                            max_duration_minutes: int | None = None,
-                           apply_qa_normalization: bool = None) -> tuple[bool, dict[str, Any] | None]:
+                           apply_qa_normalization: bool = None,
+) -> tuple[bool, dict[str, Any] | None]:
         """
-        Complete sermon audio processing pipeline with safeguards for large files and Q&A normalization.
+        Complete sermon audio processing pipeline with safeguards for large files
+        and Q&A normalization.
 
         Args:
             input_path: Input audio file path
@@ -992,11 +1067,17 @@ class AudioProcessor:
             # Calculate duration
             duration_seconds = len(audio_data) / sample_rate
             duration_minutes = duration_seconds / 60
-            logger.info(f"Audio loaded: {len(audio_data)} samples at {sample_rate} Hz ({duration_minutes:.2f} minutes)")
+            logger.info(
+                f"Audio loaded: {len(audio_data)} samples at {sample_rate} Hz "
+                f"({duration_minutes:.2f} minutes)"
+            )
 
             # Safety check for extremely long files (disabled if max_duration_minutes is None)
             if max_duration_minutes is not None and duration_minutes > max_duration_minutes:
-                logger.warning(f"Audio exceeds maximum duration of {max_duration_minutes} minutes. Processing first {max_duration_minutes} minutes only.")
+                logger.warning(
+                    f"Audio exceeds maximum duration of {max_duration_minutes} minutes. "
+                    f"Processing first {max_duration_minutes} minutes only."
+                )
                 max_samples = int(max_duration_minutes * 60 * sample_rate)
                 audio_data = audio_data[:max_samples]
 
@@ -1026,7 +1107,10 @@ class AudioProcessor:
                     # Clean up temporary file
                     os.unlink(temp_path)
 
-                    logger.info(f"Q&A normalization applied: {len(qa_processing_info.get('qa_segments', []))} segments processed")
+                    logger.info(
+                        f"Q&A normalization applied: "
+                        f"{len(qa_processing_info.get('qa_segments', []))} segments processed"
+                    )
                 except Exception as e:
                     logger.warning(f"Q&A normalization failed: {e}")
                     qa_processing_info = {'error': str(e), 'qa_segments': []}
@@ -1084,7 +1168,10 @@ class AudacityProcessor:
         if self.pipe_exists:
             logger.info("Audacity pipe detected")
         else:
-            logger.warning("Audacity pipe not found. Make sure Audacity is running with mod-script-pipe enabled")
+            logger.warning(
+                "Audacity pipe not found. Make sure Audacity is running "
+                "with mod-script-pipe enabled"
+            )
 
     def send_command(self, command: str) -> str | None:
         """Send command to Audacity via pipe."""
@@ -1108,7 +1195,9 @@ class AudacityProcessor:
             logger.error(f"Pipe command failed: {e}")
             return None
 
-    def process_with_macro(self, input_path: str, output_path: str, macro_name: str = "Sermon Edit") -> bool:
+    def process_with_macro(
+        self, input_path: str, output_path: str, macro_name: str = "Sermon Edit"
+    ) -> bool:
         """
         Process audio using Audacity macro.
         Args:
@@ -1139,9 +1228,12 @@ class AudacityProcessor:
 
 
 # Convenience function
-def process_sermon_audio(input_path: str, output_path: str, use_audacity: bool = False,
-                       skip_on_error: bool = True, enhancement_method: str = "deepfilternet",
-                       verbose: bool = False, config: dict[str, Any] | None = None, **kwargs) -> tuple[bool, dict[str, Any] | None]:
+def process_sermon_audio(
+    input_path: str, output_path: str, use_audacity: bool = False,
+    skip_on_error: bool = True, enhancement_method: str = "deepfilternet",
+    verbose: bool = False, config: dict[str, Any] | None = None,
+    **kwargs,
+) -> tuple[bool, dict[str, Any] | None]:
     """
     Process sermon audio with selected enhancement method.
 

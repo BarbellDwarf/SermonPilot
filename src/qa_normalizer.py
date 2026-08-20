@@ -1,8 +1,8 @@
 """
 Q&A Audio Normalization Module
 
-Intelligent audio processing for sermon recordings that automatically detects 
-and normalizes quiet audience questions during Q&A segments while preserving 
+Intelligent audio processing for sermon recordings that automatically detects
+and normalizes quiet audience questions during Q&A segments while preserving
 the clear audio quality of the main speaker/teacher responses.
 
 Features:
@@ -49,17 +49,17 @@ class QASegment:
 class QANormalizer:
     """
     Intelligent Q&A audio normalization with multi-modal detection.
-    
+
     Detects Q&A segments using:
     1. Audio level analysis (significant volume drops)
-    2. Speaker change detection (voice activity detection)  
+    2. Speaker change detection (voice activity detection)
     3. Temporal pattern recognition (Q&A typically follows presentation)
     """
 
     def __init__(self, config: dict[str, Any]):
         """
         Initialize Q&A normalizer with configuration.
-        
+
         Args:
             config: Configuration dictionary with Q&A processing settings
         """
@@ -91,10 +91,10 @@ class QANormalizer:
     def process_audio(self, audio_file: str) -> tuple[np.ndarray, int]:
         """
         Process audio file with Q&A normalization.
-        
+
         Args:
             audio_file: Path to input audio file
-            
+
         Returns:
             Tuple of (normalized_audio_data, sample_rate)
         """
@@ -124,11 +124,11 @@ class QANormalizer:
     def _detect_qa_segments(self, audio_data: np.ndarray, sample_rate: int) -> list[QASegment]:
         """
         Detect Q&A segments using the configured detection method.
-        
+
         Args:
             audio_data: Audio samples
             sample_rate: Sample rate in Hz
-            
+
         Returns:
             List of detected Q&A segments
         """
@@ -148,7 +148,7 @@ class QANormalizer:
     def _detect_by_audio_levels(self, audio_data: np.ndarray, sample_rate: int) -> list[QASegment]:
         """
         Detect Q&A segments based on audio level analysis.
-        
+
         Identifies segments where audio drops significantly below normal levels,
         indicating audience questions.
         """
@@ -173,15 +173,18 @@ class QANormalizer:
         timestamps = np.array(timestamps)
 
         # Find segments significantly below main speaker level
-        main_speaker_mask = rms_values > self.main_speaker_threshold_db
-        question_mask = (rms_values < self.question_threshold_db) & (rms_values > -60.0)  # Avoid silence
+        question_mask = (rms_values < self.question_threshold_db) & (
+            rms_values > -60.0
+        )  # Avoid silence
 
         # Group consecutive question segments
         segments = []
         in_question = False
         segment_start = None
 
-        for i, (is_question, timestamp, rms_db) in enumerate(zip(question_mask, timestamps, rms_values, strict=False)):
+        for i, (is_question, timestamp, _rms_db) in enumerate(
+            zip(question_mask, timestamps, rms_values, strict=False)
+        ):
             if is_question and not in_question:
                 # Start of question segment
                 segment_start = timestamp
@@ -216,10 +219,12 @@ class QANormalizer:
         logger.info(f"Detected {len(segments)} Q&A segments using audio level analysis")
         return segments
 
-    def _detect_by_speaker_diarization(self, audio_data: np.ndarray, sample_rate: int) -> list[QASegment]:
+    def _detect_by_speaker_diarization(
+        self, audio_data: np.ndarray, sample_rate: int
+    ) -> list[QASegment]:
         """
         Detect Q&A segments using speaker diarization (if available).
-        
+
         This is a placeholder for advanced speaker diarization using models like
         pyannote.audio. For now, returns empty list as it requires additional dependencies.
         """
@@ -227,10 +232,12 @@ class QANormalizer:
         logger.info("Falling back to level-based detection")
         return self._detect_by_audio_levels(audio_data, sample_rate)
 
-    def _merge_segment_detections(self, segments1: list[QASegment], segments2: list[QASegment]) -> list[QASegment]:
+    def _merge_segment_detections(
+        self, segments1: list[QASegment], segments2: list[QASegment]
+    ) -> list[QASegment]:
         """
         Merge segments from multiple detection methods.
-        
+
         Currently returns the first list as a simple implementation.
         Future versions could implement more sophisticated merging logic.
         """
@@ -240,11 +247,11 @@ class QANormalizer:
     def _apply_qa_normalization(self, audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
         """
         Apply gain adjustments to normalize Q&A segments.
-        
+
         Args:
             audio_data: Original audio samples
             sample_rate: Sample rate in Hz
-            
+
         Returns:
             Normalized audio with Q&A segments boosted
         """
@@ -298,14 +305,17 @@ class QANormalizer:
                 # Update segment with applied gain
                 segment.gain_applied = gain_db
 
-                logger.debug(f"Applied {gain_db:.1f}dB gain to question segment {segment.start_time:.1f}-{segment.end_time:.1f}s")
+                logger.debug(
+                    f"Applied {gain_db:.1f}dB gain to question segment "
+                    f"{segment.start_time:.1f}-{segment.end_time:.1f}s"
+                )
 
         return normalized_audio
 
     def get_segments(self) -> list[dict[str, Any]]:
         """
         Get detected Q&A segments as a list of dictionaries.
-        
+
         Returns:
             List of segment dictionaries suitable for JSON serialization
         """
@@ -314,7 +324,7 @@ class QANormalizer:
     def get_processing_stats(self) -> dict[str, Any]:
         """
         Get processing statistics and metrics.
-        
+
         Returns:
             Dictionary with processing statistics
         """
@@ -332,8 +342,14 @@ class QANormalizer:
             'total_segments': len(self.detected_segments),
             'question_segments': len(question_segments),
             'total_qa_duration': sum(s.duration() for s in question_segments),
-            'average_gain_applied': np.mean([s.gain_applied for s in question_segments]) if question_segments else 0.0,
-            'max_gain_applied': max([s.gain_applied for s in question_segments]) if question_segments else 0.0,
+            'average_gain_applied': (
+                np.mean([s.gain_applied for s in question_segments])
+                if question_segments else 0.0
+            ),
+            'max_gain_applied': (
+                max([s.gain_applied for s in question_segments])
+                if question_segments else 0.0
+            ),
             'detection_method': self.detection_method,
             'audio_duration': self.audio_duration
         }
@@ -343,12 +359,12 @@ def apply_qa_normalization(audio_file: str, config: dict[str, Any],
                           output_file: str | None = None) -> tuple[str, dict[str, Any]]:
     """
     Apply Q&A normalization to an audio file.
-    
+
     Args:
         audio_file: Path to input audio file
         config: Configuration dictionary
         output_file: Optional output file path (uses temp file if None)
-        
+
     Returns:
         Tuple of (output_file_path, processing_stats)
     """

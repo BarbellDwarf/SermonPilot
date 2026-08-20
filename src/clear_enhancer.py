@@ -6,11 +6,8 @@ Supports CUDA, ROCm, and CPU execution providers.
 """
 
 import logging
-import os
 import sys
-import time
 import types
-from pathlib import Path
 
 import numpy as np
 import torch
@@ -69,7 +66,7 @@ class ClearEnhancer:
             raise ImportError(
                 "onnxruntime is required for Clear enhancement. "
                 "Install with: pip install onnxruntime"
-            )
+            ) from None
 
         from huggingface_hub import hf_hub_download
 
@@ -113,7 +110,7 @@ class ClearEnhancer:
         return ["CPUExecutionProvider"]
 
     def _init_df_dsp(self):
-        from df.enhance import init_df, df_features
+        from df.enhance import df_features, init_df
 
         self._df_model, self._df_state, *_ = init_df()
         self._df_features_fn = df_features
@@ -128,7 +125,10 @@ class ClearEnhancer:
             self._df_model, "nb_df",
             getattr(self._df_model, "df_bins", 32)
         )
-        logger.info("DF DSP initialized: n_fft=%d, hop=%d, device=%s", self._n_fft, self._hop, self._device)
+        logger.info(
+            "DF DSP initialized: n_fft=%d, hop=%d, device=%s",
+            self._n_fft, self._hop, self._device,
+        )
 
     def enhance(self, audio: np.ndarray, sr: int) -> np.ndarray:
         self._ensure_initialized()

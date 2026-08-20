@@ -220,7 +220,10 @@ def _transcribe_openai(audio_path: str, api_key: str, base_url: str, model: str,
                         transcript_parts.append(text)
                     if progress_callback:
                         total_len = sum(len(p) for p in transcript_parts)
-                        progress_callback(min(total_len / 50000, 0.95), f"Transcribing... ({total_len} chars)")
+                        progress_callback(
+                            min(total_len / 50000, 0.95),
+                            f"Transcribing... ({total_len} chars)",
+                        )
                 except json.JSONDecodeError:
                     continue
             transcript = "".join(transcript_parts).strip()
@@ -278,7 +281,9 @@ def transcribe(audio_path: str, model_size: str = "base", config: dict[str, Any]
         api_key = os.getenv("OPENAI_API_KEY", oi_cfg.get("api_key", ""))
         base_url = oi_cfg.get("base_url", "https://api.openai.com/v1")
         model = oi_cfg.get("model", "whisper-1")
-        return _transcribe_openai(audio_path, api_key, base_url, model, progress_callback=progress_callback)
+        return _transcribe_openai(
+            audio_path, api_key, base_url, model, progress_callback=progress_callback
+        )
     else:
         logger.warning("Unknown transcription backend '%s', skipping transcription", backend)
         return ""

@@ -30,7 +30,7 @@ class SearchResult:
 class SermonSearchEngine:
     """
     Advanced search across sermon content with relevance scoring and suggestions.
-    
+
     Provides the search functionality as specified in the requirements:
     - Full-text search across titles, transcripts, and descriptions
     - Relevance scoring and ranking
@@ -41,7 +41,7 @@ class SermonSearchEngine:
     def __init__(self, database_path: str = "sermon_processor.db"):
         """
         Initialize search engine with database connection.
-        
+
         Args:
             database_path: Path to SQLite database
         """
@@ -52,7 +52,7 @@ class SermonSearchEngine:
     def build_search_index(self) -> dict[str, Any]:
         """
         Build in-memory search index for faster queries.
-        
+
         Returns:
             Search index dictionary
         """
@@ -95,7 +95,10 @@ class SermonSearchEngine:
         except Exception as e:
             logger.warning(f"Failed to build search index: {e}")
 
-        logger.info(f"Search index built: {len(index['terms'])} terms, {len(index['speakers'])} speakers")
+        logger.info(
+            f"Search index built: {len(index['terms'])} terms, "
+            f"{len(index['speakers'])} speakers"
+        )
         return index
 
     def _extract_terms(self, text: str) -> list[str]:
@@ -114,11 +117,11 @@ class SermonSearchEngine:
     def search(self, query: str, filters: dict[str, Any] | None = None) -> list[SearchResult]:
         """
         Advanced search across sermon content with relevance scoring.
-        
+
         Args:
             query: Search query string
             filters: Optional filters (speaker, date_range, event_type, etc.)
-            
+
         Returns:
             List of SearchResult objects ranked by relevance
         """
@@ -141,7 +144,9 @@ class SermonSearchEngine:
             logger.error(f"Search failed: {e}")
             return []
 
-    def _fts_search(self, conn: sqlite3.Connection, query: str, filters: dict[str, Any] | None) -> list[SearchResult]:
+    def _fts_search(
+        self, conn: sqlite3.Connection, query: str, filters: dict[str, Any] | None
+    ) -> list[SearchResult]:
         """Full-text search using FTS5 virtual table"""
         try:
             # Build FTS query
@@ -151,7 +156,7 @@ class SermonSearchEngine:
                 SELECT s.*, sc.transcript_text, sc.description, sc.hashtags,
                        snippet(sermon_search, 2, '<mark>', '</mark>', '...', 32) as snippet,
                        bm25(sermon_search) as relevance_score
-                FROM sermon_search 
+                FROM sermon_search
                 JOIN sermons s ON sermon_search.sermon_id = s.id
                 LEFT JOIN sermon_content sc ON s.id = sc.sermon_id
                 WHERE sermon_search MATCH ?
@@ -189,7 +194,9 @@ class SermonSearchEngine:
             logger.warning(f"FTS search failed: {e}")
             return []
 
-    def _like_search(self, conn: sqlite3.Connection, query: str, filters: dict[str, Any] | None) -> list[SearchResult]:
+    def _like_search(
+        self, conn: sqlite3.Connection, query: str, filters: dict[str, Any] | None
+    ) -> list[SearchResult]:
         """Fallback LIKE-based search"""
         search_terms = query.lower().split()
 
@@ -259,7 +266,9 @@ class SermonSearchEngine:
 
         return query
 
-    def _apply_filters(self, sql: str, params: list[Any], filters: dict[str, Any]) -> tuple[str, list[Any]]:
+    def _apply_filters(
+        self, sql: str, params: list[Any], filters: dict[str, Any]
+    ) -> tuple[str, list[Any]]:
         """Apply search filters to SQL query"""
         where_clauses = []
 
@@ -282,7 +291,8 @@ class SermonSearchEngine:
         if filters.get('has_qa_segments'):
             sql = sql.replace(
                 "LEFT JOIN sermon_content sc ON s.id = sc.sermon_id",
-                "LEFT JOIN sermon_content sc ON s.id = sc.sermon_id LEFT JOIN processing_info pi ON s.id = pi.sermon_id"
+                "LEFT JOIN sermon_content sc ON s.id = sc.sermon_id "
+                "LEFT JOIN processing_info pi ON s.id = pi.sermon_id"
             )
             where_clauses.append("pi.qa_segments_count > 0")
 
@@ -350,9 +360,13 @@ class SermonSearchEngine:
             return 'transcript'
         elif row['title'] and any(term in row['title'].lower() for term in snippet.lower().split()):
             return 'title'
-        elif row['description'] and any(term in row['description'].lower() for term in snippet.lower().split()):
+        elif row['description'] and any(
+            term in row['description'].lower() for term in snippet.lower().split()
+        ):
             return 'description'
-        elif row['hashtags'] and any(term in row['hashtags'].lower() for term in snippet.lower().split()):
+        elif row['hashtags'] and any(
+            term in row['hashtags'].lower() for term in snippet.lower().split()
+        ):
             return 'hashtags'
         else:
             return 'transcript'
@@ -375,11 +389,11 @@ class SermonSearchEngine:
     def get_search_suggestions(self, partial_query: str, limit: int = 10) -> list[str]:
         """
         Get auto-complete suggestions for search queries.
-        
+
         Args:
             partial_query: Partial search query
             limit: Maximum number of suggestions
-            
+
         Returns:
             List of suggested completions
         """
@@ -410,7 +424,7 @@ class SermonSearchEngine:
                 if len(suggestions) >= limit:
                     break
 
-        return sorted(list(suggestions))[:limit]
+        return sorted(suggestions)[:limit]
 
     def refresh_index(self):
         """Refresh the search index from database"""

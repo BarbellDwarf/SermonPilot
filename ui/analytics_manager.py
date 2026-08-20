@@ -31,7 +31,7 @@ except ImportError:
             pass
     sermonaudio = MockSermonAudio()
 
-from database import SermonRepository
+from database import SermonRepository  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,9 @@ class AnalyticsManager:
         self.api_key = config.get('api_key')
         self.broadcaster_id = config.get('broadcaster_id')
         self.analytics_enabled = config.get('web_ui', {}).get('analytics_enabled', True)
-        self.refresh_interval = config.get('web_ui', {}).get('analytics_refresh_interval', 300)  # 5 minutes
+        self.refresh_interval = (
+            config.get('web_ui', {}).get('analytics_refresh_interval', 300)  # 5 minutes
+        )
 
         # Initialize SermonAudio API
         if self.api_key:
@@ -192,7 +194,9 @@ class AnalyticsManager:
                 unique_listeners=int(stats.get('total_views', 0) * 0.75),  # Estimate
                 avg_completion_rate=0.68,  # 68% average completion
                 peak_concurrent=int(stats.get('total_views', 0) * 0.05),  # 5% peak concurrent
-                total_minutes_watched=stats.get('total_duration_hours', 0) * 60 * 0.68  # Based on completion rate
+                total_minutes_watched=(
+                    stats.get('total_duration_hours', 0) * 60 * 0.68  # Based on completion rate
+                )
             )
         except Exception as e:
             logger.error(f"Error getting engagement metrics: {e}")
@@ -337,7 +341,9 @@ class AnalyticsManager:
             weekend_multiplier = 1.5 if day_of_week in [5, 6] else 1.0
 
             # Add some randomness
-            daily_views = int(base_views * weekend_multiplier * (0.8 + (hash(f"trend{i}") % 40) / 100))
+            daily_views = int(
+                base_views * weekend_multiplier * (0.8 + (hash(f"trend{i}") % 40) / 100)
+            )
             trends.append(TimePoint(date, daily_views, date.strftime("%m/%d")))
 
         return trends
@@ -438,7 +444,10 @@ class AnalyticsManager:
 
     def _is_sermon_cache_valid(self, sermon_id: str) -> bool:
         """Check if sermon analytics cache is still valid"""
-        if sermon_id not in self._sermon_analytics_cache or sermon_id not in self._sermon_cache_times:
+        if (
+            sermon_id not in self._sermon_analytics_cache
+            or sermon_id not in self._sermon_cache_times
+        ):
             return False
 
         age = (datetime.now() - self._sermon_cache_times[sermon_id]).total_seconds()
