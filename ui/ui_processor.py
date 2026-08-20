@@ -198,7 +198,8 @@ class UIProcessor:
                 skip_audio=options.get('metadata_only', False),
                 force_description=options.get('force_description', False),
                 force_hashtags=options.get('force_hashtags', False),
-                no_metadata=options.get('no_metadata', False)
+                no_metadata=options.get('no_metadata', False),
+                config=self.get_config(),
             )
 
             if result:

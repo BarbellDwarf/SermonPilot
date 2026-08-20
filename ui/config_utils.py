@@ -5,12 +5,14 @@ Provides functions for loading and reloading configuration with proper
 session state management.
 """
 
+import logging
 from pathlib import Path
 
 import yaml
 
 # Get project root for config path
 project_root = Path(__file__).parent.parent
+
 
 def load_config_from_file():
     """Load configuration with precedence: environment > database cache > config.yaml.
@@ -21,6 +23,7 @@ def load_config_from_file():
     """
     try:
         import sys
+
         sys.path.insert(0, str(project_root))
         from sermon_updater import load_config
 
@@ -30,11 +33,12 @@ def load_config_from_file():
         # Prefer settings saved in the database (survives container recreation)
         try:
             from database import SermonDatabase
+
             db = SermonDatabase()
             db_config = db.load_config()
             if db_config:
                 # Restore config.yaml from DB so file-based tools still work
-                with open(config_path, 'w') as f:
+                with open(config_path, "w") as f:
                     yaml.dump(db_config, f, default_flow_style=False, sort_keys=True)
         except Exception:
             pass
@@ -47,11 +51,12 @@ def load_config_from_file():
             # Try loading from database cache (survives Docker/git resets)
             try:
                 from database import SermonDatabase
+
                 db = SermonDatabase()
                 config = db.load_config()
                 if config:
                     # Restore config.yaml from DB so file-based tools still work
-                    with open(config_path, 'w') as f:
+                    with open(config_path, "w") as f:
                         yaml.dump(config, f, default_flow_style=False, sort_keys=True)
             except Exception:
                 pass
@@ -61,13 +66,18 @@ def load_config_from_file():
             if example_config.exists():
                 try:
                     import streamlit as st
-                    st.warning(f"⚠️ No config.yaml found. Please copy {example_config} to {config_path} and update with your settings.")
+
+                    st.warning(
+                        f"⚠️ No config.yaml found. Please copy {example_config} to {config_path} "
+                        "and update with your settings."
+                    )
                 except ImportError:
                     pass
                 return {}
             else:
                 try:
                     import streamlit as st
+
                     st.error("❌ No configuration file found. Please create config.yaml.")
                 except ImportError:
                     pass
@@ -76,15 +86,59 @@ def load_config_from_file():
         # Ensure config is never None
         if config is None:
             config = {}
+        _warn_plaintext_api_keys()
         return config
 
     except Exception as e:
         try:
             import streamlit as st
+
             st.error(f"❌ Failed to load configuration: {e}")
         except ImportError:
             pass
         return {}
+
+
+def _find_plaintext_api_keys(config: dict) -> list[str]:
+    """Return dotted paths of api_key values that are not env placeholders."""
+    found: list[str] = []
+    for key, value in config.items():
+        if key == "api_key" and isinstance(value, str) and value and not value.startswith("${"):
+            found.append(key)
+        elif isinstance(value, dict):
+            for nested in _find_plaintext_api_keys(value):
+                found.append(f"{key}.{nested}")
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                if isinstance(item, dict):
+                    for nested in _find_plaintext_api_keys(item):
+                        found.append(f"{key}[{index}].{nested}")
+    return found
+
+
+def _warn_plaintext_api_keys() -> None:
+    """Log a warning when API keys are stored in plaintext in config.yaml."""
+    config_path = project_root / "config.yaml"
+    try:
+        with open(config_path) as f:
+            raw_config = yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError):
+        return
+    plaintext_keys = _find_plaintext_api_keys(raw_config)
+    if not plaintext_keys:
+        return
+    message = (
+        "API keys are stored in plaintext in config.yaml. "
+        "Move them to environment variables, e.g. SERMONAUDIO_API_KEY."
+    )
+    logging.warning(message)
+    try:
+        import streamlit as st
+
+        st.warning(message)
+    except ImportError:
+        pass
+
 
 def reload_configuration():
     """Force reload configuration from file and update session state"""
@@ -98,7 +152,7 @@ def reload_configuration():
         st.session_state.config = config
 
         # Clear cached objects that depend on config
-        if 'llm_manager' in st.session_state:
+        if "llm_manager" in st.session_state:
             st.session_state.llm_manager = None
 
         return config
@@ -106,22 +160,25 @@ def reload_configuration():
     except Exception as e:
         try:
             import streamlit as st
+
             st.error(f"❌ Failed to reload configuration: {e}")
         except ImportError:
             pass  # Not in Streamlit context
         return {}
+
 
 def save_config_to_file(config):
     """Save configuration to config.yaml file and database, then reload in session"""
     try:
         config_path = project_root / "config.yaml"
 
-        with open(config_path, 'w') as f:
+        with open(config_path, "w") as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=True)
 
         # Also save to database so settings survive config.yaml loss (Docker, git, etc.)
         try:
             from database import SermonDatabase
+
             db = SermonDatabase()
             db.save_config(config)
         except Exception:
@@ -132,6 +189,7 @@ def save_config_to_file(config):
 
         try:
             import streamlit as st
+
             st.info(f"Configuration saved to {config_path}")
         except ImportError:
             pass  # Not in Streamlit context
@@ -141,6 +199,7 @@ def save_config_to_file(config):
     except Exception as e:
         try:
             import streamlit as st
+
             st.error(f"Failed to save configuration: {e}")
         except ImportError:
             pass  # Not in Streamlit context
