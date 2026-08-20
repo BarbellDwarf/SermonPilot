@@ -39,9 +39,32 @@ except ImportError as e:
         SERMON_IMPORT = "sermon_import"
         VALIDATION = "validation"
 
+_FLASH_KEY = "_jobs_page_flash"
+
+
+def _set_flash(message: str, kind: str = "success") -> None:
+    """Persist a transient message so it survives the rerun after an action."""
+    st.session_state[_FLASH_KEY] = (kind, message)
+
+
+def _consume_flash() -> None:
+    """Render and clear any flash message left by the previous run."""
+    flash = st.session_state.pop(_FLASH_KEY, None)
+    if not flash:
+        return
+    kind, message = flash
+    if kind == "error":
+        st.error(message)
+    elif kind == "warning":
+        st.warning(message)
+    else:
+        st.success(message)
+
+
 def show_jobs():
     """Main jobs monitoring interface"""
     st.markdown('<div class="main-header">⚙️ Background Jobs</div>', unsafe_allow_html=True)
+    _consume_flash()
 
     if not JOB_QUEUE_AVAILABLE:
         st.error("❌ Job queue system is not available")
@@ -59,11 +82,7 @@ def show_jobs():
 
             if st.button("🧹 Clear Completed", type="secondary", width='stretch'):
                 cleared = job_queue.clear_completed_jobs()
-                st.success(f"Cleared {cleared} completed jobs")
-                st.rerun()
-
-            if st.button("➕ Test Job", type="secondary", width='stretch'):
-                add_test_job(job_queue)
+                _set_flash(f"Cleared {cleared} completed jobs")
                 st.rerun()
 
         _render_job_list(job_queue)
@@ -122,7 +141,7 @@ def show_active_jobs_compact(job_queue):
     queued_jobs = job_queue.get_all_jobs(JobStatus.QUEUED)
 
     if not running_jobs and not queued_jobs:
-        st.info("No active jobs. All background processes are idle.")
+        _render_active_empty_state(job_queue)
         return
 
     # Show running jobs first
@@ -136,6 +155,36 @@ def show_active_jobs_compact(job_queue):
         st.markdown("#### ⏳ Queued Jobs")
         for job in queued_jobs:
             show_job_card_compact(job, job_queue, show_actions=True)
+
+
+def _render_active_empty_state(job_queue):
+    """Empty Active tab: recent activity summary plus a clear next step."""
+    all_jobs = job_queue.get_all_jobs()
+    cutoff = datetime.now() - timedelta(days=1)
+    completed_recent = sum(
+        1
+        for job in all_jobs
+        if job.status == JobStatus.COMPLETED and job.completed_at and job.completed_at > cutoff
+    )
+    failed_recent = sum(
+        1
+        for job in all_jobs
+        if job.status == JobStatus.FAILED and job.completed_at and job.completed_at > cutoff
+    )
+
+    with st.container(border=True):
+        st.markdown("### 🎉 No active jobs")
+        st.write("Nothing is running or queued right now.")
+        if completed_recent or failed_recent:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Completed (24h)", completed_recent)
+            with col2:
+                st.metric("Failed (24h)", failed_recent)
+        st.markdown(
+            "**Next step:** start a sermon from the **🎵 New Sermon** page "
+            "and its progress will appear here."
+        )
 
 
 def show_completed_jobs_compact(job_queue):
@@ -243,20 +292,9 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
     }
 
     # Map job types to display text
-    str(job.type) if hasattr(job.type, 'value') else str(job.type)
     status_display = str(job.status) if hasattr(job.status, 'value') else str(job.status)
 
     status_icon = status_icons.get(job.status, "❓")
-
-    # Card styling based on status
-    if highlight_errors and job.status == JobStatus.FAILED:
-        pass
-    elif job.status == JobStatus.RUNNING:
-        pass
-    elif job.status == JobStatus.COMPLETED:
-        pass
-    else:
-        pass
 
     with st.container():
         # Compact header in single row
@@ -308,8 +346,10 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                     if job.can_cancel and job.status in [JobStatus.QUEUED, JobStatus.RUNNING]:
                         if st.button("🚫", key=f"cancel_{job.id}", help="Cancel Job"):
                             if job_queue.cancel_job(job.id):
-                                st.success("Cancelled")
-                                st.rerun()
+                                _set_flash("Job cancelled")
+                            else:
+                                _set_flash("Could not cancel job", "error")
+                            st.rerun()
 
                 with action_col2:
                     if (
@@ -319,8 +359,10 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                     ):
                         if st.button("🔄", key=f"retry_{job.id}", help="Retry Job"):
                             if job_queue.retry_job(job.id):
-                                st.success("Retrying")
-                                st.rerun()
+                                _set_flash("Job queued for retry")
+                            else:
+                                _set_flash("Could not retry job", "error")
+                            st.rerun()
             else:
                 # Show priority for non-actionable jobs
                 st.caption(f"Priority: {job.priority}/10")
@@ -437,25 +479,10 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                             parameters=new_params,
                             priority=job.priority,
                         )
-                        st.success(f"Retry job created: {new_job_id[:8]}")
+                        _set_flash(f"Retry job created: {new_job_id[:8]}")
                         st.rerun()
 
         st.markdown("---")
-
-
-
-
-
-def add_test_job(job_queue):
-    """Add a test job for demonstration"""
-    job_id = job_queue.add_job(
-        job_type=JobType.VALIDATION,
-        title="Test Validation Job",
-        description="A test job to demonstrate the queue system",
-        parameters={'sermon_ids': ['test123', 'test456']},
-        priority=3
-    )
-    st.success(f"Test job added: {job_id[:8]}")
 
 
 def format_duration(duration):
