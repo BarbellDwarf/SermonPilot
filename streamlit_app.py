@@ -143,6 +143,11 @@ st.markdown("""
         font-weight: bold;
     }
 
+    /* Hide the Streamlit skills promo banner */
+    [data-testid="stSkillsNudgeAnchor"] {
+        display: none !important;
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -150,18 +155,6 @@ def initialize_session_state():
     """Initialize Streamlit session state variables"""
     if 'config' not in st.session_state:
         st.session_state.config = {}  # Initialize with empty dict instead of None
-
-    if 'llm_manager' not in st.session_state:
-        st.session_state.llm_manager = None
-
-    if 'processing_history' not in st.session_state:
-        st.session_state.processing_history = []
-
-    if 'current_user' not in st.session_state:
-        st.session_state.current_user = "User"
-
-    if 'theme' not in st.session_state:
-        st.session_state.theme = "light"
 
     # Initialize job queue system
     if 'job_queue_initialized' not in st.session_state:
@@ -202,6 +195,11 @@ def ensure_metadata_cache_refresh():
         pass
 
 
+def _dashboard_landing():
+    """Forward the root URL to the dashboard page."""
+    st.switch_page(dashboard)
+
+
 def main():
     """Main application entry point"""
     initialize_session_state()
@@ -211,25 +209,17 @@ def main():
 
     ensure_metadata_cache_refresh()
 
-    # Restore last page on refresh when URL loses page param
-    if 'active_page_url' not in st.session_state:
-        st.session_state.active_page_url = None
-
-    # If no page param in URL but we have a stored page, set it in query params
-    if 'page' not in st.query_params and st.session_state.active_page_url:
-        st.query_params['page'] = st.session_state.active_page_url
+    landing = st.Page(
+        _dashboard_landing, title="Dashboard", icon="📊", visibility="hidden"
+    )
 
     pg = st.navigation({
-        "Main": [dashboard, new_sermon, batch_update, validation, jobs],
+        "Main": [landing, dashboard, new_sermon, batch_update, validation, jobs],
         "Data & Analytics": [library, analytics],
         "Tools": [sermon_import],
         "Configuration": [settings],
     })
-    current_page = pg.run()
-
-    # Store current page URL for refresh resilience
-    if current_page and hasattr(current_page, 'url_path'):
-        st.session_state.active_page_url = current_page.url_path
+    pg.run()
 
     render_sidebar_extras()
 
