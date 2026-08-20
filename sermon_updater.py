@@ -2205,31 +2205,67 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
             console_print(f"⚠️  Sermon created but {media_label} upload failed")
 
         # Update local database: save with real ID, delete old dry run entry
+        # in a single transaction so a failure cannot leave duplicates or neither
         duration = sermon_data.get('duration', 0)
-
-        repo.save_sermon({
-            'id': new_sermon_id,
-            'title': title,
-            'subtitle': subtitle,
-            'series_title': series_title,
-            'description': description,
-            'scripture_reference': bible_text,
-            'speaker': speaker_name,
-            'recorded_date': recorded_date,
-            'event_type': event_type,
-            'bible_text': bible_text,
-            'duration': duration,
-            'status': 'processed' if upload_success else 'error',
-            'file_paths': {
-                'audio': str(upload_path),
-                'metadata': str(file_paths.get('metadata', '')),
-            },
-            'content': {
-                'transcript_text': transcript or '',
-                'description': description or '',
-                'hashtags': hashtags or '',
-            },
-        })
+        new_file_paths = {
+            'audio': str(upload_path),
+            'metadata': str(file_paths.get('metadata', '')),
+        }
+        try:
+            with repo.db.get_connection() as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO sermons
+                    (id, title, subtitle, speaker, recorded_date, event_type, bible_text,
+                     series_title, scripture_reference, description, duration, status,
+                     updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    new_sermon_id, title, subtitle, speaker_name, recorded_date, event_type,
+                    bible_text, series_title, bible_text, description, duration,
+                    'processed' if upload_success else 'error', dt.datetime.now()
+                ))
+                for file_type, file_path in new_file_paths.items():
+                    if not file_path:
+                        continue
+                    file_size = 0
+                    try:
+                        p = Path(file_path)
+                        if p.exists():
+                            file_size = p.stat().st_size
+                    except (TypeError, OSError, ValueError):
+                        file_size = 0
+                    conn.execute("""
+                        INSERT OR REPLACE INTO sermon_files
+                        (sermon_id, file_type, file_path, file_size)
+                        VALUES (?, ?, ?, ?)
+                    """, (new_sermon_id, file_type, file_path, file_size))
+                conn.execute("""
+                    INSERT OR REPLACE INTO sermon_content
+                    (sermon_id, transcript_text, description, hashtags, key_topics, summary)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    new_sermon_id, transcript or '', description or '', hashtags or '',
+                    '[]', None
+                ))
+                conn.execute("""
+                    INSERT OR REPLACE INTO sermon_search
+                    (sermon_id, title, speaker, transcript_text, description, hashtags)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    new_sermon_id, title, speaker_name, transcript or '',
+                    description or '', hashtags or ''
+                ))
+                for table in (
+                    'qa_segments', 'sermon_content', 'processing_info', 'sermon_files',
+                    'upload_info', 'processing_status', 'sermon_search'
+                ):
+                    conn.execute(f"DELETE FROM {table} WHERE sermon_id = ?", (dry_run_id,))
+                conn.execute("DELETE FROM sermons WHERE id = ?", (dry_run_id,))
+                conn.commit()
+        except Exception as e:
+            logger.exception(f"Failed to migrate dry run sermon {dry_run_id} to {new_sermon_id}")
+            result['error'] = str(e)
+            return result
 
         # Move output directory from old ID to new ID
         output_root = Path(config.get('output_directory', 'processed_sermons'))
@@ -2244,9 +2280,6 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
                 import shutil
                 shutil.copytree(str(old_output_dir), str(new_output_dir), dirs_exist_ok=True)
                 shutil.rmtree(str(old_output_dir))
-
-        # Delete old dry run database entry
-        repo.delete_sermon(dry_run_id)
 
         if upload_success:
             console_print(f"✅ Dry run sermon published as: {new_sermon_id}")
@@ -2983,12 +3016,11 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
         if database_available and (summary or hashtags or transcript):
             try:
                 repo = SermonRepository()
-                repo.update_sermon_metadata(sermon_id, {
-                    'description': summary,
-                    'hashtags': hashtags,
-                })
-                db = repo.db
-                with db.get_connection() as conn:
+                with repo.db.get_connection() as conn:
+                    conn.execute(
+                        "UPDATE sermons SET description = ?, updated_at = ? WHERE id = ?",
+                        (summary, dt.datetime.now(), sermon_id)
+                    )
                     conn.execute("""
                         INSERT OR REPLACE INTO sermon_content
                         (sermon_id, transcript_text, description, hashtags, updated_at)
@@ -3157,13 +3189,8 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                 'duration': int(getattr(details, 'durationSeconds', 0) or 0),
                 'status': 'processed' if not DRY_RUN else 'pending',
                 'file_paths': {
-                    'processed_audio': (
+                    'audio': (
                         output_audio if output_audio and os.path.exists(output_audio) else None
-                    ),
-                    'original_audio': (
-                        original_audio_path
-                        if 'original_audio_path' in locals() and original_audio_path
-                        and os.path.exists(original_audio_path) else None
                     ),
                     'transcript': (
                         str(get_file_path(sermon_dir, "transcript")) if transcript else None
