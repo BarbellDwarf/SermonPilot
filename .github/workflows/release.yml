@@ -1,0 +1,202 @@
+name: Release
+
+# Releases are cut by CI so a merged version bump can never ship untagged:
+# release PRs are checked against the tags, a push to master creates the
+# missing annotated tag, and the tag push drafts the GitHub Release.
+# Actions are pinned to commit SHAs of their release tags to prevent
+# supply-chain tampering; the tag is noted in a trailing comment.
+
+on:
+  pull_request:
+    branches: [ master ]
+    paths: [ pyproject.toml ]
+  push:
+    branches: [ master ]
+    tags: [ 'v*' ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-version-check:
+    # Fails a release PR unless the pyproject.toml version is a valid
+    # MAJOR.MINOR.PATCH bump above the latest tag, is not tagged yet, and
+    # matches the release branch name.
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38  # v5.4.0
+        with:
+          python-version: '3.11'
+
+      - name: Verify version bumps the latest tag and matches the branch
+        run: |
+          python - <<'EOF'
+          import os
+          import re
+          import subprocess
+          import sys
+          import tomllib
+
+          with open("pyproject.toml", "rb") as f:
+              version = tomllib.load(f)["project"]["version"]
+
+          m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version)
+          if not m:
+              print(f"pyproject.toml version {version!r} is not MAJOR.MINOR.PATCH")
+              sys.exit(1)
+          new = tuple(int(x) for x in m.groups())
+
+          existing = set()
+          latest = (0, 0, 0)
+          for line in subprocess.check_output(["git", "tag", "-l", "v*"], text=True).splitlines():
+              tm = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", line.strip())
+              if not tm:
+                  continue
+              tagver = tuple(int(x) for x in tm.groups())
+              existing.add(tagver)
+              latest = max(latest, tagver)
+
+          if new in existing:
+              print(f"tag v{version} already exists; nothing new to release")
+              sys.exit(1)
+
+          if new <= latest:
+              latest_str = ".".join(str(x) for x in latest)
+              print(f"version {version} is not newer than the latest tag v{latest_str}")
+              sys.exit(1)
+
+          head_ref = os.environ.get("GITHUB_HEAD_REF", "")
+          hm = re.fullmatch(r"release/v(\d+)\.(\d+)\.(\d+)", head_ref)
+          if hm and tuple(int(x) for x in hm.groups()) != new:
+              print(f"release branch {head_ref} does not match pyproject.toml version {version}")
+              sys.exit(1)
+
+          print(f"OK: {version} is a valid unreleased bump above the latest tag")
+          EOF
+
+  create-release-tag:
+    # After a release PR merges to master, creates the annotated tag for the
+    # pyproject.toml version when it is not tagged yet. The tag push triggers
+    # this workflow's draft job and the docker build workflow.
+    if: github.event_name == 'push' && github.ref_name == 'master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38  # v5.4.0
+        with:
+          python-version: '3.11'
+
+      - name: Create annotated tag when the version is not yet tagged
+        run: |
+          python - <<'EOF'
+          import re
+          import subprocess
+          import sys
+          import tomllib
+
+          with open("pyproject.toml", "rb") as f:
+              version = tomllib.load(f)["project"]["version"]
+
+          def run(*args):
+              return subprocess.check_output(args, text=True).strip()
+
+          tag = f"v{version}"
+          if tag in run("git", "tag", "-l", "v*").splitlines():
+              print(f"tag {tag} already exists; nothing to do")
+              sys.exit(0)
+
+          m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version)
+          if not m:
+              print(f"pyproject.toml version {version!r} is not MAJOR.MINOR.PATCH")
+              sys.exit(1)
+          new = tuple(int(x) for x in m.groups())
+
+          latest = (0, 0, 0)
+          for line in run("git", "tag", "-l", "v*").splitlines():
+              tm = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", line)
+              if tm:
+                  latest = max(latest, tuple(int(x) for x in tm.groups()))
+          if new <= latest:
+              latest_str = ".".join(str(x) for x in latest)
+              print(f"version {version} is not newer than the latest tag v{latest_str}; skipping")
+              sys.exit(0)
+
+          run("git", "config", "user.name", "github-actions[bot]")
+          run("git", "config", "user.email", "github-actions[bot]@users.noreply.github.com")
+          run("git", "tag", "-a", tag, "-m", f"{tag}: release cut by CI (wayfinder/TKT-62)")
+          run("git", "push", "origin", tag)
+          print(f"created and pushed annotated tag {tag}")
+          EOF
+
+  draft-github-release:
+    # Runs on the tag push: validates the tag against pyproject.toml, then
+    # drafts the GitHub Release with auto-generated notes. The docker build
+    # workflow runs from the same tag in parallel; publish the draft once
+    # the build succeeds.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Python
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38  # v5.4.0
+        with:
+          python-version: '3.11'
+
+      - name: Validate tag matches pyproject.toml
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          import tomllib
+
+          tag = os.environ["TAG"]
+          with open("pyproject.toml", "rb") as f:
+              version = tomllib.load(f)["project"]["version"]
+          if tag != f"v{version}":
+              print(f"tag {tag} does not match pyproject.toml version {version}")
+              sys.exit(1)
+          print(f"OK: tag {tag} matches pyproject.toml version {version}")
+          PY
+
+      - name: Draft GitHub Release with auto-generated notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists; nothing to do"
+            exit 0
+          fi
+          gh release create "$TAG" --title "$TAG" --generate-notes --draft
+          echo "drafted release $TAG with auto-generated notes"
