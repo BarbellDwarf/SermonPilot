@@ -13,10 +13,10 @@ setups, and Docker images built for each backend.
   ONNX Runtime, which supports CUDA, ROCm, and CPU.
 - **Local transcription** (faster-whisper) benefits from GPU compute.
 
-The manifest in `pyproject.toml` requires `torch>=2.6.0`,
-`torchaudio>=2.6.0`, and `torchvision>=0.20.0`. Any PyTorch install must
-satisfy that floor. Some `requirements/` files still pin older CUDA builds
-(see [PyTorch version note](#pytorch-version-note) below).
+The manifest in `pyproject.toml` requires `torch>=2.6.0` and
+`torchaudio>=2.6.0`. Any PyTorch install must satisfy that floor. The
+`requirements/` override files pin builds that do (see
+[PyTorch version note](#pytorch-version-note) below).
 
 ## Choose an installation
 
@@ -57,12 +57,13 @@ uv sync
 ### 3. Install GPU PyTorch
 
 Install PyTorch from the wheelhouse that matches your CUDA version. CUDA
-12.x users typically use `cu124` or `cu126`; older toolchains use `cu118`
-or `cu121`. The install commands stay at or above the manifest floor:
+12.x users typically use `cu124` (what `requirements/requirements-gpu.txt`
+pins) or `cu126`. Whichever wheelhouse you pick, it must carry builds at or
+above the manifest floor:
 
 ```bash
 # NVIDIA CUDA (replace cu124 with your CUDA wheelhouse)
-uv pip install "torch>=2.6.0" "torchaudio>=2.6.0" "torchvision>=0.20.0" \
+uv pip install "torch>=2.6.0" "torchaudio>=2.6.0" \
   --extra-index-url https://download.pytorch.org/whl/cu124 \
   --index-strategy unsafe-best-match
 ```
@@ -73,8 +74,9 @@ For AMD GPUs, install from the ROCm 7.1 wheelhouse instead:
 uv pip install -r requirements/requirements-rocm.txt
 ```
 
-That file pins `torch==2.12.1+rocm7.1`, `torchaudio==2.11.0+rocm7.1`, and
-`torchvision==0.27.1+rocm7.1`, which satisfy the manifest floor.
+That file pins `torch==2.12.1+rocm7.1` and `torchaudio==2.11.0+rocm7.1`,
+which satisfy the manifest floor. (torch and torchaudio release independently
+on the ROCm index, so the versions differ.)
 
 ### 4. Verify the installation
 
@@ -89,11 +91,18 @@ Importing `src/audio_processing.py` prints the detected device, for example
 
 ## PyTorch version note
 
-`requirements/requirements-gpu.txt`, `requirements-gpu-minimal.txt`, and
-`requirements-gpu-full.txt` pin `torch==2.1.1+cu121` builds, which predate
-the `torch>=2.6.0` floor in `pyproject.toml`. If you install from those
-files, upgrade PyTorch afterwards with the CUDA install command in
-[step 3](#3-install-gpu-pytorch) so the environment satisfies the manifest.
+All `requirements/` override files pin builds at or above the
+`torch>=2.6.0` floor in `pyproject.toml`:
+
+- `requirements/requirements-gpu.txt` pins `torch==2.6.0+cu124` from the
+  cu124 index
+- `requirements/requirements-rocm.txt` pins `torch==2.12.1+rocm7.1` from the
+  rocm7.1 index
+- `requirements/requirements-cpu.txt` pins `torch==2.6.0+cpu` from the CPU
+  index
+
+The older `requirements-gpu-minimal.txt` and `requirements-gpu-full.txt`
+files no longer exist; if you see references to them, treat them as stale.
 
 ## Docker
 

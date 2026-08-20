@@ -6,7 +6,7 @@ Automated sermon processing tool that enhances audio (Clear/DeepFilterNet), tran
 
 - **Audio Enhancement**: Clear (desert-ant-labs) ONNX model — built on DeepFilterNet 3, fine-tuned on speech corpus. Runs via ONNX Runtime with zero PyTorch dependency. Supports CUDA, ROCm, CPU. Falls back to DeepFilterNet.
 - **Transcription**: Local Whisper/faster-whisper, OpenAI API, or OpenRouter
-- **AI Metadata**: Title, description, and hashtag generation via Ollama, OpenAI, Anthropic, xAI, or Google
+- **AI Metadata**: Title, description, and hashtag generation via Ollama, OpenAI, Anthropic, xAI, Google, Groq, or OpenRouter
 - **SermonAudio Integration**: Create, update, and upload sermons directly to SermonAudio API
 - **Streamlit Web UI**: Dashboard, library, batch processing, validation, analytics, AI chat
 - **Directory Structure**: `processed_sermons/{speaker}/{series}/{title} - {series} - {speaker}/`
@@ -37,6 +37,9 @@ cp .env.example .env
 Pre-built images are available on GitHub Container Registry. Choose your GPU backend:
 
 ```bash
+# Configure first: copy the environment template and fill in your API keys
+cp .env.example .env
+
 # Pull and run with CPU
 docker compose up -d
 
@@ -107,8 +110,8 @@ OLLAMA_HOST=http://localhost:11434
 ```
 
 Key `config.yaml` settings:
-- `audio_enhancement_method`: `deepfilternet` (default, recommended), `clear-natural`, `clear-studio`, or `none`
-- `transcription.backend`: `faster_whisper_local` (default), `whisper_local`, `whisper_openai`, or `whisper_openrouter`
+- `audio_enhancement_method`: `deepfilternet` (default, recommended), `clear-natural`, `clear-studio`, `custom`, or `none`
+- `transcription.backend`: `whisper_local` (default in `config.yaml`), `faster_whisper_local`, `whisper_openai`, or `whisper_openrouter`
 
 ## Usage
 
@@ -162,7 +165,7 @@ processed_sermons/
 
 ## Security
 
-- **torch 2.12.1** (latest) — all 54 CVEs fixed including 4 critical
+- **PyTorch** is pinned at `torch>=2.6.0` in `pyproject.toml`; the GPU override files resolve CUDA (`torch==2.6.0+cu124`) or ROCm (`torch==2.12.1+rocm7.1`) builds
 - **Clear enhancer** uses ONNX Runtime — zero PyTorch dependency for inference
 - API keys stored in `.env` (gitignored) or as environment variables
 - `config.yaml` uses `${VAR}` env var substitution — no secrets in repo
