@@ -826,64 +826,65 @@ def display_sermon_list(filtered_sermons, all_sermons):
     end_idx = min(start_idx + items_per_page, len(filtered_sermons))
     page_sermons = filtered_sermons[start_idx:end_idx]
 
-    header_cols = st.columns([0.25, 1.5, 4.2, 1.4, 1.2], vertical_alignment="center")
+    header_cols = st.columns([0.3, 1.5, 4.2, 1.4, 1.2], vertical_alignment="center")
     with header_cols[2]:
         st.caption("Title · Speaker · Date")
     with header_cols[3]:
         st.caption("Duration")
 
-    for sermon in page_sermons:
-        sid = sermon['id']
-        is_selected = sid in st.session_state.selected_sermon_ids
+    with st.container(key="sermon_rows"):
+        for sermon in page_sermons:
+            sid = sermon['id']
+            is_selected = sid in st.session_state.selected_sermon_ids
 
-        cols = st.columns([0.25, 1.5, 4.2, 1.4, 1.2], vertical_alignment="center")
-        with cols[0]:
-            checked = st.checkbox("Select", value=is_selected, key=f"bulk_{sid}",
-                                  label_visibility="collapsed",
-                                  help="Select for batch actions")
-            if checked and sid not in st.session_state.selected_sermon_ids:
-                st.session_state.selected_sermon_ids.append(sid)
-                st.rerun()
-            elif not checked and sid in st.session_state.selected_sermon_ids:
-                st.session_state.selected_sermon_ids.remove(sid)
-                st.rerun()
-        with cols[1]:
-            status = sermon.get('status', 'unknown')
-            if status in ('completed', 'processed'):
-                status_cls, status_label = 'status-ok', 'Processed'
-            elif status == 'processing':
-                status_cls, status_label = 'status-progress', 'Processing'
-            elif status in ('failed', 'error'):
-                status_cls, status_label = 'status-error', 'Error'
-            else:
-                status_cls, status_label = 'status-neutral', status.capitalize()
-            st.markdown(
-                f'<span class="{status_cls}">{status_label}</span>',
-                unsafe_allow_html=True,
-            )
-        with cols[2]:
-            title = sermon.get('title', 'Untitled')
-            speaker = sermon.get('speaker', '')
-            date = _format_date(sermon.get('recorded_date'))
-            safe_title = title.replace(chr(34), "&quot;")
-            st.markdown(
-                f'<span class="sermon-title" title="{safe_title}">{title}</span>',
-                unsafe_allow_html=True,
-            )
-            meta = f"{speaker} · {date}" if (speaker or date) else "\u00a0"
-            st.markdown(
-                f'<span class="sermon-meta">{meta}</span>',
-                unsafe_allow_html=True,
-            )
-        with cols[3]:
-            dur = sermon.get('duration', '')
-            if dur:
-                st.caption(_format_duration(dur))
-        with cols[4]:
-            if st.button("View", key=f"sel_{sid}", help="View details"):
-                st.session_state.selected_sermon = sermon
-                st.session_state.editing_sermon = False
-                st.rerun()
+            cols = st.columns([0.3, 1.5, 4.2, 1.4, 1.2], vertical_alignment="center")
+            with cols[0]:
+                checked = st.checkbox("Select", value=is_selected, key=f"bulk_{sid}",
+                                      label_visibility="collapsed",
+                                      help="Select for batch actions")
+                if checked and sid not in st.session_state.selected_sermon_ids:
+                    st.session_state.selected_sermon_ids.append(sid)
+                    st.rerun()
+                elif not checked and sid in st.session_state.selected_sermon_ids:
+                    st.session_state.selected_sermon_ids.remove(sid)
+                    st.rerun()
+            with cols[1]:
+                status = sermon.get('status', 'unknown')
+                if status in ('completed', 'processed'):
+                    status_cls, status_label = 'status-ok', 'Processed'
+                elif status == 'processing':
+                    status_cls, status_label = 'status-progress', 'Processing'
+                elif status in ('failed', 'error'):
+                    status_cls, status_label = 'status-error', 'Error'
+                else:
+                    status_cls, status_label = 'status-neutral', status.capitalize()
+                st.markdown(
+                    f'<span class="{status_cls}">{status_label}</span>',
+                    unsafe_allow_html=True,
+                )
+            with cols[2]:
+                title = sermon.get('title', 'Untitled')
+                speaker = sermon.get('speaker', '')
+                date = _format_date(sermon.get('recorded_date'))
+                safe_title = title.replace(chr(34), "&quot;")
+                st.markdown(
+                    f'<span class="sermon-title" title="{safe_title}">{title}</span>',
+                    unsafe_allow_html=True,
+                )
+                meta = f"{speaker} · {date}" if (speaker or date) else "\u00a0"
+                st.markdown(
+                    f'<span class="sermon-meta">{meta}</span>',
+                    unsafe_allow_html=True,
+                )
+            with cols[3]:
+                dur = sermon.get('duration', '')
+                if dur:
+                    st.caption(_format_duration(dur))
+            with cols[4]:
+                if st.button("View", key=f"sel_{sid}", help="View details"):
+                    st.session_state.selected_sermon = sermon
+                    st.session_state.editing_sermon = False
+                    st.rerun()
 
 def _get_hashtags_list(hashtags_source):
     """Normalize hashtags from various formats into a list"""
