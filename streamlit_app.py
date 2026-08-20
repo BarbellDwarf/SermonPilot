@@ -208,11 +208,12 @@ st.markdown("""
         padding-top: 3.75rem;
     }
 
-    /* Sidebar: divide the nav from the status and actions sections */
-    [data-testid="stSidebarNav"] {
-        border-bottom: 1px solid var(--surface-border);
-        padding-bottom: 0.75rem;
-        margin-bottom: 0.25rem;
+    /* Sidebar: divide the nav from the status and actions sections.
+       Streamlit already renders a native nav separator; the expander's
+       own default borders would double up next to it. */
+    [data-testid="stSidebar"] [data-testid="stExpander"] > details,
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] {
+        border: none;
     }
 
     [data-testid="stSidebar"] h3 {
