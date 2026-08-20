@@ -68,7 +68,7 @@ def load_config_from_file():
                     import streamlit as st
 
                     st.warning(
-                        f"⚠️ No config.yaml found. Please copy {example_config} to {config_path} "
+                        f"No config.yaml found. Please copy {example_config} to {config_path} "
                         "and update with your settings."
                     )
                 except ImportError:
@@ -78,7 +78,7 @@ def load_config_from_file():
                 try:
                     import streamlit as st
 
-                    st.error("❌ No configuration file found. Please create config.yaml.")
+                    st.error("No configuration file found. Please create config.yaml.")
                 except ImportError:
                     pass
                 return {}
@@ -93,7 +93,7 @@ def load_config_from_file():
         try:
             import streamlit as st
 
-            st.error(f"❌ Failed to load configuration: {e}")
+            st.error(f"Failed to load configuration: {e}")
         except ImportError:
             pass
         return {}
@@ -161,7 +161,7 @@ def reload_configuration():
         try:
             import streamlit as st
 
-            st.error(f"❌ Failed to reload configuration: {e}")
+            st.error(f"Failed to reload configuration: {e}")
         except ImportError:
             pass  # Not in Streamlit context
         return {}
