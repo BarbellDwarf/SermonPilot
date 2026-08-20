@@ -43,14 +43,15 @@ RUN pip install --no-cache-dir uv
 
 # Install core + GPU-specific dependencies
 RUN if [ "$GPU_BACKEND" = "cuda" ]; then \
-        uv pip install --no-cache-dir -r requirements/requirements.txt && \
+        grep -v '^onnxruntime' requirements/requirements.txt > /tmp/requirements-cuda.txt && \
+        uv pip install --no-cache-dir -r /tmp/requirements-cuda.txt && \
         uv pip install --no-cache-dir \
             --index-url https://download.pytorch.org/whl/cu121 \
             --reinstall-package torch \
             --reinstall-package torchaudio \
             --reinstall-package torchvision \
             torch torchaudio torchvision && \
-        uv pip install --no-cache-dir onnxruntime-gpu; \
+        uv pip install --no-cache-dir "onnxruntime-gpu>=1.22.1"; \
     elif [ "$GPU_BACKEND" = "rocm" ]; then \
         uv pip install --no-cache-dir -r requirements/requirements-rocm.txt; \
     else \
