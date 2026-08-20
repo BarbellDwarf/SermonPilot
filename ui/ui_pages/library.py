@@ -520,8 +520,20 @@ def show_library():
             st.info("No sermons found. Process some sermons first using the 'New Sermon' page.")
             return
 
-        # Search and filter controls
-        col1, col2, col3, col4, col5 = st.columns([1.5, 1, 1, 1, 1])
+        # Search, sort, and export controls
+        sort_labels = {
+            ("Date", "Descending"): "Date (newest)",
+            ("Date", "Ascending"): "Date (oldest)",
+            ("Title", "Ascending"): "Title (A-Z)",
+            ("Title", "Descending"): "Title (Z-A)",
+            ("Speaker", "Ascending"): "Speaker (A-Z)",
+            ("Speaker", "Descending"): "Speaker (Z-A)",
+            ("Duration", "Descending"): "Duration (longest)",
+            ("Duration", "Ascending"): "Duration (shortest)",
+        }
+        sort_label_to_pair = {v: k for k, v in sort_labels.items()}
+
+        col1, col2, col3 = st.columns([2.2, 1.4, 1.0])
 
         with col1:
             search_query = st.text_input(
@@ -532,7 +544,26 @@ def show_library():
             )
 
         with col2:
-            # Get unique speakers for filter
+            sort_labels_list = list(sort_labels.values())
+            current_pair = (
+                st.session_state.get('library_sort_by', 'Date'),
+                st.session_state.get('library_sort_order', 'Descending'),
+            )
+            default_label = sort_labels.get(current_pair, "Date (newest)")
+            sort_label = st.selectbox(
+                "Sort by",
+                sort_labels_list,
+                index=sort_labels_list.index(default_label),
+                key="library_sort_label",
+            )
+            sort_by, sort_order = sort_label_to_pair[sort_label]
+            st.session_state.library_sort_by = sort_by
+            st.session_state.library_sort_order = sort_order
+
+        # Filters row
+        col_f1, col_f2, col_f3, col_f4 = st.columns([1.3, 1.3, 1.3, 1])
+
+        with col_f1:
             speakers = sorted({s.get('speaker', '') for s in sermons if s.get('speaker')})
             speaker_filter = st.selectbox(
                 "👤 Speaker",
@@ -540,74 +571,45 @@ def show_library():
                 key="library_speaker_filter"
             )
 
-        with col3:
-            # Date range filter
+        with col_f2:
             date_filter = st.selectbox(
                 "📅 Date Range",
                 ["All", "Last Month", "Last 3 Months", "Last Year"],
                 key="library_date_filter"
             )
 
-        with col4:
-            # Processing status filter
+        with col_f3:
             status_filter = st.selectbox(
                 "🔄 Status",
                 ["All", "Processed", "Pending", "Error"],
                 key="library_status_filter"
             )
 
-        with col5:
-            st.caption("⭐")
+        with col_f4:
             favorites_only = st.checkbox(
-                "Favorites",
+                "⭐ Favorites",
                 value=st.session_state.show_favorites_only,
                 key="library_fav_toggle",
                 help="Show only favorited sermons"
             )
             st.session_state.show_favorites_only = favorites_only
 
-        # Sort controls row
-        col_s1, col_s2, col_s3, col_s4 = st.columns([1, 1, 2, 2])
-        with col_s1:
-            sort_options = ['Date', 'Title', 'Speaker', 'Duration']
-            current_sort = st.session_state.get('library_sort_by', 'Date')
-            sort_index = sort_options.index(current_sort) if current_sort in sort_options else 0
-            sort_by = st.selectbox(
-                "Sort by",
-                sort_options,
-                index=sort_index,
-                key="library_sort_by_sel"
-            )
-            st.session_state.library_sort_by = sort_by
-        with col_s2:
-            sort_order = st.selectbox(
-                "Order",
-                ["Descending", "Ascending"],
-                index=0 if st.session_state.library_sort_order == "Descending" else 1,
-                key="library_sort_order_sel"
-            )
-            st.session_state.library_sort_order = sort_order
         # Apply filters
         filtered_sermons = apply_filters(
             sermons, search_query, speaker_filter, date_filter, status_filter,
             favorites_only, sort_by, sort_order
         )
 
-        with col_s3:
-            st.caption("")
-            if st.button("📥 Export CSV", use_container_width=True):
-                csv_data = _export_csv(filtered_sermons)
+        with col3:
+            with st.popover("📥 Export", use_container_width=True):
+                st.caption(f"{len(filtered_sermons)} sermons in this view")
                 st.download_button(
-                    "Download CSV", data=csv_data,
+                    "Download CSV", data=_export_csv(filtered_sermons),
                     file_name=f"sermons_{datetime.now().strftime('%Y%m%d')}.csv",
                     mime="text/csv", key="dl_csv"
                 )
-        with col_s4:
-            st.caption("")
-            if st.button("📥 Export JSON", use_container_width=True):
-                json_data = _export_json(filtered_sermons)
                 st.download_button(
-                    "Download JSON", data=json_data,
+                    "Download JSON", data=_export_json(filtered_sermons),
                     file_name=f"sermons_{datetime.now().strftime('%Y%m%d')}.json",
                     mime="application/json", key="dl_json"
                 )
