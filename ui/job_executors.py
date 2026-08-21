@@ -7,6 +7,7 @@ Each executor is responsible for performing the work and updating job progress.
 
 import logging
 import sys
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -28,6 +29,35 @@ _RESULT_TRIM_FIELDS = ('transcript',)
 def _trim_result_payload(result: dict) -> dict:
     """Return a shallow copy of a processing result without bulky fields."""
     return {k: v for k, v in result.items() if k not in _RESULT_TRIM_FIELDS}
+
+
+def _raise_if_job_cancelled(job: Job) -> None:
+    """cancel_check hook for process_new_sermon: raise when the job is cancelled."""
+    if job.cancelled or job.status == JobStatus.CANCELLED:
+        raise JobCancelledError("Job cancelled by user")
+
+
+def _cleanup_uploaded_copy(config: dict, uploaded_file_path: str | None,
+                           job: Job) -> None:
+    """Delete the UI's temporary upload copy after successful processing.
+
+    Only files inside the configured upload_dir are removed so a path pointing
+    at real user media can never be deleted. Kept on failure for retry.
+    """
+    if not uploaded_file_path:
+        return
+    try:
+        upload_dir = Path(
+            config.get('upload_dir') or (Path(tempfile.gettempdir()) / "sermon_uploads")
+        ).resolve()
+        candidate = Path(uploaded_file_path).resolve()
+        if candidate.parent != upload_dir:
+            return
+        candidate.unlink(missing_ok=True)
+        job.add_log(f"Removed uploaded copy {candidate.name}")
+        logger.info("Removed uploaded copy %s", candidate)
+    except Exception as e:
+        logger.warning("Failed to remove uploaded copy %s: %s", uploaded_file_path, e)
 
 
 def _inject_sermon_updater_config(config: dict) -> None:
@@ -433,11 +463,17 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             custom_file=form_data.get('custom_file'),
             config=config,
             progress_callback=progress_cb,
+            cancel_check=lambda: _raise_if_job_cancelled(job),
         )
+
+        if result.get('cancelled'):
+            job.add_log("Sermon processing cancelled by user")
+            raise JobCancelledError("Job cancelled by user")
 
         if result.get('success'):
             sermon_id = result.get('sermon_id')
             job.add_log(f"Sermon created: {sermon_id or '(dry run)'}")
+            _cleanup_uploaded_copy(config, uploaded_file_path, job)
             return JobResult(
                 success=True,
                 message=f"Sermon processed successfully: {sermon_id or 'dry run'}",
