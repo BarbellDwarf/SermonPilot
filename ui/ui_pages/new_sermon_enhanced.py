@@ -491,6 +491,7 @@ def start_enhanced_processing():
             'custom_file': st.session_state.get('custom_file', ''),
             'dry_run': bool(st.session_state.get('dry_run', False)),
             'generate_short_title': bool(st.session_state.get('generate_short_title', False)),
+            'validate_quality': bool(st.session_state.get('validate_description', True)),
         }
 
         form_data['uploaded_file_path'] = str(saved_path)
