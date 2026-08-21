@@ -56,7 +56,7 @@ from ui.pages import (  # noqa: E402
     settings,
     validation,
 )
-from ui.shared_navigation import render_sidebar_extras  # noqa: E402
+from ui.shared_navigation import enforce_authentication, render_sidebar_extras  # noqa: E402
 
 # Configure Streamlit page
 st.set_page_config(
@@ -339,6 +339,7 @@ def _dashboard_landing():
 
 def main():
     """Main application entry point"""
+    enforce_authentication()
     initialize_session_state()
 
     if not st.session_state.config:
