@@ -53,12 +53,13 @@ class OllamaProvider(LLMProvider):
         self.host = config.get('host', 'http://localhost:11434')
         self.model = config.get('model', 'llama3')
         self.api_key = config.get('api_key', '')
-
-        os.environ["OLLAMA_HOST"] = self.host
+        self.temperature = float(config.get('temperature', 0.7))
+        self.max_tokens = int(config.get('max_tokens', 2048))
+        self.num_ctx = int(config.get('num_ctx', 8192))
 
         try:
             import ollama
-            self.ollama = ollama
+            self.ollama = ollama.Client(host=self.host, timeout=300)
         except ImportError:
             logger.error("Ollama library not installed. Install with: pip install ollama")
             self.ollama = None
@@ -117,7 +118,15 @@ class OllamaProvider(LLMProvider):
             raise Exception("Ollama library not available") from None
 
         try:
-            response = self.ollama.chat(model=self.model, messages=messages)
+            response = self.ollama.chat(
+                model=self.model,
+                messages=messages,
+                options={
+                    'temperature': self.temperature,
+                    'num_ctx': self.num_ctx,
+                    'num_predict': self.max_tokens,
+                },
+            )
             return response['message']['content']
         except Exception as e:
             # Check if it's a model not found error from ollama library
@@ -135,14 +144,19 @@ class OllamaProvider(LLMProvider):
             payload = {
                 "model": self.model,
                 "messages": messages,
-                "stream": False
+                "stream": False,
+                "options": {
+                    "temperature": self.temperature,
+                    "num_ctx": self.num_ctx,
+                    "num_predict": self.max_tokens,
+                },
             }
 
             response = requests.post(
                 f"{self.host}/api/chat",
                 json=payload,
                 headers=self._headers(),
-                timeout=30
+                timeout=300
             )
 
             if response.status_code == 200:
@@ -166,16 +180,23 @@ class OllamaProvider(LLMProvider):
 
 
 class OpenAIProvider(LLMProvider):
-    """OpenAI-compatible LLM provider (supports OpenAI, xAI, Anthropic, etc.)."""
+    """OpenAI-compatible LLM provider (supports xAI, Groq, OpenRouter, etc.)."""
+
+    ENV_KEY = 'OPENAI_API_KEY'
 
     def __init__(self, config: dict[str, Any]):
         super().__init__(config)
-        self.api_key = config.get('api_key')
+        self.api_key = config.get('api_key') or os.getenv(self.ENV_KEY, '')
         self.model = config.get('model', 'gpt-3.5-turbo')
-        self.base_url = config.get('base_url')  # Custom endpoint for xAI, Anthropic, etc.
+        self.base_url = config.get('base_url')
+        self.temperature = float(config.get('temperature', 0.7))
+        self.max_tokens = int(config.get('max_tokens', 2048))
 
         if not self.api_key:
-            raise ValueError("API key is required for OpenAI-compatible provider")
+            raise ValueError(
+                f"API key is required for OpenAI-compatible provider "
+                f"(config api_key or {self.ENV_KEY})"
+            )
 
         client_kwargs = {'api_key': self.api_key}
         if self.base_url:
@@ -203,7 +224,9 @@ class OpenAIProvider(LLMProvider):
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=messages
+                messages=messages,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
             )
             return response.choices[0].message.content
         except openai.NotFoundError as e:
@@ -227,27 +250,11 @@ class OpenAIProvider(LLMProvider):
             raise Exception(f"OpenAI API error: {e}") from e
 
 
-class AnthropicProvider(OpenAIProvider):
-    """Anthropic Claude LLM provider."""
-
-    def __init__(self, config: dict[str, Any]):
-        # Set default model if not specified
-        if 'model' not in config:
-            config['model'] = 'claude-3-5-sonnet-20241022'
-
-        # Set Anthropic API base URL if not specified
-        if 'base_url' not in config:
-            config['base_url'] = 'https://api.anthropic.com/v1'
-
-        super().__init__(config)
-
-    def __str__(self) -> str:
-        """String representation of the provider."""
-        return f"AnthropicProvider(model={self.model})"
-
 
 class XAIProvider(OpenAIProvider):
     """xAI Grok LLM provider."""
+
+    ENV_KEY = 'XAI_API_KEY'
 
     def __init__(self, config: dict[str, Any]):
         # Set default model if not specified
@@ -265,27 +272,11 @@ class XAIProvider(OpenAIProvider):
         return f"XAIProvider(model={self.model})"
 
 
-class GoogleProvider(OpenAIProvider):
-    """Google Gemini LLM provider."""
-
-    def __init__(self, config: dict[str, Any]):
-        # Set default model if not specified
-        if 'model' not in config:
-            config['model'] = 'gemini-1.5-flash'
-
-        # Set Google AI API base URL if not specified
-        if 'base_url' not in config:
-            config['base_url'] = 'https://generativelanguage.googleapis.com/v1beta'
-
-        super().__init__(config)
-
-    def __str__(self) -> str:
-        """String representation of the provider."""
-        return f"GoogleProvider(model={self.model})"
-
 
 class GroqProvider(OpenAIProvider):
     """Groq LLM provider."""
+
+    ENV_KEY = 'GROQ_API_KEY'
 
     def __init__(self, config: dict[str, Any]):
         # Set default model if not specified
@@ -325,7 +316,7 @@ class LLMManager:
     def __init__(self, config: dict[str, Any]):
         self.config = config
         self.primary_provider = None
-        self.fallback_provider = None
+        self.fallback_providers: list[LLMProvider] = []
         self.validator_provider = None
 
         self._initialize_providers()
@@ -347,41 +338,25 @@ class LLMManager:
             logger.error(f"Failed to initialize primary provider {primary_provider_type}: {e}")
 
         fallback_config = llm_config.get('fallback', {})
+        self.fallback_providers: list[LLMProvider] = []
         if fallback_config.get('enabled', False):
-            fallback_provider_type = fallback_config.get('provider', 'openai')
-            fallback_provider_config = fallback_config.get(fallback_provider_type, {})
-
-            # Check if fallback provider has required configuration
-            try:
-                if fallback_provider_type in [
-                    'openai', 'anthropic', 'xai', 'google', 'groq', 'openrouter'
-                ]:
-                    # These providers require an API key
-                    if not fallback_provider_config.get('api_key'):
-                        logger.info(
-                            f"Fallback provider {fallback_provider_type} disabled: "
-                            "no API key configured"
-                        )
-                        self.fallback_provider = None
-                    else:
-                        self.fallback_provider = self._create_provider(
-                            fallback_provider_type,
-                            fallback_provider_config
-                        )
-                        logger.info(f"Fallback LLM provider initialized: {fallback_provider_type}")
-                else:
-                    # Ollama or other providers that may not require API keys
-                    self.fallback_provider = self._create_provider(
+            provider_types = list(fallback_config.get('providers', []))
+            single = fallback_config.get('provider')
+            if single and single not in provider_types:
+                provider_types.insert(0, single)
+            for fallback_provider_type in provider_types:
+                fallback_provider_config = fallback_config.get(fallback_provider_type, {})
+                try:
+                    provider = self._create_provider(
                         fallback_provider_type,
                         fallback_provider_config
                     )
+                    self.fallback_providers.append(provider)
                     logger.info(f"Fallback LLM provider initialized: {fallback_provider_type}")
-            except Exception as e:
-                warning_msg = (
-                    f"Failed to initialize fallback provider {fallback_provider_type}: {e}"
-                )
-                logger.info(warning_msg)  # Changed from warning to info to reduce noise
-                self.fallback_provider = None
+                except Exception as e:
+                    logger.info(f"Skipping fallback {fallback_provider_type}: {e}")
+        else:
+            logger.info("Fallback providers disabled in config")
 
         # Initialize validator provider (smaller model for validation)
         validator_config = llm_config.get('validator', {})
@@ -406,12 +381,8 @@ class LLMManager:
             return OllamaProvider(provider_config)
         elif provider_type == 'openai':
             return OpenAIProvider(provider_config)
-        elif provider_type == 'anthropic':
-            return AnthropicProvider(provider_config)
         elif provider_type == 'xai':
             return XAIProvider(provider_config)
-        elif provider_type == 'google':
-            return GoogleProvider(provider_config)
         elif provider_type == 'groq':
             return GroqProvider(provider_config)
         elif provider_type == 'openrouter':
@@ -477,16 +448,14 @@ class LLMManager:
                     error_message=str(e)
                 )
 
-        start_time = time.time()  # Reset timer for fallback
-        if self.fallback_provider:
+        start_time = time.time()
+        for fallback in self.fallback_providers:
             try:
-                response = self.fallback_provider.chat(messages)
+                response = fallback.chat(messages)
                 duration_ms = int((time.time() - start_time) * 1000)
-
-                # Log the successful fallback API usage
                 self._log_api_usage(
-                    provider=self._get_provider_name(self.fallback_provider),
-                    model=self._get_provider_model(self.fallback_provider),
+                    provider=self._get_provider_name(fallback),
+                    model=self._get_provider_model(fallback),
                     messages=messages,
                     response=response,
                     duration_ms=duration_ms,
@@ -494,17 +463,16 @@ class LLMManager:
                     sermon_id=sermon_id,
                     status="success"
                 )
-
-                logger.info(f"Fallback provider succeeded: {type(self.fallback_provider).__name__}")
+                logger.info(f"Fallback provider succeeded: {type(fallback).__name__}")
                 return response
             except Exception as e:
-                logger.error(f"Fallback provider failed: {e}")
+                logger.error(f"Fallback provider {type(fallback).__name__} failed: {e}")
 
                 # Log the failed fallback API usage
                 duration_ms = int((time.time() - start_time) * 1000)
                 self._log_api_usage(
-                    provider=self._get_provider_name(self.fallback_provider),
-                    model=self._get_provider_model(self.fallback_provider),
+                    provider='fallback',
+                    model='unknown',
                     messages=messages,
                     response="",
                     duration_ms=duration_ms,
@@ -536,6 +504,11 @@ class LLMManager:
     def _estimate_tokens(self, text: str) -> int:
         """Rough token estimation (4 chars per token for English)"""
         return len(text) // 4
+
+    @staticmethod
+    def _unknown_model_cost(model: str, total_tokens: int) -> float:
+        logger.debug(f"No cost table entry for model '{model}'; tracking usage without cost")
+        return 0.0
 
     def _estimate_cost(
         self, provider_name: str, model: str, input_tokens: int, output_tokens: int
@@ -578,8 +551,9 @@ class LLMManager:
 
         provider_costs = cost_per_1k_tokens.get(provider_name.lower(), {})
         cost_per_token = (
-            provider_costs.get(model.lower(), 0.001) / 1000  # Default to $0.001 per 1k tokens
-        )
+            provider_costs.get(model.lower())
+            or self._unknown_model_cost(model, input_tokens + output_tokens)
+        ) / 1000
 
         return (input_tokens + output_tokens) * cost_per_token
 
@@ -722,13 +696,15 @@ class LLMManager:
                 'available': True
             }
 
-        if self.fallback_provider:
-            provider_type = type(self.fallback_provider).__name__.replace('Provider', '').lower()
-            info['fallback'] = {
-                'type': provider_type,
-                'model': getattr(self.fallback_provider, 'model', 'unknown'),
-                'available': True
-            }
+        if self.fallback_providers:
+            info['fallback'] = [
+                {
+                    'type': type(fb).__name__.replace('Provider', '').lower(),
+                    'model': getattr(fb, 'model', 'unknown'),
+                    'available': True,
+                }
+                for fb in self.fallback_providers
+            ]
 
         if self.validator_provider:
             provider_type = type(self.validator_provider).__name__.replace('Provider', '').lower()
