@@ -911,9 +911,22 @@ class AudioProcessor:
             try:
                 logger.info("Retrying DeepFilterNet with chunked processing")
                 chunk_seconds = 30
-                return self.process_large_audio_in_chunks(
-                    audio_for_fallback, original_sample_rate, chunk_size_seconds=chunk_seconds
+                result = self.process_large_audio_in_chunks(
+                    audio_data, sample_rate, chunk_size_seconds=chunk_seconds
                 )
+                if sample_rate != original_sample_rate:
+                    logger.info(
+                        f"Resampling chunked retry result from {sample_rate} Hz "
+                        f"back to {original_sample_rate} Hz"
+                    )
+                    res_t = torch.from_numpy(result.astype(np.float32)).contiguous()
+                    if res_t.ndim == 1:
+                        res_t = res_t.unsqueeze(0)
+                    res_t = torchaudio.functional.resample(res_t, 48000, original_sample_rate)
+                    result = res_t.squeeze(0).numpy() if res_t.shape[0] == 1 else res_t.numpy()
+                    if result.ndim == 1 and result.shape[0] == 1:
+                        result = result[0]
+                return result
             except Exception as e2:
                 logger.error(f"DeepFilterNet chunked processing also failed: {e2}")
                 logger.warning("Falling back to custom noise reduction")
