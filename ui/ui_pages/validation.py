@@ -833,7 +833,7 @@ def regenerate_description(sermon_id):
 def mark_for_manual_review(sermon_id):
     """Mark sermon for manual review and navigate to library"""
     try:
-        from database import SermonRepository, get_db
+        from ui.database import SermonRepository, get_db
         db = get_db()
         db.add_manual_review(sermon_id, reason="Marked from validation page")
         # Store selected sermon and feedback, then navigate to library
@@ -965,7 +965,7 @@ def show_manual_review():
     st.markdown("### Manual Review Queue")
 
     try:
-        from database import get_db
+        from ui.database import get_db
         db = get_db()
 
         status_filter = st.selectbox(
@@ -1004,7 +1004,7 @@ def show_manual_review():
                     sid = review.get('sermon_id', 'Unknown')
                     st.markdown("**Actions:**")
                     if st.button("Open in Library", key=f"open_review_{review_id}"):
-                        from database import SermonRepository
+                        from ui.database import SermonRepository
                         repo = SermonRepository()
                         sermon = repo.get_sermon(sid)
                         if sermon:

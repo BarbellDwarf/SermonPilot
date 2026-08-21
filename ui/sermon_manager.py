@@ -33,9 +33,9 @@ except ImportError:
     sermonaudio = MockSermonAudio()
 
 import yaml  # noqa: E402
-from database import SermonRepository  # noqa: E402
 
 from src.sermon_paths import discover_sermons, read_metadata  # noqa: E402
+from ui.database import SermonRepository  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

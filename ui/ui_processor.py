@@ -20,7 +20,7 @@ src_dir = ui_dir.parent / 'src'
 sys.path.insert(0, str(src_dir))
 sys.path.insert(0, str(ui_dir.parent))
 
-from database import get_db  # noqa: E402
+from ui.database import get_db  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
