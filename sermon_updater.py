@@ -2611,7 +2611,8 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
                     carried: dict[str, Any] = {}
                     if old_fts is not None:
                         carried = dict(zip(
-                            [d[0] for d in fts_cursor.description], old_fts
+                            [d[0] for d in fts_cursor.description], old_fts,
+                            strict=False,
                         ))
                     carried.update({
                         'title': title,
