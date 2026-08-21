@@ -132,7 +132,7 @@ def show_filter_and_select():
             )
             st.checkbox("Require Audio File", key="batch_require_audio")
 
-    col1, col2, col3 = st.columns([2, 1, 1])
+    col1, col2, col3 = st.columns([2, 1, 1], vertical_alignment="bottom")
 
     with col1:
         if st.button("Search Sermons", type="primary", width="stretch"):
@@ -155,6 +155,12 @@ def show_filter_and_select():
             file_name="sermon_search_results.csv",
             mime="text/csv",
             disabled=export_csv is None,
+            help=(
+                "Export the current search results as CSV. "
+                "Run a search first to enable this."
+                if export_csv is None
+                else "Export the current search results as CSV"
+            ),
             width="stretch",
         )
 
@@ -220,12 +226,6 @@ def show_batch_processing_options():
             key="batch_dry_run",
             help="Process locally but don't upload changes",
         )
-        st.checkbox(
-            "Save Backups",
-            value=True,
-            key="batch_save_backups",
-            help="Save backup copies of original metadata",
-        )
 
     st.markdown("#### Series Assignment")
     create_series_selectbox(
@@ -233,41 +233,6 @@ def show_batch_processing_options():
         key="batch_series",
         help="Assign the selected sermons to a series",
     )
-
-    st.markdown("#### Execution Settings")
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.number_input(
-            "Batch Size",
-            min_value=1,
-            max_value=50,
-            value=5,
-            key="batch_size",
-            help="Number of sermons to process in parallel",
-        )
-
-    with col2:
-        st.number_input(
-            "Delay Between (seconds)",
-            min_value=0.0,
-            max_value=10.0,
-            value=1.0,
-            step=0.1,
-            key="batch_delay",
-            help="Delay between processing items",
-        )
-
-    with col3:
-        st.number_input(
-            "Max Retries",
-            min_value=0,
-            max_value=5,
-            value=2,
-            key="batch_retries",
-            help="Number of retry attempts for failed items",
-        )
 
 
 def show_execute_batch():
@@ -284,7 +249,7 @@ def show_execute_batch():
 
     st.markdown("#### Execution Summary")
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
 
     with col1:
         st.metric("Selected Sermons", len(selected_sermons))
@@ -300,9 +265,6 @@ def show_execute_batch():
         st.metric("Estimated Time", f"{estimated_time:.1f} min")
 
     with col3:
-        st.metric("Batch Size", st.session_state.get("batch_size", 5))
-
-    with col4:
         st.metric(
             "Processing Mode",
             "Dry Run" if st.session_state.get("batch_dry_run") else "Live",
@@ -350,6 +312,10 @@ def show_execute_batch():
     with col3:
         if st.button("Reset Queue", width="stretch"):
             reset_batch_queue()
+
+    if job_id and is_job_running:
+        if st.button("View Job Progress", key="batch_view_job_progress"):
+            st.switch_page(jobs)
 
     if active_job:
         show_batch_progress()
@@ -661,9 +627,6 @@ def start_batch_processing():
             f"Processing {len(sermon_ids)} sermons in the background. "
             "You can monitor progress on the Jobs page."
         )
-
-        if st.button("View Job Progress", type="secondary"):
-            st.switch_page(jobs)
 
     except Exception as e:
         st.error(f"Failed to start batch processing job: {e}")
