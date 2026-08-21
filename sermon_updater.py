@@ -549,7 +549,8 @@ Guidelines:
 
         except Exception as e:
             logger.warning(f"Validation failed: {e}")
-            return True, f"Validation error: {e}", 0.5, [], []
+            # Fail closed: a configured validator that errors must not approve
+            return False, f"Validation error: {e}", 0.5, [], []
 
     def _parse_validation_response(
         self, response: str
@@ -1098,7 +1099,16 @@ def generate_title(transcript: str, speaker_name: str = None, event_type: str = 
 
     context = "\n".join(context_parts) if context_parts else ""
 
-    tmpl = _get_prompt_template("title", context=context, transcript=transcript[:1000])
+    # Sample beginning, middle, and end: the opening alone is often
+    # announcements and misses the sermon's actual message.
+    title_sample = (
+        f"{transcript[:1200]}\n\n[...]\n\n"
+        f"{transcript[len(transcript) // 2:(len(transcript) // 2) + 800]}\n\n[...]\n\n"
+        f"{transcript[-800:]}"
+        if len(transcript) > 2800 else transcript
+    )
+
+    tmpl = _get_prompt_template("title", context=context, transcript=title_sample)
     if tmpl:
         system_prompt, user_prompt = tmpl
         messages = [
@@ -1122,7 +1132,7 @@ Guidelines for the title:
 - Return ONLY the title, no explanation or commentary
 
 Sermon content (first 1000 characters):
-{transcript[:1000]}...
+{title_sample}...
 
 Generate a compelling sermon title:"""
         messages = [{'role': 'user', 'content': prompt}]
@@ -1473,6 +1483,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       ),
                       clean_audio_device: str = "auto",
                       generate_short_title: bool = False,
+                      force_validation: bool = False,
                       enhancement_method: str | None = None,
                       custom_repo: str | None = None,
                       custom_file: str | None = None,
@@ -1795,11 +1806,33 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             if not description:
                 try:
                     _report(70, "Generating description...")
-                    description = generate_summary(
-                        transcript,
-                        event_type=event_type,
-                        speaker_name=speaker_name
-                    )
+                    if force_validation and transcript:
+                        _report(70, "Generating description with validation...")
+                        validator = DescriptionValidator(config)
+                        description, validation_info = generate_validated_summary(
+                            transcript,
+                            event_type=event_type,
+                            speaker_name=speaker_name
+                        )
+                        is_valid, reason, score, _, _ = validator.validate_description(
+                            description, {'sermon_id': None}
+                        )
+                        if not is_valid:
+                            logger.warning(
+                                "Generated description failed validation (%s); "
+                                "regenerating without validation as fallback", reason,
+                            )
+                            description = generate_summary(
+                                transcript,
+                                event_type=event_type,
+                                speaker_name=speaker_name
+                            )
+                    else:
+                        description = generate_summary(
+                            transcript,
+                            event_type=event_type,
+                            speaker_name=speaker_name
+                        )
                 except Exception as e:
                     logger.warning("LLM description generation failed: %s", e)
                     description = None
@@ -2884,9 +2917,43 @@ def generate_summary(
         "'Pastor [Name]'. You MUST begin the description with 'Pastor [Name] teaches on...'.\n"
     )
 
+    # Long transcripts exceed LLM context windows: map-reduce via per-chunk
+    # summaries so the final prompt carries a faithful condensation.
+    working_text = transcript
+    if len(transcript) > 24000:
+        try:
+            chunks = []
+            start = 0
+            while start < len(transcript):
+                end = min(start + 12000, len(transcript))
+                if end < len(transcript):
+                    boundary = transcript.find('\n\n', end)
+                    if boundary != -1 and boundary < end + 2000:
+                        end = boundary
+                chunks.append(transcript[start:end])
+                start = end
+            chunk_summaries = []
+            for i, chunk in enumerate(chunks):
+                logger.info("Summarizing chunk %d/%d (%d chars)",
+                            i + 1, len(chunks), len(chunk))
+                chunk_summaries.append(llm_manager.chat([{
+                    'role': 'user',
+                    'content': (
+                        f"Summarize this section ({i + 1}/{len(chunks)}) of a "
+                        f"{body_desc} transcript in 3-4 sentences, covering the "
+                        f"main points, scripture, and application:\n\n{chunk}"
+                    ),
+                }]).strip())
+            working_text = "\n\n".join(chunk_summaries)
+            logger.info("Chunked summarization: %d chunks -> %d chars",
+                        len(chunks), len(working_text))
+        except Exception as e:
+            logger.warning("Chunked summarization failed (%s); using full transcript", e)
+            working_text = transcript
+
     tmpl = _get_prompt_template("description",
                                 role_desc=role_desc, body_desc=body_desc,
-                                transcript=transcript,
+                                transcript=working_text,
                                 speaker_instruction=speaker_instruction)
     if tmpl:
         system_prompt, user_prompt = tmpl
@@ -2900,7 +2967,7 @@ def generate_summary(
             f"concise description of the main message and application. Focus on what "
             f"the speaker wanted the audience to understand, believe, or do. "
             f"Avoid generic statements; "
-            f"emphasize unique focus.\n\nTranscript:\n{transcript}\n\nGuidelines:\n"
+            f"emphasize unique focus.\n\nTranscript:\n{working_text}\n\nGuidelines:\n"
             f"- Maximum 1600 characters (STRICT LIMIT - API will reject longer text)\n"
             f"- One paragraph format\n"
             + speaker_instruction +
@@ -3966,17 +4033,31 @@ def get_broadcaster_series(limit: int = 500) -> list[dict[str, Any]]:
         return []
 
 
+def _normalize_entity_name(name: str) -> str:
+    """Trim and case-fold an entity name for tolerant matching."""
+    return " ".join(name.split()).casefold()
+
+
 def resolve_series_id(series_name: str) -> int | None:
     """Resolve a series name to its numeric SermonAudio seriesID."""
     if not series_name:
         return None
-    if series_name in _SERIES_BY_NAME:
-        return _SERIES_BY_NAME[series_name]
+    normalized = _normalize_entity_name(series_name)
+    for name, series_id in _SERIES_BY_NAME.items():
+        if _normalize_entity_name(name) == normalized:
+            return series_id
     try:
         get_broadcaster_series()
     except Exception as e:
         logger.warning("Failed to refresh series list: %s", e)
-    return _SERIES_BY_NAME.get(series_name)
+    for name, series_id in _SERIES_BY_NAME.items():
+        if _normalize_entity_name(name) == normalized:
+            return series_id
+    logger.warning(
+        "Series '%s' not found on SermonAudio; the sermon will be created "
+        "without a series", series_name,
+    )
+    return None
 
 
 def set_sermon_series(sermon_id: str, series_id: int) -> bool:
