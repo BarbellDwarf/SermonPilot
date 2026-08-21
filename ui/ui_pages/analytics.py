@@ -140,10 +140,14 @@ def show_content_analysis():
         if speaker_stats:
             for speaker in speaker_stats[:5]:
                 speaker_name = str(speaker.get('speaker', 'Unknown'))
+                score = speaker.get('avg_quality_score')
                 st.metric(
                     speaker_name,
                     f"{speaker['sermons_processed']} sermons",
-                    f"{speaker['avg_quality_score']:.1f} quality"
+                    (
+                        f"{score:.1f} avg validation score"
+                        if score is not None else None
+                    ),
                 )
         else:
             st.info("No speaker data available")
@@ -171,21 +175,23 @@ def show_content_analysis():
 
     with col2:
         st.markdown("**Quality by Event Type**")
-        if event_data and isinstance(event_data, list):
-            for event in event_data:
-                if isinstance(event, dict):
-                    event_type = event.get('event_type', 'Unknown') or 'Unknown'
-                    avg_quality = event.get('avg_quality', 0.0)
-                    success_rate = event.get('success_rate', 0.0)
-                    st.metric(
-                        str(event_type),
-                        f"{avg_quality:.1f}/10",
-                        f"{success_rate:.1f}% success"
-                    )
-                else:
-                    st.write(f"• Invalid event data: {event}")
+        scored_events = [
+            event for event in (event_data or [])
+            if isinstance(event, dict) and event.get('avg_quality') is not None
+        ]
+        if scored_events:
+            for event in scored_events:
+                success_rate = event.get('success_rate')
+                st.metric(
+                    str(event.get('event_type') or 'Unknown'),
+                    f"{event['avg_quality']:.1f}/10",
+                    (
+                        f"{success_rate:.1f}% validated"
+                        if success_rate is not None else None
+                    ),
+                )
         else:
-            st.info("No quality metrics available yet")
+            st.info("No validation data available yet")
 
     # Content quality trends
     st.markdown("#### Content Quality Trends")
@@ -196,16 +202,16 @@ def show_content_analysis():
         df_quality = pd.DataFrame(quality_data)
         if (
             'date' in df_quality.columns
-            and any(
-                col in df_quality.columns
-                for col in ['description_quality', 'hashtag_quality']
-            )
+            and 'quality_score' in df_quality.columns
         ):
-            st.line_chart(df_quality.set_index('date')[['description_quality', 'hashtag_quality']])
+            st.line_chart(df_quality.set_index('date')['quality_score'])
         else:
             st.info("Quality trend data structure is incomplete")
     else:
-        st.info("No quality trend data available yet")
+        st.info(
+            "No validation data from the last five weeks yet. "
+            "Run validations to see quality trends here."
+        )
 
 def show_cost_tracking():
     """LLM API usage and cost analysis"""
@@ -380,28 +386,8 @@ def show_performance_metrics():
     with col1:
         st.markdown("#### Processing Time Distribution")
 
-        # Use real performance data if available
-        perf_data = get_real_performance_data()
-        if perf_data.get('avg_processing_time', 0) > 0:
-            # Generate distribution based on real average
-            avg_time = perf_data.get('avg_processing_time', 5.0)
-            time_buckets = ["0-2 min", "2-5 min", "5-10 min", "10-20 min", "20+ min"]
-
-            # Distribute based on average (this could be enhanced with real distribution tracking)
-            if avg_time <= 2:
-                time_counts = [80, 15, 3, 1, 1]
-            elif avg_time <= 5:
-                time_counts = [30, 50, 15, 4, 1]
-            elif avg_time <= 10:
-                time_counts = [10, 40, 35, 12, 3]
-            else:
-                time_counts = [5, 20, 35, 30, 10]
-
-            df_times = pd.DataFrame({
-                'time_bucket': time_buckets,
-                'count': time_counts
-            })
-
+        df_times = _processing_time_distribution()
+        if df_times is not None:
             st.bar_chart(df_times.set_index('time_bucket'))
         else:
             st.info("No processing time data available yet")
@@ -409,20 +395,27 @@ def show_performance_metrics():
     with col2:
         st.markdown("#### Processing Steps Performance")
 
-        step_data = perf_data['step_performance']
-        df_steps = pd.DataFrame(step_data)
+        step_data = perf_data.get('step_performance') or []
+        if step_data:
+            df_steps = pd.DataFrame(step_data)
 
-        st.dataframe(
-            df_steps,
-            column_config={
-                "step": "Processing Step",
-                "avg_time": st.column_config.NumberColumn("Avg Time (s)", format="%.1f"),
-                "success_rate": st.column_config.NumberColumn("Success Rate", format="%.1f%%"),
-                "bottleneck_score": st.column_config.NumberColumn("Bottleneck Score", format="%.2f")
-            },
-            hide_index=True,
-            width='stretch'
-        )
+            st.dataframe(
+                df_steps,
+                column_config={
+                    "step": "Processing Step",
+                    "avg_time": st.column_config.NumberColumn("Avg Time (s)", format="%.1f"),
+                    "success_rate": st.column_config.NumberColumn(
+                        "Success Rate", format="%.1f%%"
+                    ),
+                    "bottleneck_score": st.column_config.NumberColumn(
+                        "Bottleneck Score", format="%.2f"
+                    )
+                },
+                hide_index=True,
+                width='stretch'
+            )
+        else:
+            st.info("No step performance data available yet")
 
     # Resource usage
     st.markdown("#### Resource Usage")
@@ -695,129 +688,82 @@ def get_real_content_data():
         # Get all validated/interacted sermons from database
         validated_sermon_ids = get_validated_sermon_ids(db)
 
-        # Create analytics from validated/processed sermons
+        try:
+            validation_results = db.get_validation_results()
+        except Exception:
+            validation_results = []
+        result_by_sermon = {
+            r['sermon_id']: r for r in validation_results
+            if r.get('sermon_id') and isinstance(r.get('score'), (int, float))
+        }
+
+        all_sermons = repo.get_all_sermons()
+        sermon_lookup = {s['id']: s for s in all_sermons}
+
         speaker_list = []
         event_list = []
 
         if not validated_sermon_ids:
             st.info("No validated or processed sermons found. Process some sermons first!")
-            # Use fallback data from processing status or create basic data
-            if processing_data:
-                speaker_list = [{
-                    'speaker': 'System Processed',
-                    'sermons_processed': len(processing_data),
-                    'avg_quality_score': 8.0,
-                    'total_downloads': 0,
-                    'total_listens': 0
-                }]
-            else:
-                # Return basic template data
-                speaker_list = [{
-                    'speaker': 'No Processing Data',
-                    'sermons_processed': 0,
-                    'avg_quality_score': 0.0,
-                    'total_downloads': 0,
-                    'total_listens': 0
-                }]
+            speaker_list = [{
+                'speaker': 'System Processed' if processing_data else 'No Processing Data',
+                'sermons_processed': len(processing_data) if processing_data else 0,
+                'avg_quality_score': None,
+                'total_downloads': 0,
+                'total_listens': 0,
+            }]
         else:
-            # Create analytics from validated sermon IDs using real database data
+            speaker_counts: dict[str, int] = {}
+            speaker_scores: dict[str, list[float]] = {}
+            event_counts: dict[str, int] = {}
+            event_scores: dict[str, list[float]] = {}
+            event_valid: dict[str, list[bool]] = {}
 
-            # Get real sermon details from database for these validated IDs
-            validated_sermons = []
-            all_sermons = repo.get_all_sermons()  # Get all sermons from database
-
-            # Filter to only include validated sermons and extract real data
-            sermon_lookup = {sermon['id']: sermon for sermon in all_sermons}
             for sermon_id in validated_sermon_ids:
-                if sermon_id in sermon_lookup:
-                    sermon_data = sermon_lookup[sermon_id]
-                    validated_sermons.append({
-                        'id': sermon_id,
-                        'speaker': sermon_data.get('speaker', 'Unknown Speaker'),
-                        'event_type': sermon_data.get('event_type', 'Unknown Event'),
-                        'title': sermon_data.get('title', 'Untitled'),
-                        'recorded_date': sermon_data.get('recorded_date'),
-                        'duration': sermon_data.get('duration', 0),
-                        'status': sermon_data.get('status', 'unknown')
-                    })
-                else:
-                    # Fallback for sermons not found in database
-                    validated_sermons.append({
-                        'id': sermon_id,
-                        'speaker': 'Unknown Speaker',
-                        'event_type': 'Unknown Event',
-                        'title': 'Untitled',
-                        'recorded_date': None,
-                        'duration': 0,
-                        'status': 'unknown'
-                    })
+                sermon_data = sermon_lookup.get(sermon_id) or {}
+                speaker = sermon_data.get('speaker') or 'Unknown Speaker'
+                event_type = sermon_data.get('event_type') or 'Unknown Event'
+                speaker_counts[speaker] = speaker_counts.get(speaker, 0) + 1
+                event_counts[event_type] = event_counts.get(event_type, 0) + 1
 
-            # Create basic speaker stats from validated sermons
-            speaker_stats = {}
-            event_stats = {}
+                result = result_by_sermon.get(sermon_id)
+                if result:
+                    speaker_scores.setdefault(speaker, []).append(result['score'])
+                    event_scores.setdefault(event_type, []).append(result['score'])
+                    event_valid.setdefault(event_type, []).append(bool(result.get('is_valid')))
 
-            for sermon in validated_sermons:
-                speaker = sermon.get('speaker', 'Unknown Speaker') or 'Unknown Speaker'
-                event_type = sermon.get('event_type', 'Unknown Event') or 'Unknown Event'
+            speaker_list = [
+                {
+                    'speaker': speaker,
+                    'sermons_processed': count,
+                    'avg_quality_score': _mean_score(speaker_scores.get(speaker)),
+                    'total_downloads': 0,
+                    'total_listens': 0,
+                }
+                for speaker, count in sorted(
+                    speaker_counts.items(), key=lambda item: -item[1]
+                )
+            ]
 
-                if speaker not in speaker_stats:
-                    speaker_stats[speaker] = {
-                        'speaker': speaker,
-                        'sermons_processed': 0,
-                        'avg_quality_score': 8.0,  # Default for processed sermons
-                        'total_downloads': 0,
-                        'total_listens': 0
-                    }
-                speaker_stats[speaker]['sermons_processed'] += 1
-
-                if event_type not in event_stats:
-                    event_stats[event_type] = 0
-                event_stats[event_type] += 1
-
-            speaker_list = list(speaker_stats.values())
-
-            # Calculate percentages for event stats
-            total_events = sum(event_stats.values())
-            event_list = []
-            for event_type, count in event_stats.items():
-                percentage = (count / total_events * 100) if total_events > 0 else 0
+            total_events = sum(event_counts.values())
+            for event_type, count in event_counts.items():
+                valid_flags = event_valid.get(event_type, [])
                 event_list.append({
                     'event_type': event_type,
                     'count': count,
-                    'percentage': percentage,
-                    'avg_quality': 8.0,  # Default quality for processed sermons
-                    'success_rate': 95.0  # Default success rate for processed sermons
+                    'percentage': (count / total_events * 100) if total_events else 0.0,
+                    'avg_quality': _mean_score(event_scores.get(event_type)),
+                    'success_rate': (
+                        sum(1 for v in valid_flags if v) / len(valid_flags) * 100
+                        if valid_flags else None
+                    ),
                 })
-
-        # If we don't have event_list, create a fallback
-        if not event_list:
-            event_list = [{
-                'event_type': 'System Processing',
-                'count': len(processing_data) if processing_data else 1,
-                'percentage': 100.0,
-                'avg_quality': 8.0,
-                'success_rate': 95.0,
-                'total_downloads': 0,
-                'total_listens': 0
-            }]
-
-        # Quality trends from database
-        quality_trends = []
-        if processing_data:
-            # Group by week for trend analysis
-            from datetime import datetime, timedelta
-            for i in range(5):
-                date = datetime.now() - timedelta(weeks=i)
-                quality_trends.insert(0, {
-                    'date': date.strftime('%Y-%m-%d'),
-                    'description_quality': 8.0 + (i * 0.1),
-                    'hashtag_quality': 7.8 + (i * 0.1)
-                })
+            event_list.sort(key=lambda item: -item['count'])
 
         return {
             'speaker_stats': speaker_list,
             'event_types': event_list,
-            'quality_trends': quality_trends
+            'quality_trends': _quality_trends(result_by_sermon),
         }
 
     except Exception as e:
@@ -833,6 +779,96 @@ def get_real_content_data():
             'event_types': [],
             'quality_trends': []
         }
+
+
+def _mean_score(values):
+    """Average of a score list rounded to 2dp, or None when there is no data"""
+    if not values:
+        return None
+    return round(sum(values) / len(values), 2)
+
+
+def _processing_time_distribution():
+    """Bucket real recorded processing durations, or None when there is no data"""
+    try:
+        from database import get_db
+
+        rows = get_db().get_processing_status()
+    except Exception:
+        return None
+
+    minutes = []
+    for item in rows:
+        raw = item.get('duration')
+        if not raw:
+            continue
+        try:
+            if 'min' in str(raw):
+                minutes.append(float(str(raw).replace('min', '').strip()))
+            elif 'sec' in str(raw):
+                minutes.append(float(str(raw).replace('sec', '').strip()) / 60)
+        except ValueError:
+            continue
+
+    if not minutes:
+        return None
+
+    counts = [0, 0, 0, 0, 0]
+    for value in minutes:
+        if value <= 2:
+            counts[0] += 1
+        elif value <= 5:
+            counts[1] += 1
+        elif value <= 10:
+            counts[2] += 1
+        elif value <= 20:
+            counts[3] += 1
+        else:
+            counts[4] += 1
+
+    return pd.DataFrame({
+        'time_bucket': ["0-2 min", "2-5 min", "5-10 min", "10-20 min", "20+ min"],
+        'count': counts,
+    })
+
+
+def _quality_trends(result_by_sermon):
+    """Weekly average validation scores over the last five weeks"""
+    now = datetime.datetime.now()
+    buckets: dict[int, list[float]] = {}
+    for result in result_by_sermon.values():
+        validated_at = _parse_timestamp(result.get('validated_at'))
+        if validated_at is None:
+            continue
+        age_weeks = int((now - validated_at).days // 7)
+        if 0 <= age_weeks < 5:
+            buckets.setdefault(age_weeks, []).append(result['score'])
+
+    trends = []
+    for age_weeks in range(4, -1, -1):
+        scores = buckets.get(age_weeks)
+        if scores:
+            trends.append({
+                'date': (now - datetime.timedelta(weeks=age_weeks)).strftime('%Y-%m-%d'),
+                'quality_score': round(sum(scores) / len(scores), 2),
+            })
+    return trends
+
+
+def _parse_timestamp(value):
+    """Parse a validation timestamp into a datetime, or None"""
+    if isinstance(value, datetime.datetime):
+        return value
+    if not value:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(str(value))
+    except ValueError:
+        try:
+            return datetime.datetime.strptime(str(value)[:19], '%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            return None
+
 
 def get_real_cost_data():
     """Get real cost tracking data from database"""
@@ -1023,141 +1059,26 @@ def get_validated_sermon_ids(db):
             if sermon.get('status') in ['completed', 'processed']:
                 validated_ids.add(sermon.get('id'))
 
-        # Get validated sermons from database directly to avoid JSON parsing issues
-        import sqlite3
-        conn = sqlite3.connect('sermon_processor.db')
-        cursor = conn.cursor()
+        # Get validated sermons and completed processing statuses via the
+        # shared database handle so DATABASE_URL overrides are respected
+        with db.get_connection() as conn:
+            valid_rows = conn.execute(
+                'SELECT DISTINCT sermon_id FROM validation_results WHERE is_valid = 1'
+            ).fetchall()
+            for row in valid_rows:
+                validated_ids.add(row['sermon_id'])
 
-        cursor.execute('SELECT sermon_id FROM validation_results WHERE is_valid = 1')
-        valid_sermon_ids = cursor.fetchall()
-        for (sermon_id,) in valid_sermon_ids:
-            validated_ids.add(sermon_id)
-
-        # Get sermons with completed processing status
-        cursor.execute('SELECT sermon_id FROM processing_status WHERE status = "completed"')
-        completed_status_ids = cursor.fetchall()
-        for (sermon_id,) in completed_status_ids:
-            validated_ids.add(sermon_id)
-
-        conn.close()
+            done_rows = conn.execute(
+                'SELECT DISTINCT sermon_id FROM processing_status WHERE status = ?',
+                ("completed",),
+            ).fetchall()
+            for row in done_rows:
+                validated_ids.add(row['sermon_id'])
 
     except Exception as e:
         st.warning(f"Error accessing database: {str(e)}")
 
-    return list(filter(None, validated_ids))  # Remove None values
-
-
-def get_sermon_analytics_batch(sermon_updater, sermon_ids):
-    """Get analytics data for a batch of sermon IDs"""
-    speaker_stats = {}
-    event_counts = {}
-    retrieved_sermons = []
-
-    # Process in smaller batches
-    batch_size = 10
-    total_batches = (len(sermon_ids) + batch_size - 1) // batch_size
-
-    progress_bar = st.progress(0, text="Fetching sermon analytics...")
-
-    for batch_num in range(total_batches):
-        start_idx = batch_num * batch_size
-        end_idx = min(start_idx + batch_size, len(sermon_ids))
-        batch = sermon_ids[start_idx:end_idx]
-
-        # Update progress
-        progress = (batch_num + 1) / total_batches
-        progress_bar.progress(progress, text=f"Processing batch {batch_num + 1}/{total_batches}")
-
-        for sermon_id in batch:
-            try:
-                # Get individual sermon data
-                sermon_data = sermon_updater.get_sermon_by_id(sermon_id)
-                if sermon_data:
-                    retrieved_sermons.append(sermon_data)
-
-                    # Process speaker stats
-                    speaker = sermon_data.get(
-                        'speaker', sermon_data.get('preacher', 'Unknown Speaker')
-                    )
-                    if speaker not in speaker_stats:
-                        speaker_stats[speaker] = {
-                            'count': 0,
-                            'downloads': 0,
-                            'listens': 0,
-                            'scores': []
-                        }
-                    speaker_stats[speaker]['count'] += 1
-
-                    # Get real analytics data
-                    downloads = sermon_data.get('downloadCount', 0)
-                    if isinstance(downloads, (int, float)):
-                        speaker_stats[speaker]['downloads'] += downloads
-
-                    # Audio access timestamp indicates listens
-                    if sermon_data.get('lastAudioAccessTimestamp'):
-                        speaker_stats[speaker]['listens'] += 1
-
-                    speaker_stats[speaker]['scores'].append(8.0)
-
-                    # Event type analytics
-                    event_type = sermon_data.get('eventType', 'Unknown')
-                    if event_type not in event_counts:
-                        event_counts[event_type] = {
-                            'count': 0,
-                            'downloads': 0,
-                            'listens': 0
-                        }
-                    event_counts[event_type]['count'] += 1
-                    downloads_val = downloads if isinstance(downloads, (int, float)) else 0
-                    event_counts[event_type]['downloads'] += downloads_val
-                    if sermon_data.get('lastAudioAccessTimestamp'):
-                        event_counts[event_type]['listens'] += 1
-
-            except Exception as e:
-                # Skip individual sermon if there's an error
-                st.warning(f"Could not fetch data for sermon {sermon_id}: {str(e)}")
-                continue
-
-    progress_bar.empty()
-
-    # Convert to final format
-    speaker_list = []
-    for speaker, stats in speaker_stats.items():
-        avg_score = sum(stats['scores']) / len(stats['scores']) if stats['scores'] else 8.0
-        speaker_list.append({
-            'speaker': speaker,
-            'sermons_processed': stats['count'],
-            'avg_quality_score': avg_score,
-            'total_downloads': stats['downloads'],
-            'total_listens': stats['listens']
-        })
-
-    # Sort by download count, then by sermon count
-    speaker_list.sort(key=lambda x: (x['total_downloads'], x['sermons_processed']), reverse=True)
-
-    # Convert event counts to list format
-    event_list = []
-    total_sermons = len(retrieved_sermons)
-    for event_type, counts in event_counts.items():
-        percentage = (counts['count'] / total_sermons * 100) if total_sermons else 0
-        success_rate = min(95.0, 85.0 + (counts['downloads'] / max(counts['count'], 1)) * 10)
-        avg_quality = min(10.0, 7.0 + (counts['listens'] / max(counts['count'], 1)) * 3)
-
-        event_list.append({
-            'event_type': event_type,
-            'count': counts['count'],
-            'percentage': percentage,
-            'avg_quality': avg_quality,
-            'success_rate': success_rate,
-            'total_downloads': counts['downloads'],
-            'total_listens': counts['listens']
-        })
-
-    return {
-        'sermons': retrieved_sermons,
-        'speaker_stats': speaker_list,
-        'event_stats': event_list
-    }
+    return list(filter(None, validated_ids))
 
 
 def show_sermonaudio_data_view():
