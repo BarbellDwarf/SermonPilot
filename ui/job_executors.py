@@ -259,8 +259,9 @@ def execute_sermon_import_job(job: Job) -> JobResult:
         )
 
         # Import sermon importer
-        from database import SermonRepository
         from sermon_importer import SermonImporter
+
+        from ui.database import SermonRepository
 
         importer = SermonImporter(processed_sermons_dir)
         repo = SermonRepository()

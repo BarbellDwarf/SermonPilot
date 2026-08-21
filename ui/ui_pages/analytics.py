@@ -283,7 +283,7 @@ def show_cost_tracking():
             import sys
             from pathlib import Path
             sys.path.insert(0, str(Path(__file__).parent.parent))
-            from database import get_db
+            from ui.database import get_db
 
             db = get_db()
             usage_summary = db.get_llm_usage_summary(days=30)
@@ -625,7 +625,7 @@ def get_real_metrics_data(time_range):
         from datetime import datetime, timedelta
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from database import get_db
+        from ui.database import get_db
 
         db = get_db()
         processing_data = db.get_processing_status()
@@ -684,7 +684,7 @@ def get_real_content_data():
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from database import SermonRepository, get_db
+        from ui.database import SermonRepository, get_db
 
         db = get_db()
         repo = SermonRepository(db)
@@ -841,7 +841,7 @@ def get_real_cost_data():
         import sys
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from database import get_db
+        from ui.database import get_db
 
         db = get_db()
 
@@ -953,7 +953,7 @@ def get_real_performance_data():
     except Exception:
         # Fallback to existing database-based metrics if performance monitor fails
         try:
-            from database import get_db
+            from ui.database import get_db
 
             db = get_db()
             processing_data = db.get_processing_status()
