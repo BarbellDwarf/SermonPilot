@@ -1,44 +1,59 @@
-# TKT-145/146/159 Progress — db/jobs integrity
+# PROGRESS — fix/pipeline-integrity (TKT-143, TKT-144 sermon_updater portion, TKT-150)
 
-Branch: fix/db-jobs-integrity (base origin/master 393463a)
-Worktree: /tmp/opencode/wt-cfg
+Branch: fix/pipeline-integrity @ origin/master (c684af3)
 
-- [x] TKT-145: transcript stripped at persistence (`_result_for_persistence`) and at source (executor trims key)
-- [x] TKT-145: llm_api_usage pruned by cleanup_old_records (days param)
-- [x] TKT-145: Clear Completed also removes FAILED; prune_old_jobs(30d) runs at queue start
-- [x] TKT-146: WAL pragma at database init
-- [x] TKT-146: SQLite writes moved out of queue lock (add_job, _get_next_job, cancel_job, retry_job, _recover_orphaned_jobs, clear_completed_jobs)
-- [x] TKT-159: UTC timestamps: `utcnow()` helper; all 21 local now() DB writes/comparisons in database.py are UTC (naive format keeps parity with legacy rows)
-- [x] TKT-159: FTS5 MATCH input sanitization (`sanitize_fts_query`, quoted tokens, empty input returns [])
-- [x] TKT-159: 6 indexes added in init_database
-- [x] TKT-159: favorite/notes updates skip FTS rebuild (update_sermon_metadata rebuilds only when title/speaker/content changed)
-- [x] Run test suite + ruff, verify WAL takes effect
+## Findings log
 
-## TKT-159 UTC decision
+- [setup] worktree clean, branch created.
+- [TKT-143 / AUDIT-009] DONE — library.py `generate_ai_content` now saves the fetched
+  transcript via `repo.update_sermon_metadata(sermon_id, {'transcript_text': ...})`.
+  The old raw `INSERT OR REPLACE INTO sermon_content` nulled description/hashtags/
+  key_topics/summary and hand-built a 6-of-8 FTS row; the repo method upserts only the
+  transcript column and calls `_rebuild_fts_row` (all 8 columns). Removed now-unused
+  `get_db` import.
+- [TKT-143 / AUDIT-011] DONE — `publish_dry_run_sermon` migration rewritten:
+  created_at carried over from the draft row (schema-tolerant via PRAGMA), FTS row
+  rebuilt across every column present in sermon_search carrying key_topics/summary
+  from the draft row, cleanup extended to validation_results/manual_review/
+  llm_api_usage (per-table try/except). Kept single-transaction raw SQL because
+  repo.save_sermon hardcodes CURRENT_TIMESTAMP on insert (cannot preserve created_at),
+  cannot migrate child rows in one transaction, and tests/test_publish_dry_run.py
+  exercises this exact path against an in-memory fake schema.
+- [TKT-144 / AUDIT-017 partial] DONE — process_new_sermon gained
+  `cancel_check: Callable[[], None] | None = None`; checkpoints before the remote
+  create (Step 4) and before the local 'processed' save. cancel_check exceptions are
+  wrapped in ProcessingCancelledError, handled ahead of the generic except, and
+  surfaced as result['cancelled']=True.
+- [TKT-144 / AUDIT-018 partial] DONE — `_find_existing_processed_sermon_id()` looks up
+  title+speaker+recorded_date with status='processed' and a non-draft ID; found →
+  re-upload to that sermon instead of creating a duplicate.
+- [TKT-150 / AUDIT-021] DONE — recovery draft persisted locally (files + metadata.json
+  + transcript.txt + DB row status='draft') BEFORE create_new_sermon_api; deleted once
+  the real record saves; on create failure the result carries draft id/output_dir.
+- [TKT-150 / AUDIT-025] DONE — publish_dry_run_sermon checks upload_info.sermonaudio_id
+  of the draft; if set, skips creation and uploads to that ID. Newly created IDs are
+  recorded immediately after creation so a retried publish cannot duplicate.
+- [TKT-150 / AUDIT-026] DONE — _reuse_existing_transcript compares identity of stems
+  with the `{epoch_ms}_` UI prefix stripped against metadata.json original_file;
+  legacy mtime heuristic kept only for dirs without recorded original_file.
+- [TKT-150 / AUDIT-043] DONE — chose transcoding: after enhancement, the enhanced WAV
+  is converted back to the input container via ffmpeg (`_transcode_media`, per-container
+  codec args with default-encoder fallback); on failure keeps WAV + logs warning
+  (pre-existing behavior).
+- [TKT-150 / AUDIT-044] DONE — seriesID removed from create_new_sermon_api payload
+  (and from its signature); set_sermon_series PATCH is now the single application path
+  in both callers.
+- [TKT-150 / AUDIT-045] DONE — languageCode resolved from transcription config
+  (`_resolve_api_language_code`, whisper_local/faster_whisper_local/openai/openrouter
+  sections then top-level), fallback 'eng'.
+- [TKT-150 / AUDIT-071] PENDING — job_executors.py cleanup of uploaded copies.
 
-All new explicit writes use naive UTC (`utcnow()`), matching the
-`CURRENT_TIMESTAMP` (UTC) defaults that already populate created_at columns
-and llm_api_usage.timestamp. This fixes the clearly-wrong comparisons:
-get_llm_usage_summary/get_llm_usage_by_operation compared a local-time
-cutoff against UTC-stored rows, excluding recent rows by the UTC offset.
-Legacy rows written with local time keep their stored values; for cache
-expiry and pruning they are now off by the timezone offset at worst, which
-is safer than the previous mixed comparison. No data migration performed.
+## Decisions
 
-## Verification (32/32 ad-hoc checks, /tmp/opencode/verify_dbjobs.py)
+- AUDIT-043 lower-risk option picked: ffmpeg transcode back to input container
+  (consistent with existing mux/extract usage) rather than renaming outputs to .wav,
+  which would ripple into filenames/metadata/upload types everywhere.
+- AUDIT-045 passes the configured value through verbatim ('en' in default config);
+  SermonAudio accepts ISO 639 codes here and the previous hardcoded 'eng' remains the
+  fallback when unconfigured.
 
-- WAL: fresh sqlite3 connection reports journal_mode=wal; migrate_db copy too
-- Indexes: all 6 present in sqlite_master after init
-- FTS: quoted-token sanitize, hostile inputs raise nothing, symbol-only
-  input returns [], real query still matches correct sermon
-- Favorite: 0 FTS rebuilds on is_favorite/notes updates, exactly 1 on title
-- UTC: created_at/updated_at delta < 5s in raw row; fresh llm row counted
-  by get_llm_usage_summary(days=30); 40d-old llm row pruned
-- Persistence: transcript absent from background_jobs.result JSON, small
-  fields intact; executor trim verified
-- Clear Completed removes completed+failed+cancelled, keeps queued/running
-- prune_old_jobs: stale terminal row dropped from db+memory, recent kept,
-  old queued kept
-- Singleton: 8 concurrent get_job_queue threads -> one instance
-- pytest tests/: 30 passed; ruff clean on all four files; CRLF preserved in
-  job_queue.py and job_executors.py
