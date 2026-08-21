@@ -987,11 +987,16 @@ def validate_and_regenerate_descriptions(
     }
 
 
-def update_sermon_metadata(sermon_id: str, description: str, hashtags: str | list[str],
+def update_sermon_metadata(sermon_id: str, description: str, hashtags: str | list[str] | None,
                           series_title: str = None, series_id: int | None = None) -> bool:
     url = BASE_URL + f'node/sermons/{sermon_id}'
     headers = get_api_headers()
-    keywords = hashtags if isinstance(hashtags, str) else ','.join(hashtags)
+    if hashtags is None:
+        keywords = ""
+    elif isinstance(hashtags, (list, tuple)):
+        keywords = ','.join(str(tag) for tag in hashtags)
+    else:
+        keywords = str(hashtags)
     payload = {'moreInfoText': description, 'keywords': keywords}
     if series_id is None and series_title:
         series_id = resolve_series_id(series_title)

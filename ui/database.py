@@ -441,9 +441,8 @@ class SermonDatabase:
                 conn.execute("""
                     UPDATE processing_status
                     SET status = ?, progress = ?, message = ?, updated_at = ?,
-                        completed_at = (
-                            "CASE WHEN ? IN ('completed', 'failed') THEN ? ELSE completed_at END"
-                        )
+                        completed_at = CASE WHEN ? IN ('completed', 'failed')
+                                        THEN ? ELSE completed_at END
                     WHERE id = ?
                 """, (status, progress, message, now, status, now, existing['id']))
             else:
