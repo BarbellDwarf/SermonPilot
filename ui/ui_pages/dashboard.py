@@ -68,20 +68,24 @@ def show_quick_stats():
 
     with col1:
         st.metric("Total Sermons", str(total_sermons),
-                  f"+{last_24h} today" if last_24h > 0 else "No recent activity")
+                  f"+{last_24h} today" if last_24h > 0 else "No recent activity",
+                  delta_color="off" if last_24h == 0 else "normal")
 
     with col2:
         st.metric("Processed", str(processed_status),
-                  f"{processed_status}/{total_sermons}" if total_sermons > 0 else "N/A")
+                  f"{processed_status}/{total_sermons}" if total_sermons > 0 else "N/A",
+                  delta_color="off")
 
     with col3:
         uploaded = sum(1 for s in sermons if s.get('upload_status'))
         st.metric("Uploaded to SA", str(uploaded),
-                  f"{uploaded}/{total_sermons}" if total_sermons > 0 else "N/A")
+                  f"{uploaded}/{total_sermons}" if total_sermons > 0 else "N/A",
+                  delta_color="off")
 
     with col4:
         st.metric("Last 24h", str(last_24h),
-                  f"out of {total_sermons} total" if total_sermons > 0 else "N/A")
+                  f"out of {total_sermons} total" if total_sermons > 0 else "N/A",
+                  delta_color="off")
 
 def show_recent_activity():
     """Show recent sermons from the database"""
@@ -105,14 +109,44 @@ def show_recent_activity():
             ),
             'Title': s.get('title', '(no title)'),
             'Speaker': s.get('speaker', ''),
-            'Status': (
-                "Processed" if s.get('status') == 'processed'
-                else "Processing" if s.get('status') == 'processing' else "Error"
-            ),
+            'Status': _status_label(s.get('status')),
         })
 
     df = pd.DataFrame(formatted_data)
-    st.dataframe(df, width='stretch', hide_index=True)
+    event = st.dataframe(
+        df,
+        width='stretch',
+        hide_index=True,
+        height=260,
+        on_select='rerun',
+        selection_mode='single-row',
+    )
+    selected_rows = event.selection.rows
+    if selected_rows:
+        if st.button(
+            "View in Library",
+            key="dash_view_in_library",
+            help="Open the selected sermon in the Library",
+        ):
+            from ui.pages import library as library_page
+
+            st.session_state.selected_sermon = sermons[selected_rows[0]]
+            st.session_state.editing_sermon = False
+            st.switch_page(library_page)
+
+
+def _status_label(status):
+    """Map a stored sermon status to its display label"""
+    labels = {
+        'processed': 'Processed',
+        'processing': 'Processing',
+        'pending': 'Pending',
+        'draft': 'Draft',
+        'error': 'Error',
+    }
+    if status in labels:
+        return labels[status]
+    return str(status).capitalize() if status else 'Unknown'
 
 def show_quick_actions():
     """Show quick action shortcuts for common tasks"""
@@ -138,14 +172,16 @@ def show_system_status():
     st.markdown("### System Health")
 
     status = check_system_components()
-    cols = st.columns(len(status))
-    for col, (component, details) in zip(cols, status.items(), strict=False):
-        with col:
-            healthy = details['status']
-            st.metric(
-                component, f"{'OK' if healthy else 'Error'}",
-                help=details.get('message', ''),
-            )
+    items = list(status.items())
+    for row_start in range(0, len(items), 2):
+        row = st.columns(2)
+        for col, (component, details) in zip(row, items[row_start:row_start + 2], strict=False):
+            with col:
+                healthy = details['status']
+                st.metric(
+                    component, f"{'OK' if healthy else 'Error'}",
+                    help=details.get('message', ''),
+                )
 
 def show_processing_queue():
     """Show current processing queue from job_queue module"""
