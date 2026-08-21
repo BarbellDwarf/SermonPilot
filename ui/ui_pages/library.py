@@ -166,23 +166,15 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
         if fetched:
             transcript = fetched
             with st.spinner("Saving fetched transcript to local database..."):
-                from database import SermonRepository, get_db
+                from database import SermonRepository
                 repo = SermonRepository()
-                db = get_db()
-                with db.get_connection() as conn:
-                    conn.execute("""
-                        INSERT OR REPLACE INTO sermon_content
-                        (sermon_id, transcript_text, updated_at)
-                        VALUES (?, ?, ?)
-                    """, (sermon_id, transcript, str(datetime.now())))
-                    conn.execute("DELETE FROM sermon_search WHERE sermon_id = ?", (sermon_id,))
-                    conn.execute("""
-                        INSERT INTO sermon_search
-                        (sermon_id, title, speaker, transcript_text, description, hashtags)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (sermon_id, sermon.get('title', ''), sermon.get('speaker', ''),
-                          transcript, sermon.get('description', ''), sermon.get('hashtags', '')))
-                    conn.commit()
+                if not repo.update_sermon_metadata(
+                    sermon_id, {'transcript_text': transcript}
+                ):
+                    _set_feedback(
+                        "Transcript fetched but could not be saved locally.",
+                        kind="warning",
+                    )
             st.success("Transcript fetched from SermonAudio!")
         else:
             # Fall back to local transcript
