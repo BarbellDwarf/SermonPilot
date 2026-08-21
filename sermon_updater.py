@@ -37,7 +37,7 @@ import sys
 import time
 import traceback
 import warnings
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from io import StringIO
@@ -1272,11 +1272,120 @@ def resolve_speaker_id(speaker_name: str) -> int | None:
         return None
 
 
+class ProcessingCancelledError(RuntimeError):
+    """Raised at a cancellation checkpoint when the cancel_check hook fires."""
+
+
+_TRANSCODE_CODEC_ARGS = {
+    '.mp3': ['-codec:a', 'libmp3lame', '-q:a', '2'],
+    '.m4a': ['-c:a', 'aac', '-b:a', '192k'],
+    '.aac': ['-c:a', 'aac', '-b:a', '192k'],
+    '.mp4': ['-c:a', 'aac', '-b:a', '192k'],
+    '.ogg': ['-c:a', 'libvorbis', '-q:a', '4'],
+    '.flac': ['-c:a', 'flac'],
+}
+
+
+def _transcode_media(src: Path, dst: Path) -> bool:
+    """Transcode an audio file into the container implied by dst's extension.
+
+    Returns True when the converted file exists. Falls back to ffmpeg's
+    default encoder for the container, then gives up (caller keeps src).
+    """
+    import subprocess
+    codec_args = _TRANSCODE_CODEC_ARGS.get(dst.suffix.lower(), [])
+    attempts: list[list[str]] = []
+    if codec_args:
+        attempts.append(["ffmpeg", "-y", "-i", str(src), *codec_args, str(dst)])
+    attempts.append(["ffmpeg", "-y", "-i", str(src), str(dst)])
+    last_err: Exception | None = None
+    for cmd in attempts:
+        try:
+            subprocess.run(cmd, capture_output=True, text=True, timeout=3600, check=True)
+            if dst.exists() and dst.stat().st_size > 0:
+                return True
+        except Exception as e:
+            last_err = e
+    logger.warning("Transcoding %s to %s failed: %s", src.name, dst.name, last_err)
+    return False
+
+
+def _resolve_api_language_code(cfg: dict | None) -> str:
+    """Pick a SermonAudio languageCode from the configured transcription language."""
+    try:
+        trans_cfg = (cfg or {}).get('transcription') or {}
+        for section in (
+            'whisper_local',
+            'faster_whisper_local',
+            'whisper_openai',
+            'whisper_openrouter',
+        ):
+            lang = (trans_cfg.get(section) or {}).get('language')
+            if lang:
+                return str(lang)
+        top_level = trans_cfg.get('language')
+        if top_level:
+            return str(top_level)
+    except Exception as e:
+        logger.debug("Could not resolve transcription language: %s", e)
+    return 'eng'
+
+
+_EPOCH_STEM_RE = re.compile(r'^\d{10,}_')
+
+
+def _normalized_file_stem(path: str | Path) -> str:
+    """Strip a leading epoch-milliseconds upload prefix from a filename stem."""
+    return _EPOCH_STEM_RE.sub('', Path(path).stem).strip('_')
+
+
+def _find_existing_processed_sermon_id(title: str | None, speaker_name: str | None,
+                                       recorded_date: str | None) -> str | None:
+    """Find a previously uploaded processed sermon with identical identity fields.
+
+    Used to avoid creating duplicate remote sermons when a job is retried
+    after dying mid-upload.
+    """
+    if not title or not speaker_name:
+        return None
+    try:
+        from ui.database import SermonRepository
+        repo = SermonRepository()
+        with repo.db.get_connection() as conn:
+            row = conn.execute("""
+                SELECT id FROM sermons
+                WHERE title = ? AND speaker = ? AND recorded_date = ?
+                  AND status = 'processed'
+                  AND id NOT LIKE 'draft\\_%' ESCAPE '\\'
+                ORDER BY updated_at DESC
+                LIMIT 1
+            """, (title, speaker_name, recorded_date or '')).fetchone()
+            if row:
+                return row['id']
+    except Exception as e:
+        logger.debug("Existing processed sermon lookup failed: %s", e)
+    return None
+
+
+def _record_publication_id(repo: Any, draft_id: str, remote_sermon_id: str) -> None:
+    """Best-effort record of the remote ID a draft was already published under."""
+    try:
+        with repo.db.get_connection() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO upload_info
+                (sermon_id, sermonaudio_id, upload_status, upload_message)
+                VALUES (?, ?, ?, ?)
+            """, (draft_id, remote_sermon_id, 'publishing',
+                  f'Created on SermonAudio as {remote_sermon_id}'))
+            conn.commit()
+    except Exception as e:
+        logger.debug("Could not record publication id for %s: %s", draft_id, e)
+
+
 def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
                          event_type: str = "Sunday Service", bible_text: str = None,
                          subtitle: str = None, description: str = None,
                          hashtags: str = None, speaker_id: int | None = None,
-                         series_id: int | None = None,
                          display_title: str = None) -> str:
     """Create a new sermon via the SermonAudio API.
 
@@ -1290,9 +1399,11 @@ def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
         description: Sermon description (optional)
         hashtags: Hashtags/keywords (optional)
         speaker_id: Numeric speaker ID (optional, preferred over speaker_name)
-        series_id: Numeric series ID (optional; the API only accepts seriesID)
         display_title: Short display title (max 30 chars, optional). If not provided,
                        generated from full title by truncation.
+
+    Series is intentionally not sent here: the API ignores it during creation,
+    so callers apply it once via set_sermon_series() after creation.
 
     Returns:
         Created sermon ID if successful, None if failed
@@ -1307,7 +1418,7 @@ def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
         'speakerName': speaker_name[:50],  # Ensure limit
         'preachDate': recorded_date,
         'eventType': event_type,
-        'languageCode': 'eng'  # Default to English
+        'languageCode': _resolve_api_language_code(globals().get('config'))
     }
 
     # Use numeric speakerID if available (more reliable)
@@ -1323,8 +1434,6 @@ def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
         payload['moreInfoText'] = description
     if hashtags:
         payload['keywords'] = hashtags
-    if series_id is not None:
-        payload['seriesID'] = series_id
 
     # Use provided display_title or generate from full title
     if display_title:
@@ -1369,7 +1478,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       custom_file: str | None = None,
                       series_id: int | None = None,
                       config: dict | None = None,
-                      progress_callback=None) -> dict:
+                      progress_callback=None,
+                      cancel_check: Callable[[], None] | None = None) -> dict:
     """Process a new sermon from audio file with automatic metadata generation.
 
     Args:
@@ -1389,6 +1499,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         whisper_model: Whisper model size for transcription
         progress_callback: Optional callable(progress_pct: float, message: str)
             for progress reporting
+        cancel_check: Optional zero-argument callable invoked at cancellation
+            checkpoints (before the remote create and before the local save).
+            Any exception it raises is converted to ProcessingCancelledError.
 
     Returns:
         Dict with keys: success, sermon_id, title, description, hashtags,
@@ -1400,6 +1513,16 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 progress_callback(progress, msg)
             except Exception:
                 pass
+
+    def _check_cancelled():
+        if cancel_check is None:
+            return
+        try:
+            cancel_check()
+        except Exception as cancel_exc:
+            raise ProcessingCancelledError(
+                str(cancel_exc) or "Processing cancelled"
+            ) from cancel_exc
 
     if config is None:
         config = globals().get('config') or {}
@@ -1552,6 +1675,23 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             else:
                 logger.warning("AudioProcessor unavailable, skipping enhancement")
                 enhanced_audio_path = audio_path
+
+        # The enhancer writes WAV regardless of the input container; transcode
+        # back to the input's format so saved/uploaded files match their
+        # extension and MIME type instead of shipping a 500MB "mp3".
+        if (
+            enhanced_audio_path != audio_path
+            and enhanced_audio_path.exists()
+            and temp_dir is not None
+        ):
+            target_ext = audio_path.suffix.lower()
+            if target_ext and enhanced_audio_path.suffix.lower() != target_ext:
+                converted_path = temp_dir / f"enhanced_audio{target_ext}"
+                if _transcode_media(Path(enhanced_audio_path), converted_path):
+                    console_print(
+                        f"🎧 Converted enhanced audio to {target_ext.lstrip('.').upper()}"
+                    )
+                    enhanced_audio_path = converted_path
 
         result['enhanced_audio_path'] = str(enhanced_audio_path)
 
@@ -1876,39 +2016,185 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             return result
 
         # Step 4: Create sermon via API
-        _report(83, "Resolving speaker...")
-        console_print("👤 Resolving speaker...")
-        speaker_id = resolve_speaker_id(speaker_name)
-        if speaker_id:
-            console_print(f"✅ Resolved speaker '{speaker_name}' to ID {speaker_id}")
-        else:
-            console_print(f"ℹ️  Using speaker name '{speaker_name}' as-is (no numeric ID found)")
+        _check_cancelled()
 
-        _report(85, "Creating sermon on SermonAudio...")
-        console_print("📤 Creating sermon on SermonAudio...")
-        sermon_id = create_new_sermon_api(
-            title=title,
-            speaker_name=speaker_name,
-            recorded_date=recorded_date,
-            event_type=event_type,
-            bible_text=bible_text,
-            subtitle=subtitle,
-            description=description,
-            hashtags=hashtags,
-            speaker_id=speaker_id,
-            series_id=series_id,
-            display_title=short_display_title,
+        # Reuse an already-uploaded sermon with identical identity fields so a
+        # retry after dying mid-upload cannot create a duplicate remote sermon.
+        reusable_sermon_id = _find_existing_processed_sermon_id(
+            title, speaker_name, recorded_date
         )
 
-        if not sermon_id:
-            logger.error("Failed to create sermon")
-            result['error'] = "Failed to create sermon on SermonAudio API"
-            return result
+        recovery_draft_id: str | None = None
+        recovery_output_dir: Path | None = None
+        if reusable_sermon_id:
+            sermon_id = reusable_sermon_id
+            console_print(
+                f"♻️  Existing processed sermon {sermon_id} matches "
+                f"'{title}' by {speaker_name} ({recorded_date}); reusing it"
+            )
+            _report(88, f"Reusing existing sermon: {sermon_id}")
+        else:
+            # Persist everything generated so far as a local draft BEFORE the
+            # API create so a failed create loses no work.
+            try:
+                import json as _json
+                import re as _re
+                import shutil as _shutil
+                import uuid as _uuid
+
+                from src.sermon_paths import build_output_filename
+
+                safe_title = _re.sub(
+                    r'[^a-zA-Z0-9]+', '_', (title or 'Untitled').strip().lower()
+                )[:40]
+                safe_speaker = _re.sub(
+                    r'[^a-zA-Z0-9]+', '_', (speaker_name or 'Unknown').strip().lower()
+                )[:20]
+                safe_date = (recorded_date or 'nodate').replace('-', '')
+                recovery_draft_id = (
+                    f"draft_{safe_speaker}_{safe_date}_{safe_title}_"
+                    f"{_uuid.uuid4().hex[:8]}"
+                )
+                output_root = Path(config.get('output_directory', 'processed_sermons'))
+                if not output_root.is_absolute():
+                    output_root = Path(__file__).parent / output_root
+                recovery_output_dir = get_sermon_dir(
+                    output_root, speaker_name, series_title, title, recovery_draft_id
+                )
+                recovery_output_dir.mkdir(parents=True, exist_ok=True)
+
+                ext = Path(audio_path).suffix
+                if input_is_video and upload_type == "original-video":
+                    draft_source = (
+                        final_upload_path
+                        if Path(final_upload_path).exists()
+                        else enhanced_audio_path
+                    )
+                else:
+                    draft_source = (
+                        enhanced_audio_path
+                        if enhanced_audio_path != audio_path
+                        else audio_path
+                    )
+                draft_processed_path = recovery_output_dir / build_output_filename(
+                    title, series_title, speaker_name, recorded_date, "Processed", ext
+                )
+                if Path(draft_source).resolve() != draft_processed_path.resolve():
+                    _shutil.copy2(draft_source, draft_processed_path)
+                draft_original_path = recovery_output_dir / build_output_filename(
+                    title, series_title, speaker_name, recorded_date, "Original", ext
+                )
+                if not draft_original_path.exists():
+                    _shutil.copy2(audio_path, draft_original_path)
+
+                draft_metadata = {
+                    'sermon_id': recovery_draft_id,
+                    'sermonID': recovery_draft_id,
+                    'title': title,
+                    'speaker': speaker_name,
+                    'series_title': series_title or '',
+                    'recorded_date': recorded_date,
+                    'event_type': event_type,
+                    'bible_text': bible_text,
+                    'subtitle': subtitle,
+                    'description': description,
+                    'hashtags': hashtags,
+                    'original_file': str(audio_path),
+                    'processed_file': str(draft_processed_path),
+                    'is_video': input_is_video,
+                    'upload_type': upload_type,
+                    'transcript_length': len(transcript) if transcript else 0,
+                    'has_transcript': bool(transcript),
+                    'dry_run': False,
+                    'recovery_draft': True,
+                }
+                with open(get_file_path(recovery_output_dir, "metadata"), 'w') as f:
+                    _json.dump(draft_metadata, f, indent=2)
+                if transcript:
+                    with open(
+                        get_file_path(recovery_output_dir, "transcript"),
+                        'w',
+                        encoding='utf-8',
+                    ) as f:
+                        f.write(transcript)
+
+                try:
+                    from ui.database import SermonRepository
+                    repo = SermonRepository()
+                    repo.save_sermon({
+                        'id': recovery_draft_id,
+                        'title': title or '',
+                        'subtitle': subtitle or '',
+                        'series_title': series_title or '',
+                        'description': description or '',
+                        'scripture_reference': bible_text or '',
+                        'speaker': speaker_name or '',
+                        'recorded_date': recorded_date or '',
+                        'event_type': event_type or '',
+                        'bible_text': bible_text or '',
+                        'status': 'draft',
+                        'file_paths': {
+                            'audio': str(draft_processed_path),
+                            'metadata': str(
+                                get_file_path(recovery_output_dir, "metadata")
+                            ),
+                        },
+                        'content': {
+                            'transcript_text': transcript or '',
+                            'description': description or '',
+                            'hashtags': hashtags or '',
+                        },
+                    })
+                    console_print(f"💾 Draft saved locally before upload: {recovery_draft_id}")
+                except Exception as db_err:
+                    logger.warning("Failed to save pre-upload draft to database: %s", db_err)
+            except Exception as draft_err:
+                logger.warning("Failed to persist pre-upload draft: %s", draft_err)
+                recovery_draft_id = None
+
+            _report(83, "Resolving speaker...")
+            console_print("👤 Resolving speaker...")
+            speaker_id = resolve_speaker_id(speaker_name)
+            if speaker_id:
+                console_print(f"✅ Resolved speaker '{speaker_name}' to ID {speaker_id}")
+            else:
+                console_print(f"ℹ️  Using speaker name '{speaker_name}' as-is (no numeric ID found)")
+
+            _report(85, "Creating sermon on SermonAudio...")
+            console_print("📤 Creating sermon on SermonAudio...")
+            sermon_id = create_new_sermon_api(
+                title=title,
+                speaker_name=speaker_name,
+                recorded_date=recorded_date,
+                event_type=event_type,
+                bible_text=bible_text,
+                subtitle=subtitle,
+                description=description,
+                hashtags=hashtags,
+                speaker_id=speaker_id,
+                display_title=short_display_title,
+            )
+
+            if not sermon_id:
+                logger.error("Failed to create sermon")
+                result['error'] = "Failed to create sermon on SermonAudio API"
+                if recovery_draft_id:
+                    result['sermon_id'] = recovery_draft_id
+                    result['output_dir'] = str(recovery_output_dir)
+                    result['draft_saved'] = True
+                    result['error'] += (
+                        f"; progress preserved locally as draft {recovery_draft_id}"
+                    )
+                    console_print(
+                        f"💾 Create failed - progress saved as draft {recovery_draft_id}"
+                    )
+                return result
 
         result['sermon_id'] = sermon_id
         _report(90, f"Created sermon: {sermon_id}")
 
-        # The API ignores seriesTitle during creation, so PATCH it after
+        # Single application path for series: the API ignores it during
+        # creation, so always PATCH it onto the sermon afterwards
         if series_id is not None:
             set_sermon_series(sermon_id, series_id)
 
@@ -1992,6 +2278,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     f.write(transcript)
                 console_print(f"📝 Transcript saved ({len(transcript)} characters)")
 
+            # Cancellation checkpoint: stop before persisting the local record
+            # as 'processed' if the user cancelled while uploading
+            _check_cancelled()
+
             # Save to local database for UI visibility
             try:
                 from ui.database import SermonRepository
@@ -2033,6 +2323,18 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         'hashtags': hashtags or '',
                     },
                 })
+
+                # Remove the pre-upload recovery draft now that the real
+                # sermon record is saved
+                if recovery_draft_id:
+                    try:
+                        repo.delete_sermon(recovery_draft_id)
+                    except Exception as cleanup_err:
+                        logger.warning(
+                            "Could not remove pre-upload draft %s: %s",
+                            recovery_draft_id, cleanup_err,
+                        )
+
                 console_print("💾 Sermon saved to local database")
             except Exception as e:
                 logger.warning(f"Failed to save sermon to local database: {e}")
@@ -2072,6 +2374,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             except Exception as e:
                 logger.warning(f"Failed to save failed-upload sermon to DB: {e}")
             return result
+
+    except ProcessingCancelledError:
+        logger.info("Sermon processing cancelled by user request")
+        result['error'] = "Processing cancelled"
+        result['cancelled'] = True
+        return result
 
     except Exception as e:
         logger.error("Error processing new sermon: %s", e)
@@ -2151,25 +2459,40 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
         if speaker_id:
             console_print(f"✅ Resolved speaker '{speaker_name}' to ID {speaker_id}")
 
-        console_print("📤 Creating sermon on SermonAudio...")
-        new_sermon_id = create_new_sermon_api(
-            title=title,
-            speaker_name=speaker_name,
-            recorded_date=recorded_date,
-            event_type=event_type,
-            bible_text=bible_text or None,
-            subtitle=subtitle or None,
-            description=description or None,
-            hashtags=hashtags or None,
-            speaker_id=speaker_id,
-            series_id=series_id,
+        # If a previous publish attempt already created the remote sermon
+        # (e.g. it died mid-upload), reuse that ID instead of creating a
+        # duplicate.
+        existing_publication_id = (sermon_data.get('upload_info') or {}).get(
+            'sermonaudio_id'
         )
+        if existing_publication_id:
+            new_sermon_id = str(existing_publication_id)
+            console_print(
+                f"♻️  Draft was already created on SermonAudio as {new_sermon_id}; "
+                "skipping creation"
+            )
+        else:
+            console_print("📤 Creating sermon on SermonAudio...")
+            new_sermon_id = create_new_sermon_api(
+                title=title,
+                speaker_name=speaker_name,
+                recorded_date=recorded_date,
+                event_type=event_type,
+                bible_text=bible_text or None,
+                subtitle=subtitle or None,
+                description=description or None,
+                hashtags=hashtags or None,
+                speaker_id=speaker_id,
+            )
 
-        if not new_sermon_id:
-            result['error'] = "Failed to create sermon on SermonAudio API"
-            return result
+            if not new_sermon_id:
+                result['error'] = "Failed to create sermon on SermonAudio API"
+                return result
 
-        console_print(f"✅ Sermon created with ID: {new_sermon_id}")
+            # Record immediately so a retried publish cannot create a duplicate
+            _record_publication_id(repo, dry_run_id, str(new_sermon_id))
+
+            console_print(f"✅ Sermon created with ID: {new_sermon_id}")
 
         # The API ignores seriesTitle during creation, so PATCH it after
         if series_id is not None:
@@ -2221,17 +2544,34 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
         }
         try:
             with repo.db.get_connection() as conn:
-                conn.execute("""
-                    INSERT OR REPLACE INTO sermons
-                    (id, title, subtitle, speaker, recorded_date, event_type, bible_text,
-                     series_title, scripture_reference, description, duration, status,
-                     updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    new_sermon_id, title, subtitle, speaker_name, recorded_date, event_type,
-                    bible_text, series_title, bible_text, description, duration,
-                    'processed' if upload_success else 'error', dt.datetime.now()
-                ))
+                sermons_cols = [
+                    row[1] for row in conn.execute("PRAGMA table_info(sermons)")
+                ]
+                col_values: dict[str, Any] = {
+                    'id': new_sermon_id,
+                    'title': title,
+                    'subtitle': subtitle,
+                    'speaker': speaker_name,
+                    'recorded_date': recorded_date,
+                    'event_type': event_type,
+                    'bible_text': bible_text,
+                    'series_title': series_title,
+                    'scripture_reference': bible_text,
+                    'description': description,
+                    'duration': duration,
+                    'status': 'processed' if upload_success else 'error',
+                    'updated_at': dt.datetime.now(),
+                }
+                original_created_at = sermon_data.get('created_at')
+                if original_created_at and 'created_at' in sermons_cols:
+                    col_values['created_at'] = original_created_at
+                columns = [c for c in col_values if c in sermons_cols]
+                placeholders = ", ".join("?" for _ in columns)
+                conn.execute(
+                    f"INSERT OR REPLACE INTO sermons ({', '.join(columns)}) "
+                    f"VALUES ({placeholders})",
+                    [col_values[c] for c in columns],
+                )
                 for file_type, file_path in new_file_paths.items():
                     if not file_path:
                         continue
@@ -2255,19 +2595,50 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
                     new_sermon_id, transcript or '', description or '', hashtags or '',
                     '[]', None
                 ))
-                conn.execute("""
-                    INSERT OR REPLACE INTO sermon_search
-                    (sermon_id, title, speaker, transcript_text, description, hashtags)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    new_sermon_id, title, speaker_name, transcript or '',
-                    description or '', hashtags or ''
-                ))
+                # Rebuild the FTS row across every column the table actually
+                # has, carrying over indexed topics/summary from the draft row
+                fts_cols = [
+                    row[1] for row in conn.execute("PRAGMA table_info(sermon_search)")
+                ]
+                conn.execute(
+                    "DELETE FROM sermon_search WHERE sermon_id = ?", (new_sermon_id,)
+                )
+                if fts_cols:
+                    fts_cursor = conn.execute(
+                        "SELECT * FROM sermon_search WHERE sermon_id = ?", (dry_run_id,)
+                    )
+                    old_fts = fts_cursor.fetchone()
+                    carried: dict[str, Any] = {}
+                    if old_fts is not None:
+                        carried = dict(zip(
+                            [d[0] for d in fts_cursor.description], old_fts
+                        ))
+                    carried.update({
+                        'title': title,
+                        'speaker': speaker_name,
+                        'transcript_text': transcript or '',
+                        'description': description or '',
+                        'hashtags': hashtags or '',
+                    })
+                    insert_cols = [c for c in fts_cols if c != 'sermon_id']
+                    conn.execute(
+                        f"INSERT INTO sermon_search "
+                        f"(sermon_id, {', '.join(insert_cols)}) "
+                        f"VALUES (?, {', '.join('?' for _ in insert_cols)})",
+                        [new_sermon_id] + [carried.get(c) for c in insert_cols],
+                    )
+                conn.execute("DELETE FROM sermon_search WHERE sermon_id = ?", (dry_run_id,))
                 for table in (
                     'qa_segments', 'sermon_content', 'processing_info', 'sermon_files',
-                    'upload_info', 'processing_status', 'sermon_search'
+                    'upload_info', 'processing_status', 'validation_results',
+                    'manual_review', 'llm_api_usage',
                 ):
-                    conn.execute(f"DELETE FROM {table} WHERE sermon_id = ?", (dry_run_id,))
+                    try:
+                        conn.execute(
+                            f"DELETE FROM {table} WHERE sermon_id = ?", (dry_run_id,)
+                        )
+                    except Exception as table_err:
+                        logger.debug("Cleanup skipped for %s: %s", table, table_err)
                 conn.execute("DELETE FROM sermons WHERE id = ?", (dry_run_id,))
                 conn.commit()
         except Exception as e:
@@ -3627,9 +3998,11 @@ def _reuse_existing_transcript(input_path: Path, speaker_name: str, series_title
                                title: str, config: dict) -> str:
     """Load a saved transcript when the source file is unchanged.
 
-    Reuses only when transcript.txt exists in the sermon output dir and its
-    mtime is newer than the input file's mtime, so stale transcripts are
-    never reused.
+    Reuses only when transcript.txt exists in the sermon output dir and the
+    input's identity matches the one recorded in metadata.json. UI uploads
+    carry a fresh epoch-milliseconds filename prefix on every upload, so raw
+    mtime comparison would always consider the input newer; identity is
+    compared on stems with that prefix stripped instead.
     """
     try:
         output_root = Path(config.get('output_directory', 'processed_sermons'))
@@ -3637,10 +4010,25 @@ def _reuse_existing_transcript(input_path: Path, speaker_name: str, series_title
             output_root = Path(__file__).parent / output_root
         reuse_dir = get_sermon_dir(output_root, speaker_name, series_title, title, "reuse")
         transcript_path = get_file_path(reuse_dir, "transcript")
-        if (transcript_path.exists()
-                and transcript_path.stat().st_mtime > input_path.stat().st_mtime):
-            logger.info("Reusing existing transcript: %s", transcript_path)
-            return transcript_path.read_text(encoding='utf-8')
+        if not transcript_path.exists():
+            return ""
+
+        meta = read_metadata(reuse_dir) or {}
+        stored_original = meta.get('original_file') or ''
+        if stored_original:
+            if _normalized_file_stem(stored_original) == _normalized_file_stem(input_path):
+                logger.info("Reusing existing transcript: %s", transcript_path)
+                return transcript_path.read_text(encoding='utf-8')
+            return ""
+
+        # Legacy output dirs carry no original_file; keep the old mtime
+        # heuristic for them
+        try:
+            if transcript_path.stat().st_mtime > Path(input_path).stat().st_mtime:
+                logger.info("Reusing existing transcript: %s", transcript_path)
+                return transcript_path.read_text(encoding='utf-8')
+        except OSError:
+            pass
     except Exception as e:
         logger.debug("Transcript reuse check failed: %s", e)
     return ""
