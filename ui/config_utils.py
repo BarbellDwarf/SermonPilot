@@ -32,7 +32,7 @@ def load_config_from_file():
 
         # Prefer settings saved in the database (survives container recreation)
         try:
-            from database import SermonDatabase
+            from ui.database import SermonDatabase
 
             db = SermonDatabase()
             db_config = db.load_config()
@@ -50,7 +50,7 @@ def load_config_from_file():
         else:
             # Try loading from database cache (survives Docker/git resets)
             try:
-                from database import SermonDatabase
+                from ui.database import SermonDatabase
 
                 db = SermonDatabase()
                 config = db.load_config()
@@ -177,7 +177,7 @@ def save_config_to_file(config):
 
         # Also save to database so settings survive config.yaml loss (Docker, git, etc.)
         try:
-            from database import SermonDatabase
+            from ui.database import SermonDatabase
 
             db = SermonDatabase()
             db.save_config(config)
