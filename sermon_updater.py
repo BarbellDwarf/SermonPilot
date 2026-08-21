@@ -95,7 +95,7 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
         ProcessingOrchestrator,
         SermonFilter,
     )
-    from transcription import transcribe
+    from transcription import TranscriptionError, transcribe
     try:
         sys.path.insert(0, str(Path(__file__).parent / "ui"))
         from database import SermonRepository
@@ -1617,8 +1617,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                             backend_override=transcription_backend,
                             progress_callback=_report,
                         )
+                except TranscriptionError as e:
+                    logger.error("Transcription failed: %s", e)
+                    raise RuntimeError(f"Transcription failed: {e}") from e
                 except Exception as e:
-                    logger.warning("Transcription failed: %s", e)
+                    logger.warning("Transcription attempt produced no result: %s", e)
                     transcript = ""
                 _report(55, f"Transcription complete: {len(transcript)} characters")
         elif skip_transcription:

@@ -70,7 +70,6 @@ transcription:
     language: en
     model: base
   whisper_local:
-    compute_type: float16
     device: auto
     language: en
     model: base
