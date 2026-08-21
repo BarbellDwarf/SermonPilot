@@ -40,7 +40,7 @@ def show_new_sermon_enhanced():
     _show_start_section()
     with st.expander("1. Upload Audio/Video File", expanded=True):
         _show_upload_section()
-    with st.expander("2. Sermon Metadata", expanded=False):
+    with st.expander("2. Sermon Metadata", expanded=st.session_state.pop('expand_metadata', False)):
         _show_metadata_section()
     with st.expander("3. Processing Options", expanded=False):
         _show_processing_section()
@@ -60,6 +60,10 @@ def _show_upload_section():
         if st.session_state.get('autodetected_filename') != uploaded_file.name:
             apply_filename_autodetect(uploaded_file.name)
             st.session_state.autodetected_filename = uploaded_file.name
+            st.session_state.expand_metadata = True
+    else:
+        st.session_state.pop('uploaded_file', None)
+        st.session_state.pop('expand_metadata', False)
 
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -277,18 +281,22 @@ def _show_start_section():
     has_file, has_metadata = _start_section_state()
     st.session_state['_start_state'] = (has_file, has_metadata)
 
-    if not has_file:
-        st.warning("Please upload a file in section 1")
-        return
-    if not has_metadata:
-        st.warning("Please complete required metadata in section 2")
-        return
+    if not has_file or not has_metadata:
+        missing = []
+        if not has_file:
+            missing.append("a file upload (section 1)")
+        if not has_metadata:
+            missing.append("the required metadata (section 2)")
+        st.caption(f"Add {' and '.join(missing)} to enable processing.")
 
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("**File & Content:**")
-        st.write(f"• File: {st.session_state.uploaded_file.name}")
-        st.write(f"• Size: {st.session_state.uploaded_file.size / (1024*1024):.1f} MB")
+        if _has_uploaded_file():
+            st.write(f"• File: {st.session_state.uploaded_file.name}")
+            st.write(f"• Size: {st.session_state.uploaded_file.size / (1024*1024):.1f} MB")
+        else:
+            st.write("• File: none selected")
         st.write(f"• Speaker: {_resolved_speaker_name() or 'N/A'}")
         st.write(f"• Date: {st.session_state.get('recorded_date', 'N/A')}")
     with col2:
@@ -602,7 +610,13 @@ def _show_enhanced_processing_results(job):
             st.metric("Recorded Date", results.get('recorded_date'))
 
     sermon_id = results.get('sermon_id')
-    if sermon_id:
+    is_dry_run = bool((job.parameters or {}).get('form_data', {}).get('dry_run', False))
+    if sermon_id and is_dry_run:
+        st.info(
+            f"Dry run saved locally as a draft (ID: {sermon_id}). "
+            "Publish it from the Library when ready."
+        )
+    elif sermon_id:
         sermon_url = f"https://www.sermonaudio.com/sermoninfo.asp?SID={sermon_id}"
         st.markdown(f"[View on SermonAudio]({sermon_url})")
 

@@ -10,6 +10,7 @@ Provides accurate system status checking for:
 - Processing queue status
 """
 
+import copy
 import logging
 import sqlite3
 import sys
@@ -581,13 +582,17 @@ class SystemStatusManager:
             }
 
 # Global instance
-_status_manager = None
+_status_manager: SystemStatusManager | None = None
+_status_manager_config: dict[str, Any] | None = None
+
 
 def get_status_manager(config: dict[str, Any] | None = None) -> SystemStatusManager:
-    """Get global status manager instance"""
-    global _status_manager
+    """Get global status manager instance, rebuilt when the config changes"""
+    global _status_manager, _status_manager_config
 
-    if _status_manager is None:
+    if _status_manager is None or (
+        config is not None and config != _status_manager_config
+    ):
         if config is None:
             # Load default config
             try:
@@ -598,6 +603,7 @@ def get_status_manager(config: dict[str, Any] | None = None) -> SystemStatusMana
                 config = {}
 
         _status_manager = SystemStatusManager(config)
+        _status_manager_config = copy.deepcopy(config)
 
     return _status_manager
 
