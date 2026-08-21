@@ -16,6 +16,7 @@ sys.path.insert(0, str(project_root / "ui"))
 sys.path.insert(0, str(project_root / "src"))
 
 from ui.sermon_metadata import (  # noqa: E402
+    apply_filename_autodetect,
     create_event_type_selectbox,
     create_pastor_selectbox,
     create_series_selectbox,
@@ -55,6 +56,10 @@ def _show_upload_section():
 
     if uploaded_file:
         st.session_state.uploaded_file = uploaded_file
+
+        if st.session_state.get('autodetected_filename') != uploaded_file.name:
+            apply_filename_autodetect(uploaded_file.name)
+            st.session_state.autodetected_filename = uploaded_file.name
 
         col1, col2, col3, col4 = st.columns(4)
         with col1:
