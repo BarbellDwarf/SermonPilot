@@ -40,7 +40,7 @@ def show_quick_stats():
     """Display key metrics from the real database"""
     st.markdown("### Quick Statistics")
     try:
-        from database import SermonRepository
+        from ui.database import SermonRepository
         repo = SermonRepository()
         sermons = repo.get_all_sermons()
     except Exception:
@@ -87,7 +87,7 @@ def show_recent_activity():
     """Show recent sermons from the database"""
     st.markdown("### Recent Activity")
     try:
-        from database import SermonRepository
+        from ui.database import SermonRepository
         repo = SermonRepository()
         sermons = repo.get_all_sermons(limit=10)
     except Exception:

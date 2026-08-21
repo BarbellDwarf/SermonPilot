@@ -81,7 +81,7 @@ def push_sermon_metadata_to_api(sermon):
                     success = sermon_updater.reupload_media_for_sermon(sermon_id, audio_path)
                     if success:
                         _set_feedback("Media re-uploaded successfully!")
-                        from database import SermonRepository
+                        from ui.database import SermonRepository
                         repo = SermonRepository()
                         repo.update_sermon(sermon_id, {'status': 'processed'})
                     else:
@@ -166,7 +166,7 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
         if fetched:
             transcript = fetched
             with st.spinner("Saving fetched transcript to local database..."):
-                from database import SermonRepository
+                from ui.database import SermonRepository
                 repo = SermonRepository()
                 if not repo.update_sermon_metadata(
                     sermon_id, {'transcript_text': transcript}
@@ -297,7 +297,7 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
 
         # Save to database
         with st.spinner("Saving to database..."):
-            from database import SermonRepository, get_db
+            from ui.database import SermonRepository, get_db
             repo = SermonRepository()
 
             update_data = {}
@@ -366,7 +366,7 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
 
 def _toggle_favorite(sermon_id, current_value):
     """Toggle the favorite status of a sermon"""
-    from database import SermonRepository
+    from ui.database import SermonRepository
     repo = SermonRepository()
     repo.update_sermon_metadata(sermon_id, {'is_favorite': 0 if current_value else 1})
     sermon = repo.get_sermon(sermon_id)
@@ -410,14 +410,14 @@ def _export_json(sermons):
 
 def _save_notes(sermon_id, notes):
     """Save notes for a sermon"""
-    from database import SermonRepository
+    from ui.database import SermonRepository
     repo = SermonRepository()
     repo.update_sermon_metadata(sermon_id, {'notes': notes})
 
 
 def _batch_delete(sermon_ids):
     """Delete multiple sermons — actual deletion, confirmation handled in display_sermon_list"""
-    from database import SermonRepository
+    from ui.database import SermonRepository
     repo = SermonRepository()
     count = 0
     for sid in sermon_ids:
@@ -478,8 +478,9 @@ def show_library():
     st.markdown("Browse and search all processed sermons")
 
     try:
-        from database import SermonRepository
         from sermonaudio_api import SermonAudioAPI
+
+        from ui.database import SermonRepository
 
         repo = SermonRepository()
         api_client = SermonAudioAPI()
@@ -644,7 +645,7 @@ def apply_filters(sermons, search_query, speaker_filter, date_filter, status_fil
     # FTS5 search if query is provided
     if search_query:
         try:
-            from database import SermonRepository
+            from ui.database import SermonRepository
             repo = SermonRepository()
             fts_results = repo.search_sermons(search_query, limit=1000)
             fts_ids = {s['id'] for s in fts_results if s.get('id')}
@@ -961,7 +962,7 @@ def display_sermon_details(sermon):
         c1, c2 = st.columns([1, 5])
         with c1:
             if st.button("Yes, delete", type="primary", key=f"confirm_del_{sermon['id']}"):
-                from database import SermonRepository
+                from ui.database import SermonRepository
                 repo = SermonRepository()
                 if repo.delete_sermon(sermon['id']):
                     file_paths = sermon.get('file_paths', sermon.get('files', {}))
@@ -1068,7 +1069,7 @@ def display_sermon_details(sermon):
             db_updates['subtitle'] = api['subtitle']
         if db_updates:
             try:
-                from database import SermonRepository
+                from ui.database import SermonRepository
                 repo = SermonRepository()
                 repo.update_sermon_metadata(sermon_id, db_updates)
             except Exception:
@@ -1225,8 +1226,9 @@ def display_sermon_details(sermon):
                     "Start Re-processing", type="primary", key=f"rp_start_{sermon['id']}"
                 ):
                     try:
-                        from database import SermonRepository
                         from job_queue import JobType, get_job_queue
+
+                        from ui.database import SermonRepository
                         job_queue = get_job_queue()
                         repo = SermonRepository()
                         full_sermon = repo.get_sermon(sermon['id'])
@@ -1276,7 +1278,7 @@ def display_sermon_details(sermon):
             edited_transcript = st.text_area("Edit transcript", value=transcript, height=200)
             save_transcript = st.form_submit_button("Save Transcript", type="primary")
         if save_transcript and edited_transcript != transcript:
-            from database import SermonRepository
+            from ui.database import SermonRepository
             repo = SermonRepository()
             repo.update_sermon(sermon['id'], {'transcript': edited_transcript})
             _set_feedback("Transcript saved")
@@ -1292,7 +1294,7 @@ def display_sermon_details(sermon):
         if save_notes and new_notes != current_notes:
             _save_notes(sermon['id'], new_notes)
             _set_feedback("Notes saved")
-            from database import SermonRepository
+            from ui.database import SermonRepository
             st.session_state.selected_sermon = SermonRepository().get_sermon(sermon['id'])
             st.rerun()
 
@@ -1301,8 +1303,9 @@ def display_sermon_details(sermon):
             "Refresh from SermonAudio", help="Fetch the latest data from SermonAudio API"
         ):
             try:
-                from database import SermonRepository
                 from sermonaudio_api import SermonAudioAPI
+
+                from ui.database import SermonRepository
                 api_client = SermonAudioAPI()
                 fresh_data = api_client.get_sermon_details(sermon_id, force_refresh=True)
                 if fresh_data:
