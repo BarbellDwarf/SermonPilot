@@ -2,7 +2,10 @@ name: Release
 
 # Releases are cut by CI so a merged version bump can never ship untagged:
 # release PRs are checked against the tags, a push to master creates the
-# missing annotated tag, and the tag push drafts the GitHub Release.
+# missing annotated tag, then drafts the GitHub Release and dispatches the
+# docker build from that same job (refs pushed with GITHUB_TOKEN fire no
+# push events). Manually pushed tags still get validated and drafted by
+# the tag-push job below.
 # Actions are pinned to commit SHAs of their release tags to prevent
 # supply-chain tampering; the tag is noted in a trailing comment.
 
@@ -88,12 +91,14 @@ jobs:
 
   create-release-tag:
     # After a release PR merges to master, creates the annotated tag for the
-    # pyproject.toml version when it is not tagged yet. The tag push triggers
-    # this workflow's draft job and the docker build workflow.
+    # pyproject.toml version when it is not tagged yet. Token-pushed refs
+    # fire no push events, so this job also drafts the release and dispatches
+    # the docker build on the tag ref.
     if: github.event_name == 'push' && github.ref_name == 'master'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
 
     steps:
       - name: Checkout code
@@ -108,12 +113,18 @@ jobs:
           python-version: '3.11'
 
       - name: Create annotated tag when the version is not yet tagged
+        id: tag
         run: |
           python - <<'EOF'
+          import os
           import re
           import subprocess
           import sys
           import tomllib
+
+          def emit(key, value):
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write(f"{key}={value}\n")
 
           with open("pyproject.toml", "rb") as f:
               version = tomllib.load(f)["project"]["version"]
@@ -146,13 +157,32 @@ jobs:
           run("git", "config", "user.email", "github-actions[bot]@users.noreply.github.com")
           run("git", "tag", "-a", tag, "-m", f"{tag}: release cut by CI (wayfinder/TKT-62)")
           run("git", "push", "origin", tag)
+          emit("tag", tag)
+          emit("created", "true")
           print(f"created and pushed annotated tag {tag}")
           EOF
 
+      - name: Draft the release and dispatch the docker build
+        if: steps.tag.outputs.created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --generate-notes --title "$TAG" --target "$GITHUB_SHA"
+            echo "drafted release $TAG"
+          else
+            echo "release $TAG already exists; skipping draft"
+          fi
+          gh workflow run docker-build.yml --ref "$TAG"
+          echo "dispatched docker-build.yml on $TAG"
+
   draft-github-release:
-    # Runs on the tag push: validates the tag against pyproject.toml, then
-    # drafts the GitHub Release with auto-generated notes. The docker build
-    # workflow runs from the same tag in parallel; publish the draft once
+    # Runs on tag pushes (manual cuts): validates the tag against
+    # pyproject.toml, then drafts the GitHub Release with auto-generated
+    # notes unless a draft already exists. CI-cut tags arrive with a draft
+    # already created by create-release-tag, so this skips gracefully.
+    # The docker build runs from the same tag; publish the draft once
     # the build succeeds.
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
