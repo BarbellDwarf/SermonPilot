@@ -17,9 +17,12 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "src"))
 sys.path.insert(0, str(ui_dir))
 
-if not is_authenticated():
-    render_login()
-    st.stop()
+
+def enforce_authentication() -> None:
+    """Gate every script run: unauthenticated sessions get only the login form."""
+    if not is_authenticated():
+        render_login()
+        st.stop()
 
 
 def _status_class(label: str) -> str:
