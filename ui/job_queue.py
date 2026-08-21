@@ -21,7 +21,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -37,6 +37,12 @@ logger = logging.getLogger(__name__)
 
 _SECRET_KEY_SUFFIXES = ('_key', '_token', '_secret', '_password', '_passwd')
 _SECRET_KEY_NAMES = frozenset({'password', 'passwd', 'token', 'secret', 'auth', 'authorization'})
+
+# Result payload keys that are too bulky to persist with every job record
+_RESULT_STRIP_FIELDS = frozenset({'transcript'})
+
+# Terminal jobs older than this are pruned from memory and the database
+JOB_RETENTION_DAYS = 30
 
 
 def _is_secret_key(key: str) -> bool:
@@ -81,6 +87,11 @@ class JobStatus(Enum):
 
 class JobCancelledError(Exception):
     """Raised when a job is cancelled while it is executing."""
+
+
+_TERMINAL_JOB_STATUSES = frozenset({
+    JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED,
+})
 
 
 @dataclass
@@ -157,6 +168,20 @@ class Job:
         return cls(**data)
 
 
+def _result_for_persistence(result: JobResult) -> dict[str, Any]:
+    """Serialize a JobResult without bulky payload fields (e.g. transcripts).
+
+    Transcripts can be megabytes of text and are already stored in
+    sermon_content; keeping them in background_jobs.result bloats the
+    database forever since job rows have no size bound.
+    """
+    data = asdict(result)
+    payload = data.get('data')
+    if isinstance(payload, dict):
+        data['data'] = {k: v for k, v in payload.items() if k not in _RESULT_STRIP_FIELDS}
+    return data
+
+
 class JobQueue:
     """Thread-safe job queue manager"""
 
@@ -211,6 +236,9 @@ class JobQueue:
         self._running = True
         self._shutdown_event.clear()
 
+        # Prune terminal jobs past the retention window before loading
+        self.prune_old_jobs()
+
         # Load existing jobs from database
         self._load_jobs_from_db()
 
@@ -237,7 +265,7 @@ class JobQueue:
         because _get_next_job() only looks for QUEUED status. Mark them
         as FAILED so the user can review and retry from the Jobs page.
         """
-        recovered = 0
+        recovered_jobs = []
         with self._queue_lock:
             for job in self._jobs.values():
                 if job.status == JobStatus.RUNNING:
@@ -249,14 +277,58 @@ class JobQueue:
                         message="Service restarted during processing",
                         error="Job was interrupted by a service restart. Please retry.",
                     )
-                    self._save_job_to_db(job)
-                    recovered += 1
+                    recovered_jobs.append(job)
 
-        if recovered:
+        for job in recovered_jobs:
+            self._save_job_to_db(job)
+
+        if recovered_jobs:
             logger.warning(
-                f"Recovered {recovered} orphaned job(s) left in RUNNING state "
+                f"Recovered {len(recovered_jobs)} orphaned job(s) left in RUNNING state "
                 f"from a previous restart. Marked as FAILED — retry from the Jobs page."
             )
+
+    def prune_old_jobs(self, days: int = JOB_RETENTION_DAYS) -> int:
+        """Delete terminal jobs older than the retention window.
+
+        Removes completed/failed/cancelled jobs whose completed_at predates
+        the cutoff from both the database and the in-memory dict, so startup
+        never reloads an unbounded history of job rows.
+        """
+        if not self.db:
+            return 0
+
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        status_values = [status.value for status in _TERMINAL_JOB_STATUSES]
+        placeholders = ','.join(['?' for _ in status_values])
+        removed = 0
+
+        try:
+            with self.db.get_connection() as conn:
+                cursor = conn.execute(f"""
+                    DELETE FROM background_jobs
+                    WHERE status IN ({placeholders})
+                      AND completed_at IS NOT NULL AND completed_at < ?
+                """, (*status_values, cutoff))
+                conn.commit()
+                removed = max(cursor.rowcount, 0)
+        except Exception as e:
+            logger.error(f"Failed to prune old jobs from database: {e}")
+
+        with self._queue_lock:
+            stale_ids = [
+                job_id for job_id, job in self._jobs.items()
+                if job.status in _TERMINAL_JOB_STATUSES
+                and job.completed_at is not None
+                and job.completed_at.isoformat() < cutoff
+            ]
+            for job_id in stale_ids:
+                del self._jobs[job_id]
+
+        if removed or stale_ids:
+            logger.info(f"Pruned {removed} database / {len(stale_ids)} memory "
+                        f"job(s) older than {days} days")
+        return removed
 
     def stop(self):
         """Stop the job queue"""
@@ -291,9 +363,13 @@ class JobQueue:
             priority=priority
         )
 
+        # Persist before publishing to the queue so workers only ever see a
+        # job whose initial state is already durable, and so the SQLite write
+        # never happens under the queue lock.
+        self._save_job_to_db(job)
+
         with self._queue_lock:
             self._jobs[job_id] = job
-            self._save_job_to_db(job)
 
         job.add_log(f"Job created: {title}")
         logger.info(f"Added job {job_id}: {title}")
@@ -319,68 +395,68 @@ class JobQueue:
 
     def cancel_job(self, job_id: str) -> bool:
         """Cancel a job"""
+        cancelled = False
         with self._queue_lock:
             job = self._jobs.get(job_id)
-            if not job or not job.can_cancel:
-                return False
+            if job and job.can_cancel:
+                if job.status in [JobStatus.QUEUED, JobStatus.RUNNING]:
+                    job.cancelled = True
+                    job.status = JobStatus.CANCELLED
+                    job.completed_at = datetime.now()
+                    job.add_log("Job cancelled by user")
+                    cancelled = True
+                    logger.info(f"Cancelled job {job_id}")
 
-            if job.status in [JobStatus.QUEUED, JobStatus.RUNNING]:
-                job.cancelled = True
-                job.status = JobStatus.CANCELLED
-                job.completed_at = datetime.now()
-                job.add_log("Job cancelled by user")
-                self._save_job_to_db(job)
-                logger.info(f"Cancelled job {job_id}")
-                return True
-
-        return False
+        if cancelled:
+            self._save_job_to_db(job)
+        return cancelled
 
     def retry_job(self, job_id: str) -> bool:
         """Retry a failed, cancelled, or completed job"""
+        retried = False
         with self._queue_lock:
             job = self._jobs.get(job_id)
-            if not job or not job.can_retry:
-                return False
+            if job and job.can_retry:
+                if job.status in [JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.COMPLETED]:
+                    job.cancelled = False
+                    job.status = JobStatus.QUEUED
+                    job.progress = 0.0
+                    job.started_at = None
+                    job.completed_at = None
+                    job.result = None
+                    job.add_log("Job queued for retry")
+                    retried = True
+                    logger.info(f"Retrying job {job_id}")
 
-            if job.status in [JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.COMPLETED]:
-                job.cancelled = False
-                job.status = JobStatus.QUEUED
-                job.progress = 0.0
-                job.started_at = None
-                job.completed_at = None
-                job.result = None
-                job.add_log("Job queued for retry")
-                self._save_job_to_db(job)
-                logger.info(f"Retrying job {job_id}")
-                return True
-
-        return False
+        if retried:
+            self._save_job_to_db(job)
+        return retried
 
     def clear_completed_jobs(self) -> int:
-        """Remove completed jobs from queue"""
+        """Remove terminal jobs (completed, cancelled, failed) from queue"""
         removed_count = 0
         with self._queue_lock:
-            completed_jobs = [
+            cleared_ids = [
                 job_id for job_id, job in self._jobs.items()
-                if job.status in [JobStatus.COMPLETED, JobStatus.CANCELLED]
+                if job.status in _TERMINAL_JOB_STATUSES
             ]
 
-            for job_id in completed_jobs:
+            for job_id in cleared_ids:
                 del self._jobs[job_id]
                 removed_count += 1
 
-            # Also remove from database
-            if self.db and completed_jobs:
-                try:
-                    with self.db.get_connection() as conn:
-                        placeholders = ','.join(['?' for _ in completed_jobs])
-                        conn.execute(
-                            f"DELETE FROM background_jobs WHERE id IN ({placeholders})",
-                            completed_jobs
-                        )
-                        conn.commit()
-                except Exception as e:
-                    logger.error(f"Failed to clear completed jobs from database: {e}")
+        # Also remove from database
+        if self.db and cleared_ids:
+            try:
+                with self.db.get_connection() as conn:
+                    placeholders = ','.join(['?' for _ in cleared_ids])
+                    conn.execute(
+                        f"DELETE FROM background_jobs WHERE id IN ({placeholders})",
+                        cleared_ids
+                    )
+                    conn.commit()
+            except Exception as e:
+                logger.error(f"Failed to clear completed jobs from database: {e}")
 
         logger.info(f"Cleared {removed_count} completed jobs")
         return removed_count
@@ -422,9 +498,9 @@ class JobQueue:
             next_job.status = JobStatus.RUNNING
             next_job.started_at = datetime.now()
             next_job.add_log("Job started")
-            self._save_job_to_db(next_job)
 
-            return next_job
+        self._save_job_to_db(next_job)
+        return next_job
 
     def _mark_cancelled(self, job: Job):
         """Mark a job as cancelled and record its completion time."""
@@ -517,7 +593,7 @@ class JobQueue:
                     job.id, job.type.value, job.title, job.description,
                     job.status.value, job.progress,
                     parameters_json,
-                    json.dumps(asdict(job.result)) if job.result else None,
+                    json.dumps(_result_for_persistence(job.result)) if job.result else None,
                     json.dumps(job.logs) if job.logs else None,
                     job.created_at.isoformat() if job.created_at else None,
                     job.started_at.isoformat() if job.started_at else None,
@@ -588,14 +664,16 @@ class JobQueue:
 
 # Global job queue instance
 _job_queue: JobQueue | None = None
+_job_queue_lock = threading.Lock()
 
 
 def get_job_queue() -> JobQueue:
     """Get the global job queue instance"""
     global _job_queue
-    if _job_queue is None:
-        _job_queue = JobQueue()
-        _job_queue.start()
+    with _job_queue_lock:
+        if _job_queue is None:
+            _job_queue = JobQueue()
+            _job_queue.start()
     return _job_queue
 
 
@@ -609,7 +687,8 @@ def initialize_job_queue():
 def shutdown_job_queue():
     """Shutdown the job queue system"""
     global _job_queue
-    if _job_queue:
-        _job_queue.stop()
-        _job_queue = None
-        logger.info("Job queue system shutdown")
+    with _job_queue_lock:
+        if _job_queue:
+            _job_queue.stop()
+            _job_queue = None
+            logger.info("Job queue system shutdown")
