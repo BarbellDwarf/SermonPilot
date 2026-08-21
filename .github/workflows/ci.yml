@@ -22,12 +22,15 @@ jobs:
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38  # v5.4.0
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements/requirements.txt
 
       - name: Install dependencies
+        # The fast suite (-m "not heavy") imports only these packages, so the
+        # full requirements set (torch, whisper, chromadb, ...) stays out of CI.
         run: |
           python -m pip install --upgrade pip
-          pip install ruff pytest
-          pip install -r requirements/requirements.txt
+          pip install ruff pytest requests python-dotenv PyYAML streamlit
           pip install -e . --no-deps
 
       - name: Lint with ruff
