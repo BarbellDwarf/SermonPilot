@@ -23,12 +23,43 @@ CHILD_TABLES = (
     'processing_status',
 )
 
+# Must match the indexes created by SermonDatabase.init_database()
+INDEX_STATEMENTS = (
+    ("idx_llm_usage_timestamp", "llm_api_usage(timestamp)"),
+    ("idx_llm_usage_provider_model", "llm_api_usage(provider, model)"),
+    ("idx_llm_usage_sermon_id", "llm_api_usage(sermon_id)"),
+    ("idx_qa_segments_sermon_id", "qa_segments(sermon_id)"),
+    ("idx_processing_status_sermon_operation",
+     "processing_status(sermon_id, operation)"),
+    ("idx_processing_status_started_at", "processing_status(started_at)"),
+    ("idx_sermons_status", "sermons(status)"),
+    ("idx_sermons_recorded_date", "sermons(recorded_date)"),
+)
+
 
 def _connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+def enable_wal(conn: sqlite3.Connection) -> None:
+    """Switch the database to write-ahead logging (persistent per file)."""
+    mode = conn.execute("PRAGMA journal_mode = WAL").fetchone()[0]
+    print(f"Journal mode: {mode}")
+
+
+def ensure_indexes(conn: sqlite3.Connection) -> None:
+    """Create any missing query indexes."""
+    created = 0
+    for name, columns in INDEX_STATEMENTS:
+        cursor = conn.execute(
+            f"CREATE INDEX IF NOT EXISTS {name} ON {columns}"
+        )
+        created += max(cursor.rowcount, 0)
+    conn.commit()
+    print(f"Indexes ensured ({created} created)")
 
 
 def rebuild_fts(conn: sqlite3.Connection) -> None:
@@ -126,6 +157,8 @@ def main() -> int:
         dedupe_fts(conn)
         remove_orphans(conn, tables)
         guard_null_dates(conn)
+        ensure_indexes(conn)
+        enable_wal(conn)
         print("Database repair complete")
     finally:
         conn.close()

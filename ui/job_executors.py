@@ -20,6 +20,15 @@ from job_queue import Job, JobCancelledError, JobResult, JobStatus, JobType  # n
 
 logger = logging.getLogger(__name__)
 
+# Bulky result keys that are stored elsewhere (sermon_content) and must not
+# be copied into job results, which persist to the jobs table
+_RESULT_TRIM_FIELDS = ('transcript',)
+
+
+def _trim_result_payload(result: dict) -> dict:
+    """Return a shallow copy of a processing result without bulky fields."""
+    return {k: v for k, v in result.items() if k not in _RESULT_TRIM_FIELDS}
+
 
 def _inject_sermon_updater_config(config: dict) -> None:
     """Inject config into the sermon_updater module so its module-level
@@ -432,7 +441,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             return JobResult(
                 success=True,
                 message=f"Sermon processed successfully: {sermon_id or 'dry run'}",
-                data=result,
+                data=_trim_result_payload(result),
             )
         else:
             err = result.get('error') or 'Unknown processing error'
@@ -441,7 +450,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
                 success=False,
                 message=f"Processing failed: {err}",
                 error=err,
-                data=result,
+                data=_trim_result_payload(result),
             )
 
     except JobCancelledError:
