@@ -86,7 +86,7 @@ class SermonAudioAPI:
 
         # Fall back to database cache
         try:
-            from database import SermonDatabase
+            from ui.database import SermonDatabase
             db = SermonDatabase()
             data = db.get_cached_api_response(cache_key)
             if data:
@@ -115,7 +115,7 @@ class SermonAudioAPI:
 
         # Also save to database for persistence across container restarts
         try:
-            from database import SermonDatabase
+            from ui.database import SermonDatabase
             db = SermonDatabase()
             db.cache_api_response(cache_key, data, expires_hours=24)
         except Exception as e:
@@ -260,7 +260,7 @@ class SermonAudioAPI:
             logger.error(f"Error clearing filesystem cache: {e}")
 
         try:
-            from database import SermonDatabase
+            from ui.database import SermonDatabase
             db = SermonDatabase()
             db.clear_api_cache()
             logger.info("Cleared database API cache")

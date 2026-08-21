@@ -1283,8 +1283,9 @@ class SermonRepository:
 
                 # Main sermon table fields
                 sermon_fields = [
-                    'title', 'speaker', 'recorded_date', 'event_type', 'bible_text',
-                    'duration', 'status',
+                    'title', 'subtitle', 'speaker', 'recorded_date', 'event_type',
+                    'bible_text', 'series_title', 'description', 'scripture_reference',
+                    'church_name', 'is_favorite', 'notes', 'duration', 'status',
                 ]
 
                 for field in sermon_fields:

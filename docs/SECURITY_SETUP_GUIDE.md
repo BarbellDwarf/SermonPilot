@@ -74,9 +74,7 @@ See `.env.example` for the complete list of available environment variables. Key
 #### LLM Providers (Configure at least one)
 - `OPENAI_API_KEY` - OpenAI GPT models
 - `XAI_API_KEY` - xAI Grok models
-- `ANTHROPIC_API_KEY` - Anthropic Claude models
 - `GROQ_API_KEY` - Groq fast inference
-- `GOOGLE_API_KEY` - Google Gemini models
 - `OPENROUTER_API_KEY` - OpenRouter models
 
 #### Local LLM (Alternative to API providers)
