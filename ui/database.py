@@ -32,6 +32,16 @@ def _resolve_database_url(db_path: str) -> str:
     return db_path
 
 
+def utcnow() -> datetime.datetime:
+    """Naive UTC timestamp used for every explicit database write and comparison.
+
+    SQLite's CURRENT_TIMESTAMP defaults store UTC, so explicit writes must
+    also be UTC or timestamp math mixes wall-clock-local and UTC values.
+    The naive format keeps parity with rows written by older versions.
+    """
+    return datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+
+
 class SermonDatabase:
     """SQLite database for sermon metadata and processing status"""
 
@@ -44,8 +54,13 @@ class SermonDatabase:
         self.init_database()
 
     def init_database(self):
-        """Initialize database tables"""
+        """Initialize database tables (and enable WAL journaling)"""
         with self.get_connection() as conn:
+            # WAL lets readers work while a worker writes; the mode is stored
+            # in the database file, so setting it once here covers all later
+            # connections.
+            conn.execute("PRAGMA journal_mode = WAL")
+
             # Config cache table (survives reboots, no expiration)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS config_cache (
@@ -308,6 +323,36 @@ class SermonDatabase:
                 ON llm_api_usage(provider, model)
             """)
 
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_llm_usage_sermon_id
+                ON llm_api_usage(sermon_id)
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_qa_segments_sermon_id
+                ON qa_segments(sermon_id)
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_processing_status_sermon_operation
+                ON processing_status(sermon_id, operation)
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_processing_status_started_at
+                ON processing_status(started_at)
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_sermons_status
+                ON sermons(status)
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_sermons_recorded_date
+                ON sermons(recorded_date)
+            """)
+
             conn.commit()
 
     @contextmanager
@@ -323,13 +368,13 @@ class SermonDatabase:
 
     def cache_metadata(self, key: str, data: list[str], expires_hours: int = 24):
         """Cache metadata with expiration"""
-        expires_at = datetime.datetime.now() + datetime.timedelta(hours=expires_hours)
+        expires_at = utcnow() + datetime.timedelta(hours=expires_hours)
 
         with self.get_connection() as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO metadata_cache (key, data, last_updated, expires_at)
                 VALUES (?, ?, ?, ?)
-            """, (key, json.dumps(data), datetime.datetime.now(), expires_at))
+            """, (key, json.dumps(data), utcnow(), expires_at))
             conn.commit()
 
     @staticmethod
@@ -358,7 +403,7 @@ class SermonDatabase:
                 return None
 
             expires_at = self._parse_db_timestamp(row['expires_at'])
-            is_stale = expires_at is not None and expires_at <= datetime.datetime.now()
+            is_stale = expires_at is not None and expires_at <= utcnow()
             return {
                 'data': json.loads(row['data']),
                 'last_updated': self._parse_db_timestamp(row['last_updated']),
@@ -381,7 +426,7 @@ class SermonDatabase:
             conn.execute("""
                 INSERT OR REPLACE INTO config_cache (key, data, updated_at)
                 VALUES (?, ?, ?)
-            """, ("app_config", json.dumps(config), datetime.datetime.now()))
+            """, ("app_config", json.dumps(config), utcnow()))
             conn.commit()
 
     def load_config(self) -> dict | None:
@@ -396,12 +441,12 @@ class SermonDatabase:
 
     def cache_api_response(self, cache_key: str, data: dict, expires_hours: int = 24) -> None:
         """Cache an API response in the database."""
-        expires_at = datetime.datetime.now() + datetime.timedelta(hours=expires_hours)
+        expires_at = utcnow() + datetime.timedelta(hours=expires_hours)
         with self.get_connection() as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO api_cache (cache_key, data, cached_at, expires_at)
                 VALUES (?, ?, ?, ?)
-            """, (cache_key, json.dumps(data), datetime.datetime.now(), expires_at))
+            """, (cache_key, json.dumps(data), utcnow(), expires_at))
             conn.commit()
 
     def get_cached_api_response(self, cache_key: str) -> dict | None:
@@ -410,7 +455,7 @@ class SermonDatabase:
             row = conn.execute("""
                 SELECT data FROM api_cache
                 WHERE cache_key = ? AND (expires_at IS NULL OR expires_at > ?)
-            """, (cache_key, datetime.datetime.now())).fetchone()
+            """, (cache_key, utcnow())).fetchone()
             if row:
                 return json.loads(row['data'])
             return None
@@ -419,14 +464,14 @@ class SermonDatabase:
         """Clear all expired API cache entries."""
         with self.get_connection() as conn:
             conn.execute("DELETE FROM api_cache WHERE expires_at < ?",
-                        (datetime.datetime.now(),))
+                        (utcnow(),))
             conn.commit()
 
     def update_processing_status(self, sermon_id: str, operation: str,
                                status: str, progress: float = 0.0,
                                message: str = ""):
         """Update processing status for a sermon"""
-        now = datetime.datetime.now()
+        now = utcnow()
 
         with self.get_connection() as conn:
             # Check if record exists
@@ -488,7 +533,7 @@ class SermonDatabase:
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (sermon_id, is_valid, score, reason,
                   json.dumps(criteria_met), json.dumps(criteria_failed),
-                  datetime.datetime.now()))
+                  utcnow()))
             conn.commit()
 
     def get_validation_results(self, sermon_ids: list[str] = None) -> list[dict]:
@@ -522,7 +567,7 @@ class SermonDatabase:
             conn.execute("""
                 INSERT INTO manual_review (sermon_id, reason, status, created_at)
                 VALUES (?, ?, 'pending', ?)
-            """, (sermon_id, reason, datetime.datetime.now()))
+            """, (sermon_id, reason, utcnow()))
             conn.commit()
 
     def get_manual_reviews(self, status: str = None) -> list[dict]:
@@ -546,24 +591,27 @@ class SermonDatabase:
                 UPDATE manual_review
                 SET status = ?, reviewed_at = ?, notes = ?
                 WHERE id = ?
-            """, (status, datetime.datetime.now(), notes, review_id))
+            """, (status, utcnow(), notes, review_id))
             conn.commit()
 
     def cleanup_old_records(self, days: int = 30):
-        """Clean up old processing status and expired cache entries"""
-        cutoff = datetime.datetime.now() - datetime.timedelta(days=days)
+        """Clean up old processing status, LLM usage rows, and expired cache entries"""
+        cutoff = utcnow() - datetime.timedelta(days=days)
 
         with self.get_connection() as conn:
             # Clean old processing status
             conn.execute("DELETE FROM processing_status WHERE started_at < ?", (cutoff,))
 
+            # Clean old LLM usage rows (they store full prompts and responses)
+            conn.execute("DELETE FROM llm_api_usage WHERE timestamp < ?", (cutoff,))
+
             # Clean expired metadata cache
             conn.execute(
-                "DELETE FROM metadata_cache WHERE expires_at < ?", (datetime.datetime.now(),)
+                "DELETE FROM metadata_cache WHERE expires_at < ?", (utcnow(),)
             )
 
             conn.commit()
-            logger.info("Cleaned up old database records")
+            logger.info(f"Cleaned up database records older than {days} days")
 
     def log_llm_api_usage(self, sermon_id: str = None, operation: str = "",
                           provider: str = "", model: str = "",
@@ -592,7 +640,7 @@ class SermonDatabase:
 
     def get_llm_usage_summary(self, days: int = 30):
         """Get LLM usage summary for the specified number of days"""
-        cutoff = datetime.datetime.now() - datetime.timedelta(days=days)
+        cutoff = utcnow() - datetime.timedelta(days=days)
 
         with self.get_connection() as conn:
             # Total usage stats
@@ -661,7 +709,7 @@ class SermonDatabase:
 
     def get_llm_usage_by_operation(self, days: int = 30):
         """Get LLM usage breakdown by operation type"""
-        cutoff = datetime.datetime.now() - datetime.timedelta(days=days)
+        cutoff = utcnow() - datetime.timedelta(days=days)
 
         with self.get_connection() as conn:
             operations = conn.execute("""
@@ -709,6 +757,22 @@ def _fts_snippet_case() -> str:
         whens.append(f"WHEN instr({snippet}, '<mark>') > 0 THEN {snippet}")
     fallback = "snippet(sermon_search, 3, '<mark>', '</mark>', '...', 32)"
     return "CASE " + " ".join(whens) + f" ELSE {fallback} END"
+
+
+def sanitize_fts_query(query_text: str) -> str:
+    """Convert raw user input into quoted FTS5 tokens joined by implicit AND.
+
+    Double quotes are escaped by doubling them so arbitrary input cannot
+    break MATCH syntax; tokens without any alphanumeric character are
+    dropped so symbol-only input yields an empty (skip-search) query.
+    """
+    tokens = []
+    for raw in str(query_text or '').split():
+        if not any(ch.isalnum() for ch in raw):
+            continue
+        token = raw.replace('"', '""')
+        tokens.append(f'"{token}"')
+    return ' '.join(tokens)
 
 
 def _like_snippet(row: sqlite3.Row, query_text: str) -> str:
@@ -818,7 +882,7 @@ class SermonRepository:
                     sermon_data.get('description'),
                     sermon_data.get('duration'),
                     sermon_data.get('status', 'processed'),
-                    datetime.datetime.now()
+                    utcnow()
                 ))
 
                 # Save file paths
@@ -1030,7 +1094,7 @@ class SermonRepository:
                         params.append(metadata[col])
                 if set_parts:
                     set_parts.append("updated_at = ?")
-                    params.append(datetime.datetime.now())
+                    params.append(utcnow())
                     params.append(sermon_id)
                     conn.execute(f"""
                         UPDATE sermons SET {', '.join(set_parts)} WHERE id = ?
@@ -1049,9 +1113,14 @@ class SermonRepository:
                             {set_expr},
                             updated_at = excluded.updated_at
                     """, [sermon_id] + [metadata[c] for c in content_updates]
-                         + [datetime.datetime.now()])
+                         + [utcnow()])
 
-                if set_parts or content_updates:
+                # Rebuild the FTS row only when an indexed column changed, so
+                # toggles like is_favorite or notes edits stay cheap.
+                needs_fts_rebuild = (
+                    bool({'title', 'speaker'} & set(metadata)) or bool(content_updates)
+                )
+                if needs_fts_rebuild:
                     self._rebuild_fts_row(conn, sermon_id)
 
                 conn.commit()
@@ -1127,6 +1196,10 @@ class SermonRepository:
     def search_sermons(self, query_text: str, limit: int = 50) -> list[dict[str, Any]]:
         """Full-text search across sermon content"""
         with self.db.get_connection() as conn:
+            sanitized_query = sanitize_fts_query(query_text)
+            if not sanitized_query:
+                return []
+
             # Try FTS search first, fall back to LIKE search if FTS fails
             try:
                 search_results = conn.execute(f"""
@@ -1139,7 +1212,7 @@ class SermonRepository:
                     WHERE sermon_search MATCH ?
                     ORDER BY rank
                     LIMIT ?
-                """, (query_text, limit)).fetchall()
+                """, (sanitized_query, limit)).fetchall()
             except Exception:
                 # Fallback to simple LIKE search if FTS fails
                 like_rows = conn.execute("""
@@ -1221,7 +1294,7 @@ class SermonRepository:
 
                 if set_clauses:
                     set_clauses.append("updated_at = ?")
-                    params.append(datetime.datetime.now())
+                    params.append(utcnow())
                     params.append(sermon_id)
 
                     query = f"UPDATE sermons SET {', '.join(set_clauses)} WHERE id = ?"
@@ -1246,7 +1319,7 @@ class SermonRepository:
                             {set_expr},
                             updated_at = excluded.updated_at
                     """, [sermon_id] + list(content_updates.values())
-                         + [datetime.datetime.now()])
+                         + [utcnow()])
 
                 if set_clauses or content_updates:
                     self._rebuild_fts_row(conn, sermon_id)

@@ -1,63 +1,44 @@
-# TKT-154 progress: CI supply chain and caching
+# TKT-145/146/159 Progress — db/jobs integrity
 
-Branch: fix/ci-supply-chain (base = master 1aff3c5)
+Branch: fix/db-jobs-integrity (base origin/master 393463a)
+Worktree: /tmp/opencode/wt-cfg
 
-## Done
+- [x] TKT-145: transcript stripped at persistence (`_result_for_persistence`) and at source (executor trims key)
+- [x] TKT-145: llm_api_usage pruned by cleanup_old_records (days param)
+- [x] TKT-145: Clear Completed also removes FAILED; prune_old_jobs(30d) runs at queue start
+- [x] TKT-146: WAL pragma at database init
+- [x] TKT-146: SQLite writes moved out of queue lock (add_job, _get_next_job, cancel_job, retry_job, _recover_orphaned_jobs, clear_completed_jobs)
+- [x] TKT-159: UTC timestamps: `utcnow()` helper; all 21 local now() DB writes/comparisons in database.py are UTC (naive format keeps parity with legacy rows)
+- [x] TKT-159: FTS5 MATCH input sanitization (`sanitize_fts_query`, quoted tokens, empty input returns [])
+- [x] TKT-159: 6 indexes added in init_database
+- [x] TKT-159: favorite/notes updates skip FTS rebuild (update_sermon_metadata rebuilds only when title/speaker/content changed)
+- [x] Run test suite + ruff, verify WAL takes effect
 
-- Read docker-build.yml: five floating refs found (checkout@v4, setup-buildx@v3,
-  login-action@v3 x2 jobs, build-push@v6).
-- Collected repo's pinned-SHA convention from ci.yml / release.yml / security-check.yml:
-  - actions/checkout @ 11bd71901bbe5b1630ceea73d27597364c9af683 (v4.2.2)
-  - actions/setup-python @ 42375524e23c412d93fb67b49958b491fce71c38 (v5.4.0)
-  - actions/upload-artifact @ b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 (v4.4.3)
-- Docker actions absent elsewhere in repo, so verified latest tags via GitHub API
-  (all resolved objects are type=commit):
-  - docker/setup-buildx-action v3.12.0 -> 8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
-  - docker/login-action v3.7.0 -> c94ce9fb468520275223c153574b00df6fe4bcc9
-  - docker/build-push-action v6.19.2 -> 10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+## TKT-159 UTC decision
 
-## AUDIT-014 analysis (minimal dep set)
+All new explicit writes use naive UTC (`utcnow()`), matching the
+`CURRENT_TIMESTAMP` (UTC) defaults that already populate created_at columns
+and llm_api_usage.timestamp. This fixes the clearly-wrong comparisons:
+get_llm_usage_summary/get_llm_usage_by_operation compared a local-time
+cutoff against UTC-stored rows, excluding recent rows by the UTC offset.
+Legacy rows written with local time keep their stored values; for cache
+expiry and pruning they are now off by the timezone offset at worst, which
+is safer than the previous mixed comparison. No data migration performed.
 
-Module-level import trace for the fast suite:
-- sermon_updater.py top level: stdlib + requests + dotenv(load_dotenv) +
-  sermonaudio (stubbed by conftest) + src.sermon_paths (stdlib) + lazy
-  cli.parser/core.config/llm_manager/processing.orchestrator/transcription ->
-  core.config needs yaml; llm_manager+transcription need requests;
-  audio_processing import is try/except guarded (no torch needed).
-- ui.database, ui.sermonaudio_analytics: stdlib + requests.
-- ui.sermon_metadata: needs streamlit (unguarded module-level import).
-- Minimal set: pytest, ruff, requests, python-dotenv, PyYAML, streamlit.
+## Verification (32/32 ad-hoc checks, /tmp/opencode/verify_dbjobs.py)
 
-Proof: clean venv (/tmp/opencode/ci-min-venv) with only those packages ->
-ruff check . passes; pytest -m "not heavy" -> 30 passed, 0.28s.
-No manifest files touched.
-
-## Changes
-
-- [x] docker-build.yml: pin all five refs, add ci.yml-style pinning comment.
-- [x] ci.yml: setup-python cache: 'pip' keyed on requirements/requirements.txt;
-      fast job installs the verified minimal set instead of full requirements.
-- [x] Validate both files parse (python yaml.safe_load).
-- [x] Prove CI sequence in clean venv: minimal install -> pip install -e .
-      --no-deps (hatchling, build isolation) -> ruff check . -> 30 passed.
-- [ ] Commit.
-
-## Final pins in docker-build.yml
-
-| Action | SHA | Tag |
-|---|---|---|
-| actions/checkout | 11bd71901bbe5b1630ceea73d27597364c9af683 | v4.2.2 (repo convention) |
-| docker/setup-buildx-action | 8d2750c68a42422c14e847fe6c8ac0403b4cbd6f | v3.12.0 (latest v3) |
-| docker/login-action | c94ce9fb468520275223c153574b00df6fe4bcc9 | v3.7.0 (latest v3, both jobs) |
-| docker/build-push-action | 10e90e3645eae34f1e60eeb005ba3a3d33f178e8 | v6.19.2 (latest v6) |
-
-## Cache key config (ci.yml)
-
-```yaml
-cache: 'pip'
-cache-dependency-path: requirements/requirements.txt
-```
-
-Fast job installs: ruff pytest requests python-dotenv PyYAML streamlit,
-plus `pip install -e . --no-deps`.
-
+- WAL: fresh sqlite3 connection reports journal_mode=wal; migrate_db copy too
+- Indexes: all 6 present in sqlite_master after init
+- FTS: quoted-token sanitize, hostile inputs raise nothing, symbol-only
+  input returns [], real query still matches correct sermon
+- Favorite: 0 FTS rebuilds on is_favorite/notes updates, exactly 1 on title
+- UTC: created_at/updated_at delta < 5s in raw row; fresh llm row counted
+  by get_llm_usage_summary(days=30); 40d-old llm row pruned
+- Persistence: transcript absent from background_jobs.result JSON, small
+  fields intact; executor trim verified
+- Clear Completed removes completed+failed+cancelled, keeps queued/running
+- prune_old_jobs: stale terminal row dropped from db+memory, recent kept,
+  old queued kept
+- Singleton: 8 concurrent get_job_queue threads -> one instance
+- pytest tests/: 30 passed; ruff clean on all four files; CRLF preserved in
+  job_queue.py and job_executors.py
