@@ -138,7 +138,7 @@ Segments are positional, split on the literal `" - "` separator, and anything pa
 | 3 | Speaker | Speaker dropdown (selects an existing pastor, otherwise pre-fills "Add New") | Left empty |
 | 4 | Date | Recording Date; accepts `YYYY-MM-DD`, `YYYY_MM_DD`, `MM-DD-YYYY`, `MM_DD_YYYY`, `DD.MM.YYYY` | Stays at today's default |
 
-Detection runs once per uploaded filename and only fills fields you have left empty, so your own edits are never overwritten.
+Detection runs once per uploaded filename and only fills fields still at their defaults, so your own edits are never overwritten.
 
 Examples:
 - `My Sermon - Romans - Paul - 2026-08-20.mp4` fills title "My Sermon", series "Romans", speaker "Paul" and date 2026-08-20

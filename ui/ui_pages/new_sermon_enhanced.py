@@ -525,7 +525,7 @@ def start_enhanced_processing():
 
 def reset_enhanced_form():
     keys_to_clear = [
-        'uploaded_file', 'metadata_complete',
+        'uploaded_file', 'metadata_complete', 'autodetected_filename',
         'speaker_name_select', 'speaker_name_custom',
         'recorded_date', 'event_type_select', 'event_type_custom', 'bible_text',
         'sermon_title', 'sermon_subtitle', 'sermon_description', 'sermon_hashtags',
