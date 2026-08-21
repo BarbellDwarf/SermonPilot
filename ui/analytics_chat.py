@@ -61,9 +61,17 @@ class AnalyticsChatInterface:
                     embedding_config = self.config.get('embeddings', {})
                     self.rag_system = initialize_rag_system_with_data(
                         st.session_state.analytics_data,
-                        embedding_config=embedding_config
+                        embedding_config=embedding_config,
+                        llm_config=self.config,
                     )
                     st.session_state.rag_initialized = True
+
+                    reset_notice = getattr(self.rag_system, 'reset_notice', None)
+                    if reset_notice:
+                        st.session_state.rag_reset_notice = reset_notice
+                    else:
+                        st.session_state.pop('rag_reset_notice', None)
+
                     logger.info("RAG system initialized successfully")
 
                 return True
@@ -77,6 +85,10 @@ class AnalyticsChatInterface:
         """Render the chat interface"""
         st.subheader("Analytics Chat Assistant")
         st.write("Ask questions about your sermon analytics data using natural language.")
+
+        reset_notice = st.session_state.get('rag_reset_notice')
+        if reset_notice:
+            st.warning(reset_notice)
 
         # Initialize RAG system if needed
         if not st.session_state.rag_initialized:
@@ -122,12 +134,26 @@ class AnalyticsChatInterface:
         # Show data statistics
         self._render_data_stats()
 
+    def _build_conversation_history(self) -> list[dict[str, str]]:
+        """Build the last few Q/A pairs to give the LLM conversation context"""
+        history: list[dict[str, str]] = []
+        for message in st.session_state.chat_history:
+            if message['type'] in ('user', 'assistant') and message.get('content'):
+                history.append({
+                    'role': message['type'],
+                    'content': message['content'],
+                })
+        return history[-12:]
+
     def _process_question(self, question: str):
         """Process a user question and get response"""
         if not self.rag_system:
-            self.rag_system = SermonAnalyticsRAG()
+            self.rag_system = SermonAnalyticsRAG(llm_config=self.config)
 
         try:
+            # Snapshot prior turns before appending the current question
+            conversation_history = self._build_conversation_history()
+
             # Add user message to history
             st.session_state.chat_history.append({
                 'type': 'user',
@@ -137,7 +163,10 @@ class AnalyticsChatInterface:
 
             with st.spinner("Searching for answer..."):
                 # Query the RAG system
-                response = self.rag_system.query_analytics(question)
+                response = self.rag_system.query_analytics(
+                    question,
+                    history=conversation_history,
+                )
 
                 # Add assistant response to history
                 st.session_state.chat_history.append({
@@ -252,6 +281,7 @@ class AnalyticsChatInterface:
                         self.rag_system.clear_collection()
                         st.session_state.rag_initialized = False
                         st.session_state.analytics_data = []
+                        st.session_state.pop('rag_reset_notice', None)
                         st.toast("Chat system reset")
                         st.rerun()
                     except Exception as e:
