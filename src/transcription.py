@@ -19,6 +19,12 @@ import requests
 logger = logging.getLogger(__name__)
 
 
+class TranscriptionError(Exception):
+    """Raised when a transcription backend fails hard (uninstalled, disabled,
+    model load failure, or cloud API error). Callers should mark the job
+    failed with this reason instead of treating it as an empty transcript."""
+
+
 def _detect_device(preference: str = "auto", allow_rocm: bool = True) -> str:
     """Detect the compute device for local Whisper.
 
@@ -54,7 +60,10 @@ def _detect_device(preference: str = "auto", allow_rocm: bool = True) -> str:
 
 
 def _transcribe_whisper_local(
-    audio_path: str, model_size: str, device_preference: str = "auto"
+    audio_path: str,
+    model_size: str,
+    device_preference: str = "auto",
+    language: str | None = None,
 ) -> str:
     """Transcribe using the `whisper` library.
 
@@ -62,6 +71,7 @@ def _transcribe_whisper_local(
         audio_path: Path to audio file.
         model_size: Whisper model size (tiny, base, small, medium, large).
         device_preference: Device selection string.
+        language: ISO 639 language code; None lets Whisper detect it.
     Returns:
         Transcript text or empty string on error.
     """
@@ -69,9 +79,10 @@ def _transcribe_whisper_local(
         import warnings
 
         import whisper
-    except ImportError:
-        logger.warning("whisper library not installed, cannot perform local transcription")
-        return ""
+    except ImportError as e:
+        raise TranscriptionError(
+            "whisper library not installed - install with: pip install openai-whisper"
+        ) from e
 
     device = _detect_device(device_preference)
     logger.info("Local Whisper transcription: model=%s, device=%s", model_size, device)
@@ -82,27 +93,19 @@ def _transcribe_whisper_local(
             warnings.simplefilter("ignore")
             model = whisper.load_model(model_size, device=device)
     except Exception as e:
-        # Network errors while downloading model are common; try tiny as fallback.
-        logger.warning("Failed to load Whisper model %s on %s: %s", model_size, device, e)
-        if "connection" in str(e).lower() or "network" in str(e).lower():
-            logger.info("Attempting to load tiny model as fallback")
-            try:
-                model = whisper.load_model("tiny", device=device)
-            except Exception as e2:
-                logger.error("Fallback tiny model also failed: %s", e2)
-                return ""
-        else:
-            return ""
+        raise TranscriptionError(
+            f"Failed to load Whisper model {model_size} on {device}: {e}"
+        ) from e
 
     # Transcribe
     try:
-        result = model.transcribe(audio_path)
+        transcribe_kwargs = {"language": language} if language else {}
+        result = model.transcribe(audio_path, **transcribe_kwargs)
         transcript = result.get("text", "").strip()
         logger.info("Local transcription succeeded (%d characters)", len(transcript))
         return transcript
     except Exception as e:
-        logger.error("Local transcription error: %s", e)
-        return ""
+        raise TranscriptionError(f"Local transcription error: {e}") from e
 
 
 def _transcribe_faster_whisper_local(
@@ -158,28 +161,32 @@ def _transcribe_faster_whisper_local(
         return _transcribe_whisper_local(audio_path, model_size, device_preference)
 
 
-def _transcribe_openrouter(audio_path: str, api_key: str, base_url: str, model: str) -> str:
+def _transcribe_openrouter(
+    audio_path: str, api_key: str, base_url: str, model: str, progress_callback=None
+) -> str:
     """Transcribe using OpenRouter's Whisper endpoint.
 
     OpenRouter follows the OpenAI API shape: POST /audio/transcriptions.
     """
     if not api_key:
-        logger.error("OpenRouter API key missing for transcription")
-        return ""
+        raise TranscriptionError("OpenRouter API key missing for transcription")
     headers = {"Authorization": f"Bearer {api_key}"}
     files = {"file": open(audio_path, "rb")}
     data = {"model": model}
     try:
         url = f"{base_url.rstrip('/')}/audio/transcriptions"
         logger.info("Calling OpenRouter Whisper at %s", url)
-        resp = requests.post(url, headers=headers, data=data, files=files, timeout=120)
+        if progress_callback:
+            progress_callback(5, f"Uploading audio to {url}")
+        resp = requests.post(url, headers=headers, data=data, files=files, timeout=600)
         resp.raise_for_status()
         transcript = resp.json().get("text", "").strip()
+        if progress_callback:
+            progress_callback(90, "Transcription received")
         logger.info("OpenRouter transcription succeeded (%d characters)", len(transcript))
         return transcript
-    except Exception as e:
-        logger.error("OpenRouter transcription failed: %s", e)
-        return ""
+    except requests.RequestException as e:
+        raise TranscriptionError(f"OpenRouter transcription failed: {e}") from e
     finally:
         files["file"].close()
 
@@ -192,8 +199,7 @@ def _transcribe_openai(audio_path: str, api_key: str, base_url: str, model: str,
     Supports SSE streaming for progress reporting when the endpoint supports it.
     """
     if not api_key:
-        logger.error("OpenAI API key missing for transcription")
-        return ""
+        raise TranscriptionError("OpenAI API key missing for transcription")
     effective_base = base_url.rstrip('/') if base_url else "https://api.openai.com/v1"
     url = f"{effective_base}/audio/transcriptions"
     headers = {"Authorization": f"Bearer {api_key}"}
@@ -231,11 +237,19 @@ def _transcribe_openai(audio_path: str, api_key: str, base_url: str, model: str,
             transcript = resp.json().get("text", "").strip()
         logger.info("OpenAI transcription succeeded (%d characters)", len(transcript))
         return transcript
-    except Exception as e:
-        logger.error("OpenAI transcription failed: %s", e)
-        return ""
+    except requests.RequestException as e:
+        raise TranscriptionError(f"OpenAI transcription failed: {e}") from e
     finally:
         files["file"].close()
+
+
+def _is_cloud_model_override(model_size: str | None) -> bool:
+    """True when the caller passed a specific cloud model rather than the
+    generic local default ("base"). Cloud backends serve named models, so
+    sizes like tiny/base/small do not map to anything meaningful there."""
+    if not model_size:
+        return False
+    return model_size.lower() not in {"tiny", "base", "small", "medium", "large"}
 
 
 def transcribe(audio_path: str, model_size: str = "base", config: dict[str, Any] = None,
@@ -257,9 +271,11 @@ def transcribe(audio_path: str, model_size: str = "base", config: dict[str, Any]
     if backend == "whisper_local":
         local_cfg = transcription_cfg.get("whisper_local", {})
         device_pref = local_cfg.get("device", "auto")
-        # model_size from CLI overrides config size if provided
+        language = local_cfg.get("language")
         model = model_size or local_cfg.get("model", "base")
-        return _transcribe_whisper_local(audio_path, model, device_pref)
+        return _transcribe_whisper_local(
+            audio_path, model, device_pref, language=language
+        )
     elif backend == "faster_whisper_local":
         faster_cfg = transcription_cfg.get("faster_whisper_local", {})
         device_pref = faster_cfg.get("device", "auto")
@@ -274,13 +290,21 @@ def transcribe(audio_path: str, model_size: str = "base", config: dict[str, Any]
         or_cfg = transcription_cfg.get("whisper_openrouter", {})
         api_key = os.getenv("OPENROUTER_API_KEY", or_cfg.get("api_key", ""))
         base_url = or_cfg.get("base_url", "https://openrouter.ai/api/v1")
-        model = or_cfg.get("model", "openai/whisper-large-v3")
-        return _transcribe_openrouter(audio_path, api_key, base_url, model)
+        model = (
+            model_size if _is_cloud_model_override(model_size)
+            else or_cfg.get("model", "openai/whisper-large-v3")
+        )
+        return _transcribe_openrouter(
+            audio_path, api_key, base_url, model, progress_callback=progress_callback
+        )
     elif backend == "whisper_openai":
         oi_cfg = transcription_cfg.get("whisper_openai", {})
         api_key = os.getenv("OPENAI_API_KEY", oi_cfg.get("api_key", ""))
         base_url = oi_cfg.get("base_url", "https://api.openai.com/v1")
-        model = oi_cfg.get("model", "whisper-1")
+        model = (
+            model_size if _is_cloud_model_override(model_size)
+            else oi_cfg.get("model", "whisper-1")
+        )
         return _transcribe_openai(
             audio_path, api_key, base_url, model, progress_callback=progress_callback
         )
