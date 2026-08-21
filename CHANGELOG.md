@@ -2,6 +2,35 @@
 
 All notable changes to SermonPilot are documented here.
 
+## v1.6.1 (2026-08-21)
+
+Post-release security and quality audit remediation: 109 findings addressed across UI, backend, database, jobs, pipeline, providers, and infrastructure.
+
+### Fixed
+
+- Security: auth gate enforced per request (was bypassed after first session); MD5 hardened; sermon paths sanitized against traversal
+- Crashes: regenerated descriptions upload again; status-update SQL rewritten (raised on every second write); DeepFilterNet retry sample rate; sys.exit calls in LLM providers replaced with exceptions
+- Data loss: transcript fetch preserves AI content; dry-run publish preserves created_at and cleans child tables; API-create failure persists recovery draft; failed uploads keep media
+- Jobs: cancellation checkpoints before remote create/save; duplicate-sermon guard on retry; per-job temp dirs; transcripts stripped from persisted results; retention for terminal jobs and LLM usage rows; thread-safe singleton; WAL mode
+- Pipeline: WAV output transcoded to input container; single series application; configured language code; uploaded copies cleaned; transcript reuse fixed
+- Providers: broken Anthropic/Google removed; env-key fallbacks; sampling options + num_ctx; full fallback chain; no global env mutation; honest unknown-model cost handling
+- Context/validation: chunked summarization for long transcripts; titles sampled beginning/middle/end; validation checkbox wired end-to-end; fail-closed validation errors
+- Transcription: typed failures replace silent empty strings; tiny-model downgrade removed; cloud model picker honored; language/compute wiring; OpenRouter timeout + progress parity
+- Entities: custom pastors/series/event types persisted; normalized resolution; missing-series warning
+- RAG/chat: answers routed through the app's LLM stack; fabricated embedding providers removed; refresh uses upserts
+
+### Changed
+
+- UI: emoji-free prose, library toolbar + card rows, dark/light theme tokens, sidebar dividers, auth gate, top-gap fix across every page
+- CI: action SHAs pinned in docker-build; pip caching; minimal fast-job dependencies
+- Streamlit minimum raised to 1.36.0
+
+### Known Issues
+
+- chromadb CVE-2026-45829: fix blocked on upstream 1.6.0 (embedded usage not exposed)
+- torch advisories: accepted risk pending ROCm regression gate (see docs/GPU_INSTALLATION.md)
+
+
 ## v1.6.0 (2026-08-20)
 
 A full application review: persistence, series upload, audio processing, CI, security, UI, docs, and release automation.
