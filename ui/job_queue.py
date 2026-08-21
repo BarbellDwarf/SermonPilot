@@ -199,7 +199,7 @@ class JobQueue:
     def _init_database(self):
         """Initialize job storage in database"""
         try:
-            from database import get_db
+            from ui.database import get_db
             self.db = get_db()
 
             # Create jobs table if it doesn't exist

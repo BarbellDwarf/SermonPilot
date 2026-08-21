@@ -78,7 +78,7 @@ def get_cached_metadata() -> dict[str, list[str]]:
         'last_refresh' (datetime or None) and 'stale' (bool) flags.
     """
     try:
-        from database import get_db
+        from ui.database import get_db
         db = get_db()
 
         infos = {key: db.get_cached_metadata_info(key) for key in _METADATA_KEYS}
@@ -129,7 +129,7 @@ def get_cached_metadata() -> dict[str, list[str]]:
 def needs_metadata_refresh() -> bool:
     """True when any metadata key is missing from the cache or expired."""
     try:
-        from database import get_db
+        from ui.database import get_db
         db = get_db()
         for key in _METADATA_KEYS:
             info = db.get_cached_metadata_info(key)
@@ -188,7 +188,7 @@ def fetch_and_cache_metadata(
         progress_callback(1.0, 'Saving to cache...')
 
     try:
-        from database import get_db
+        from ui.database import get_db
         db = get_db()
 
         if pastors:

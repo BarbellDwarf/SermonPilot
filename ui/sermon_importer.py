@@ -19,9 +19,8 @@ src_dir = ui_dir.parent / "src"
 sys.path.insert(0, str(ui_dir))
 sys.path.insert(0, str(src_dir))
 
-from database import SermonRepository  # noqa: E402
-
 from src.sermon_paths import FILENAMES, discover_sermons, read_metadata  # noqa: E402
+from ui.database import SermonRepository  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

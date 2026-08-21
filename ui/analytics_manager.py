@@ -31,7 +31,7 @@ except ImportError:
             pass
     sermonaudio = MockSermonAudio()
 
-from database import SermonRepository  # noqa: E402
+from ui.database import SermonRepository  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

@@ -31,7 +31,7 @@ try:
 except ImportError:
     sermonaudio_available = False
 
-from database import SermonRepository  # noqa: E402
+from ui.database import SermonRepository  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
