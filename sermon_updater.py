@@ -4033,17 +4033,31 @@ def get_broadcaster_series(limit: int = 500) -> list[dict[str, Any]]:
         return []
 
 
+def _normalize_entity_name(name: str) -> str:
+    """Trim and case-fold an entity name for tolerant matching."""
+    return " ".join(name.split()).casefold()
+
+
 def resolve_series_id(series_name: str) -> int | None:
     """Resolve a series name to its numeric SermonAudio seriesID."""
     if not series_name:
         return None
-    if series_name in _SERIES_BY_NAME:
-        return _SERIES_BY_NAME[series_name]
+    normalized = _normalize_entity_name(series_name)
+    for name, series_id in _SERIES_BY_NAME.items():
+        if _normalize_entity_name(name) == normalized:
+            return series_id
     try:
         get_broadcaster_series()
     except Exception as e:
         logger.warning("Failed to refresh series list: %s", e)
-    return _SERIES_BY_NAME.get(series_name)
+    for name, series_id in _SERIES_BY_NAME.items():
+        if _normalize_entity_name(name) == normalized:
+            return series_id
+    logger.warning(
+        "Series '%s' not found on SermonAudio; the sermon will be created "
+        "without a series", series_name,
+    )
+    return None
 
 
 def set_sermon_series(sermon_id: str, series_id: int) -> bool:
