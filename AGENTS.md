@@ -114,9 +114,10 @@ Direct commits to `master` are **not allowed**. Every change must go through a b
 
 - `.github/workflows/release.yml` covers the release flow end to end:
   - **On release PRs** (branch `release/vX.Y.Z`, touching `pyproject.toml`): fails unless the version is a valid `MAJOR.MINOR.PATCH` bump above the latest tag, the tag does not exist yet, and the branch name matches the version
-  - **On merge to master**: creates the annotated tag `vX.Y.Z` when the pyproject.toml version is not yet tagged
-  - **On tag push**: validates the tag against `pyproject.toml`, then drafts the GitHub Release with auto-generated notes
-- The tag push triggers `.github/workflows/docker-build.yml` (tags `v*`) to build and push the `cuda`/`rocm`/`cpu` images from the tag; the release draft is published manually after the build succeeds
+  - **On merge to master**: creates the annotated tag `vX.Y.Z` when the pyproject.toml version is not yet tagged, then drafts the GitHub Release with auto-generated notes and dispatches `.github/workflows/docker-build.yml` on the tag ref (refs pushed with GITHUB_TOKEN fire no push events, so the tag push alone would trigger nothing)
+  - **On tag push**: validates the tag against `pyproject.toml`, then drafts the GitHub Release with auto-generated notes unless a draft already exists; this path covers manually pushed tags
+- `.github/workflows/docker-build.yml` builds and pushes the `cuda`/`rocm`/`cpu` images from any `v*` tag ref, whether pushed or dispatched on the tag: versioned tags plus the moving per-backend and `latest` tags. Plain branch dispatches produce timestamp-only tags
+- The release draft is published manually after the Docker build succeeds
 - The checks exist so a merged version bump can never ship untagged again
 
 ### Tag Naming

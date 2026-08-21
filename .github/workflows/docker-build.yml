@@ -53,9 +53,12 @@ jobs:
 
       - name: Extract version
         id: version
+        # Any v-tag ref counts as a release build, including a
+        # workflow_dispatch on the tag (release.yml dispatches the build
+        # after cutting the tag, since token-pushed refs fire no events).
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
             echo "publish_moving=true" >> "$GITHUB_OUTPUT"
           else
             echo "tag=$(date +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
