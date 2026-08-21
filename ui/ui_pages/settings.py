@@ -432,13 +432,14 @@ def show_ollama_settings(label, config, key_prefix):
             f"Refresh {label} Models", key=f"{key_prefix}_refresh_models"
         )
 
-        if refresh_clicked or not st.session_state.get(f"{key_prefix}_ollama_models"):
+        if refresh_clicked:
             try:
                 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
                 from llm_manager import OllamaProvider
 
-                ollama_provider = OllamaProvider({'host': host, 'api_key': api_key})
-                available_models = ollama_provider.list_models()
+                with st.spinner(f"Fetching models from {host}..."):
+                    ollama_provider = OllamaProvider({'host': host, 'api_key': api_key})
+                    available_models = ollama_provider.list_models()
                 st.session_state[f"{key_prefix}_ollama_models"] = available_models
 
                 if available_models:
@@ -1605,7 +1606,11 @@ def show_yaml_backup_restore():
             "Download Config",
             data=config_yaml,
             file_name="config_backup.yaml",
-            mime="text/yaml"
+            mime="text/yaml",
+            help=(
+                "Secrets are masked as '***' in this export. "
+                "Masked values cannot be restored directly."
+            ),
         )
 
     st.markdown("#### Restore Configuration")
@@ -1621,19 +1626,31 @@ def show_yaml_backup_restore():
             new_config = yaml.safe_load(config_content)
             st.success("Configuration file loaded successfully!")
             if isinstance(new_config, dict):
-                masked_preview = yaml.dump(
-                    _mask_secrets(new_config), default_flow_style=False, sort_keys=True
-                )
-                st.code(masked_preview, language='yaml')
-                if st.button("Apply Configuration", type="primary"):
-                    st.session_state.config = new_config
-                    from config_utils import save_config_to_file
-                    if save_config_to_file(new_config):
-                        _clear_settings_widget_keys()
-                        st.session_state['settings_feedback'] = (
-                            "Configuration applied and saved!"
-                        )
-                        st.rerun()
+                masked_paths = _find_masked_secrets(new_config)
+                if masked_paths:
+                    st.error(
+                        "This backup contains masked secrets ('***') where API keys "
+                        "should be. Applying it would overwrite your real keys with "
+                        "the mask, so the restore was rejected. "
+                        "Edit the file to remove masked values or paste the real "
+                        "keys first. Affected keys: "
+                        + ", ".join(masked_paths[:10])
+                        + ("…" if len(masked_paths) > 10 else "")
+                    )
+                else:
+                    masked_preview = yaml.dump(
+                        _mask_secrets(new_config), default_flow_style=False, sort_keys=True
+                    )
+                    st.code(masked_preview, language='yaml')
+                    if st.button("Apply Configuration", type="primary"):
+                        st.session_state.config = new_config
+                        from config_utils import save_config_to_file
+                        if save_config_to_file(new_config):
+                            _clear_settings_widget_keys()
+                            st.session_state['settings_feedback'] = (
+                                "Configuration applied and saved!"
+                            )
+                            st.rerun()
             else:
                 st.error("Configuration file must contain a YAML mapping at the top level.")
         except Exception as e:
@@ -2056,6 +2073,26 @@ def _mask_secrets(value):
     if isinstance(value, list):
         return [_mask_secrets(item) for item in value]
     return value
+
+def _find_masked_secrets(value, prefix: str = "") -> list[str]:
+    """Return the config paths whose value is the '***' mask sentinel"""
+    paths: list[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            if item == '***':
+                paths.append(path)
+            else:
+                paths.extend(_find_masked_secrets(item, path))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            path = f"{prefix}[{index}]"
+            if item == '***':
+                paths.append(path)
+            else:
+                paths.extend(_find_masked_secrets(item, path))
+    return paths
+
 
 def _clear_settings_widget_keys():
     """Drop Settings widget keys so they re-initialize from the new config"""
