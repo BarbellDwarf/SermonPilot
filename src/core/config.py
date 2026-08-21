@@ -134,13 +134,37 @@ class ConfigManager:
             'EMBEDDING_MODEL': ['embeddings', 'primary', 'model'],
         }
 
+        numeric_paths = {
+            tuple(path): float
+            for path in (
+                ['audio_gain_db'],
+                ['audio_target_level_db'],
+                ['audio_noise_reduction'],
+                ['audio_normalize'],
+            )
+        }
+
+        def coerce(config_path: tuple, value):
+            if isinstance(value, str) and value.lower() in ('true', 'false'):
+                return value.lower() == 'true'
+            if config_path in numeric_paths:
+                try:
+                    return numeric_paths[config_path](value)
+                except ValueError:
+                    logger.warning(
+                        "Invalid numeric value for %s: %r (ignored)",
+                        '.'.join(config_path), value,
+                    )
+                    return None
+            return value
+
         for env_var, config_path in env_mappings.items():
             value = os.getenv(env_var)
             if value:
-                # Convert boolean strings
-                if value.lower() in ('true', 'false'):
-                    value = value.lower() == 'true'
-                self._set_nested_value(self._config, config_path, value)
+                coerced = coerce(tuple(config_path), value)
+                if coerced is None and value == '':
+                    continue
+                self._set_nested_value(self._config, config_path, coerced)
 
     def _migrate_legacy_config(self):
         """Migrate legacy configuration format to new format."""
@@ -311,8 +335,10 @@ class ConfigManager:
 
     def __str__(self) -> str:
         """String representation of the configuration."""
-        # Hide sensitive data
-        safe_config = self._config.copy()
+        # Hide sensitive data on a deep copy so the live config is untouched
+        import copy
+
+        safe_config = copy.deepcopy(self._config)
 
         def hide_sensitive(obj, path=""):
             if isinstance(obj, dict):
