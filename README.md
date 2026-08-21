@@ -121,6 +121,29 @@ streamlit run streamlit_app.py
 # Open http://localhost:8501
 ```
 
+#### Filename auto-detection
+
+When you upload a file on the **New Sermon** page, SermonPilot reads the filename and pre-fills the metadata form. Name your recordings:
+
+```
+Title - Series - Speaker - date.extension
+```
+
+Segments are positional, split on the literal `" - "` separator, and anything past the fourth segment is ignored.
+
+| Position | Segment | Fills | If missing |
+|----------|---------|-------|------------|
+| 1 | Title | Sermon Title | Left blank for AI generation |
+| 2 | Series | Series dropdown (selects an existing series, otherwise pre-fills "Add New") | Left empty |
+| 3 | Speaker | Speaker dropdown (selects an existing pastor, otherwise pre-fills "Add New") | Left empty |
+| 4 | Date | Recording Date; accepts `YYYY-MM-DD`, `YYYY_MM_DD`, `MM-DD-YYYY`, `MM_DD_YYYY`, `DD.MM.YYYY` | Stays at today's default |
+
+Detection runs once per uploaded filename and only fills fields still at their defaults, so your own edits are never overwritten.
+
+Examples:
+- `My Sermon - Romans - Paul - 2026-08-20.mp4` fills title "My Sermon", series "Romans", speaker "Paul" and date 2026-08-20
+- `Evening Prayer.mp4` fills only the title "Evening Prayer"
+
 ### CLI — New Sermon
 ```bash
 python sermon_updater.py new-sermon audio.mp3 --speaker "Pastor Smith" --date "2024-01-15"
