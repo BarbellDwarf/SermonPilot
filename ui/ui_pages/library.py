@@ -8,6 +8,7 @@ Provides comprehensive sermon browsing with:
 """
 
 import csv
+import html
 import io
 import json
 import re
@@ -453,9 +454,10 @@ def _batch_push(sermon_ids):
             },
             priority=5
         )
-        st.success(f"Push job created: {job_id[:8]}")
+        _set_feedback(f"Push job created: {job_id[:8]}. Monitor it on the Jobs page.")
+        st.rerun()
     except Exception as e:
-        st.error(f"Failed to create push job: {e}")
+        _set_feedback(f"Failed to create push job: {e}", kind="error")
 
 
 def _batch_generate_ai(sermon_ids):
@@ -474,9 +476,10 @@ def _batch_generate_ai(sermon_ids):
             },
             priority=5
         )
-        st.success(f"AI generation job created: {job_id[:8]}")
+        _set_feedback(f"AI generation job created: {job_id[:8]}. Monitor it on the Jobs page.")
+        st.rerun()
     except Exception as e:
-        st.error(f"Failed to create AI generation job: {e}")
+        _set_feedback(f"Failed to create AI generation job: {e}", kind="error")
 
 
 def show_library():
@@ -575,7 +578,7 @@ def show_library():
                     )
                     st.selectbox(
                         "Status",
-                        ["All", "Processed", "Pending", "Error"],
+                        ["All", "Processed", "Pending", "Draft", "Error"],
                         key="library_status_filter"
                     )
                 with fcol2:
@@ -699,9 +702,10 @@ def apply_filters(sermons, search_query, speaker_filter, date_filter, status_fil
     # Status filter
     if status_filter != "All":
         status_map = {
-            "Processed": ["completed", "processed"],
-            "Pending": ["processing"],
-            "Error": ["failed"]
+            "Processed": ["processed"],
+            "Pending": ["pending"],
+            "Draft": ["draft"],
+            "Error": ["error"],
         }
         target_statuses = status_map.get(status_filter, [status_filter.lower()])
         filtered_sermons = [s for s in filtered_sermons if s.get('status') in target_statuses]
@@ -762,6 +766,18 @@ def _format_date(date_str):
 def display_sermon_list(filtered_sermons, all_sermons):
     """Display the sermon list with compact clickable rows"""
 
+    if not filtered_sermons:
+        st.info("No sermons match your search or filters.")
+        if st.button("Clear Search & Filters", key="library_clear_filters"):
+            for key in (
+                'library_search', 'library_speaker_filter', 'library_date_filter',
+                'library_status_filter', 'library_fav_toggle', 'library_page',
+            ):
+                st.session_state.pop(key, None)
+            st.session_state.show_favorites_only = False
+            st.rerun()
+        return
+
     st.markdown(f"**{len(filtered_sermons)}** sermons shown (of {len(all_sermons)} total)")
 
     # Bulk action bar
@@ -798,6 +814,9 @@ def display_sermon_list(filtered_sermons, all_sermons):
 
     items_per_page = 20
     total_pages = (len(filtered_sermons) + items_per_page - 1) // items_per_page
+
+    if st.session_state.get('library_page', 0) > total_pages - 1:
+        st.session_state.library_page = max(0, total_pages - 1)
 
     page = 0
     if total_pages > 1:
@@ -866,7 +885,7 @@ def display_sermon_list(filtered_sermons, all_sermons):
                 title = sermon.get('title', 'Untitled')
                 speaker = sermon.get('speaker', '')
                 date = _format_date(sermon.get('recorded_date'))
-                safe_title = title.replace(chr(34), "&quot;")
+                safe_title = html.escape(str(title))
                 st.markdown(
                     f'<span class="sermon-title" title="{safe_title}">{title}</span>',
                     unsafe_allow_html=True,

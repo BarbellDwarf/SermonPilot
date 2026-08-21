@@ -77,13 +77,18 @@ def show_jobs():
         with st.sidebar:
             st.markdown("### Controls")
 
-            if st.button("Refresh", type="primary", width='stretch'):
-                st.rerun()
-
             if st.button("Clear Completed", type="secondary", width='stretch'):
-                cleared = job_queue.clear_completed_jobs()
-                _set_flash(f"Cleared {cleared} completed jobs")
-                st.rerun()
+                if st.session_state.get('confirm_clear_completed', False):
+                    cleared = job_queue.clear_completed_jobs()
+                    st.session_state.confirm_clear_completed = False
+                    _set_flash(f"Cleared {cleared} completed jobs")
+                    st.rerun()
+                else:
+                    st.session_state.confirm_clear_completed = True
+                    st.warning(
+                        "This permanently deletes ALL completed jobs. "
+                        "Click again to confirm."
+                    )
 
         _render_job_list(job_queue)
 
@@ -337,7 +342,7 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                                 _set_flash("Job cancelled")
                             else:
                                 _set_flash("Could not cancel job", "error")
-                            st.rerun()
+                            st.rerun(scope="app")
 
                 with action_col2:
                     if (
@@ -350,7 +355,7 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                                 _set_flash("Job queued for retry")
                             else:
                                 _set_flash("Could not retry job", "error")
-                            st.rerun()
+                            st.rerun(scope="app")
             else:
                 # Show priority for non-actionable jobs
                 st.caption(f"Priority: {job.priority}/10")
@@ -468,7 +473,7 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                             priority=job.priority,
                         )
                         _set_flash(f"Retry job created: {new_job_id[:8]}")
-                        st.rerun()
+                        st.rerun(scope="app")
 
         st.markdown("---")
 
