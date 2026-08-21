@@ -33,6 +33,28 @@ def _parse_validated_at(value: Any) -> dt.datetime | None:
         return None
 
 
+def _sermon_title_lookup() -> dict[str, str]:
+    """Map sermon IDs to titles so validation tables can show real names"""
+    try:
+        from database import SermonRepository
+
+        repo = SermonRepository()
+        return {
+            s['id']: (s.get('title') or 'Untitled')
+            for s in repo.get_all_sermons()
+            if s.get('id')
+        }
+    except Exception:
+        return {}
+
+
+def _sermon_display_id(sermon_id: Any, titles: dict[str, str]) -> str:
+    """Format a sermon reference as 'Title (id)', falling back to the raw ID"""
+    sid = str(sermon_id)
+    title = titles.get(sid)
+    return f"{title} ({sid})" if title else sid
+
+
 def show_validation():
     """Main validation interface"""
     st.markdown('<div class="main-header">Validation</div>', unsafe_allow_html=True)
@@ -138,17 +160,14 @@ def show_quality_metrics():
                 validation_results[-10:] if len(validation_results) > 10 else validation_results
             )
 
+            titles = _sermon_title_lookup()
             results_data = []
             for result in recent_results:
                 results_data.append({
-                    'Sermon ID': result.get('sermon_id', 'Unknown'),
+                    'Sermon': _sermon_display_id(result.get('sermon_id', 'Unknown'), titles),
                     'Status': 'Pass' if result.get('is_valid', False) else 'Fail',
                     'Score': f"{result.get('score', 0):.2f}/1.0",
-                    'Reason': (
-                        result.get('reason', 'No reason provided')[:50] + '...'
-                        if len(result.get('reason', '')) > 50
-                        else result.get('reason', 'No reason provided')
-                    ),
+                    'Reason': result.get('reason', 'No reason provided'),
                     'Validated': (
                         result.get('validated_at', 'Unknown')[:10]
                         if result.get('validated_at') else 'Unknown'
@@ -160,6 +179,10 @@ def show_quality_metrics():
 
             st.dataframe(
                 df_results,
+                column_config={
+                    'Sermon': st.column_config.TextColumn('Sermon', width='medium'),
+                    'Reason': st.column_config.TextColumn('Reason', width='large'),
+                },
                 width='stretch',
                 hide_index=True
             )
@@ -254,6 +277,7 @@ def show_failed_descriptions():
 
         # Display failed descriptions
         st.markdown("#### Failed Descriptions List")
+        titles = _sermon_title_lookup()
 
         if not filtered_results:
             st.info("No failed descriptions match the current filters.")
@@ -266,7 +290,10 @@ def show_failed_descriptions():
 
             priority = "High" if score < 0.4 else "Medium" if score < 0.6 else "Low"
 
-            with st.expander(f"{priority} - Sermon {sermon_id} (Score: {score:.2f}/1.0)"):
+            with st.expander(
+                f"{priority} — {_sermon_display_id(sermon_id, titles)} "
+                f"(Score: {score:.2f}/1.0)"
+            ):
 
                 col1, col2 = st.columns([2, 1])
 
@@ -554,10 +581,7 @@ def start_background_validation(scope: str, options: dict):
             f"Validating {len(sermon_ids)} sermons in the background. "
             "You can monitor progress on the Jobs page."
         )
-
-        # Add button to go to jobs page
-        if st.button("View Job Progress", type="secondary"):
-            st.switch_page(jobs)
+        st.session_state['current_validation_job_id'] = job_id
 
     except Exception as e:
         st.error(f"Failed to start validation job: {e}")
@@ -600,6 +624,17 @@ def show_current_validation_status():
         from job_queue import JobStatus, JobType, get_job_queue
 
         job_queue = get_job_queue()
+
+        active_job_id = st.session_state.get('current_validation_job_id')
+        if active_job_id:
+            try:
+                active_job = job_queue.get_job(active_job_id)
+                if active_job and active_job.status in (JobStatus.QUEUED, JobStatus.RUNNING):
+                    if st.button("View Job Progress", key="validation_view_progress"):
+                        st.switch_page(jobs)
+            except Exception:
+                pass
+
         completed_jobs = [
             job for job in job_queue.get_all_jobs(status_filter=JobStatus.COMPLETED)
             if job.type == JobType.VALIDATION and job.result and job.result.data
@@ -609,7 +644,9 @@ def show_current_validation_status():
                 completed_jobs,
                 key=lambda job: job.completed_at or job.created_at
             )
-            st.session_state['last_validation_results'] = latest.result.data
+            if latest.id != st.session_state.get('dismissed_validation_job_id'):
+                st.session_state['last_validation_results'] = latest.result.data
+                st.session_state['last_validation_job_id'] = latest.id
 
         # Show recent validation results if available
         if 'last_validation_results' in st.session_state:
@@ -642,10 +679,13 @@ def show_current_validation_status():
             if details:
                 st.markdown("##### Detailed Results")
 
+                titles = _sermon_title_lookup()
                 details_df = []
                 for detail in details:
                     details_df.append({
-                        'Sermon ID': detail.get('sermon_id', 'Unknown'),
+                        'Sermon': _sermon_display_id(
+                            detail.get('sermon_id', 'Unknown'), titles
+                        ),
                         'Status': (
                             'Valid' if detail.get('is_valid')
                             else 'Invalid' if 'is_valid' in detail else 'Error'
@@ -659,11 +699,23 @@ def show_current_validation_status():
                 if details_df:
                     import pandas as pd
                     df = pd.DataFrame(details_df)
-                    st.dataframe(df, width='stretch')
+                    st.dataframe(
+                        df,
+                        column_config={
+                            'Sermon': st.column_config.TextColumn('Sermon', width='medium'),
+                            'Reason': st.column_config.TextColumn('Reason', width='large'),
+                        },
+                        width='stretch',
+                        hide_index=True,
+                    )
 
                     # Clear results button
                     if st.button("Clear Results"):
-                        del st.session_state['last_validation_results']
+                        st.session_state['dismissed_validation_job_id'] = (
+                            st.session_state.get('last_validation_job_id')
+                        )
+                        st.session_state.pop('last_validation_results', None)
+                        st.session_state.pop('last_validation_job_id', None)
                         st.rerun()
 
     except Exception as e:
@@ -784,10 +836,13 @@ def show_validation_trends():
                 )
 
                 activity_data = []
+                trends_titles = _sermon_title_lookup()
                 for result in recent_validations:
                     validated = _parse_validated_at(result.get('validated_at'))
                     activity_data.append({
-                        'Sermon ID': result.get('sermon_id', 'Unknown'),
+                        'Sermon': _sermon_display_id(
+                            result.get('sermon_id', 'Unknown'), trends_titles
+                        ),
                         'Score': f"{result.get('score', 0):.2f}",
                         'Status': 'Valid' if result.get('is_valid', False) else 'Invalid',
                         'Date': validated.strftime('%Y-%m-%d') if validated else 'Unknown'
@@ -841,9 +896,10 @@ def mark_for_manual_review(sermon_id):
         sermon = repo.get_sermon(sermon_id)
         if sermon:
             st.session_state.selected_sermon = sermon
-        st.session_state.validation_flash = (
-            f"Sermon {sermon_id} added to manual review queue"
-        )
+        st.session_state['library_feedback'] = {
+            'kind': 'success',
+            'message': f"Sermon {sermon_id} added to manual review queue",
+        }
         st.switch_page("ui/ui_pages/library.py")
     except Exception as e:
         st.error(f"Error marking for manual review: {e}")
