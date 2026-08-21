@@ -1,10 +1,13 @@
 # .dockerignore
 .git
 .gitignore
+.github/
+.githooks/
 README.md
 .env
 .venv/
 .venv-*/
+.venv.old/
 venv/
 env/
 __pycache__/
@@ -13,6 +16,7 @@ __pycache__/
 *.so
 .mypy_cache/
 .pytest_cache/
+.ruff_cache/
 .coverage
 .tox/
 .cache
@@ -45,6 +49,7 @@ test_*/
 *.db
 api_cache/
 analytics_cache/
+analytics_vector_db/
 
 # Documentation and plans
 docs/
@@ -66,7 +71,9 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+.tmp/
 .cache/
+audit-*.png
 
 # Test files
 tests/
@@ -77,3 +84,7 @@ conftest.py
 
 # Agent files
 AGENTS.md
+.agents/
+.claude/
+.playwright-mcp/
+opencode.json
