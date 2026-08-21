@@ -66,6 +66,22 @@ def _normalize_series(data) -> list[dict[str, Any]]:
     return normalized
 
 
+def _persist_entity(key: str, name: str) -> None:
+    """Add a newly used entity name to the local metadata cache so it
+    appears in dropdowns next time (best-effort; cache refresh overwrites)."""
+    try:
+        from database import get_db
+
+        db = get_db()
+        current = get_cached_metadata().get(key, [])
+        normalized = " ".join(name.split())
+        if any(n.casefold() == normalized.casefold() for n in current):
+            return
+        db.cache_metadata(key, [*current, normalized])
+    except Exception as e:
+        logger.warning("Failed to persist %s '%s' to cache: %s", key, name, e)
+
+
 def get_cached_metadata() -> dict[str, list[str]]:
     """
     Get cached sermon metadata (pastors, events, series) from SQLite database.
@@ -418,6 +434,8 @@ def create_pastor_selectbox(
             key=f"{key}_custom",
             placeholder="Enter pastor name"
         )
+        if custom_pastor:
+            _persist_entity("pastors", custom_pastor)
         return custom_pastor if custom_pastor else None
     elif selected == "[Select Pastor]":
         return None
@@ -453,6 +471,8 @@ def create_event_type_selectbox(
             key=f"{key}_custom",
             placeholder="Special Service"
         )
+        if custom_event:
+            _persist_entity("event_types", custom_event)
         return custom_event if custom_event else None
     elif selected == "[Select Event Type]":
         return None
@@ -484,6 +504,8 @@ def create_series_selectbox(
             key=f"{key}_custom",
             placeholder="Book of Romans"
         )
+        if custom_series:
+            _persist_entity("series", custom_series)
         st.session_state[f"{key}_id"] = None
         return custom_series if custom_series else None
     elif selected == "[No Series]":
