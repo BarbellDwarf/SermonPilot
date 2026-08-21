@@ -492,3 +492,108 @@ def create_series_selectbox(
     else:
         st.session_state[f"{key}_id"] = series_map.get(selected)
         return selected
+
+
+_FILENAME_DATE_FORMATS = ('%Y-%m-%d', '%Y_%m_%d', '%m-%d-%Y', '%m_%d_%Y', '%d.%m.%Y')
+
+
+def parse_sermon_filename(filename: str) -> dict[str, str | datetime.date | None]:
+    """Parse 'Title - Series - Speaker - date.ext' style filenames.
+
+    The stem is split on the literal ' - ' separator: position 0 is the title,
+    1 the series, 2 the speaker and 3 a date candidate. Segments past the
+    fourth are ignored and missing ones come back as None.
+    """
+    stem = Path(filename).stem
+    segments = [segment.strip() for segment in stem.split(' - ')]
+
+    def segment(index: int) -> str | None:
+        return segments[index] if index < len(segments) else None
+
+    raw_date = segment(3)
+    return {
+        'title': segment(0) or None,
+        'series': segment(1) or None,
+        'speaker': segment(2) or None,
+        'date': _parse_filename_date(raw_date) if raw_date else None,
+    }
+
+
+def _parse_filename_date(value: str) -> datetime.date | None:
+    for date_format in _FILENAME_DATE_FORMATS:
+        try:
+            return datetime.datetime.strptime(value, date_format).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _match_option(options: list[str], value: str) -> str | None:
+    for option in options:
+        if option == value:
+            return option
+    folded = value.casefold()
+    for option in options:
+        if option.casefold() == folded:
+            return option
+    return None
+
+
+def _speaker_field_set() -> bool:
+    selected = st.session_state.get('speaker_name_select')
+    if selected and selected not in ('[Select Pastor]', '[Add New Pastor]'):
+        return True
+    return bool(st.session_state.get('speaker_name_custom'))
+
+
+def _series_field_set() -> bool:
+    selected = st.session_state.get('sermon_series_select')
+    if selected and selected not in ('[No Series]', '[Add New Series]'):
+        return True
+    return bool(st.session_state.get('sermon_series_custom'))
+
+
+def apply_filename_autodetect(filename: str) -> bool:
+    """Pre-fill metadata fields from an uploaded filename.
+
+    Call before the metadata widgets render. Only fields the user has not set
+    are touched. Returns True when any field was pre-filled.
+    """
+    parsed = parse_sermon_filename(filename)
+    applied = False
+
+    title = parsed['title']
+    if title and not st.session_state.get('sermon_title'):
+        st.session_state['sermon_title'] = title
+        applied = True
+
+    speaker = parsed['speaker']
+    if speaker and not _speaker_field_set():
+        match = _match_option(get_pastors(), speaker)
+        if match is not None:
+            st.session_state['speaker_name_select'] = match
+        else:
+            st.session_state['speaker_name_select'] = '[Add New Pastor]'
+            st.session_state['speaker_name_custom'] = speaker
+        applied = True
+
+    series = parsed['series']
+    if series and not _series_field_set():
+        match = _match_option(get_series(), series)
+        if match is not None:
+            st.session_state['sermon_series_select'] = match
+            st.session_state['sermon_series_id'] = get_series_map().get(match)
+        else:
+            st.session_state['sermon_series_select'] = '[Add New Series]'
+            st.session_state['sermon_series_custom'] = series
+            st.session_state['sermon_series_id'] = None
+        applied = True
+
+    parsed_date = parsed['date']
+    if parsed_date is not None:
+        current_date = st.session_state.get('recorded_date')
+        if current_date is None or current_date == datetime.date.today():
+            st.session_state['recorded_date'] = parsed_date
+            applied = True
+
+    return applied
