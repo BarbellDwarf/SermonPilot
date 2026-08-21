@@ -132,62 +132,17 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             raise
 
 
-class XAIEmbeddingProvider(EmbeddingProvider):
-    """xAI embedding provider (remote API)."""
-
-    def __init__(self, config: dict[str, Any]):
-        super().__init__(config)
-        self.api_key = config.get("api_key")
-        self.model_name = config.get("model", "text-embedding-3-small")
-        self.base_url = config.get("base_url", "https://api.x.ai/v1")
-        self.client = None
-
-        # xAI model dimensions (similar to OpenAI)
-        self.model_dimensions = {
-            "text-embedding-3-small": 1536,
-            "text-embedding-3-large": 3072,
-        }
-
-        self.dimensions = self.model_dimensions.get(self.model_name, 1536)
-        self._initialize_client()
-
-    def _initialize_client(self) -> None:
-        """Initialize xAI client."""
-        if not self.api_key:
-            raise ValueError("xAI API key is required for xAI embedding provider")
-
-        try:
-            import openai
-
-            self.client = openai.OpenAI(api_key=self.api_key, base_url=self.base_url)
-            logger.info(
-                f"Initialized xAI embedding client for model: {self.model_name}"
-            )
-
-        except ImportError:
-            logger.error("OpenAI library not installed. Install with: pip install openai")
-            raise
-        except Exception as e:
-            logger.error(f"Failed to initialize xAI client: {e}")
-            raise
-
-    def get_embeddings(self, texts: list[str]) -> list[list[float]]:
-        """Generate embeddings using xAI API."""
-        if self.client is None:
-            raise RuntimeError("xAI client not initialized")
-
-        try:
-            response = self.client.embeddings.create(model=self.model_name, input=texts)
-            embeddings = [embedding.embedding for embedding in response.data]
-            return embeddings
-
-        except Exception as e:
-            logger.error(f"Failed to generate embeddings with xAI: {e}")
-            raise
-
-
 class HashEmbeddingProvider(EmbeddingProvider):
-    """Fallback hash-based embedding provider for offline mode."""
+    """
+    Explicit offline-only embedding provider.
+
+    Produces deterministic pseudo-vectors derived from an md5 hash of the text.
+    These vectors carry no semantic similarity signal: retrieval quality degrades
+    to keyword-level overlap at best. Use only when no real embedding model
+    (Ollama, sentence-transformers, OpenAI) can be reached, e.g. fully offline
+    installs. Select it deliberately via ``provider: hash``; it is not a stand-in
+    for a real embedding API.
+    """
 
     def __init__(self, config: dict[str, Any]):
         super().__init__(config)
@@ -386,76 +341,6 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
             raise
 
 
-class AnthropicEmbeddingProvider(EmbeddingProvider):
-    """Anthropic embedding provider (Claude)."""
-
-    def __init__(self, config: dict[str, Any]):
-        super().__init__(config)
-        self.api_key = config.get("api_key")
-        self.model_name = config.get("model", "claude-3-haiku-20240307")
-        self.client = None
-
-        # Model dimensions mapping
-        self.model_dimensions = {
-            "claude-3-haiku-20240307": 1536,
-            "claude-3-sonnet-20240229": 1536,
-            "claude-3-opus-20240229": 1536,
-            "claude-3-5-sonnet-20240620": 1536,
-        }
-
-        self.dimensions = self.model_dimensions.get(self.model_name, 1536)
-        self._initialize_client()
-
-    def _initialize_client(self) -> None:
-        """Initialize Anthropic client."""
-        if not self.api_key:
-            raise ValueError("Anthropic API key is required")
-
-        try:
-            import anthropic
-
-            self.client = anthropic.Anthropic(api_key=self.api_key)
-            logger.info(
-                f"Initialized Anthropic embedding client for model: {self.model_name}"
-            )
-
-        except ImportError:
-            logger.error(
-                "Anthropic library not installed. Install with: pip install anthropic"
-            )
-            raise
-        except Exception as e:
-            logger.error(f"Failed to initialize Anthropic client: {e}")
-            raise
-
-    def get_embeddings(self, texts: list[str]) -> list[list[float]]:
-        """Generate embeddings using Anthropic API (placeholder strategy)."""
-        if self.client is None:
-            raise RuntimeError("Anthropic client not initialized")
-
-        try:
-            # Anthropic doesn't have a direct embedding API; use a deterministic fallback
-            embeddings: list[list[float]] = []
-            for text in texts:
-                import hashlib as _hashlib
-
-                hash_obj = _hashlib.md5(text.encode(), usedforsecurity=False)
-                hash_int = int(hash_obj.hexdigest(), 16)
-
-                # Create deterministic embedding from hash
-                embedding: list[float] = []
-                for i in range(self.dimensions):
-                    embedding.append(((hash_int >> (i % 32)) & 1) * 2 - 1)  # -1 or 1
-
-                embeddings.append(embedding)
-
-            return embeddings
-
-        except Exception as e:
-            logger.error(f"Failed to generate embeddings with Anthropic: {e}")
-            raise
-
-
 class CohereEmbeddingProvider(EmbeddingProvider):
     """Cohere embedding provider."""
 
@@ -635,10 +520,6 @@ class EmbeddingManager:
             return SentenceTransformerProvider(provider_config)
         if provider_type == "openai":
             return OpenAIEmbeddingProvider(provider_config)
-        if provider_type == "xai":
-            return XAIEmbeddingProvider(provider_config)
-        if provider_type == "anthropic":
-            return AnthropicEmbeddingProvider(provider_config)
         if provider_type == "cohere":
             return CohereEmbeddingProvider(provider_config)
         if provider_type == "voyageai":
@@ -736,34 +617,6 @@ PRESET_EMBEDDING_MODELS = {
         "text-embedding-ada-002": {
             "dimensions": 1536,
             "description": "Legacy model",
-        },
-    },
-    "xai": {
-        "text-embedding-3-small": {
-            "dimensions": 1536,
-            "description": "Fast, cost-effective",
-        },
-        "text-embedding-3-large": {
-            "dimensions": 3072,
-            "description": "Highest quality",
-        },
-    },
-    "anthropic": {
-        "claude-3-haiku-20240307": {
-            "dimensions": 1536,
-            "description": "Fast, efficient model",
-        },
-        "claude-3-sonnet-20240229": {
-            "dimensions": 1536,
-            "description": "Balanced performance",
-        },
-        "claude-3-opus-20240229": {
-            "dimensions": 1536,
-            "description": "Highest quality",
-        },
-        "claude-3-5-sonnet-20240620": {
-            "dimensions": 1536,
-            "description": "Latest high-performance model",
         },
     },
     "cohere": {
