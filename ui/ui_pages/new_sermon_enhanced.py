@@ -61,9 +61,6 @@ def _show_upload_section():
             apply_filename_autodetect(uploaded_file.name)
             st.session_state.autodetected_filename = uploaded_file.name
             st.session_state.expand_metadata = True
-    else:
-        st.session_state.pop('uploaded_file', None)
-        st.session_state.pop('expand_metadata', False)
 
         col1, col2, col3, col4 = st.columns(4)
         with col1:
@@ -96,6 +93,9 @@ def _show_upload_section():
                     st.warning(f"Could not preview file: {e}")
         else:
             st.info(f"Preview skipped for files over {max_preview_size // (1024*1024)} MB")
+    else:
+        st.session_state.pop('uploaded_file', None)
+        st.session_state.pop('expand_metadata', False)
 
 
 def _show_metadata_section():
