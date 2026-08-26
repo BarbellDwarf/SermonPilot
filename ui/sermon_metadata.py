@@ -75,9 +75,19 @@ def _persist_entity(key: str, name: str) -> None:
         db = get_db()
         current = get_cached_metadata().get(key, [])
         normalized = " ".join(name.split())
-        if any(n.casefold() == normalized.casefold() for n in current):
+        existing_names = set()
+        for item in current:
+            if isinstance(item, dict):
+                existing_names.add(item.get("name", "").casefold())
+            elif isinstance(item, str):
+                existing_names.add(item.casefold())
+        if normalized.casefold() in existing_names:
             return
-        db.cache_metadata(key, [*current, normalized])
+        if key == "series":
+            entry = {"name": normalized}
+        else:
+            entry = normalized
+        db.cache_metadata(key, [*current, entry])
     except Exception as e:
         logger.warning("Failed to persist %s '%s' to cache: %s", key, name, e)
 
