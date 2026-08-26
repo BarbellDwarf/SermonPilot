@@ -1,6 +1,5 @@
 [theme]
-# Indigo accent so affirmative (type="primary") actions stop rendering
-# Streamlit's default danger-red; matches --card-grad-a in streamlit_app.py.
+base = "dark"
 primaryColor = "#4f46e5"
 
 [server]
