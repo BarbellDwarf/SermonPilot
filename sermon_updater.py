@@ -1000,7 +1000,7 @@ def update_sermon_metadata(sermon_id: str, description: str, hashtags: str | lis
         keywords = str(hashtags)
     payload = {'moreInfoText': description, 'keywords': keywords}
     if series_id is None and series_title:
-        series_id = resolve_series_id(series_title)
+        series_id = resolve_series_id(series_title, create_missing=True)
     if series_id is not None:
         payload['seriesID'] = series_id
     resp = requests.patch(url, headers=headers, json=payload, timeout=60)
@@ -1538,7 +1538,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
     if config is None:
         config = globals().get('config') or {}
     if series_id is None and series_title:
-        series_id = resolve_series_id(series_title)
+        series_id = resolve_series_id(series_title, create_missing=not dry_run)
 
     result = {
         'success': False,
@@ -2229,7 +2229,16 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         # Single application path for series: the API ignores it during
         # creation, so always PATCH it onto the sermon afterwards
         if series_id is not None:
-            set_sermon_series(sermon_id, series_id)
+            if set_sermon_series(sermon_id, series_id):
+                console_print(f"📚 Series set: {series_title} (ID {series_id})")
+            else:
+                console_print(
+                    f"⚠️ Failed to set series '{series_title}' on sermon {sermon_id}"
+                )
+                logger.error(
+                    "set_sermon_series failed: sermon %s, seriesID %s (%s)",
+                    sermon_id, series_id, series_title,
+                )
 
         # Step 5: Upload the media (audio or video)
         media_label = "video" if upload_type == "original-video" else "audio"
@@ -2459,7 +2468,7 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
         bible_text = sermon_data.get('bible_text') or sermon_data.get('scripture_reference') or ''
         subtitle = sermon_data.get('subtitle', '') or ''
         series_title = sermon_data.get('series_title', '') or ''
-        series_id = resolve_series_id(series_title) if series_title else None
+        series_id = resolve_series_id(series_title, create_missing=True) if series_title else None
 
         content = sermon_data.get('content', {}) or {}
         description = content.get('description', '') or sermon_data.get('description', '') or ''
@@ -3961,63 +3970,33 @@ def get_broadcaster_series(limit: int = 500) -> list[dict[str, Any]]:
     Retrieve the broadcaster's series with their numeric IDs.
 
     Args:
-        limit: Maximum number of sermons to fetch for analysis (default: 500)
+        limit: Kept for caller compatibility; the series endpoint returns
+            the broadcaster's full series list in one response.
 
     Returns:
         Sorted list of dicts with 'name' (str) and 'seriesID' (int or None) keys.
     """
     try:
-        params = {
-            'page': 1,
-            'pageSize': 50,
-            'lite': 'false'  # Need full data to get series info
-        }
-        headers = get_api_headers()
-        url = f"{BASE_URL}node/sermons"
+        resp = requests.get(
+            BASE_URL + f'node/broadcasters/{SERMON_AUDIO_BROADCASTER_ID}/series',
+            headers=get_api_headers(),
+            timeout=60,
+        )
+        if resp.status_code != 200:
+            logger.warning("Failed to fetch series: %s", resp.status_code)
+            return []
+
         series_by_name: dict[str, int | None] = {}
-        fetched_count = 0
-
-        logger.debug(f"Fetching series from broadcaster's sermons (limit: {limit})")
-
-        while fetched_count < limit:
-            try:
-                resp = requests.get(url, params=params, headers=headers, timeout=60)
-                if resp.status_code != 200:
-                    logger.warning(f"Failed to fetch sermons: {resp.status_code}")
-                    break
-
-                data = resp.json()
-                results = data.get('results', [])
-
-                if not results:
-                    break
-
-                for sermon in results:
-                    series_info = sermon.get('series')
-                    if isinstance(series_info, dict):
-                        series_name = series_info.get('displayName') or series_info.get('name')
-                        series_id = series_info.get('seriesID') or series_info.get('id')
-                        if series_id is not None:
-                            try:
-                                series_id = int(series_id)
-                            except (TypeError, ValueError):
-                                series_id = None
-                        if series_name and series_name.strip():
-                            series_by_name[series_name.strip()] = series_id
-
-                    fetched_count += 1
-
-                    if fetched_count >= limit:
-                        break
-
-                if not data.get('next') or fetched_count >= limit:
-                    break
-
-                params['page'] += 1
-
-            except Exception as e:
-                logger.error(f"Error fetching sermon data: {e}")
-                break
+        for series in resp.json().get('results', []):
+            name = series.get('title') or series.get('displayName') or series.get('name')
+            series_id = series.get('seriesID') or series.get('id')
+            if series_id is not None:
+                try:
+                    series_id = int(series_id)
+                except (TypeError, ValueError):
+                    series_id = None
+            if name and str(name).strip():
+                series_by_name[str(name).strip()] = series_id
 
         series_list = [
             {'name': name, 'seriesID': series_id}
@@ -4027,6 +4006,9 @@ def get_broadcaster_series(limit: int = 500) -> list[dict[str, Any]]:
         _SERIES_BY_NAME.update(series_by_name)
         logger.debug(f"Found {len(series_list)} unique series")
         return series_list
+    except Exception as e:
+        logger.error(f"Error fetching series: {e}")
+        return []
 
     except Exception as e:
         logger.error(f"Error retrieving series: {e}")
@@ -4038,8 +4020,12 @@ def _normalize_entity_name(name: str) -> str:
     return " ".join(name.split()).casefold()
 
 
-def resolve_series_id(series_name: str) -> int | None:
-    """Resolve a series name to its numeric SermonAudio seriesID."""
+def resolve_series_id(series_name: str, create_missing: bool = False) -> int | None:
+    """Resolve a series name to its numeric SermonAudio seriesID.
+
+    With create_missing=True, a name that doesn't exist yet is created on
+    SermonAudio and its new ID is returned (used for non-dry-run uploads).
+    """
     if not series_name:
         return None
     normalized = _normalize_entity_name(series_name)
@@ -4053,10 +4039,50 @@ def resolve_series_id(series_name: str) -> int | None:
     for name, series_id in _SERIES_BY_NAME.items():
         if _normalize_entity_name(name) == normalized:
             return series_id
+    if create_missing:
+        new_id = create_series_on_api(series_name)
+        if new_id is not None:
+            _SERIES_BY_NAME[series_name] = new_id
+            return new_id
     logger.warning(
         "Series '%s' not found on SermonAudio; the sermon will be created "
         "without a series", series_name,
     )
+    return None
+
+
+def create_series_on_api(series_name: str) -> int | None:
+    """Create a series on SermonAudio and return its new numeric seriesID."""
+    try:
+        resp = requests.post(
+            BASE_URL + 'node/series',
+            headers=get_api_headers(),
+            json={
+                'broadcasterID': SERMON_AUDIO_BROADCASTER_ID,
+                'title': series_name,
+            },
+            timeout=30,
+        )
+        if resp.status_code in (200, 201):
+            series_id = resp.json().get('seriesID')
+            if series_id is not None:
+                series_id = int(series_id)
+                logger.info(
+                    "Created series '%s' on SermonAudio (seriesID %s)",
+                    series_name, series_id,
+                )
+                return series_id
+            logger.warning(
+                "Series '%s' created but response missing seriesID: %s",
+                series_name, resp.text[:200],
+            )
+            return None
+        logger.warning(
+            "Failed to create series '%s': %d %s",
+            series_name, resp.status_code, resp.text[:200],
+        )
+    except Exception as e:
+        logger.warning("Error creating series '%s': %s", series_name, e)
     return None
 
 
