@@ -17,7 +17,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
     - name: Set up Python
       uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38  # v5.4.0
@@ -70,7 +70,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
     - name: Scan for secrets
       uses: trufflesecurity/trufflehog@abecab0d8fb9fb3e79366abc3909825488e9bb40  # v3.82.12
@@ -84,7 +84,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
     - name: Set up Python
       uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38  # v5.4.0
