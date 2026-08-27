@@ -37,13 +37,14 @@ def show_new_sermon_enhanced():
         st.error("Configuration not loaded. Please check the Settings page first.")
         return
 
-    _show_start_section()
+    _show_start_summary()
     with st.expander("1. Upload Audio/Video File", expanded=True):
         _show_upload_section()
-    with st.expander("2. Sermon Metadata", expanded=st.session_state.pop('expand_metadata', False)):
+    with st.expander("2. Sermon Metadata", expanded=st.session_state.get('expand_metadata', False)):
         _show_metadata_section()
     with st.expander("3. Processing Options", expanded=False):
         _show_processing_section()
+    _show_start_buttons()
     _sync_start_section_state()
 
 
@@ -98,6 +99,16 @@ def _show_upload_section():
         st.session_state.pop('expand_metadata', False)
 
 
+def _on_sermon_title_change():
+    if st.session_state.get('sermon_title', '').strip():
+        st.session_state.generate_title = False
+
+
+def _on_generate_title_change():
+    if st.session_state.get('generate_title', True):
+        st.session_state.sermon_title = ''
+
+
 def _show_metadata_section():
     show_metadata_refresh_section()
 
@@ -112,7 +123,8 @@ def _show_metadata_section():
     with col2:
         st.text_input("Bible Text", key="bible_text", placeholder="John 3:16-17")
         st.text_input(
-            "Sermon Title", key="sermon_title", placeholder="Leave blank for AI generation"
+            "Sermon Title", key="sermon_title", placeholder="Leave blank for AI generation",
+            on_change=_on_sermon_title_change,
         )
         st.text_input("Subtitle", key="sermon_subtitle", placeholder="Additional context")
         series = create_series_selectbox("Series", key="sermon_series")
@@ -203,7 +215,7 @@ def _show_processing_section():
     st.session_state.setdefault('generate_hashtags', True)
     st.session_state.setdefault('validate_description', True)
     with gen_col1:
-        st.checkbox("Generate Title", key="generate_title",
+        st.checkbox("Generate Title", key="generate_title", on_change=_on_generate_title_change,
                     help="Use AI to generate sermon title from transcript")
     with gen_col2:
         st.checkbox("Generate Description", key="generate_description",
@@ -275,19 +287,9 @@ def _show_openrouter_whisper_ui():
                   help="Model name (e.g. openai/whisper-large-v3)")
 
 
-def _show_start_section():
-    st.markdown("### Start Processing")
-
+def _show_start_summary():
     has_file, has_metadata = _start_section_state()
     st.session_state['_start_state'] = (has_file, has_metadata)
-
-    if not has_file or not has_metadata:
-        missing = []
-        if not has_file:
-            missing.append("a file upload (section 1)")
-        if not has_metadata:
-            missing.append("the required metadata (section 2)")
-        st.caption(f"Add {' and '.join(missing)} to enable processing.")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -311,6 +313,17 @@ def _show_start_section():
             f"{'Yes' if st.session_state.get('generate_description', True) else 'No'}"
         )
         st.write(f"• Dry Run: {'Yes' if st.session_state.get('dry_run', False) else 'No'}")
+
+
+def _show_start_buttons():
+    has_file, has_metadata = _start_section_state()
+    if not has_file or not has_metadata:
+        missing = []
+        if not has_file:
+            missing.append("a file upload (section 1)")
+        if not has_metadata:
+            missing.append("the required metadata (section 2)")
+        st.caption(f"Add {' and '.join(missing)} to enable processing.")
 
     start_col, reset_col = st.columns(2)
     with start_col:
@@ -534,7 +547,7 @@ def start_enhanced_processing():
 
 def reset_enhanced_form():
     keys_to_clear = [
-        'uploaded_file', 'metadata_complete', 'autodetected_filename',
+        'uploaded_file', 'metadata_complete', 'autodetected_filename', 'expand_metadata',
         'speaker_name_select', 'speaker_name_custom',
         'recorded_date', 'event_type_select', 'event_type_custom', 'bible_text',
         'sermon_title', 'sermon_subtitle', 'sermon_description', 'sermon_hashtags',
