@@ -4010,10 +4010,6 @@ def get_broadcaster_series(limit: int = 500) -> list[dict[str, Any]]:
         logger.error(f"Error fetching series: {e}")
         return []
 
-    except Exception as e:
-        logger.error(f"Error retrieving series: {e}")
-        return []
-
 
 def _normalize_entity_name(name: str) -> str:
     """Trim and case-fold an entity name for tolerant matching."""
