@@ -185,7 +185,7 @@ def _result_for_persistence(result: JobResult) -> dict[str, Any]:
 class JobQueue:
     """Thread-safe job queue manager"""
 
-    def __init__(self, max_workers: int = 3):
+    def __init__(self, max_workers: int = 1):
         self.max_workers = max_workers
         self._jobs: dict[str, Job] = {}
         self._queue_lock = threading.Lock()
