@@ -36,17 +36,20 @@ XAI_API_KEY=xai-your-xai-key-here
 # OR configure Ollama (see Ollama Setup below)
 ```
 
-### 3. Configuration File
+### 3. Configuration
 
-Copy and customize the configuration:
+No configuration file is required. Settings live in the SQLite settings
+database: on first launch the environment variables above are seeded into it
+automatically, and the web UI Settings page maintains them from then on.
 
-```bash
-# Copy the configuration template
-cp config/config.example.yaml config.yaml
+Optional extras:
 
-# The config.yaml file references environment variables with ${VAR} syntax,
-# so secrets stay out of the repository
-```
+- `SA_UPDATER_CONFIG` points at a YAML file loaded as an extra layer between
+  defaults and the database. `${VAR}` placeholders in that file are expanded
+  from the environment.
+- `config/config.example.yaml` is a reference listing every recognized key.
+- The Settings page's Import/Export tab produces a masked YAML backup and
+  restores from an uploaded YAML file.
 
 ### 4. Security Validation
 
@@ -58,7 +61,8 @@ python src/secure_config.py
 ```
 
 This prints the status of your `.env` file, required variables, and
-`config.yaml`, then loads the configuration through the secure loader
+`config.yaml` (validating `config/config.example.yaml` instead when no
+`config.yaml` exists), then loads the configuration through the secure loader
 (`src/secure_config.py`), which fails on hardcoded credentials.
 
 ## Detailed Setup Instructions
@@ -105,16 +109,17 @@ ollama pull gemma2:2b        # Fast validator model
 export OLLAMA_HOST=http://localhost:11434
 ```
 
-Set the model names in `config.yaml` under `llm.primary.ollama.model` and
-`llm.validator.ollama.model` (or the `OLLAMA_MODEL` environment variable).
+Set the model names with the `OLLAMA_MODEL` environment variable or in the
+Settings page under `llm.primary.ollama.model` and `llm.validator.ollama.model`.
 
 ### Security Best Practices
 
 #### 1. Credential Management
-- ✅ **Never** commit `.env` files to version control
-- ✅ Use different API keys for development/production
-- ✅ Regularly rotate API keys
-- ✅ Keep secrets out of `config.yaml`; reference them with `${VAR}` syntax
+- **Never** commit `.env` files to version control
+- Use different API keys for development/production
+- Regularly rotate API keys
+- Prefer the environment over stored values; when a key must live in stored
+  settings or a file layer, keep it as a `${VAR}` placeholder
 
 #### 2. Development vs Production
 ```bash
@@ -177,13 +182,14 @@ echo "SERMONAUDIO_API_KEY=your-key-here" >> .env
 **"Hardcoded credentials detected"**
 ```bash
 # Replace hardcoded values with environment variables
-# Example: api_key: "sk-abc123" → api_key: "${OPENAI_API_KEY}"
+# Example: api_key: "sk-abc123" -> api_key: "${OPENAI_API_KEY}"
 ```
 
 **"Configuration file not found"**
 ```bash
-# Copy the example configuration
-cp config/config.example.yaml config.yaml
+# Nothing to fix: no config file is required. Settings come from the
+# environment and the settings database. To validate the example file:
+python src/secure_config.py
 ```
 
 #### Environment Variable Not Loading
@@ -211,7 +217,7 @@ cp config/config.example.yaml config.yaml
 After setup, verify:
 
 - [ ] `.env` file exists with your credentials
-- [ ] `config.yaml` uses environment variables (`${VAR_NAME}` syntax)
+- [ ] Secrets stay in the environment (or as `${VAR_NAME}` placeholders), never committed
 - [ ] Security validation passes: `python src/secure_config.py`
 - [ ] Pre-commit hook installed and working
 - [ ] LLM provider connectivity verified
