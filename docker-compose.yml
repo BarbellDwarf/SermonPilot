@@ -7,10 +7,11 @@
 #   rocm -> /app/config/templates/rocm.yaml
 #   cpu  -> /app/config/templates/cpu.yaml
 # The templates differ only in the transcription section (backend, device,
-# compute type) matched to the image's hardware stack. Once runtime config
-# import lands (#204), import the matching template from the UI settings
-# page; until then, copy its transcription block into your config.yaml if
-# the shipped defaults do not fit your hardware.
+# compute type) matched to the image's hardware stack. Runtime configuration
+# is stored in the settings database and seeded from environment variables;
+# config.yaml is optional (export/import only). Import the matching template
+# from the UI config page, or point SA_UPDATER_CONFIG at a template to use it
+# as a file overlay.
 #
 # Environment variables consumed by config resolution (environment values
 # override values loaded from config files):

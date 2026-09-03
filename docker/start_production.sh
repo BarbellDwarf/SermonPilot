@@ -7,7 +7,7 @@ echo "Starting SermonPilot"
 VARIANT="${SERMONPILOT_VARIANT:-unknown}"
 echo "Variant: ${VARIANT}"
 if [ "${VARIANT}" != "unknown" ] && [ -f "/app/config/templates/${VARIANT}.yaml" ]; then
-    echo "Config template: /app/config/templates/${VARIANT}.yaml"
+    echo "Config template: /app/config/templates/${VARIANT}.yaml (import from the UI config page or point SA_UPDATER_CONFIG at it)"
 fi
 
 # Graceful shutdown handler
