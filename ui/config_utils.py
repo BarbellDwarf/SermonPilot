@@ -281,7 +281,8 @@ def load_config_from_file():
     See resolve_config / _resolve_layers for the exact precedence.
     """
     try:
-        config, sources, _ = _resolve_layers()
+        config, db_layer, file_layer = _resolve_layers()
+        sources = _config_sources(config, db_layer, file_layer)
     except Exception as e:
         logger.error("Failed to load configuration: %s", e)
         try:
