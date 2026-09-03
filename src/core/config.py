@@ -14,6 +14,115 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+ENV_CONFIG_MAP: dict[str, list[list[str]]] = {
+    'SERMONAUDIO_API_KEY': [['api_key']],
+    'SERMONAUDIO_BROADCASTER_ID': [['broadcaster_id']],
+    'OPENAI_API_KEY': [['llm', 'primary', 'openai', 'api_key']],
+    'ANTHROPIC_API_KEY': [['llm', 'primary', 'anthropic', 'api_key']],
+    'XAI_API_KEY': [['llm', 'primary', 'xai', 'api_key']],
+    'GOOGLE_API_KEY': [['llm', 'primary', 'google', 'api_key']],
+    'GROQ_API_KEY': [['llm', 'primary', 'groq', 'api_key']],
+    'OLLAMA_HOST': [
+        ['llm', 'primary', 'ollama', 'host'],
+        ['llm', 'fallback', 'ollama', 'host'],
+    ],
+    'OLLAMA_MODEL': [['llm', 'primary', 'ollama', 'model']],
+    'LLM_PROVIDER': [['llm', 'primary', 'provider']],
+    'OPENAI_MODEL': [['llm', 'primary', 'openai', 'model']],
+    'ANTHROPIC_MODEL': [['llm', 'primary', 'anthropic', 'model']],
+    'XAI_MODEL': [['llm', 'primary', 'xai', 'model']],
+    'GOOGLE_MODEL': [['llm', 'primary', 'google', 'model']],
+    'GROQ_MODEL': [['llm', 'primary', 'groq', 'model']],
+    'OPENROUTER_API_KEY': [['llm', 'primary', 'openrouter', 'api_key']],
+    'OPENROUTER_MODEL': [['llm', 'primary', 'openrouter', 'model']],
+    'WHISPER_MODEL': [['transcription', 'whisper_local', 'model']],
+    'TRANSCRIPTION_BACKEND': [['transcription', 'backend']],
+    'AUDIO_ENHANCEMENT_METHOD': [['audio_enhancement_method']],
+    'AUDIO_NOISE_REDUCTION': [['audio_noise_reduction']],
+    'AUDIO_NORMALIZE': [['audio_normalize']],
+    'AUDIO_TARGET_LEVEL': [['audio_target_level_db']],
+    'AUDIO_GAIN_DB': [['audio_gain_db']],
+    'OUTPUT_DIRECTORY': [['output_directory']],
+    'SAVE_TRANSCRIPT': [['save_transcript']],
+    'SAVE_ORIGINAL_AUDIO': [['save_original_audio']],
+    'DEBUG': [['debug']],
+    'VERBOSE': [['verbose']],
+    'DRY_RUN': [['dry_run']],
+    'HASHTAG_VERIFICATION': [['hashtag_verification']],
+    'QA_NORMALIZATION_ENABLED': [['qa_normalization', 'enabled']],
+    'EMBEDDING_PROVIDER': [['embeddings', 'primary', 'provider']],
+    'EMBEDDING_MODEL': [['embeddings', 'primary', 'model']],
+}
+
+ENV_NUMERIC_PATHS: dict[tuple[str, ...], type] = {
+    ('audio_gain_db',): float,
+    ('audio_target_level_db',): float,
+    ('audio_noise_reduction',): float,
+    ('audio_normalize',): float,
+}
+
+
+def coerce_env_value(path: tuple[str, ...], value: str):
+    """Coerce a raw environment string to the type the config path expects."""
+    if isinstance(value, str) and value.lower() in ('true', 'false'):
+        return value.lower() == 'true'
+    if path in ENV_NUMERIC_PATHS:
+        try:
+            return ENV_NUMERIC_PATHS[path](value)
+        except ValueError:
+            logger.warning(
+                "Invalid numeric value for %s: %r (ignored)",
+                '.'.join(path), value,
+            )
+            return None
+    return value
+
+
+def set_nested_value(config: dict, path: list[str], value: Any):
+    """Set a value in nested dictionary structure."""
+    current = config
+    for key in path[:-1]:
+        if key not in current:
+            current[key] = {}
+        current = current[key]
+    current[path[-1]] = value
+
+
+def apply_env_overrides(config: dict[str, Any], environ=None) -> dict[str, Any]:
+    """Apply ENV_CONFIG_MAP overrides onto config in place and return it.
+
+    Environment variables always win over values already present in the
+    config dict, because they carry operator intent for the running process.
+    """
+    env = os.environ if environ is None else environ
+    for env_var, config_paths in ENV_CONFIG_MAP.items():
+        value = env.get(env_var)
+        if value:
+            for config_path in config_paths:
+                coerced = coerce_env_value(tuple(config_path), value)
+                set_nested_value(config, config_path, coerced)
+    return config
+
+
+def expand_env_value(value: str) -> str:
+    """Expand ${VAR} and ${VAR:-default} patterns in a single string value.
+
+    A missing variable without a default keeps its placeholder so stored
+    values are never silently wiped to an empty string.
+    """
+    import re
+
+    def replace_var(match):
+        var_expr = match.group(1)
+        if ':-' in var_expr:
+            var_name, default_value = var_expr.split(':-', 1)
+            return os.environ.get(var_name.strip(), default_value.strip())
+        var_name = var_expr.strip()
+        found = os.environ.get(var_name)
+        return found if found is not None else match.group(0)
+
+    return re.sub(r'\$\{([^}]+)\}', replace_var, value)
+
 
 class ConfigManager:
     """Manages configuration loading and validation for SermonPilot."""
@@ -97,74 +206,7 @@ class ConfigManager:
 
     def _override_from_env(self):
         """Override configuration with environment variables."""
-        env_mappings = {
-            'SERMONAUDIO_API_KEY': ['api_key'],
-            'SERMONAUDIO_BROADCASTER_ID': ['broadcaster_id'],
-            'OPENAI_API_KEY': ['llm', 'primary', 'openai', 'api_key'],
-            'ANTHROPIC_API_KEY': ['llm', 'primary', 'anthropic', 'api_key'],
-            'XAI_API_KEY': ['llm', 'primary', 'xai', 'api_key'],
-            'GOOGLE_API_KEY': ['llm', 'primary', 'google', 'api_key'],
-            'GROQ_API_KEY': ['llm', 'primary', 'groq', 'api_key'],
-            'OLLAMA_HOST': ['llm', 'primary', 'ollama', 'host'],
-            'OLLAMA_MODEL': ['llm', 'primary', 'ollama', 'model'],
-            'LLM_PROVIDER': ['llm', 'primary', 'provider'],
-            'OPENAI_MODEL': ['llm', 'primary', 'openai', 'model'],
-            'ANTHROPIC_MODEL': ['llm', 'primary', 'anthropic', 'model'],
-            'XAI_MODEL': ['llm', 'primary', 'xai', 'model'],
-            'GOOGLE_MODEL': ['llm', 'primary', 'google', 'model'],
-            'GROQ_MODEL': ['llm', 'primary', 'groq', 'model'],
-            'OPENROUTER_API_KEY': ['llm', 'primary', 'openrouter', 'api_key'],
-            'OPENROUTER_MODEL': ['llm', 'primary', 'openrouter', 'model'],
-            'WHISPER_MODEL': ['transcription', 'whisper_local', 'model'],
-            'TRANSCRIPTION_BACKEND': ['transcription', 'backend'],
-            'AUDIO_ENHANCEMENT_METHOD': ['audio_enhancement_method'],
-            'AUDIO_NOISE_REDUCTION': ['audio_noise_reduction'],
-            'AUDIO_NORMALIZE': ['audio_normalize'],
-            'AUDIO_TARGET_LEVEL': ['audio_target_level_db'],
-            'AUDIO_GAIN_DB': ['audio_gain_db'],
-            'OUTPUT_DIRECTORY': ['output_directory'],
-            'SAVE_TRANSCRIPT': ['save_transcript'],
-            'SAVE_ORIGINAL_AUDIO': ['save_original_audio'],
-            'DEBUG': ['debug'],
-            'VERBOSE': ['verbose'],
-            'DRY_RUN': ['dry_run'],
-            'HASHTAG_VERIFICATION': ['hashtag_verification'],
-            'QA_NORMALIZATION_ENABLED': ['qa_normalization', 'enabled'],
-            'EMBEDDING_PROVIDER': ['embeddings', 'primary', 'provider'],
-            'EMBEDDING_MODEL': ['embeddings', 'primary', 'model'],
-        }
-
-        numeric_paths = {
-            tuple(path): float
-            for path in (
-                ['audio_gain_db'],
-                ['audio_target_level_db'],
-                ['audio_noise_reduction'],
-                ['audio_normalize'],
-            )
-        }
-
-        def coerce(config_path: tuple, value):
-            if isinstance(value, str) and value.lower() in ('true', 'false'):
-                return value.lower() == 'true'
-            if config_path in numeric_paths:
-                try:
-                    return numeric_paths[config_path](value)
-                except ValueError:
-                    logger.warning(
-                        "Invalid numeric value for %s: %r (ignored)",
-                        '.'.join(config_path), value,
-                    )
-                    return None
-            return value
-
-        for env_var, config_path in env_mappings.items():
-            value = os.getenv(env_var)
-            if value:
-                coerced = coerce(tuple(config_path), value)
-                if coerced is None and value == '':
-                    continue
-                self._set_nested_value(self._config, config_path, coerced)
+        apply_env_overrides(self._config)
 
     def _migrate_legacy_config(self):
         """Migrate legacy configuration format to new format."""
@@ -212,12 +254,7 @@ class ConfigManager:
 
     def _set_nested_value(self, config: dict, path: list[str], value: Any):
         """Set a value in nested dictionary structure."""
-        current = config
-        for key in path[:-1]:
-            if key not in current:
-                current[key] = {}
-            current = current[key]
-        current[path[-1]] = value
+        set_nested_value(config, path, value)
 
     def get(self, key_path: str, default=None):
         """Get configuration value using dot notation."""

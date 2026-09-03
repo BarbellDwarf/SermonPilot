@@ -147,22 +147,29 @@ def load_config(path: str) -> dict:
 
 
 CONFIG_PATH = os.environ.get("SA_UPDATER_CONFIG", "config.yaml")
-config_manager = ConfigManager(CONFIG_PATH)
+config_manager = ConfigManager(CONFIG_PATH) if Path(CONFIG_PATH).exists() else None
 
-# Validate required settings
-missing_settings = config_manager.validate_required_settings()
+try:
+    from ui.config_utils import resolve_config
+
+    config = resolve_config()
+except Exception as exc:
+    logger.warning("Falling back to file-based configuration: %s", exc)
+    config = ConfigManager(CONFIG_PATH).get_raw_config()
+
+missing_settings = [key for key in ('api_key', 'broadcaster_id') if not config.get(key)]
 if missing_settings:
-    raise RuntimeError(
-        f"[FATAL] Missing required configuration settings: {', '.join(missing_settings)}. "
-        f"Please check your config file: {CONFIG_PATH}"
+    logger.warning(
+        "Missing required configuration settings: %s. Set SERMONAUDIO_API_KEY and "
+        "SERMONAUDIO_BROADCASTER_ID, or save them in the settings UI.",
+        ', '.join(missing_settings)
     )
 
 # For backward compatibility, provide config dict
-config = config_manager.get_raw_config()
 llm_manager = LLMManager(config)
 
-SERMON_AUDIO_API_KEY = config_manager.get('api_key')
-SERMON_AUDIO_BROADCASTER_ID = config_manager.get('broadcaster_id')
+SERMON_AUDIO_API_KEY = config.get('api_key')
+SERMON_AUDIO_BROADCASTER_ID = config.get('broadcaster_id')
 sermonaudio.set_api_key(SERMON_AUDIO_API_KEY)
 
 DRY_RUN = config.get('dry_run', False)

@@ -13,9 +13,11 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import yaml
 
 # Add src directory to path for imports
 project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "src"))
 
 try:
@@ -25,6 +27,95 @@ try:
 except ImportError as e:
     st.error(f"SQL Configuration system not available: {e}")
     SQL_CONFIG_AVAILABLE = False
+
+SECRET_KEY_HINTS = ("key", "password", "token", "secret")
+SOURCE_DESCRIPTIONS = {
+    "env": "process environment (overrides saved settings)",
+    "file": "config file layer",
+    "db": "settings database",
+    "default": "built-in default",
+}
+
+
+def _flatten_config_leaves(value, prefix: str = "") -> list[tuple[str, object]]:
+    """Flatten nested dicts into dotted leaf paths for tabular display."""
+    leaves: list[tuple[str, object]] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            leaves.extend(_flatten_config_leaves(item, path))
+    elif prefix:
+        leaves.append((prefix, value))
+    return leaves
+
+
+def _is_secret_path(path: str) -> bool:
+    return any(hint in path.rsplit(".", 1)[-1].lower() for hint in SECRET_KEY_HINTS)
+
+
+def _display_value(path: str, value: object) -> str:
+    if value is None:
+        return ""
+    if _is_secret_path(path) and str(value):
+        return "***"
+    return str(value)
+
+
+def _mask_secret_values(value):
+    """Return a deep copy of the config with secret values masked."""
+    if isinstance(value, dict):
+        return {
+            key: (
+                "***"
+                if _is_secret_path(str(key)) and value[key]
+                else _mask_secret_values(value[key])
+            )
+            for key in value
+        }
+    if isinstance(value, list):
+        return [_mask_secret_values(item) for item in value]
+    return value
+
+
+def show_effective_config() -> None:
+    """Render the DB-backed effective configuration with each value's source."""
+    from ui.config_utils import resolve_config_with_sources
+
+    st.subheader("Effective Configuration")
+    try:
+        config, sources = resolve_config_with_sources()
+    except Exception as e:
+        st.error(f"Failed to resolve configuration: {e}")
+        return
+
+    rows = [
+        {
+            "Key": path,
+            "Value": _display_value(path, value),
+            "Source": sources.get(path, "default"),
+        }
+        for path, value in _flatten_config_leaves(config)
+    ]
+    if rows:
+        st.dataframe(pd.DataFrame(rows), width='stretch', hide_index=True)
+    else:
+        st.info("No configuration values resolved yet.")
+
+    st.caption(
+        "Sources: "
+        + "; ".join(
+            f"{name} = {description}" for name, description in SOURCE_DESCRIPTIONS.items()
+        )
+        + ". Environment variables always override saved settings for mapped keys."
+    )
+
+    st.download_button(
+        "Download Effective Config (YAML)",
+        data=yaml.dump(_mask_secret_values(config), default_flow_style=False, sort_keys=True),
+        file_name="effective_config.yaml",
+        mime="text/yaml",
+        help="Secrets are masked as '***' in this export.",
+    )
 
 
 def show_database_setup(db_path: str):
@@ -127,6 +218,8 @@ def show_database_setup(db_path: str):
 def show_config_editor(db_path: str):
     """Configuration editor interface."""
     st.header("Configuration Editor")
+
+    show_effective_config()
 
     try:
         with SQLConfigManager(db_path) as config_manager:
