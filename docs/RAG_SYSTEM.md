@@ -19,18 +19,18 @@ interface (`ui/analytics_chat.py`).
    - **Sentence Transformers**: local models (`all-MiniLM-L6-v2`, `all-mpnet-base-v2`, ...)
    - **OpenAI**: remote API (`text-embedding-3-small`, `text-embedding-3-large`, ...)
    - **Ollama**: local API server (`nomic-embed-text`, `mxbai-embed-large`, ...)
-   - **xAI / Anthropic**: remote API (OpenAI-compatible or deterministic fallback)
-   - **Hash-based fallback**: deterministic offline embeddings (the default when
-     no configuration is provided)
-3. **LLM Integration**: response generation reuses the `llm` block from
-   `config.yaml`
+   - **Cohere / VoyageAI**: remote APIs
+   - **Hash-based fallback**: deterministic offline embeddings with no
+     semantic signal; the default when no configuration is provided
+3. **LLM Integration**: response generation reuses the `llm` block from the
+   resolved settings (settings database with env overrides)
 4. **Automatic Fallback**: if the primary embedding provider fails, the
    configured fallbacks are tried in order
 
 ### Data Flow
 
 ```
-Question → Embedding → Vector Search (ChromaDB) → Context → LLM Answer
+Question -> Embedding -> Vector Search (ChromaDB) -> Context -> LLM Answer
 ```
 
 ## Vector Database Setup
@@ -51,12 +51,13 @@ The collection is named `sermon_analytics`.
 
 ### Embeddings
 
-Embedding providers are configured under `embeddings` in `config.yaml`:
+Embedding providers are configured under `embeddings` in the settings store
+(Settings page, environment variables, or a `SA_UPDATER_CONFIG` file):
 
 ```yaml
 embeddings:
   primary:
-    provider: "ollama"                # sentence_transformers, openai, ollama, xai, anthropic
+    provider: "ollama"                # sentence_transformers, openai, ollama, cohere, voyageai, hash
     ollama:
       host: "http://localhost:11434"
       model: "mxbai-embed-large:latest"
@@ -223,6 +224,7 @@ indexing pass.
 - Analytics data is stored locally in the ChromaDB directory; nothing is
   sent to external services except the question and retrieved context, which
   go to the configured LLM provider
-- API keys are read from environment variables via `config.yaml` substitution
+- API keys come from the environment (`OPENAI_API_KEY`, ...) or from
+  `${VAR}` placeholders in stored settings and file layers
 - The web UI can require a password before any page renders (set
   `APP_PASSWORD` in `.env`); see [SECURITY_SETUP_GUIDE.md](SECURITY_SETUP_GUIDE.md)

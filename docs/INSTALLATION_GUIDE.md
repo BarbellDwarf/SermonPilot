@@ -100,8 +100,16 @@ project virtual environment.
 
 ```bash
 cp .env.example .env          # Fill in your SermonAudio and LLM API keys
-cp config/config.example.yaml config.yaml   # Optional: customize settings
 ```
+
+No `config.yaml` is required. Settings live in a SQLite settings database:
+on first launch the environment variables are seeded into it, and the web UI
+Settings page edits it from then on. `config/config.example.yaml` is a
+reference showing every recognized key, and the Settings page can export the
+current settings to YAML or import a YAML file. To force a specific file as
+an extra config layer, point `SA_UPDATER_CONFIG` at it. An existing install
+that still has a hand-tuned `config.yaml` has its values imported into the
+database once, automatically.
 
 ### GPU Installation Verification
 
