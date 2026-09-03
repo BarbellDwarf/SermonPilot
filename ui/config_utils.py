@@ -6,12 +6,64 @@ session state management.
 """
 
 import logging
+import os
+import shutil
+import time
 from pathlib import Path
 
 import yaml
 
 # Get project root for config path
 project_root = Path(__file__).parent.parent
+
+
+def default_cache_root() -> Path:
+    """Return the disk-backed cache root: $XDG_CACHE_HOME/sermonpilot or ~/.cache/sermonpilot."""
+    xdg_cache = os.environ.get("XDG_CACHE_HOME")
+    base = Path(xdg_cache) if xdg_cache else Path.home() / ".cache"
+    return base / "sermonpilot"
+
+
+def sweep_stale_job_files(config: dict | None = None, max_age_hours: float = 24.0) -> None:
+    """Delete files and per-job dirs older than max_age_hours under the job temp roots."""
+    if not config:
+        config = load_config_from_file()
+    roots = [
+        Path(config.get('upload_dir') or (default_cache_root() / "sermon_uploads")),
+        Path(config.get('processing_temp_dir') or (default_cache_root() / "sermon_processing")),
+    ]
+    output_root = Path(config.get('output_directory') or 'processed_sermons')
+    if not output_root.is_absolute():
+        output_root = project_root / output_root
+    try:
+        output_root = output_root.resolve()
+    except OSError:
+        return
+    cutoff = time.time() - max_age_hours * 3600
+    for root in roots:
+        try:
+            resolved = root.resolve()
+            if (
+                resolved == output_root
+                or output_root in resolved.parents
+                or resolved in output_root.parents
+            ):
+                continue
+            if not resolved.is_dir():
+                continue
+            for entry in resolved.iterdir():
+                try:
+                    is_dir = not entry.is_symlink() and entry.is_dir()
+                    if entry.lstat().st_mtime >= cutoff:
+                        continue
+                    if is_dir:
+                        shutil.rmtree(entry, ignore_errors=True)
+                    else:
+                        entry.unlink(missing_ok=True)
+                except OSError:
+                    continue
+        except OSError:
+            continue
 
 
 def load_config_from_file():

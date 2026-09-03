@@ -112,6 +112,8 @@ OLLAMA_HOST=http://localhost:11434
 Key `config.yaml` settings:
 - `audio_enhancement_method`: `deepfilternet` (default, recommended), `clear-natural`, `clear-studio`, `custom`, or `none`
 - `transcription.backend`: `whisper_local` (default in `config.yaml`), `faster_whisper_local`, `whisper_openai`, or `whisper_openrouter`
+- `upload_dir`: staging directory for files uploaded through the web UI; defaults to `sermon_uploads` under the disk-backed cache root (`$XDG_CACHE_HOME/sermonpilot` or `~/.cache/sermonpilot`)
+- `processing_temp_dir`: parent directory for per-job processing temp dirs; defaults to `sermon_processing` under the same cache root. Each job gets its own subdirectory, removed when the job ends; leftovers older than 24h are swept at startup
 
 ## Usage
 

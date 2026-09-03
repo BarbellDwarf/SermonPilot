@@ -141,3 +141,6 @@ docs/sermonaudio_api_v2_openapi.json
 
 # local config with real keys; ship config.example.yaml instead
 config.yaml
+
+# Local agent worktrees
+/.worktrees/
