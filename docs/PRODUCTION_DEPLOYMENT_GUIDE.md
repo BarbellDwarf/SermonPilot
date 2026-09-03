@@ -2,51 +2,46 @@
 
 ## Overview
 This guide covers the steps needed to run SermonPilot in production: real
-credentials, environment configuration, the systemd service, and a reverse
-proxy.
+credentials, environment configuration, the Docker Compose deployment, the
+systemd service for bare-metal installs, and a reverse proxy.
 
-## ⚠️ Production Safety Checklist
+## Production Safety Checklist
 
-### 🔥 Critical Items (Must Fix Before Production)
+### Critical Items (Fix Before Production)
 
-#### 1. Replace Configuration Placeholders
-All placeholder values in configuration files must be replaced with real credentials:
+#### 1. Set Real Credentials in the Environment
+All credentials come from the environment. Copy `.env.example` to `.env`
+(docker compose loads it automatically) or export the variables in your
+service unit, and replace every placeholder:
 
-**Files to Update:**
-- `config.yaml` - Replace all `your-*-key` placeholders with real API keys
-- Remove or secure any `demo-*` or `test-*` values
+**Required:**
+- SermonAudio API key (`SERMONAUDIO_API_KEY`) and broadcaster ID
+  (`SERMONAUDIO_BROADCASTER_ID`)
 
-**Required Credentials:**
-- SermonAudio API key and broadcaster ID
-- LLM provider API keys (OpenAI, Anthropic, xAI, etc.)
-- Database credentials (if applicable)
+**As needed:**
+- LLM provider keys (`OPENAI_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`,
+  `OPENROUTER_API_KEY`) or a reachable Ollama host (`OLLAMA_HOST`)
+- `APP_PASSWORD` when the UI is reachable beyond localhost
 
-#### 2. Remove Demo/Test Files
+On first launch the environment values are seeded into the SQLite settings
+database and persist from then on. Environment variables keep precedence over
+stored settings for each running process, so rotating a key in `.env` and
+restarting is enough.
 
-#### 3. Secure Environment Variables
-Replace hardcoded credentials with environment variables:
+#### 2. Remove Demo/Test Files and Values
 
-```bash
-# .env file (DO NOT commit to git)
-OPENAI_API_KEY=your-real-openai-key
-SERMONAUDIO_API_KEY=your-real-sermonaudio-key
-SERMONAUDIO_BROADCASTER_ID=your-real-broadcaster-id
-```
+#### 3. Never Commit Secrets
+`.env` is gitignored. Do not paste real keys into YAML files, tickets, or
+logs. The Settings export masks secrets; never store unmasked keys in
+imported files.
 
-Update `config.yaml` to use environment variables:
-```yaml
-sermonaudio:
-  api_key: "${SERMONAUDIO_API_KEY}"
-  broadcaster_id: "${SERMONAUDIO_BROADCASTER_ID}"
-```
-
-### ⚠️ Medium Priority Items
+### Medium Priority Items
 
 #### 1. Code Quality Improvements
 Large files should be refactored for maintainability:
-- `ui/ui_pages/settings.py` (2,117 lines) - Break into smaller components
-- `ui/ui_pages/analytics.py` (1,421 lines) - Extract chart components
-- `ui/ui_pages/library.py` (1,438 lines) - Separate data and UI logic
+- `ui/ui_pages/settings.py`
+- `ui/ui_pages/analytics.py`
+- `ui/ui_pages/library.py`
 
 #### 2. Logging and Monitoring
 Implement production logging:
@@ -59,18 +54,47 @@ Implement production logging:
 - Configure connection pooling for databases
 - Set up resource monitoring
 
-## 🏗️ Deployment Architecture
+## Deployment Architecture
 
-### Recommended Stack
+### Recommended Stack (Docker Compose)
+
+`docker-compose.yml` at the repository root runs the Streamlit UI in a
+container from `ghcr.io/barbelldwarf/sermonpilot`. Key properties:
+
+- **Image variants**: set `SERMONPILOT_TAG` to `cpu`, `rocm`, `cuda`, a
+  versioned tag such as `v1.6.2-rocm`, or `latest` (latest CUDA build).
+  Each image ships a matching config template under `config/templates/`
+  and prints its path at startup; import it from the Settings page or point
+  `SA_UPDATER_CONFIG` at it. The templates differ only in the transcription
+  section.
+- **Persistent data**: named volumes mount `/data` (SQLite databases,
+  `DATABASE_URL` defaults to `sqlite:///data/sermon_processor.db`),
+  `/models`, `/app/api_cache`, `/app/processed_sermons`,
+  `/home/sermonapp/.cache`, and `/app/logs`.
+- **Environment**: the compose file passes through `APP_PASSWORD`,
+  `OLLAMA_HOST` (defaulting to `http://host.docker.internal:11434`),
+  `DATABASE_URL`, `SERMONAUDIO_*`, `OPENAI_API_KEY`, `XAI_API_KEY`, `DEBUG`,
+  and anything else in `.env` via `env_file`. `HOST_BIND` controls the
+  published port's bind address (default `127.0.0.1`).
+- **Startup**: the entrypoint creates and repairs volume ownership for the
+  `sermonapp` user, initializes the database, and starts Streamlit on port
+  8501 with a health check.
+
+```bash
+cp .env.example .env   # fill in real values
+SERMONPILOT_TAG=cpu docker compose up -d
+```
+
+### Alternative Stack (bare metal)
+
 - **Application**: Streamlit served by the Streamlit server (no WSGI layer)
-- **Database**: SQLite (`sermon_processor.db`) for the UI; ChromaDB for the
-  analytics vector store
+- **Database**: SQLite (`sermon_processor.db`) for the UI and settings;
+  ChromaDB for the analytics vector store
 - **Monitoring**: system metrics collected by `ui/performance_monitor.py`
 
 ### Environment Setup
 
 #### 1. Production Environment Variables
-Copy `.env.example` to `.env` and fill in real values:
 
 ```bash
 # Application Configuration
@@ -87,12 +111,11 @@ APP_PASSWORD=your-strong-password
 HOST_BIND=0.0.0.0
 ```
 
-`config.yaml` references these variables with `${VAR}` substitution:
-
-```yaml
-api_key: "${SERMONAUDIO_API_KEY}"
-broadcaster_id: "${SERMONAUDIO_BROADCASTER_ID}"
-```
+Any setting that the env map covers (`TRANSCRIPTION_BACKEND`,
+`AUDIO_ENHANCEMENT_METHOD`, `OUTPUT_DIRECTORY`, `EMBEDDING_PROVIDER`, ...)
+can be set the same way; see the Configuration section of the README for the
+full list. Values you do not set fall back to what is stored in the settings
+database, then to built-in defaults.
 
 #### 2. Production Dependencies
 ```bash
@@ -122,6 +145,7 @@ Type=simple
 User=sermonapp
 WorkingDirectory=/opt/sermon-pilot
 Environment=PYTHONPATH=/opt/sermon-pilot
+EnvironmentFile=/opt/sermon-pilot/.env
 ExecStart=/opt/sermon-pilot/.venv/bin/python -m streamlit run streamlit_app.py --server.port 8501 --server.address 0.0.0.0
 Restart=always
 RestartSec=10
@@ -151,7 +175,7 @@ server {
 }
 ```
 
-## 🧪 Pre-Production Testing
+## Pre-Production Testing
 
 ### 1. Run Comprehensive Test Suite
 ```bash
@@ -170,7 +194,7 @@ server {
 - Test input validation
 - Verify access controls
 
-## 📊 Production Monitoring
+## Production Monitoring
 
 ### Application Metrics
 - Request/response times
@@ -184,13 +208,13 @@ server {
 - User engagement metrics
 - Cost per processing job
 
-## 🔄 Maintenance
+## Maintenance
 
 ### Regular Tasks
 - Monitor log files for errors
 - Check API quota usage
 - Update dependencies
-- Backup vector database
+- Backup the SQLite database and the vector database
 - Review and rotate logs
 
 ### Incident Response
@@ -199,13 +223,15 @@ server {
 - Performance degradation responses
 - API failure handling
 
-## 📞 Support and Troubleshooting
+## Support and Troubleshooting
 
 ### Common Issues
 1. **Import Errors**: See `docs/` and the project README for setup steps
-2. **Configuration Issues**: Verify environment variables and config.yaml
+2. **Configuration Issues**: Verify environment variables and the Settings
+   page; `python src/secure_config.py` reports what is set
 3. **API Failures**: Check API keys and quota limits
-4. **Performance Issues**: Monitor resource usage via the Analytics → Performance tab
+4. **Performance Issues**: Monitor resource usage via the Analytics ->
+   Performance tab
 
 ### Getting Help
 - Review documentation in `docs/` directory

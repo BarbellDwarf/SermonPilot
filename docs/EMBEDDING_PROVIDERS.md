@@ -1,21 +1,31 @@
 # Configurable Embedding Providers for RAG System
 
-This document describes the new configurable embedding system that supports multiple embedding providers with automatic fallback capabilities.
+This document describes the configurable embedding system used by the
+analytics RAG chat. Providers are implemented in `ui/embedding_manager.py`
+(`EmbeddingManager`) and consumed by `ui/rag_system.py` (`SermonAnalyticsRAG`).
 
 ## Overview
 
-The RAG system now supports multiple embedding providers:
+Supported providers:
 
-- **Sentence Transformers**: Local models (all-MiniLM-L6-v2, all-mpnet-base-v2, etc.)
-- **OpenAI Embeddings**: Remote API-based embeddings (text-embedding-3-small, text-embedding-3-large, etc.)
-- **Ollama Embeddings**: Local API server embeddings (nomic-embed-text, mxbai-embed-large, etc.)
-- **Hash-based Fallback**: Deterministic offline embeddings for complete offline operation
+- **sentence_transformers** (alias `local`): local models (`all-MiniLM-L6-v2`, `all-mpnet-base-v2`, ...)
+- **openai**: remote API (`text-embedding-3-small`, `text-embedding-3-large`, `text-embedding-ada-002`)
+- **ollama**: local API server (`nomic-embed-text`, `mxbai-embed-large`, ...)
+- **cohere**: remote API (`embed-english-v3.0`, `embed-multilingual-v3.0`, ...)
+- **voyageai**: remote API (`voyage-2`, `voyage-large-2`, ...)
+- **hash**: deterministic offline pseudo-vectors, no semantic signal
+
+## Where settings live
+
+The `embeddings` block is part of the SQLite settings store. Edit it in the
+web UI Settings page, seed it with the `EMBEDDING_PROVIDER` and
+`EMBEDDING_MODEL` environment variables (they override the stored primary
+provider and model), or keep it in a file layer via `SA_UPDATER_CONFIG`.
+There is no required config file.
 
 ## Configuration
 
-### Basic Configuration
-
-Add the following to your `config.yaml`:
+### Basic
 
 ```yaml
 embeddings:
@@ -23,289 +33,206 @@ embeddings:
     provider: "sentence_transformers"
     model: "all-MiniLM-L6-v2"
   fallback:
-    - provider: "hash"
-      dimensions: 384
+    - provider: "ollama"
+      host: "http://localhost:11434"
+      model: "nomic-embed-text"
 ```
 
-### Advanced Configuration
+### Advanced
 
 ```yaml
 embeddings:
-  # Primary embedding provider
   primary:
-    provider: "openai"  # or "sentence_transformers", "ollama"
-    
-    # OpenAI configuration
+    provider: "openai"     # or sentence_transformers / local, ollama, cohere, voyageai
+    model: "text-embedding-3-small"
+
+    # Provider-specific blocks (nested values win over the outer keys)
     openai:
-      api_key: "your-openai-key"
+      api_key: "${OPENAI_API_KEY}"
       model: "text-embedding-3-small"
-      base_url: "https://api.openai.com/v1"  # Optional: for other providers
-    
-    # Sentence Transformers configuration
+      base_url: "https://api.openai.com/v1"   # optional, for compatible endpoints
     sentence_transformers:
-      model: "all-MiniLM-L6-v2"  # Local model name
-    
-    # Ollama configuration
+      model: "all-MiniLM-L6-v2"
     ollama:
       host: "http://localhost:11434"
       model: "nomic-embed-text"
-  
-  # Fallback providers (tried in order)
+      auto_download: false                    # ollama only: pull the model on first use
+    cohere:
+      api_key: "your-cohere-key"
+      model: "embed-english-v3.0"
+    voyageai:
+      api_key: "your-voyageai-key"
+      model: "voyage-2"
+
+  # Fallback providers, tried in order
   fallback:
     - provider: "sentence_transformers"
       model: "all-MiniLM-L6-v2"
     - provider: "hash"
-      dimensions: 384  # Final fallback for offline mode
+      dimensions: 384
 ```
 
-## Supported Models
+`dimensions` (default 384) is read from the provider block; providers with a
+known model table derive it from the model name, and sentence transformers
+read it from the loaded model.
 
-### Sentence Transformers (Local)
+## Model reference
+
+### Sentence Transformers (local)
 
 | Model | Dimensions | Description |
 |-------|------------|-------------|
 | `all-MiniLM-L6-v2` | 384 | Fast, good quality (default) |
 | `all-mpnet-base-v2` | 768 | Higher quality, slower |
-| `all-distilroberta-v1` | 768 | Good balance of speed/quality |
-| `paraphrase-multilingual-MiniLM-L12-v2` | 384 | Multilingual support |
+| `all-distilroberta-v1` | 768 | Balance of speed and quality |
+| `paraphrase-multilingual-MiniLM-L12-v2` | 384 | Multilingual |
 
-### OpenAI Embeddings (Remote)
+### OpenAI (remote)
 
 | Model | Dimensions | Description |
 |-------|------------|-------------|
-| `text-embedding-3-small` | 1536 | Fast, cost-effective |
+| `text-embedding-3-small` | 1536 | Fast, cost-effective (default) |
 | `text-embedding-3-large` | 3072 | Highest quality |
-| `text-embedding-ada-002` | 1536 | Legacy model |
+| `text-embedding-ada-002` | 1536 | Legacy |
 
-### Ollama Embeddings (Local API)
+### Ollama (local API)
 
 | Model | Dimensions | Description |
 |-------|------------|-------------|
-| `nomic-embed-text` | 768 | General purpose embedding |
-| `mxbai-embed-large` | 1024 | High-quality embedding |
-| `snowflake-arctic-embed:s` | 384 | Small, fast model |
-| `snowflake-arctic-embed:m` | 768 | Medium model |
-| `snowflake-arctic-embed:l` | 1024 | Large, high-quality model |
+| `nomic-embed-text` | 768 | General purpose (default) |
+| `mxbai-embed-large` | 1024 | High quality |
+| `snowflake-arctic-embed:s` | 384 | Small, fast |
+| `snowflake-arctic-embed:m` | 768 | Medium |
+| `snowflake-arctic-embed:l` | 1024 | Large, highest quality |
 
-## Usage Examples
+### Cohere (remote)
 
-### Programming Interface
+| Model | Dimensions | Description |
+|-------|------------|-------------|
+| `embed-english-v3.0` | 1024 | English (default) |
+| `embed-multilingual-v3.0` | 1024 | Multilingual |
+| `embed-english-light-v3.0` | 384 | Faster English |
+| `embed-multilingual-light-v3.0` | 384 | Faster multilingual |
+
+### VoyageAI (remote)
+
+| Model | Dimensions | Description |
+|-------|------------|-------------|
+| `voyage-2` | 1024 | General purpose (default) |
+| `voyage-large-2` | 1536 | Higher quality |
+| `voyage-large-2-instruct` | 1536 | Instruction-tuned |
+| `voyage-code-2` | 1536 | Code retrieval |
+
+Requires the optional `cohere` / `voyageai` Python packages; the provider
+raises with an install hint when they are missing.
+
+### Hash (offline)
+
+Produces deterministic pseudo-vectors from an md5 hash of the text. The
+vectors carry no semantic similarity signal; retrieval degrades to
+keyword-level overlap. Select it deliberately with `provider: hash` for
+fully offline installs. `EmbeddingManager` also appends a hash fallback
+automatically as the last resort, sized to the primary provider's dimensions
+(384 when there is no primary).
+
+## Fallback behavior
+
+1. The primary provider handles every request while it succeeds.
+2. On failure, the configured `fallback` providers are tried in order.
+3. A hash provider is appended automatically as the final option.
+
+The manager remembers which provider answered and keeps using it until it
+fails again.
+
+## Usage from Python
 
 ```python
 from ui.rag_system import SermonAnalyticsRAG
 
-# Configuration for OpenAI embeddings
 embedding_config = {
     'primary': {
         'provider': 'openai',
-        'api_key': 'your-api-key',
-        'model': 'text-embedding-3-small'
+        'openai': {'api_key': 'your-api-key', 'model': 'text-embedding-3-small'}
     },
     'fallback': [
-        {
-            'provider': 'hash',
-            'dimensions': 1536
-        }
+        {'provider': 'hash', 'dimensions': 1536}
     ]
 }
 
-# Initialize RAG system
 rag = SermonAnalyticsRAG(embedding_config=embedding_config)
 
-# Check current provider
 provider_info = rag.get_embedding_provider_info()
-print(f"Using: {provider_info['current_provider']['provider']}")
+print(provider_info['current_provider'])
 
-# Add data and query
 rag.add_analytics_data(sermon_data)
 result = rag.query_analytics("What are the most popular sermons?")
 ```
 
-### Web Interface
-
-The new embedding system is automatically integrated into the Streamlit web interface:
-
-1. Navigate to **Analytics** → **SermonAudio Analytics**
-2. Initialize the chat system
-3. View embedding provider information in the sidebar
-4. The system automatically uses your configured embedding provider
-
-## Fallback Mechanism
-
-The system implements a robust fallback chain:
-
-1. **Primary Provider**: Configured primary embedding provider
-2. **Fallback Providers**: Configured fallback providers (in order)
-3. **Hash Fallback**: Automatically added as final fallback for offline mode
-
-If the primary provider fails, the system automatically tries fallback providers until one succeeds.
-
-## Provider Switching
-
-You can switch embedding providers at runtime:
+The same configuration can be changed at runtime:
 
 ```python
-# Switch to a different provider
-new_config = {
+success = rag.switch_embedding_provider({
     'primary': {
         'provider': 'ollama',
         'host': 'http://localhost:11434',
         'model': 'nomic-embed-text'
     }
-}
-
-success = rag.switch_embedding_provider(new_config)
-if success:
-    print("Successfully switched to Ollama embeddings")
+})
 ```
 
-**Note**: Switching providers with different dimensions may make existing embeddings incompatible.
-
-## Performance Characteristics
-
-### Sentence Transformers
-- ✅ **Offline**: Works completely offline after initial download
-- ✅ **Privacy**: Data never leaves your machine
-- ⚠️ **Speed**: Moderate (depends on model size)
-- ⚠️ **Setup**: Requires model download (100MB+)
-
-### OpenAI Embeddings
-- ✅ **Quality**: High-quality embeddings
-- ✅ **Speed**: Fast API responses
-- ❌ **Offline**: Requires internet connection
-- ❌ **Privacy**: Data sent to OpenAI
-- ❌ **Cost**: API usage costs
-
-### Ollama Embeddings
-- ✅ **Offline**: Works offline after model download
-- ✅ **Privacy**: Data stays local
-- ✅ **Quality**: Good quality embeddings
-- ⚠️ **Setup**: Requires Ollama server setup
-
-### Hash Fallback
-- ✅ **Offline**: Always works
-- ✅ **Fast**: Instant generation
-- ✅ **Deterministic**: Same input = same output
-- ❌ **Quality**: Lower semantic quality
-
-## Migration Guide
-
-### From Legacy RAG System
-
-Old RAG system (hardcoded sentence-transformers):
-```python
-rag = SermonAnalyticsRAG()
-```
-
-New configurable system:
-```python
-embedding_config = {
-    'primary': {
-        'provider': 'sentence_transformers',
-        'model': 'all-MiniLM-L6-v2'
-    }
-}
-rag = SermonAnalyticsRAG(embedding_config=embedding_config)
-```
-
-### Existing Vector Database
-
-The new system is compatible with existing vector databases as long as you use the same embedding dimensions. If switching to a provider with different dimensions, clear and rebuild the vector database:
-
-```python
-rag.clear_collection()  # Clear existing data
-rag.add_analytics_data(analytics_data)  # Re-add with new embeddings
-```
+Switching to a provider with different dimensions makes the stored vectors
+incompatible; `query_analytics()` detects the mismatch and the Analytics chat
+clears and re-indexes the collection automatically.
 
 ## Troubleshooting
 
-### Model Download Issues
+**Sentence transformer download fails.** Check connectivity to
+huggingface.co, configure a proxy if needed, or run offline with the hash
+provider. Pre-download models with:
 
-**Problem**: Sentence transformer models fail to download
-```
-Failed to connect to 'https://huggingface.co'
-```
-
-**Solution**: 
-1. Check internet connection
-2. Configure proxy if needed
-3. Use hash fallback for offline mode
-
-### OpenAI API Issues
-
-**Problem**: OpenAI embeddings fail
-```
-OpenAI API key is required
+```bash
+python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 ```
 
-**Solution**:
-1. Check API key configuration
-2. Verify API key permissions
-3. Check rate limits
-4. Ensure fallback provider is configured
+**"OpenAI API key is required".** The provider block has no `api_key` and no
+`OPENAI_API_KEY` environment variable is set. Set one of the two and re-open
+the Analytics page.
 
-### Ollama Connection Issues
+**"Failed to connect to Ollama".** Ensure Ollama is running and the host is
+reachable, then pull the model: `ollama pull nomic-embed-text`.
 
-**Problem**: Ollama embeddings fail
-```
-Failed to connect to Ollama
-```
+**Dimension mismatch after switching models.** Expected: the stored vectors
+no longer match. The chat interface resets the collection and re-indexes on
+the next query, or clear it manually with `rag.clear_collection()`.
 
-**Solution**:
-1. Ensure Ollama is installed and running
-2. Check host configuration
-3. Verify model is downloaded: `ollama pull nomic-embed-text`
-
-### Dimension Mismatch
-
-**Problem**: Existing embeddings incompatible with new provider
-```
-Dimension mismatch: old=384, new=1536
-```
-
-**Solution**:
-1. Use same dimension provider
-2. Or clear and rebuild vector database
-3. Consider using `dimensions` parameter to match
-
-## API Reference
+## API reference
 
 ### EmbeddingManager
 
 ```python
 class EmbeddingManager:
-    def __init__(self, config: Dict[str, Any])
-    def get_embeddings(self, texts: List[str]) -> List[List[float]]
+    def __init__(self, config: dict[str, Any])
+    def get_embeddings(self, texts: list[str]) -> list[list[float]]
     def get_embedding_dimension(self) -> int
-    def get_current_provider_info(self) -> Dict[str, Any]
+    def get_current_provider_info(self) -> dict[str, Any]
 ```
 
 ### SermonAnalyticsRAG
 
 ```python
 class SermonAnalyticsRAG:
-    def __init__(self, db_path: str = "analytics_vector_db", 
-                 embedding_config: Optional[Dict[str, Any]] = None)
-    def get_embedding_provider_info(self) -> Dict[str, Any]
-    def switch_embedding_provider(self, new_config: Dict[str, Any]) -> bool
+    def __init__(self, db_path: str = "analytics_vector_db",
+                 embedding_config: dict[str, Any] | None = None,
+                 llm_config: dict[str, Any] | None = None)
+    def get_embedding_provider_info(self) -> dict[str, Any]
+    def switch_embedding_provider(self, new_config: dict[str, Any]) -> bool
 ```
 
-## Best Practices
+## Best practices
 
-1. **Start Simple**: Begin with sentence-transformers for offline operation
-2. **Configure Fallbacks**: Always configure hash fallback for reliability
-3. **Match Dimensions**: Keep consistent embedding dimensions for compatibility
-4. **Monitor Performance**: Check provider info to ensure optimal provider is used
-5. **Test Offline**: Verify system works without internet connectivity
-6. **Consider Costs**: Be aware of API costs when using remote providers
-
-## Integration with Existing Codebase
-
-The new embedding system is designed to be backward compatible:
-
-- **No Breaking Changes**: Existing code continues to work
-- **Default Behavior**: Falls back to hash embeddings if no config provided
-- **Graceful Degradation**: Automatically handles provider failures
-- **Configuration Driven**: All behavior controlled via config.yaml
-
-The embedding system enhances the RAG capabilities while maintaining the existing robust, offline-first design philosophy of the sermon processor.
+1. Start with sentence transformers for offline, private operation.
+2. Configure at least one real fallback before the automatic hash fallback.
+3. Keep embedding dimensions consistent; rebuild the vector store after a
+   dimension change.
+4. Check `get_embedding_provider_info()` if retrieval quality drops; it shows
+   which provider is actually serving requests.
