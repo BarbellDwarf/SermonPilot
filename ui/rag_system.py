@@ -127,7 +127,7 @@ class SermonAnalyticsRAG:
                         f"({current_dimensions}D)"
                     )
                     logger.warning(
-                        f"   Dimension mismatch detected: {stored_dimensions}D → "
+                        f"   Dimension mismatch detected: {stored_dimensions}D -> "
                         f"{current_dimensions}D"
                     )
                     logger.warning(
@@ -148,7 +148,7 @@ class SermonAnalyticsRAG:
                             "embedding_dimensions": str(current_dimensions),
                             "created_at": datetime.now().isoformat(),
                             "reset_reason": (
-                                f"Dimension mismatch: {stored_dimensions}D → {current_dimensions}D"
+                                f"Dimension mismatch: {stored_dimensions}D -> {current_dimensions}D"
                             )
                         }
                     )
@@ -160,7 +160,7 @@ class SermonAnalyticsRAG:
                     )
                     self.reset_notice = (
                         "The analytics vector database was reset because the embedding "
-                        f"model changed ({stored_dimensions}D → {current_dimensions}D). "
+                        f"model changed ({stored_dimensions}D -> {current_dimensions}D). "
                         "Previously indexed data was cleared and will be re-indexed on "
                         "the next data load."
                     )
@@ -197,7 +197,7 @@ class SermonAnalyticsRAG:
             except Exception:
                 # Collection doesn't exist - create new one
                 logger.info(
-                    f"🆕 Creating new vector database with {current_dimensions}D embeddings"
+                    f"Creating new vector database with {current_dimensions}D embeddings"
                 )
                 self.collection = self.client.create_collection(
                     name=collection_name,
