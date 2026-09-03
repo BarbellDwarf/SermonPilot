@@ -82,6 +82,7 @@ jobs:
             org.opencontainers.image.description=SermonPilot (${{ matrix.gpu }})
           build-args: |
             GPU_BACKEND=${{ matrix.gpu }}
+            SERMONPILOT_VARIANT=${{ matrix.gpu }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
