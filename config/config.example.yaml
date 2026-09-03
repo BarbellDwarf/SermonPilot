@@ -156,6 +156,13 @@ output_directory: "processed_sermons"  # Directory to store processed sermon fil
 save_original_audio: true  # Save the original downloaded audio file alongside processed audio
 save_transcript: true  # Save the sermon transcript as a text file alongside other outputs
 
+# Temporary Job Storage (optional)
+# Unset keys fall back to a disk-backed folder under the user cache root
+# ($XDG_CACHE_HOME/sermonpilot or ~/.cache/sermonpilot); the previous fallback
+# was the system temp dir, which is tmpfs (RAM) on many Linux systems.
+upload_dir: "/var/tmp/sermonpilot/uploads"  # Staging area for files uploaded through the web UI
+processing_temp_dir: "/var/tmp/sermonpilot/processing"  # Parent for per-job audio processing temp dirs
+
 # Metadata Processing Settings
 metadata_processing:
   enabled: true  # Enable metadata processing (descriptions and hashtags)
