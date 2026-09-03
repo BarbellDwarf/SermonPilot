@@ -302,6 +302,12 @@ def initialize_session_state():
         except Exception:
             st.session_state.job_queue_initialized = False
             # Don't show error here as it would be shown on every page load
+        try:
+            from ui.config_utils import sweep_stale_job_files
+
+            sweep_stale_job_files(st.session_state.config or None)
+        except Exception:
+            pass
 
 def load_configuration(force_reload=False):
     """Load configuration from config.yaml"""
