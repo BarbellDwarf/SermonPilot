@@ -291,7 +291,12 @@ st.markdown("""
 def initialize_session_state():
     """Initialize Streamlit session state variables"""
     if 'config' not in st.session_state:
-        st.session_state.config = {}  # Initialize with empty dict instead of None
+        try:
+            from ui.config_utils import load_config_from_file
+
+            st.session_state.config = load_config_from_file()
+        except Exception:
+            st.session_state.config = {}
 
     # Initialize job queue system
     if 'job_queue_initialized' not in st.session_state:
@@ -310,7 +315,7 @@ def initialize_session_state():
             pass
 
 def load_configuration(force_reload=False):
-    """Load configuration from config.yaml"""
+    """Load the resolved configuration (database, env overrides, defaults)"""
     from ui.config_utils import load_config_from_file, reload_configuration
 
     if force_reload:

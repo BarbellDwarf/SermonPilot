@@ -50,7 +50,7 @@ class OllamaProvider(LLMProvider):
 
     def __init__(self, config: dict[str, Any]):
         super().__init__(config)
-        self.host = config.get('host', 'http://localhost:11434')
+        self.host = config.get('host') or os.environ.get('OLLAMA_HOST') or 'http://localhost:11434'
         self.model = config.get('model', 'llama3')
         self.api_key = config.get('api_key', '')
         self.temperature = float(config.get('temperature', 0.7))
