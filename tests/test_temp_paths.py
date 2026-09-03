@@ -98,7 +98,7 @@ def test_sweep_removes_only_stale_entries(tmp_path):
     upload_dir.mkdir()
     processing_root.mkdir()
 
-    stale_upload = upload_dir / "old_upload.mp3"
+    stale_upload = upload_dir / "1788307151352_old_upload.mp3"
     stale_upload.write_bytes(b"x")
     fresh_upload = upload_dir / "fresh_upload.mp3"
     fresh_upload.write_bytes(b"x")

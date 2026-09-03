@@ -202,3 +202,98 @@ def test_sources_report_env_db_and_default(fresh_db, clear_config_env, monkeypat
     assert sources["broadcaster_id"] == "env"
     assert sources["llm.primary.model_tag"] == "db"
     assert sources["llm.primary.ollama.host"] == "default"
+
+
+class _LogSpy:
+    def __init__(self):
+        self.lines: list[str] = []
+
+    def add_log(self, message: str) -> None:
+        self.lines.append(message)
+
+
+def _make_job_files(upload_dir: Path, stem: str = "1788307151352_sermon") -> None:
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    (upload_dir / f"{stem}.mp4").write_bytes(b"x")
+    (upload_dir / f"{stem}_enhanced.mp4").write_bytes(b"x")
+    (upload_dir / f"{stem}_cleaned.wav").write_bytes(b"x")
+
+
+def test_failure_keeps_upload_but_drops_derived(tmp_path):
+    from ui.job_executors import _cleanup_job_files
+
+    upload_dir = tmp_path / "uploads"
+    _make_job_files(upload_dir)
+    config = {"upload_dir": str(upload_dir)}
+    uploaded = str(upload_dir / "1788307151352_sermon.mp4")
+
+    _cleanup_job_files(config, uploaded, None, _LogSpy(), keep_upload=True)
+
+    assert (upload_dir / "1788307151352_sermon.mp4").exists()
+    assert not (upload_dir / "1788307151352_sermon_enhanced.mp4").exists()
+    assert not (upload_dir / "1788307151352_sermon_cleaned.wav").exists()
+
+
+def test_success_deletes_upload_and_derived(tmp_path):
+    from ui.job_executors import _cleanup_job_files
+
+    upload_dir = tmp_path / "uploads"
+    _make_job_files(upload_dir)
+    config = {"upload_dir": str(upload_dir)}
+    uploaded = str(upload_dir / "1788307151352_sermon.mp4")
+
+    _cleanup_job_files(config, uploaded, None, _LogSpy(), keep_upload=False)
+
+    assert not (upload_dir / "1788307151352_sermon.mp4").exists()
+
+
+def test_file_layer_loses_to_db(fresh_db, clear_config_env, monkeypatch, tmp_path):
+    cfg_file = tmp_path / "override.yaml"
+    cfg_file.write_text(yaml.safe_dump({"audio_gain_db": 9.9}))
+    monkeypatch.setenv("SA_UPDATER_CONFIG", str(cfg_file))
+    fresh_db.save_config({"audio_gain_db": 0.5})
+
+    config = resolve_config(fresh_db)
+
+    assert config["audio_gain_db"] == 0.5
+
+
+def test_legacy_yaml_migrates_once(fresh_db, clear_config_env, monkeypatch, tmp_path):
+    monkeypatch.setattr(config_utils, "project_root", tmp_path)
+    (tmp_path / "config.yaml").write_text(yaml.safe_dump({"hashtag_verification": False}))
+
+    config = resolve_config(fresh_db)
+
+    assert config["hashtag_verification"] is False
+    assert fresh_db.load_config().get("hashtag_verification") is False
+    assert (tmp_path / "config.yaml").exists()
+
+    second = resolve_config(fresh_db)
+    assert second["hashtag_verification"] is False
+
+
+def test_sweep_uploads_root_is_pattern_filtered(tmp_path, monkeypatch):
+    import os
+    import time as _time
+
+    from ui.config_utils import sweep_stale_job_files
+
+    uploads = tmp_path / "uploads"
+    uploads.mkdir()
+    old = _time.time() - 48 * 3600
+    job_upload = uploads / "1788307151352_sermon.mp4"
+    bystander = uploads / "keepme.txt"
+    job_upload.write_bytes(b"x")
+    bystander.write_bytes(b"x")
+    os.utime(job_upload, (old, old))
+    os.utime(bystander, (old, old))
+
+    monkeypatch.setattr(config_utils, "project_root", tmp_path)
+    sweep_stale_job_files({
+        "upload_dir": str(uploads),
+        "processing_temp_dir": str(tmp_path / "processing"),
+        "output_directory": str(tmp_path / "out"),
+    })
+
+    assert not job_upload.exists()
+    assert bystander.exists()

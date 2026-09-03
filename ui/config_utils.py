@@ -9,6 +9,7 @@ import copy
 import datetime
 import logging
 import os
+import re
 import shutil
 import time
 from pathlib import Path
@@ -65,12 +66,25 @@ def default_cache_root() -> Path:
 
 
 def sweep_stale_job_files(config: dict | None = None, max_age_hours: float = 24.0) -> None:
-    """Delete files and per-job dirs older than max_age_hours under the job temp roots."""
+    """Delete files and per-job dirs older than max_age_hours under the job temp roots.
+
+    The uploads root is filtered to the engine's own upload names (epoch-ms
+    prefix) so a custom upload_dir pointed at real media stays untouched; the
+    processing root is swept wholesale (per-job uuid dirs). A job with a silent
+    phase longer than max_age_hours could in principle have its live directory
+    swept; 24h makes that practically impossible.
+    """
     if not config:
         config = load_config_from_file()
+    upload_root = Path(
+        config.get('upload_dir') or (default_cache_root() / "sermon_uploads")
+    )
+    processing_root = Path(
+        config.get('processing_temp_dir') or (default_cache_root() / "sermon_processing")
+    )
     roots = [
-        Path(config.get('upload_dir') or (default_cache_root() / "sermon_uploads")),
-        Path(config.get('processing_temp_dir') or (default_cache_root() / "sermon_processing")),
+        (upload_root, True),
+        (processing_root, False),
     ]
     output_root = Path(config.get('output_directory') or 'processed_sermons')
     if not output_root.is_absolute():
@@ -80,7 +94,7 @@ def sweep_stale_job_files(config: dict | None = None, max_age_hours: float = 24.
     except OSError:
         return
     cutoff = time.time() - max_age_hours * 3600
-    for root in roots:
+    for root, uploads_only in roots:
         try:
             resolved = root.resolve()
             if (
@@ -93,6 +107,8 @@ def sweep_stale_job_files(config: dict | None = None, max_age_hours: float = 24.
                 continue
             for entry in resolved.iterdir():
                 try:
+                    if uploads_only and not re.match(r"^\d{10,}_", entry.name):
+                        continue
                     is_dir = not entry.is_symlink() and entry.is_dir()
                     if entry.lstat().st_mtime >= cutoff:
                         continue
@@ -160,16 +176,46 @@ def _seed_database_from_env(db) -> dict[str, Any] | None:
     if not active_vars:
         return None
     seeded = apply_env_overrides(copy.deepcopy(BUILTIN_DEFAULTS))
-    db.save_config(seeded)
-    db.save_config_meta({
-        "seeded_at": datetime.datetime.now(datetime.UTC).isoformat(),
-        "version": CONFIG_SEED_VERSION,
-        "env_vars": active_vars,
-    })
+    try:
+        db.save_config(seeded)
+        db.save_config_meta({
+            "seeded_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            "version": CONFIG_SEED_VERSION,
+            "env_vars": active_vars,
+        })
+    except Exception as exc:
+        logger.warning("Could not persist env seeding to the settings database: %s", exc)
+        return seeded
     logger.info(
         "Seeded settings database from environment variables: %s", ", ".join(active_vars)
     )
     return seeded
+
+
+def _migrate_legacy_config_yaml(db) -> None:
+    """Import config.yaml into the settings database once, for existing installs.
+
+    Config resolution no longer reads config.yaml (ticket #201 demoted it to
+    an explicit import/export artifact). This carries hand-tuned settings from
+    pre-existing local installs across that change. Skipped when
+    $SA_UPDATER_CONFIG is set (the test harness owns the file layer) and when
+    the database already holds a config or a seed marker.
+    """
+    if os.environ.get("SA_UPDATER_CONFIG"):
+        return
+    try:
+        if db.load_config_meta() or db.load_config():
+            return
+        legacy = project_root / "config.yaml"
+        if not legacy.exists():
+            return
+        migrated = yaml.safe_load(legacy.read_text()) or {}
+        if not isinstance(migrated, dict) or not migrated:
+            return
+        db.save_config(migrated)
+        logger.info("Imported legacy config.yaml into the settings database")
+    except Exception as exc:
+        logger.warning("Legacy config.yaml import skipped: %s", exc)
 
 
 def _open_database():
@@ -195,6 +241,12 @@ def _resolve_layers(db=None) -> tuple[dict[str, Any], dict[str, Any], dict[str, 
     consumed directly from the environment and never enter the config dict.
     """
     file_layer = _load_file_layer()
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(project_root / ".env")
+    except ImportError:
+        pass
     db_layer: dict[str, Any] | None = None
     if db is None:
         try:
@@ -208,7 +260,10 @@ def _resolve_layers(db=None) -> tuple[dict[str, Any], dict[str, Any], dict[str, 
             logger.warning("Failed to read settings database: %s", exc)
             db_layer = None
         if db_layer is None:
-            db_layer = _seed_database_from_env(db) or {}
+            _migrate_legacy_config_yaml(db)
+            db_layer = db.load_config()
+            if db_layer is None:
+                db_layer = _seed_database_from_env(db) or {}
 
     config = copy.deepcopy(BUILTIN_DEFAULTS)
     if file_layer:

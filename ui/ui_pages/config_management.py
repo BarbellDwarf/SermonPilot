@@ -220,6 +220,11 @@ def show_config_editor(db_path: str):
     st.header("Configuration Editor")
 
     show_effective_config()
+    st.caption(
+        "The editor below manages the legacy SQL config store, which the "
+        "effective values above do not read. Effective settings come from the "
+        "settings database and environment variables."
+    )
 
     try:
         with SQLConfigManager(db_path) as config_manager:
