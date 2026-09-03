@@ -1,5 +1,7 @@
 # SermonAudio Updater Configuration
-# Copy this to config.yaml and update with your settings
+# Settings load from the SQLite settings database, seeded from environment
+# variables on first run (see README). This file is optional: use it via
+# the UI import or SA_UPDATER_CONFIG; config.yaml is export/import only.
 
 # SermonAudio API credentials - Use environment variables for security
 api_key: "${SERMONAUDIO_API_KEY}"
@@ -9,7 +11,7 @@ broadcaster_id: "${SERMONAUDIO_BROADCASTER_ID}"
 llm:
   # Primary LLM settings
   primary:
-    provider: "ollama"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
+    provider: "ollama"  # Options: "ollama", "openai", "xai", "groq", "openrouter"
     ollama:
       host: "http://localhost:11434"
       model: "llama3"
@@ -17,15 +19,9 @@ llm:
       api_key: "${OPENAI_API_KEY}"
       model: "gpt-3.5-turbo"
       # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for other providers
-    anthropic:
-      api_key: "${ANTHROPIC_API_KEY}"
-      model: "claude-3-5-sonnet-20241022"  # Default model, can be overridden
     xai:
       api_key: "${XAI_API_KEY}"
       model: "grok-beta"  # Default model, can be overridden
-    google:
-      api_key: "${GOOGLE_API_KEY}"
-      model: "gemini-1.5-flash"  # Default model, can be overridden
     groq:
       api_key: "${GROQ_API_KEY}"
       model: "llama-3.1-70b-versatile"  # Default model, can be overridden
@@ -33,7 +29,7 @@ llm:
   # Fallback LLM settings (used if primary fails)
   fallback:
     enabled: true
-    provider: "openai"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
+    provider: "openai"  # Options: "ollama", "openai", "xai", "groq", "openrouter"
     ollama:
       host: "http://localhost:11434"
       model: "llama2"
@@ -41,15 +37,9 @@ llm:
       api_key: "${OPENAI_API_KEY}"
       model: "gpt-3.5-turbo"
       # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint for other providers
-    anthropic:
-      api_key: "${ANTHROPIC_API_KEY}"
-      model: "claude-3-haiku-20240307"  # Faster/cheaper model for fallback
     xai:
       api_key: "${XAI_API_KEY}"
       model: "grok-beta"
-    google:
-      api_key: "${GOOGLE_API_KEY}"
-      model: "gemini-1.5-flash"
     groq:
       api_key: "${GROQ_API_KEY}"
       model: "llama-3.1-8b-instant"  # Faster model for fallback
@@ -57,7 +47,7 @@ llm:
   # Validation LLM settings (smaller model for description validation)
   validator:
     enabled: true
-    provider: "ollama"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
+    provider: "ollama"  # Options: "ollama", "openai", "xai", "groq", "openrouter"
     ollama:
       host: "http://localhost:11434"
       model: "gemma2:2b"  # Smaller, faster model for validation
@@ -65,12 +55,6 @@ llm:
       api_key: "${OPENAI_API_KEY}"
       model: "gpt-4o-mini"  # Smaller OpenAI model for validation
       # base_url: "https://api.openai.com/v1"  # Optional: Custom endpoint
-    anthropic:
-      api_key: "${ANTHROPIC_API_KEY}"
-      model: "claude-3-haiku-20240307"  # Fast, affordable model for validation
-    google:
-      api_key: "${GOOGLE_API_KEY}"
-      model: "gemini-1.5-flash"  # Fast model for validation
     groq:
       api_key: "${GROQ_API_KEY}"
       model: "llama-3.1-8b-instant"  # Fast model for validation
@@ -102,13 +86,6 @@ qa_normalization:
     max_speakers: 10  # Maximum number of speakers to detect
 
 # Content Management Settings
-content_management:
-  database_path: "sermon_processor.db"  # Database file path
-  full_text_search: true  # Enable full-text search capabilities
-  auto_topic_extraction: true  # Enable automatic topic extraction
-  content_backup: true  # Backup content files
-  search_suggestions: true  # Enable search auto-complete suggestions
-  
 # Embedding Configuration for RAG System
 embeddings:
   # Primary embedding provider
@@ -187,15 +164,11 @@ metadata_processing:
     min_length_threshold: 10  # Characters to consider "minimal"
 
 # Default search criteria
-default_criteria:
-  event_type: "sunday_service"  # Options: sunday_service, sunday_school, midweek_service
-  date_range: 7  # Days back from today
 
 # Transcription Settings
 transcription:
   backend: faster_whisper_local  # Options: whisper_local, faster_whisper_local, whisper_openai, whisper_openrouter
   whisper_local:
-    compute_type: float16  # Options: float16, int8, int8_float16, int8_uint8, int16, float32
     device: auto  # Options: auto, cpu, cuda
     language: en  # Language code (en, es, fr, etc.) or None for auto-detection
     model: base  # Options: tiny, base, small, medium, large

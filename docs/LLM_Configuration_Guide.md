@@ -2,119 +2,133 @@
 
 ## Overview
 
-SermonPilot now supports flexible LLM configuration with both primary and fallback providers. You can easily switch between **7 major LLM providers** with dedicated provider types: OpenAI, Anthropic (Claude), xAI (Grok), Google (Gemini), Groq, OpenRouter, and Ollama for local models. Each provider type comes with sensible defaults and simplified configuration.
+SermonPilot generates sermon metadata (title, description, hashtags) and
+validates descriptions through an LLM. Providers are configured with a
+primary and an optional fallback, plus a separate smaller validator model.
 
-## New Configuration Structure
+The provider implementations live in `src/llm_manager.py`. Five provider
+types are supported:
 
-### Current config.yaml
+| Provider | Class | Default model | Default endpoint | API key env var |
+|----------|-------|---------------|------------------|-----------------|
+| `ollama` | `OllamaProvider` | `llama3` | `http://localhost:11434` | n/a (local) |
+| `openai` | `OpenAIProvider` | `gpt-3.5-turbo` | OpenAI default | `OPENAI_API_KEY` |
+| `xai` | `XAIProvider` | `grok-beta` | `https://api.x.ai/v1` | `XAI_API_KEY` |
+| `groq` | `GroqProvider` | `llama-3.1-70b-versatile` | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` |
+| `openrouter` | `OpenRouterProvider` | `openai/gpt-4o-mini` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
+
+`openai`, `xai`, `groq`, and `openrouter` share one OpenAI-compatible client
+class, so any of them accepts a custom `base_url`.
+
+Anthropic and Google are not implemented. `ANTHROPIC_API_KEY`,
+`GOOGLE_API_KEY`, `ANTHROPIC_MODEL`, and `GOOGLE_MODEL` exist in the
+environment variable map and their values are stored with the rest of your
+settings, but the provider factory has no class for `provider: "anthropic"`
+or `provider: "google"`; selecting one logs a failed initialization and the
+manager runs without a primary. Use one of the five supported providers, or
+an OpenAI-compatible endpoint.
+
+## Where settings live
+
+Settings are stored in the SQLite settings database and resolved as:
+built-in defaults, an optional file layer (`SA_UPDATER_CONFIG`), the stored
+settings, then environment variables (env wins for the running process).
+There is no required config file. Practical consequences:
+
+- Set `OPENAI_API_KEY` or `LLM_PROVIDER` etc. in `.env` and the first launch
+  seeds them into the database; they survive restarts.
+- Change providers any time in the web UI Settings page.
+- The Settings page's Import/Export tab writes the current settings to YAML
+  and restores from an uploaded YAML file. A pre-existing `config.yaml` from
+  an older install is imported into the database once, automatically.
+
+## Configuration structure
+
 ```yaml
-# LLM Configuration
 llm:
-  # Primary LLM settings
   primary:
-    provider: "ollama"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq", "openrouter"
+    provider: "ollama"        # ollama, openai, xai, groq, openrouter
+    ollama:
+      host: "http://localhost:11434"
+      model: "llama3"
+    openai:
+      api_key: "${OPENAI_API_KEY}"   # or set OPENAI_API_KEY in the environment
+      model: "gpt-4o"
+      # base_url: "https://api.openai.com/v1"  # optional, for compatible endpoints
+    xai:
+      api_key: "${XAI_API_KEY}"
+      model: "grok-beta"
+    groq:
+      api_key: "${GROQ_API_KEY}"
+      model: "llama-3.1-70b-versatile"
+    openrouter:
+      api_key: "${OPENROUTER_API_KEY}"
+      model: "openai/gpt-4o-mini"
+
+  fallback:
+    enabled: true
+    provider: "openai"        # single fallback provider
+    # providers: ["openai", "groq"]  # optional: try several, in order
+    openai:
+      api_key: "${OPENAI_API_KEY}"
+      model: "gpt-3.5-turbo"
+
+  validator:
+    enabled: true             # smaller model for description validation
+    provider: "ollama"
+    ollama:
+      host: "http://localhost:11434"
+      model: "gemma2:2b"
+```
+
+Only the fields for the provider you actually select are required; the rest
+are ignored. `${VAR}` placeholders are expanded from the environment when a
+file layer or stored value references them.
+
+## Environment variables
+
+| Variable | Sets |
+|----------|------|
+| `LLM_PROVIDER` | `llm.primary.provider` |
+| `OLLAMA_HOST` | `llm.primary.ollama.host` and `llm.fallback.ollama.host` |
+| `OLLAMA_MODEL` | `llm.primary.ollama.model` |
+| `OPENAI_API_KEY` / `OPENAI_MODEL` | `llm.primary.openai.api_key` / `.model` |
+| `XAI_API_KEY` / `XAI_MODEL` | `llm.primary.xai.api_key` / `.model` |
+| `GROQ_API_KEY` / `GROQ_MODEL` | `llm.primary.groq.api_key` / `.model` |
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | `llm.primary.openrouter.api_key` / `.model` |
+| `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` | stored, but no provider implementation exists (see above) |
+
+## Provider examples
+
+### Local Ollama (default)
+
+```yaml
+llm:
+  primary:
+    provider: "ollama"
     ollama:
       host: "http://localhost:11434"
       model: "llama3.1:8b"
-    openai:
-      api_key: "your-openai-key"
-      model: "gpt-4o"
-      # base_url: "https://api.openai.com/v1"  # Optional for custom endpoints
-    anthropic:
-      api_key: "your-anthropic-key"
-      model: "claude-3-5-sonnet-20241022"  # Default model
-    xai:
-      api_key: "your-xai-key"
-      model: "grok-beta"  # Default model
-    google:
-      api_key: "your-google-key"
-      model: "gemini-1.5-flash"  # Default model
-    groq:
-      api_key: "your-groq-key"
-      model: "llama-3.1-70b-versatile"  # Default model
-  
-  # Fallback LLM settings (used if primary fails)
   fallback:
-    enabled: true
-    provider: "openai"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq", "openrouter"
-    ollama:
-      host: "http://localhost:11434"
-      model: "llama2"
-    openai:
-      api_key: "your-openai-key"
-      model: "gpt-3.5-turbo"
-      # base_url: "https://api.openai.com/v1"  # Optional for custom endpoints
+    enabled: false
 ```
 
-## Provider Examples
+`OllamaProvider` also reads `temperature` (default 0.7), `max_tokens`
+(default 2048), and `num_ctx` (default 8192) from the provider block.
 
-### OpenAI (Default)
+### OpenAI
+
 ```yaml
 llm:
   primary:
     provider: "openai"
     openai:
-      api_key: "sk-..."
+      api_key: "${OPENAI_API_KEY}"
       model: "gpt-4o"
-      # base_url is optional for OpenAI
 ```
 
-### Anthropic (Claude) - NEW!
-```yaml
-llm:
-  primary:
-    provider: "anthropic"
-    anthropic:
-      api_key: "sk-ant-..."
-      model: "claude-3-5-sonnet-20241022"  # Default, can be overridden
-```
+Any OpenAI-compatible server works through the same provider:
 
-### xAI (Grok) - NEW!
-```yaml
-llm:
-  primary:
-    provider: "xai"
-    xai:
-      api_key: "xai-..."
-      model: "grok-beta"  # Default, can be overridden
-```
-
-### Google (Gemini) - NEW!
-```yaml
-llm:
-  primary:
-    provider: "google"
-    google:
-      api_key: "your-google-ai-key"
-      model: "gemini-1.5-flash"  # Default, can be overridden
-```
-
-### Groq - NEW!
-```yaml
-llm:
-  primary:
-    provider: "groq"
-    groq:
-      api_key: "gsk_..."
-      model: "llama-3.1-70b-versatile"  # Default, can be overridden
-```
-
-### OpenRouter
-```yaml
-llm:
-  primary:
-    provider: "openrouter"
-    openrouter:
-      api_key: "sk-or-..."
-      model: "openai/gpt-4o-mini"  # Default, can be overridden
-      # base_url defaults to https://openrouter.ai/api/v1
-```
-
-OpenRouter's default model is `openai/gpt-4o-mini` and its base URL is
-`https://openrouter.ai/api/v1`. Set `OPENROUTER_API_KEY` in your `.env` or
-provide `api_key` directly in the config.
-
-### Local/Self-hosted OpenAI API
 ```yaml
 llm:
   primary:
@@ -125,224 +139,121 @@ llm:
       base_url: "http://localhost:8000/v1"
 ```
 
-### Legacy: Using OpenAI Provider with Custom URLs (Still Supported)
-```yaml
-# This still works for backward compatibility or custom endpoints
-llm:
-  primary:
-    provider: "openai"
-    openai:
-      api_key: "gsk_..."
-      model: "llama-3.1-70b-versatile"
-      base_url: "https://api.groq.com/openai/v1"
-```
-
-## How to Switch Providers
-
-### To use Anthropic as primary with Groq fallback
-
-```yaml
-llm:
-  primary:
-    provider: "anthropic"
-    anthropic:
-      api_key: "sk-ant-your-key"
-      model: "claude-3-5-sonnet-20241022"
-  fallback:
-    enabled: true
-    provider: "groq"
-    groq:
-      api_key: "gsk_your-groq-key"
-      model: "llama-3.1-8b-instant"  # Fast model for fallback
-```
-
-### To use Google Gemini as primary with OpenAI fallback
-
-```yaml
-llm:
-  primary:
-    provider: "google"
-    google:
-      api_key: "your-google-ai-key"
-      model: "gemini-1.5-pro"
-  fallback:
-    enabled: true
-    provider: "openai"
-    openai:
-      api_key: "sk-your-openai-key"
-      model: "gpt-3.5-turbo"
-```
-
-### To use xAI as primary with OpenAI fallback
+### xAI (Grok)
 
 ```yaml
 llm:
   primary:
     provider: "xai"
     xai:
-      api_key: "xai-your-key"
-      model: "grok-beta"
+      api_key: "${XAI_API_KEY}"
+      model: "grok-beta"      # default; base_url defaults to https://api.x.ai/v1
+```
+
+### Groq
+
+```yaml
+llm:
+  primary:
+    provider: "groq"
+    groq:
+      api_key: "${GROQ_API_KEY}"
+      model: "llama-3.1-70b-versatile"  # default; base_url defaults to https://api.groq.com/openai/v1
+```
+
+### OpenRouter
+
+```yaml
+llm:
+  primary:
+    provider: "openrouter"
+    openrouter:
+      api_key: "${OPENROUTER_API_KEY}"
+      model: "openai/gpt-4o-mini"       # default; base_url defaults to https://openrouter.ai/api/v1
+```
+
+## Switching providers
+
+```yaml
+llm:
+  primary:
+    provider: "groq"
+    groq:
+      api_key: "${GROQ_API_KEY}"
+      model: "llama-3.1-70b-versatile"
   fallback:
     enabled: true
     provider: "openai"
     openai:
-      api_key: "sk-your-openai-key"
-      model: "gpt-4o"
+      api_key: "${OPENAI_API_KEY}"
+      model: "gpt-3.5-turbo"
 ```
 
-### To use only Ollama (no fallback)
+Set `LLM_PROVIDER=groq` (plus the key) in `.env` to the same effect through
+the environment; the env override wins over stored settings.
 
-```yaml
-llm:
-  primary:
-    provider: "ollama"
-    ollama:
-      host: "http://your-ollama-server:11434"
-      model: "llama3.1:8b"
-  fallback:
-    enabled: false
-```
+Fallbacks are tried in order when the primary request fails (connection
+errors, timeouts, provider errors). When a chat succeeds with a fallback,
+the manager logs which provider answered.
 
-### To use different Ollama servers for primary and fallback
+## Model suggestions
 
-```yaml
-llm:
-  primary:
-    provider: "ollama"
-    ollama:
-      host: "http://192.168.1.100:11434"  # Main server
-      model: "llama3.1:8b"
-  fallback:
-    enabled: true
-    provider: "ollama"
-    ollama:
-      host: "http://192.168.1.200:11434"  # Backup server
-      model: "llama2"
-```
+### Sermon processing (primary)
+- **Best value**: `groq` with `llama-3.1-70b-versatile`: fast and cheap
+- **Reliable**: `openai` with `gpt-4o`
+- **Privacy/local**: `ollama` with `llama3.1:8b`: no data leaves your network
 
-## Features Implemented
+### Fallback providers
+- `openai` with `gpt-3.5-turbo`
+- `groq` with `llama-3.1-8b-instant`
+- `ollama` with a smaller model such as `gemma2:2b`
 
-✅ **Dedicated Provider Types**: Native support for 7 major LLM providers with intuitive configuration
+### Validation (smaller models)
+The validator only runs when `llm.validator.enabled` is true:
+- Local: `ollama` with `gemma2:2b` or `phi3:mini`
+- Fast: `groq` with `llama-3.1-8b-instant`
 
-✅ **Top LLM Provider Support**: OpenAI, Anthropic (Claude), xAI (Grok), Google (Gemini), Groq, OpenRouter, and Ollama
+## Debug mode
 
-✅ **Smart Defaults**: Each provider comes with sensible default models and endpoints
+Set `debug: true` (Settings page, file layer, or the `DEBUG` environment
+variable) for verbose output: processing steps, file paths, audio parameters,
+API response details, and provider initialization details.
 
-✅ **Flexible Provider Configuration**: Switch between any supported provider easily
-
-✅ **Custom Endpoints**: Configure different server hosts for any OpenAI-compatible API
-
-✅ **Model Selection**: Choose different models for each provider
-
-✅ **Automatic Fallback**: If primary provider fails, automatically use fallback
-
-✅ **Legacy Support**: Old configuration format is automatically migrated
-
-✅ **Detailed Logging**: See which provider is being used and why fallbacks occur
-
-✅ **Error Handling**: Clear error messages when both providers fail
-
-✅ **Debug Mode**: Enable verbose debugging output for troubleshooting
-
-## Model Recommendations by Use Case
-
-### 🎯 Sermon Processing (Primary)
-- **Best Quality**: `anthropic` with `claude-3-5-sonnet-20241022` - Excellent at theological content
-- **Best Value**: `groq` with `llama-3.1-70b-versatile` - Fast and cost-effective
-- **Best Speed**: `groq` with `llama-3.1-8b-instant` - Ultra-fast responses
-- **Privacy/Local**: `ollama` with `llama3.1:8b` - No data leaves your network
-
-### ⚡ Fallback Providers
-- **Reliable**: `openai` with `gpt-3.5-turbo` - Stable and widely available
-- **Budget**: `groq` with `llama-3.1-8b-instant` - Cheap and fast
-- **Offline**: `ollama` with smaller models like `gemma2:2b`
-
-### 🔍 Validation (Smaller Models)
-- **Fast Validation**: `groq` with `llama-3.1-8b-instant`
-- **Local Validation**: `ollama` with `gemma2:2b` or `phi3:mini`
-- **Budget Validation**: `google` with `gemini-1.5-flash`
-
-### 💰 Cost Optimization Strategies
-1. **Primary**: Fast/cheap model like Groq
-2. **Fallback**: Premium model like Claude for quality assurance
-3. **Validator**: Tiny local model for basic checks
-
-## Debug Mode
-
-SermonPilot includes a debug mode to help with troubleshooting. Set `debug: true` in your `config.yaml` to enable verbose output that shows:
-
-- Detailed sermon processing steps
-- File paths and directory operations
-- Audio processing parameters
-- API response details
-- Provider initialization details
-
-**To enable debug mode:**
-```yaml
-# Processing Options
-debug: true    # Set to true to enable verbose debug output
-```
-
-**To disable debug mode (default):**
-```yaml
-# Processing Options
-debug: false   # Set to false for normal operation
-```
-
-When debug is disabled, the script will only show essential progress messages and errors.
-
-## Testing
-
-Verify that your configured providers initialize correctly:
+## Verifying your setup
 
 ```bash
 python -c "
-import sys, yaml
-sys.path.insert(0, 'src')
-from llm_manager import LLMManager
-config = yaml.safe_load(open('config.yaml'))
-manager = LLMManager(config)
+from ui.config_utils import resolve_config
+from src.llm_manager import LLMManager
+manager = LLMManager(resolve_config())
 print('Primary:', manager.primary_provider)
-print('Fallback:', manager.fallback_provider)
+print('Fallbacks:', manager.fallback_providers)
 print('Validator:', manager.validator_provider)
 "
 ```
 
-This checks that both providers are configured correctly, that the fallback
-mechanism resolves, and shows which provider will be used. There is no
-dedicated LLM unit test file; the provider wiring is exercised through the
-CLI and the web UI.
-
-## Usage
-
-When you run the sermon updater, you'll see output like:
+This resolves the effective settings the same way the app does and shows
+which providers initialized. During processing you will see log lines like:
 
 ```
 INFO:llm_manager:Primary LLM provider initialized: ollama
 INFO:llm_manager:Fallback LLM provider initialized: openai
-Generating summary using ollama LLM...
 ```
 
-If the primary provider fails:
+If the primary fails:
 
 ```
 WARNING:llm_manager:Primary provider failed: connection error
 INFO:llm_manager:Fallback provider succeeded: OpenAIProvider
 ```
 
-For custom endpoints, you'll see the base URL in the provider info:
+For custom endpoints, the provider info shows the base URL, e.g.
+`OpenAIProvider(model=grok-beta, base_url=https://api.x.ai/v1)`.
 
-```
-INFO:llm_manager:Primary LLM provider initialized: openai
-Primary provider: OpenAIProvider(model=grok-beta, base_url=https://api.x.ai/v1)
-```
+## Migrating old configuration
 
-## Migration from Old Format
-
-The system automatically migrates old configuration formats:
-
-- `llm_provider: "ollama"` → new structured format
-- `ollama_host`, `ollama_model` → `llm.primary.ollama.*`
-- `openai_api_key`, `openai_model` → `llm.primary.openai.*`
-
-Your existing config will work without changes!
+- Flat legacy keys (`llm_provider`, `ollama_host`, `ollama_model`,
+  `openai_api_key`, `openai_model`) are converted to the structured `llm`
+  block when they appear in a loaded file.
+- An existing `config.yaml` from a pre-database install is imported into the
+  settings database once, automatically, on first resolution.

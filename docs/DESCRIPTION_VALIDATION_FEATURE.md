@@ -25,7 +25,7 @@ The Description Validation feature allows you to check existing sermon descripti
 - Identification of sermons needing manual review
 
 ### 4. **Flexible Validation Criteria**
-- Configurable validation criteria in `config.yaml`
+- Configurable validation criteria in the settings store
 - Default criteria focus on theological content, speaker message, professional style, substance over generic phrases, and practical application
 - Easy to customize for different organizations
 
@@ -33,21 +33,22 @@ The Description Validation feature allows you to check existing sermon descripti
 
 ### Basic Setup
 
-Add the validator configuration to your `config.yaml`:
+Configure the validator in the settings store (Settings page in the web UI,
+environment variables, or a `SA_UPDATER_CONFIG` file layer):
 
 ```yaml
 llm:
   # ... existing primary and fallback config ...
-  
+
   # Validation LLM settings (smaller model for description validation)
   validator:
     enabled: true
-    provider: "ollama"  # Options: "ollama", "openai", "anthropic", "xai", "google", "groq"
+    provider: "ollama"  # Options: "ollama", "openai", "xai", "groq", "openrouter"
     ollama:
       host: "http://localhost:11434"
       model: "gemma2:2b"  # Smaller, faster model for validation
     openai:
-      api_key: "your-api-key"
+      api_key: "${OPENAI_API_KEY}"
       model: "gpt-4o-mini"  # Smaller OpenAI model for validation
       base_url: "https://api.openai.com/v1"  # Optional custom endpoint
 
@@ -125,21 +126,21 @@ python src/description_validator.py --local-sermons --export-json detailed_resul
 
 ### 5. Integrated Validation and Regeneration
 
-Use the `validation` subcommand of the CLI to validate and automatically
+Use the validation flags of the CLI to validate and automatically
 regenerate failed descriptions:
 
 ```bash
 # Validate all and regenerate failed descriptions
-python sermon_updater.py validation --validate-and-regenerate
+python sermon_updater.py --validate-and-regenerate
 
 # Dry run to see what would be regenerated
-python sermon_updater.py validation --validate-and-regenerate --dry-run
+python sermon_updater.py --validate-and-regenerate --dry-run
 
-# Validate recent sermons and regenerate
-python sermon_updater.py validation --validate-descriptions --validation-report --since-days 30
+# Validate and regenerate specific sermons
+python sermon_updater.py --validate-and-regenerate --validation-sermon-ids 123456789,987654321
 
-# Validate specific sermons
-python sermon_updater.py validation --validate-and-regenerate --validation-sermon-ids 123456789,987654321
+# Validate only, with a detailed report
+python sermon_updater.py --validate-descriptions --validation-report
 ```
 
 ## Understanding Validation Results
@@ -147,38 +148,38 @@ python sermon_updater.py validation --validate-and-regenerate --validation-sermo
 ### Validation Scores
 
 - **0.8-1.0**: High quality, approved
-- **0.6-0.79**: Acceptable quality but could be improved  
+- **0.6-0.79**: Acceptable quality but could be improved
 - **0.0-0.59**: Poor quality, recommended for regeneration
 
 ### Validation Status
 
-- **✅ APPROVED**: Description meets quality standards
-- **❌ REJECTED**: Description fails to meet minimum standards
-- **⚠️ NEEDS_REVIEW**: Manual review recommended
+- **APPROVED**: Description meets quality standards
+- **REJECTED**: Description fails to meet minimum standards
+- **NEEDS_REVIEW**: Manual review recommended
 
 ### Sample Output
 
 ```
-📊 DESCRIPTION VALIDATION REPORT
-================================================================================
+DESCRIPTION VALIDATION REPORT
+===============================================================================
 
-📈 SUMMARY:
+SUMMARY:
    Total Sermons Validated: 150
-   ✅ Valid Descriptions: 120 (80.0%)
-   ❌ Invalid Descriptions: 30
-   🔄 Need Regeneration: 25
-   📊 Average Score: 0.75/1.0
+   Valid Descriptions: 120 (80.0%)
+   Invalid Descriptions: 30
+   Need Regeneration: 25
+   Average Score: 0.75/1.0
 
-📋 CRITERIA PERFORMANCE:
-   ✅ Contains specific theological content or Bible references: 85.3%
-   ✅ Mentions the speaker's main message or key points: 78.7%
-   ⚠️ Is written in a professional, engaging style: 72.0%
-   ❌ Avoids generic Christian phrases without substance: 55.3%
-   ✅ Has clear application or takeaway for listeners: 81.3%
+CRITERIA PERFORMANCE:
+   [PASS] Contains specific theological content or Bible references: 85.3%
+   [PASS] Mentions the speaker's main message or key points: 78.7%
+   [WARN] Is written in a professional, engaging style: 72.0%
+   [FAIL] Avoids generic Christian phrases without substance: 55.3%
+   [PASS] Has clear application or takeaway for listeners: 81.3%
 
-❌ FAILED VALIDATIONS (25 sermons):
+FAILED VALIDATIONS (25 sermons):
 
-   📝 Sermon ID: 123456789
+   Sermon ID: 123456789
       Score: 0.45/1.0
       Reason: Too generic, lacks specific biblical content
       Length: 89 chars
@@ -197,7 +198,7 @@ The validation system integrates with the existing `generate_validated_summary()
 description, validation_info = generate_validated_summary(transcript, event_type, speaker_name)
 
 if validation_info['final_status'] == 'needs_review':
-    print("⚠️ Description may need manual review")
+    print("Description may need manual review")
 ```
 
 `final_status` is one of `no_validation` (validation disabled),
@@ -228,7 +229,11 @@ python src/description_validator.py --local-sermons --export-csv monthly_audit.c
 ### Common Issues
 
 **"Validator LLM not configured"**
-- Ensure the `llm.validator` section is properly configured in `config.yaml`
+- The standalone `src/description_validator.py` reads a YAML file directly
+  (`--config`, default `config.yaml`); point it at a YAML file that contains
+  your `llm` block (export one from the Settings page)
+- The `sermon_updater.py` validation flags use the resolved settings store;
+  enable `llm.validator` there
 - Verify the validator model is available (run `ollama list` for Ollama models)
 
 **"No sermons found to validate"**
@@ -332,7 +337,7 @@ python src/description_validator.py --local-sermons --detailed-report
 ### Example 3: Custom Criteria Testing
 
 ```yaml
-# config.yaml - test different criteria
+# file layer (SA_UPDATER_CONFIG) or imported through the Settings page
 metadata_processing:
   description:
     validation:
