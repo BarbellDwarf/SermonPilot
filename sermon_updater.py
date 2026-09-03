@@ -1558,6 +1558,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         'transcript_length': 0,
         'transcript': None,
         'output_dir': None,
+        'processing_temp_dir': None,
         'error': None,
     }
 
@@ -1625,7 +1626,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
     temp_dir = None
     import subprocess as _subprocess
-    import tempfile as _tempfile
+    import uuid as _uuid
+
+    from ui.config_utils import default_cache_root
+
     try:
         # Step 1: Process the audio (or skip if requested)
         if skip_audio:
@@ -1637,12 +1641,15 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             console_print("🎵 Processing audio...")
             _report(10, "Initializing audio processor...")
             if audio_processor_available:
-                # Create temporary output directory (absolute path).
-                # processing_temp_dir config key overrides the TMPDIR-backed
-                # default so long jobs don't fill a small RAM disk.
-                temp_root = config.get('processing_temp_dir') or _tempfile.gettempdir()
-                temp_dir = Path(temp_root) / "sermon_processing"
+                # Per-job temp dir: processing_temp_dir config key or the
+                # disk-backed cache root, so jobs never share a tmpfs folder.
+                processing_root = Path(
+                    config.get('processing_temp_dir')
+                    or (default_cache_root() / "sermon_processing")
+                )
+                temp_dir = processing_root / _uuid.uuid4().hex
                 temp_dir.mkdir(parents=True, exist_ok=True)
+                result['processing_temp_dir'] = str(temp_dir)
 
                 # For video inputs, extract audio to WAV first
                 process_input = audio_path

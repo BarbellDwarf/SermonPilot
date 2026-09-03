@@ -15,6 +15,7 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "ui"))
 sys.path.insert(0, str(project_root / "src"))
 
+from ui.config_utils import default_cache_root  # noqa: E402
 from ui.sermon_metadata import (  # noqa: E402
     apply_filename_autodetect,
     create_event_type_selectbox,
@@ -432,10 +433,8 @@ def start_enhanced_processing():
             st.error("No file uploaded.")
             return
 
-        # upload_dir config key overrides the TMPDIR-backed default so long
-        # jobs don't fill a small RAM disk.
         upload_dir = Path(
-            config.get('upload_dir') or (Path(tempfile.gettempdir()) / "sermon_uploads")
+            config.get('upload_dir') or (default_cache_root() / "sermon_uploads")
         )
         upload_dir.mkdir(parents=True, exist_ok=True)
         safe_name = Path(uploaded_file.name).name
