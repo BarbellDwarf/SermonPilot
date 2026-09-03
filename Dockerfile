@@ -8,6 +8,11 @@ FROM rocm/dev-ubuntu-22.04:7.1 AS base-rocm
 
 FROM base-${GPU_BACKEND} AS base
 
+# Pre-FROM args must be redeclared to be visible inside the stage;
+# this also makes the requirements selection below actually branch.
+ARG GPU_BACKEND
+ARG SERMONPILOT_VARIANT=${GPU_BACKEND}
+
 RUN apt-get update && apt-get install -y \
     python3.11 \
     python3.11-venv \
@@ -28,6 +33,7 @@ RUN python3.11 -m venv /app/venv
 
 ENV PATH="/app/venv/bin:$PATH"
 ENV PYTHONPATH="/app:/app/src:/app/ui"
+ENV SERMONPILOT_VARIANT=${SERMONPILOT_VARIANT}
 
 RUN useradd -m -u 1000 sermonapp && \
     mkdir -p /app /data /models /logs /home/sermonapp/.cache && \
