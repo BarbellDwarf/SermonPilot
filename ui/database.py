@@ -439,6 +439,25 @@ class SermonDatabase:
                 return json.loads(row['data'])
             return None
 
+    def save_config_meta(self, data: dict) -> None:
+        """Save config metadata (e.g. first-run seed marker) to the cache table."""
+        with self.get_connection() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO config_cache (key, data, updated_at)
+                VALUES (?, ?, ?)
+            """, ("config_seed_meta", json.dumps(data), utcnow()))
+            conn.commit()
+
+    def load_config_meta(self) -> dict | None:
+        """Load config metadata, or None if never written."""
+        with self.get_connection() as conn:
+            row = conn.execute("""
+                SELECT data FROM config_cache WHERE key = ?
+            """, ("config_seed_meta",)).fetchone()
+            if row:
+                return json.loads(row['data'])
+            return None
+
     def cache_api_response(self, cache_key: str, data: dict, expires_hours: int = 24) -> None:
         """Cache an API response in the database."""
         expires_at = utcnow() + datetime.timedelta(hours=expires_hours)

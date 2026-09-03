@@ -138,30 +138,19 @@ def execute_validation_job(job: Job) -> JobResult:
                     progress, f"Validating sermon {sermon_id} ({i+1}/{len(sermon_ids)})"
                 )
 
-                # Get configuration from job parameters first, then try loading
-                # from file as fallback
+                # Get configuration from job parameters first, then resolve
                 config = job.parameters.get('config', {})
                 if not config:
-                    job.add_log("No config in job parameters, attempting to load from file...")
+                    job.add_log("No config in job parameters, resolving configuration...")
                     try:
-                        # Try to load configuration from file as fallback
-                        from pathlib import Path
+                        from ui.config_utils import load_config_from_file
 
-                        import yaml
-
-                        # Look for config.yaml in the project root
-                        config_path = Path(__file__).parent.parent / "config.yaml"
-                        if config_path.exists():
-                            with open(config_path, encoding='utf-8') as f:
-                                config = yaml.safe_load(f)
-                            job.add_log(f"Loaded configuration from {config_path}")
-                        else:
-                            raise FileNotFoundError(f"Config file not found at {config_path}")
+                        config = load_config_from_file()
                     except Exception as e:
-                        job.add_log(f"Failed to load config from file: {e}")
+                        job.add_log(f"Failed to resolve configuration: {e}")
                         raise ValueError(
-                            f"No configuration available in job parameters and failed "
-                            f"to load from file: {e}"
+                            f"No configuration available in job parameters and "
+                            f"resolution failed: {e}"
                         ) from e
 
                 if not config:
