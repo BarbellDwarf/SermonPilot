@@ -173,7 +173,7 @@ def main() -> int:
         summary = validator.generate_summary(results)
 
         # Print basic summary
-        print("\n✅ Validation Complete!")
+        print("\nValidation Complete!")
         print(f"   Validated {summary.total_sermons} sermons")
         print(f"   {summary.valid_descriptions} valid ({summary.validation_rate:.1f}%)")
         print(f"   {summary.invalid_descriptions} invalid")

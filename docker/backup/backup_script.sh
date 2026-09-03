@@ -7,13 +7,13 @@ BACKUP_DIR="/backups"
 DATE=$(date +%Y%m%d_%H%M%S)
 CONTAINER_NAME="sermon-processor"
 
-echo "🔄 Starting backup process..."
+echo "Starting backup process..."
 
 # Create backup directory
 mkdir -p "$BACKUP_DIR/$DATE"
 
 # Backup application data
-echo "📁 Backing up application data..."
+echo "Backing up application data..."
 docker run --rm \
     --volumes-from $CONTAINER_NAME \
     -v "$BACKUP_DIR/$DATE":/backup \
@@ -22,10 +22,10 @@ docker run --rm \
 
 # Backup database if PostgreSQL is running
 if docker ps | grep -q sermon-postgres; then
-    echo "🗄️ Backing up PostgreSQL database..."
+    echo "Backing up PostgreSQL database..."
     docker exec sermon-postgres pg_dump -U sermon_user sermon_processor | gzip > "$BACKUP_DIR/$DATE/database.sql.gz"
 else
-    echo "📂 Backing up SQLite database..."
+    echo "Backing up SQLite database..."
     docker run --rm \
         --volumes-from $CONTAINER_NAME \
         -v "$BACKUP_DIR/$DATE":/backup \
@@ -34,7 +34,7 @@ else
 fi
 
 # Backup configuration
-echo "⚙️ Backing up configuration..."
+echo "Backing up configuration..."
 docker run --rm \
     --volumes-from $CONTAINER_NAME \
     -v "$BACKUP_DIR/$DATE":/backup \
@@ -42,7 +42,7 @@ docker run --rm \
     tar czf /backup/config.tar.gz /app/config_backups /app/*.yaml 2>/dev/null || true
 
 # Create backup manifest
-echo "📝 Creating backup manifest..."
+echo "Creating backup manifest..."
 cat > "$BACKUP_DIR/$DATE/manifest.json" << EOF
 {
     "backup_date": "$DATE",
@@ -57,7 +57,7 @@ cat > "$BACKUP_DIR/$DATE/manifest.json" << EOF
 EOF
 
 # Cleanup old backups (keep last 7 days)
-echo "🧹 Cleaning up old backups..."
+echo "Cleaning up old backups..."
 find "$BACKUP_DIR" -type d -name "*_*" -mtime +7 -exec rm -rf {} \; 2>/dev/null || true
 
-echo "✅ Backup completed: $BACKUP_DIR/$DATE"
+echo "Backup completed: $BACKUP_DIR/$DATE"
