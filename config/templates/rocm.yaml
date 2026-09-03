@@ -1,6 +1,7 @@
 # SermonPilot configuration template - rocm image variant
-# Derived from config/config.example.yaml; only the transcription section
-# differs. Every other section behaves exactly as the example describes.
+# Derived from config/config.example.yaml; the transcription section is
+# variant-specific and other sections may drift from the example over time
+# (the example remains canonical).
 
 # SermonAudio API credentials - Use environment variables for security
 api_key: "${SERMONAUDIO_API_KEY}"
