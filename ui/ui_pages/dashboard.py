@@ -222,8 +222,8 @@ def show_setup_guide():
     st.markdown("""
     To get started, please complete the setup:
 
-    1. **Configuration**: Copy `config.example.yaml` to `config.yaml` and update your settings
-    2. **API Keys**: Add your SermonAudio API credentials
+    1. **Configuration**: Set your environment variables (SERMONAUDIO_API_KEY, SERMONAUDIO_BROADCASTER_ID) or adjust settings in the UI; they persist to the settings database
+    2. **API Keys**: Add your SermonAudio API credentials via environment or the UI
     3. **LLM Provider**: Configure OpenAI or Ollama for AI processing
     4. **Audio Enhancement**: Choose your preferred enhancement method
     """)

@@ -1,6 +1,7 @@
 # SermonAudio Updater - LLM Provider Examples
-# ⚠️  WARNING: EXAMPLE FILE ONLY - DO NOT USE IN PRODUCTION ⚠️
-# Copy the section you want to use to your config.yaml and replace with environment variables
+# WARNING: EXAMPLE FILE ONLY - DO NOT USE IN PRODUCTION
+# Use these as overlays: point SA_UPDATER_CONFIG at the file or copy a section
+# into the UI config import. Keys must match what src/llm_manager.py reads.
 
 # Example 1: xAI Grok as primary, OpenAI as fallback
 llm_xai_example:
@@ -17,14 +18,16 @@ llm_xai_example:
       api_key: "${OPENAI_API_KEY}"  # Replace with your OpenAI API key
       model: "gpt-4o"
 
-# Example 2: Anthropic Claude as primary, Ollama as fallback
+# Example 2: Anthropic Claude via an OpenAI-compatible proxy, Ollama as fallback
+# NOTE: src/llm_manager.py has no native Anthropic provider; base_url must point
+# at an OpenAI-compatible endpoint (proxy/gateway), not api.anthropic.com directly.
 llm_anthropic_example:
   primary:
     provider: "openai"
     openai:
-      api_key: "${ANTHROPIC_API_KEY}"  # Replace with your Anthropic API key
+      api_key: "${ANTHROPIC_API_KEY}"  # Replace with your proxy API key
       model: "claude-3-5-sonnet-20241022"
-      base_url: "https://api.anthropic.com/v1"
+      base_url: "https://your-openai-compatible-proxy.example.com/v1"
   fallback:
     enabled: true
     provider: "ollama"
