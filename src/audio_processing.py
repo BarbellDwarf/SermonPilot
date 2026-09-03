@@ -521,7 +521,7 @@ class AudioProcessor:
         system_memory_before = psutil.virtual_memory().used / (1024**3)
 
         logger.info(
-            f"🔍 MEMORY BEFORE CHUNKING: GPU {gpu_memory_before:.1f}GB allocated, "
+            f"MEMORY BEFORE CHUNKING: GPU {gpu_memory_before:.1f}GB allocated, "
             f"{gpu_reserved_before:.1f}GB reserved, System {system_memory_before:.1f}GB used"
         )
 
@@ -568,7 +568,7 @@ class AudioProcessor:
                 processing_time = individual_chunk_end - individual_chunk_start
                 speed_factor = chunk_duration / processing_time
                 logger.info(
-                    f"⏱️  Chunk {i+1}: {processing_time:.1f}s to process "
+                    f"Chunk {i+1}: {processing_time:.1f}s to process "
                     f"{chunk_duration:.1f}s audio (speed: {speed_factor:.1f}x realtime)"
                 )
 
@@ -635,17 +635,17 @@ class AudioProcessor:
         total_chunk_time = chunk_end_time - chunk_start_time
 
         logger.info(
-            f"🔍 MEMORY AFTER CHUNKING: GPU {gpu_memory_after:.1f}GB allocated "
+            f"MEMORY AFTER CHUNKING: GPU {gpu_memory_after:.1f}GB allocated "
             f"({gpu_memory_after-gpu_memory_before:+.1f}GB), "
             f"{gpu_reserved_after:.1f}GB reserved "
             f"({gpu_reserved_after-gpu_reserved_before:+.1f}GB)"
         )
         logger.info(
-            f"🔍 SYSTEM MEMORY: {system_memory_after:.1f}GB used "
+            f"SYSTEM MEMORY: {system_memory_after:.1f}GB used "
             f"({system_memory_after-system_memory_before:+.1f}GB change)"
         )
         logger.info(
-            f"⏱️  CHUNK PROCESSING TIME: {total_chunk_time:.1f}s for {num_chunks} chunks "
+            f"CHUNK PROCESSING TIME: {total_chunk_time:.1f}s for {num_chunks} chunks "
             f"({total_chunk_time/num_chunks:.1f}s per chunk)"
         )
 
@@ -845,7 +845,7 @@ class AudioProcessor:
                 total_time = chunk_end_time - start_time
                 chunk_time = chunk_end_time - chunk_start_time
                 logger.info(
-                    f"⏱️  CHUNKED PROCESSING: Total time {total_time:.1f}s, "
+                    f"CHUNKED PROCESSING: Total time {total_time:.1f}s, "
                     f"Chunking overhead: {total_time - chunk_time:.1f}s"
                 )
             else:

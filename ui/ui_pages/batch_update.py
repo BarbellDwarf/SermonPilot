@@ -558,7 +558,7 @@ def start_batch_processing():
         if not config:
             st.error("No configuration loaded. Please check the Settings page first.")
             st.info(
-                "Try going to Settings → Configuration and saving your settings, "
+                "Try going to Settings -> Configuration and saving your settings, "
                 "then return to this page."
             )
             return
@@ -570,7 +570,7 @@ def start_batch_processing():
                 f"Configuration is missing required fields: {', '.join(missing_fields)}"
             )
             st.info(
-                "Please go to Settings → Configuration and ensure all required fields "
+                "Please go to Settings -> Configuration and ensure all required fields "
                 "are filled out."
             )
             return
