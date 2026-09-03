@@ -199,20 +199,20 @@ class ProcessingOrchestrator:
                                index: int, total: int) -> str:
         """Format processing result message."""
         if not result:
-            return f"[{index}/{total}] ✅ Completed: {sermon_title}"
+            return f"[{index}/{total}] Completed: {sermon_title}"
 
         if result.get("action") == "skipped":
             reason = result.get("reason", "Unknown reason")
-            return f"[{index}/{total}] ⏭️ Skipped: {sermon_title} - {reason}"
+            return f"[{index}/{total}] Skipped: {sermon_title} - {reason}"
         elif result.get("action") == "processed":
             completed = result.get("completed", [])
             if completed:
                 actions_text = ", ".join(completed)
-                return f"[{index}/{total}] ✅ Updated: {sermon_title} - {actions_text}"
+                return f"[{index}/{total}] Updated: {sermon_title} - {actions_text}"
             else:
-                return f"[{index}/{total}] ✅ Completed: {sermon_title}"
+                return f"[{index}/{total}] Completed: {sermon_title}"
         else:
-            return f"[{index}/{total}] ✅ Completed: {sermon_title}"
+            return f"[{index}/{total}] Completed: {sermon_title}"
 
     def should_process_sermon(
         self, sermon, processing_options: ProcessingOptions

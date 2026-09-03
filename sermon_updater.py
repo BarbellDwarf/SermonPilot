@@ -44,8 +44,8 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
-print("🔄 Initializing SermonPilot...")
-print("   📦 Loading dependencies...")
+print("Initializing SermonPilot...")
+print("   Loading dependencies...")
 
 import requests  # noqa: E402
 import sermonaudio  # noqa: E402
@@ -61,7 +61,7 @@ from src.sermon_paths import (  # noqa: E402
     read_metadata,
 )
 
-print("   🤖 Loading AI components...")
+print("   Loading AI components...")
 # Suppress ML library import noise
 with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_warnings():
     warnings.simplefilter("ignore")
@@ -108,12 +108,12 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
 _is_cli = __name__ == '__main__'
 
 if _is_cli:
-    print("   ⚙️  Configuring environment...")
+    print("   Configuring environment...")
 load_dotenv()
 
 if _is_cli:
-    print("✅ Initialization complete!")
-    print("📃Retrieving Sermon List....")
+    print("Initialization complete!")
+    print("Retrieving Sermon List....")
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -216,13 +216,13 @@ def console_print(message: str, level: str = "info"):
         level: Message level (info, warning, error, success)
     """
     if level == "error":
-        print(f"❌ {message}")
+        print(f"ERROR: {message}")
     elif level == "warning":
-        print(f"⚠️  {message}")
+        print(f"WARNING: {message}")
     elif level == "success":
-        print(f"✅ {message}")
+        print(f"SUCCESS: {message}")
     else:
-        print(f"ℹ️  {message}")
+        print(f"INFO: {message}")
 
 
 def is_content_missing_or_minimal(content: str | None, min_length: int) -> bool:
@@ -732,32 +732,32 @@ Guidelines:
     def print_detailed_report(self, results: list[ValidationResult], summary: ValidationSummary):
         """Print a detailed validation report to console."""
         print("\n" + "="*80)
-        print("📊 DESCRIPTION VALIDATION REPORT")
+        print("DESCRIPTION VALIDATION REPORT")
         print("="*80)
 
         # Summary section
-        print("\n📈 SUMMARY:")
+        print("\nSUMMARY:")
         print(f"   Total Sermons Validated: {summary.total_sermons}")
         print(
-            f"   ✅ Valid Descriptions: {summary.valid_descriptions} "
+            f"   Valid Descriptions: {summary.valid_descriptions} "
             f"({summary.validation_rate:.1f}%)"
         )
-        print(f"   ❌ Invalid Descriptions: {summary.invalid_descriptions}")
-        print(f"   🔄 Need Regeneration: {summary.needs_regeneration}")
-        print(f"   📊 Average Score: {summary.average_score:.2f}/1.0")
+        print(f"   Invalid Descriptions: {summary.invalid_descriptions}")
+        print(f"   Need Regeneration: {summary.needs_regeneration}")
+        print(f"   Average Score: {summary.average_score:.2f}/1.0")
 
         # Criteria performance
-        print("\n📋 CRITERIA PERFORMANCE:")
+        print("\nCRITERIA PERFORMANCE:")
         for criterion, performance in summary.criteria_performance.items():
-            status_icon = "✅" if performance >= 80 else "⚠️" if performance >= 60 else "❌"
+            status_icon = "OK" if performance >= 80 else "WARN" if performance >= 60 else "FAIL"
             print(f"   {status_icon} {criterion}: {performance:.1f}%")
 
         # Individual results (failed validations)
         failed_results = [r for r in results if not r.is_valid]
         if failed_results:
-            print(f"\n❌ FAILED VALIDATIONS ({len(failed_results)} sermons):")
+            print(f"\nFAILED VALIDATIONS ({len(failed_results)} sermons):")
             for result in failed_results[:10]:  # Show first 10
-                print(f"\n   📝 Sermon ID: {result.sermon_id}")
+                print(f"\n   Sermon ID: {result.sermon_id}")
                 print(f"      Score: {result.validation_score:.2f}/1.0")
                 print(f"      Reason: {result.validation_reason}")
                 print(f"      Length: {result.description_length} chars")
@@ -771,10 +771,10 @@ Guidelines:
         # Low scoring but passed validations
         low_score_passed = [r for r in results if r.is_valid and r.validation_score < 0.8]
         if low_score_passed:
-            print(f"\n⚠️  PASSED BUT LOW SCORING ({len(low_score_passed)} sermons):")
+            print(f"\nPASSED BUT LOW SCORING ({len(low_score_passed)} sermons):")
             for result in low_score_passed[:5]:  # Show first 5
                 print(
-                    f"   📝 {result.sermon_id}: {result.validation_score:.2f}/1.0 "
+                    f"   {result.sermon_id}: {result.validation_score:.2f}/1.0 "
                     f"- {result.validation_reason}"
                 )
 
@@ -857,25 +857,25 @@ def validate_and_regenerate_descriptions(
     Returns:
         Dictionary with processing results including links to changed sermons
     """
-    console_print("🔍 Starting description validation and regeneration process...")
+    console_print("Starting description validation and regeneration process...")
 
     # Validate existing descriptions
-    console_print("📋 Validating existing descriptions...")
+    console_print("Validating existing descriptions...")
     results = validator.validate_local_sermons(sermon_ids)
 
     if not results:
-        console_print("❌ No sermons found to validate", "error")
+        console_print("No sermons found to validate", "error")
         return {'validated': 0, 'regenerated': 0, 'failed': 0}
 
     # Generate summary
     summary = validator.generate_summary(results)
 
     # Print validation summary
-    console_print("📊 Validation Results:")
+    console_print("Validation Results:")
     console_print(f"   Total validated: {summary.total_sermons}")
-    console_print(f"   ✅ Valid: {summary.valid_descriptions} ({summary.validation_rate:.1f}%)")
-    console_print(f"   ❌ Invalid: {summary.invalid_descriptions}")
-    console_print(f"   🔄 Need regeneration: {summary.needs_regeneration}")
+    console_print(f"   Valid: {summary.valid_descriptions} ({summary.validation_rate:.1f}%)")
+    console_print(f"   Invalid: {summary.invalid_descriptions}")
+    console_print(f"   Need regeneration: {summary.needs_regeneration}")
 
     regenerated_count = 0
     failed_regeneration = 0
@@ -883,7 +883,7 @@ def validate_and_regenerate_descriptions(
     validation_failures = []  # Track double-validation failures
 
     if regenerate_failed and summary.invalid_descriptions > 0:
-        console_print(f"🔄 Regenerating {summary.invalid_descriptions} failed descriptions...")
+        console_print(f"Regenerating {summary.invalid_descriptions} failed descriptions...")
 
         failed_results = [r for r in results if not r.is_valid]
 
@@ -893,19 +893,19 @@ def validate_and_regenerate_descriptions(
 
             try:
                 if dry_run:
-                    console_print(f"      🔍 DRY RUN: Would regenerate description for {sermon_id}")
+                    console_print(f"      DRY RUN: Would regenerate description for {sermon_id}")
                     regenerated_count += 1
                     continue
 
                 # Get sermon transcript for regeneration
                 transcript = get_sermon_transcript(sermon_id)
                 if not transcript:
-                    console_print(f"      ❌ Could not get transcript for {sermon_id}", "error")
+                    console_print(f"      Could not get transcript for {sermon_id}", "error")
                     failed_regeneration += 1
                     continue
 
                 # Generate new description with validation
-                console_print("      🤖 Generating new description...")
+                console_print("      Generating new description...")
                 new_description, validation_info = generate_validated_summary(
                     transcript,
                     event_type=None,  # Could enhance this with API data
@@ -913,7 +913,7 @@ def validate_and_regenerate_descriptions(
                 )
 
                 # Double-validate the newly generated description
-                console_print("      🔍 Double-validating new description...")
+                console_print("      Double-validating new description...")
                 is_valid, reason, score, criteria_met, criteria_failed = (
                     validator.validate_description(
                         new_description,
@@ -924,7 +924,7 @@ def validate_and_regenerate_descriptions(
                 # Check if the new description actually passes validation
                 if not is_valid:
                     console_print(
-                        "      ⚠️  WARNING: New description still fails validation!", "warning"
+                        "      WARNING: New description still fails validation!", "warning"
                     )
                     console_print(f"               Score: {score:.2f}, Reason: {reason}", "warning")
                     validation_failures.append({
@@ -936,11 +936,11 @@ def validate_and_regenerate_descriptions(
                     })
 
                 if validation_info.get('final_status') == 'approved_primary':
-                    status_icon = "✅"
+                    status_icon = "OK"
                 elif validation_info.get('final_status') == 'approved_fallback':
-                    status_icon = "⚠️"
+                    status_icon = "WARN"
                 else:
-                    status_icon = "❌"
+                    status_icon = "FAIL"
 
                 console_print(f"      {status_icon} Generated new description "
                       f"({len(new_description)} chars, score: {score:.2f})")
@@ -949,7 +949,7 @@ def validate_and_regenerate_descriptions(
                 sermon_dir = find_sermon_dir(validator.output_dir, sermon_id)
                 if not sermon_dir:
                     console_print(
-                        f"      ❌ Could not find sermon directory for {sermon_id}", "error"
+                        f"      Could not find sermon directory for {sermon_id}", "error"
                     )
                     failed_regeneration += 1
                     continue
@@ -959,29 +959,29 @@ def validate_and_regenerate_descriptions(
                     # Backup old description
                     backup_file = sermon_dir / f"{sermon_id}_description_backup.txt"
                     description_file.rename(backup_file)
-                    console_print(f"      💾 Backed up original to {backup_file.name}")
+                    console_print(f"      Backed up original to {backup_file.name}")
 
                 description_file.write_text(new_description, encoding='utf-8')
 
                 # Update SermonAudio if not in dry run mode and upload is enabled
                 upload_success = False
                 if upload_to_sermonaudio and not dry_run:
-                    console_print("      📤 Uploading to SermonAudio...")
+                    console_print("      Uploading to SermonAudio...")
                     try:
                         upload_success = update_sermon_metadata(sermon_id, new_description, None)
                         if upload_success:
-                            console_print("      ✅ Updated SermonAudio successfully", "success")
+                            console_print("      Updated SermonAudio successfully", "success")
                         else:
-                            console_print("      ⚠️  SermonAudio update failed", "warning")
+                            console_print("      SermonAudio update failed", "warning")
                     except Exception as e:
-                        console_print(f"      ❌ SermonAudio upload error: {e}", "error")
+                        console_print(f"      SermonAudio upload error: {e}", "error")
 
                 regenerated_count += 1
-                console_print(f"      ✅ Updated description for sermon {sermon_id}", "success")
+                console_print(f"      Updated description for sermon {sermon_id}", "success")
 
             except Exception as e:
                 console_print(
-                    f"      ❌ Failed to regenerate description for {sermon_id}: {e}", "error"
+                    f"      Failed to regenerate description for {sermon_id}: {e}", "error"
                 )
                 failed_regeneration += 1
 
@@ -1589,7 +1589,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
     # Preprocessing: optional clean-audio.py step (runs before enhancement)
     if use_clean_audio:
-        console_print("🧹 Running external clean-audio.py preprocessing...")
+        console_print("Running external clean-audio.py preprocessing...")
         _report(3, "Running clean-audio.py (Audacity macro + DeepFilterNet)...")
         import subprocess
         clean_script = Path(clean_audio_script).expanduser()
@@ -1617,7 +1617,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 return result
             # Replace audio_path with cleaned file (enhancements will still run on it)
             audio_path = clean_output
-            console_print(f"✅ clean-audio.py done: {clean_output.name}")
+            console_print(f"clean-audio.py done: {clean_output.name}")
             _report(7, "clean-audio.py complete")
         except subprocess.TimeoutExpired:
             logger.error("clean-audio.py timed out after 30 minutes")
@@ -1640,12 +1640,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
     try:
         # Step 1: Process the audio (or skip if requested)
         if skip_audio:
-            console_print("⏭️  Skipping audio enhancement (--skip-audio enabled)")
+            console_print("Skipping audio enhancement (--skip-audio enabled)")
             logger.info("Skipping audio enhancement per user request")
             _report(20, "Skipping audio enhancement (using file as-is)")
             enhanced_audio_path = audio_path
         else:
-            console_print("🎵 Processing audio...")
+            console_print("Processing audio...")
             _report(10, "Initializing audio processor...")
             if audio_processor_available:
                 # Per-job temp dir: processing_temp_dir config key or the
@@ -1714,7 +1714,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 converted_path = temp_dir / f"enhanced_audio{target_ext}"
                 if _transcode_media(Path(enhanced_audio_path), converted_path):
                     console_print(
-                        f"🎧 Converted enhanced audio to {target_ext.lstrip('.').upper()}"
+                        f"Converted enhanced audio to {target_ext.lstrip('.').upper()}"
                     )
                     enhanced_audio_path = converted_path
 
@@ -1746,12 +1746,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     mux_proc.run(mux_cmd, capture_output=True, text=True, timeout=600, check=True)
                     final_upload_path = final_video
                     upload_type = "original-video"
-                    console_print(f"🎬 Muxed enhanced audio into video: {final_video.name}")
+                    console_print(f"Muxed enhanced audio into video: {final_video.name}")
                 except Exception as e:
                     logger.warning("Video muxing failed, falling back to audio upload: %s", e)
-                    console_print("⚠️  Video mux failed, uploading audio only")
+                    console_print("Video mux failed, uploading audio only")
             else:
-                console_print("🎬 Uploading original video (no audio enhancement)")
+                console_print("Uploading original video (no audio enhancement)")
                 final_upload_path = original_input_path
                 upload_type = "original-video"
 
@@ -1762,7 +1762,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 original_input_path, speaker_name, series_title, title, config
             )
             if transcript:
-                console_print(f"♻️ Reusing existing transcript ({len(transcript)} characters)")
+                console_print(f"Reusing existing transcript ({len(transcript)} characters)")
                 _report(55, f"Reusing existing transcript ({len(transcript)} characters)")
             else:
                 _report(35, f"Starting transcription ({whisper_model} model)...")
@@ -1795,7 +1795,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     transcript = ""
                 _report(55, f"Transcription complete: {len(transcript)} characters")
         elif skip_transcription:
-            console_print("⏭️  Skipping transcription (--skip-transcription enabled)")
+            console_print("Skipping transcription (--skip-transcription enabled)")
             _report(55, "Skipped transcription")
 
         result['transcript'] = transcript
@@ -1803,7 +1803,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
         # Step 3: Generate metadata using transcript or fallback
         if transcript and not skip_ai_generation:
-            console_print("🤖 Generating metadata from transcript...")
+            console_print("Generating metadata from transcript...")
 
             if not title:
                 try:
@@ -1859,9 +1859,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     logger.warning("LLM hashtag generation failed: %s", e)
                     hashtags = None
         elif skip_ai_generation:
-            console_print("⏭️  Skipping AI metadata generation")
+            console_print("Skipping AI metadata generation")
         else:
-            console_print("⚠️  No transcript available, using basic metadata...")
+            console_print("No transcript available, using basic metadata...")
 
         # Fallback metadata generation for any missing fields
         if skip_ai_generation:
@@ -1904,17 +1904,17 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         if generate_short_title and title:
             try:
                 short_display_title = generate_short_display_title(title)
-                console_print(f"📝 Short display title: {short_display_title}")
+                console_print(f"Short display title: {short_display_title}")
             except Exception as e:
                 logger.warning("Short title generation failed: %s", e)
 
-        console_print(f"📝 Generated title: {title}")
-        console_print(f"📝 Generated description: {description[:100]}...")
+        console_print(f"Generated title: {title}")
+        console_print(f"Generated description: {description[:100]}...")
         if hashtags:
-            console_print(f"🏷️  Generated hashtags: {hashtags}")
+            console_print(f"Generated hashtags: {hashtags}")
 
         if dry_run:
-            console_print("🔍 DRY RUN - Would create sermon with:")
+            console_print("DRY RUN - Would create sermon with:")
             console_print(f"  Title: {title}")
             console_print(f"  Speaker: {speaker_name}")
             console_print(f"  Date: {recorded_date}")
@@ -2053,11 +2053,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         'hashtags': hashtags or '',
                     },
                 })
-                console_print("💾 Dry run sermon saved to local database (status: draft)")
+                console_print("Dry run sermon saved to local database (status: draft)")
             except Exception as e:
                 logger.warning(f"Failed to save dry run sermon to local database: {e}")
 
-            console_print(f"📁 Dry run files saved to: {output_dir}")
+            console_print(f"Dry run files saved to: {output_dir}")
             _report(100, "Dry run complete")
             result['success'] = True
             return result
@@ -2076,7 +2076,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         if reusable_sermon_id:
             sermon_id = reusable_sermon_id
             console_print(
-                f"♻️  Existing processed sermon {sermon_id} matches "
+                f"Existing processed sermon {sermon_id} matches "
                 f"'{title}' by {speaker_name} ({recorded_date}); reusing it"
             )
             _report(88, f"Reusing existing sermon: {sermon_id}")
@@ -2192,7 +2192,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                             'hashtags': hashtags or '',
                         },
                     })
-                    console_print(f"💾 Draft saved locally before upload: {recovery_draft_id}")
+                    console_print(f"Draft saved locally before upload: {recovery_draft_id}")
                 except Exception as db_err:
                     logger.warning("Failed to save pre-upload draft to database: %s", db_err)
             except Exception as draft_err:
@@ -2200,15 +2200,15 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 recovery_draft_id = None
 
             _report(83, "Resolving speaker...")
-            console_print("👤 Resolving speaker...")
+            console_print("Resolving speaker...")
             speaker_id = resolve_speaker_id(speaker_name)
             if speaker_id:
-                console_print(f"✅ Resolved speaker '{speaker_name}' to ID {speaker_id}")
+                console_print(f"Resolved speaker '{speaker_name}' to ID {speaker_id}")
             else:
-                console_print(f"ℹ️  Using speaker name '{speaker_name}' as-is (no numeric ID found)")
+                console_print(f"Using speaker name '{speaker_name}' as-is (no numeric ID found)")
 
             _report(85, "Creating sermon on SermonAudio...")
-            console_print("📤 Creating sermon on SermonAudio...")
+            console_print("Creating sermon on SermonAudio...")
             sermon_id = create_new_sermon_api(
                 title=title,
                 speaker_name=speaker_name,
@@ -2233,7 +2233,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         f"; progress preserved locally as draft {recovery_draft_id}"
                     )
                     console_print(
-                        f"💾 Create failed - progress saved as draft {recovery_draft_id}"
+                        f"Create failed - progress saved as draft {recovery_draft_id}"
                     )
                 return result
 
@@ -2244,10 +2244,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         # creation, so always PATCH it onto the sermon afterwards
         if series_id is not None:
             if set_sermon_series(sermon_id, series_id):
-                console_print(f"📚 Series set: {series_title} (ID {series_id})")
+                console_print(f"Series set: {series_title} (ID {series_id})")
             else:
                 console_print(
-                    f"⚠️ Failed to set series '{series_title}' on sermon {sermon_id}"
+                    f"Failed to set series '{series_title}' on sermon {sermon_id}"
                 )
                 logger.error(
                     "set_sermon_series failed: sermon %s, seriesID %s (%s)",
@@ -2256,13 +2256,13 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
         # Step 5: Upload the media (audio or video)
         media_label = "video" if upload_type == "original-video" else "audio"
-        console_print(f"📤 Uploading {media_label} for sermon {sermon_id}...")
+        console_print(f"Uploading {media_label} for sermon {sermon_id}...")
         _report(92, f"Uploading {media_label} to SermonAudio...")
         upload_success = upload_media_file(sermon_id, str(final_upload_path), upload_type)
 
         if upload_success:
             console_print(
-                f"✅ Successfully created and uploaded {media_label} for sermon {sermon_id}"
+                f"Successfully created and uploaded {media_label} for sermon {sermon_id}"
             )
             _report(95, f"{media_label.capitalize()} uploaded successfully")
 
@@ -2332,7 +2332,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             if transcript:
                 with open(get_file_path(output_dir, "transcript"), 'w', encoding='utf-8') as f:
                     f.write(transcript)
-                console_print(f"📝 Transcript saved ({len(transcript)} characters)")
+                console_print(f"Transcript saved ({len(transcript)} characters)")
 
             # Cancellation checkpoint: stop before persisting the local record
             # as 'processed' if the user cancelled while uploading
@@ -2391,11 +2391,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                             recovery_draft_id, cleanup_err,
                         )
 
-                console_print("💾 Sermon saved to local database")
+                console_print("Sermon saved to local database")
             except Exception as e:
                 logger.warning(f"Failed to save sermon to local database: {e}")
 
-            console_print(f"📁 Sermon files saved to: {output_dir}")
+            console_print(f"Sermon files saved to: {output_dir}")
             _report(100, f"Done - sermon {sermon_id} created and uploaded")
             result['success'] = True
             return result
@@ -2508,12 +2508,12 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
             result['error'] = f"Audio file not found: {audio_path_str}"
             return result
 
-        console_print(f"📤 Publishing dry run sermon: {title}")
+        console_print(f"Publishing dry run sermon: {title}")
         console_print(f"   Speaker: {speaker_name}, Date: {recorded_date}")
 
         speaker_id = resolve_speaker_id(speaker_name)
         if speaker_id:
-            console_print(f"✅ Resolved speaker '{speaker_name}' to ID {speaker_id}")
+            console_print(f"Resolved speaker '{speaker_name}' to ID {speaker_id}")
 
         # If a previous publish attempt already created the remote sermon
         # (e.g. it died mid-upload), reuse that ID instead of creating a
@@ -2524,11 +2524,11 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
         if existing_publication_id:
             new_sermon_id = str(existing_publication_id)
             console_print(
-                f"♻️  Draft was already created on SermonAudio as {new_sermon_id}; "
+                f"Draft was already created on SermonAudio as {new_sermon_id}; "
                 "skipping creation"
             )
         else:
-            console_print("📤 Creating sermon on SermonAudio...")
+            console_print("Creating sermon on SermonAudio...")
             new_sermon_id = create_new_sermon_api(
                 title=title,
                 speaker_name=speaker_name,
@@ -2548,7 +2548,7 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
             # Record immediately so a retried publish cannot create a duplicate
             _record_publication_id(repo, dry_run_id, str(new_sermon_id))
 
-            console_print(f"✅ Sermon created with ID: {new_sermon_id}")
+            console_print(f"Sermon created with ID: {new_sermon_id}")
 
         # The API ignores seriesTitle during creation, so PATCH it after
         if series_id is not None:
@@ -2583,13 +2583,13 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
                 pass
 
         media_label = "video" if upload_type == "original-video" else "audio"
-        console_print(f"📤 Uploading {media_label}...")
+        console_print(f"Uploading {media_label}...")
         upload_success = upload_media_file(new_sermon_id, str(upload_path), upload_type)
 
         if upload_success:
-            console_print(f"✅ {media_label.capitalize()} uploaded successfully")
+            console_print(f"{media_label.capitalize()} uploaded successfully")
         else:
-            console_print(f"⚠️  Sermon created but {media_label} upload failed")
+            console_print(f"Sermon created but {media_label} upload failed")
 
         # Update local database: save with real ID, delete old dry run entry
         # in a single transaction so a failure cannot leave duplicates or neither
@@ -2718,9 +2718,9 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
                 shutil.rmtree(str(old_output_dir))
 
         if upload_success:
-            console_print(f"✅ Dry run sermon published as: {new_sermon_id}")
+            console_print(f"Dry run sermon published as: {new_sermon_id}")
         else:
-            console_print(f"⚠️  Sermon created ({new_sermon_id}) but media upload failed")
+            console_print(f"Sermon created ({new_sermon_id}) but media upload failed")
         result['success'] = upload_success
         result['sermon_id'] = new_sermon_id
         return result
@@ -3333,7 +3333,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
     # Get transcript if needed
     if needs_transcript:
         if not verbose:
-            print("   📄 Retrieving transcript...")
+            print("   Retrieving transcript...")
         if audio_file and transcription_backend:
             from src.transcription import transcribe
             transcript = transcribe(audio_file, model_size="base", config=config,
@@ -3346,7 +3346,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
             # Process metadata if needed and transcript is available
             if needs_desc_update:
                 if not verbose:
-                    print("   ✨ Generating description...")
+                    print("   Generating description...")
                 summary, validation_info = generate_validated_summary(
                     transcript, event_type=event_type, speaker_name=speaker_name
                 )
@@ -3355,7 +3355,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
 
             if needs_hash_update:
                 if not verbose:
-                    print("   🏷️  Generating hashtags...")
+                    print("   Generating hashtags...")
                 hashtags = generate_hashtags(transcript)
                 logger.debug("Generated hashtags: %s", hashtags)
 
@@ -3364,7 +3364,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
     qa_processing_info = None
     if needs_audio:
         if not verbose:
-            print("   🎵 Downloading audio...")
+            print("   Downloading audio...")
         input_audio = os.path.join(sermon_dir, FILENAMES["temp"])
         output_audio = os.path.join(sermon_dir, FILENAMES["enhanced"])
 
@@ -3409,7 +3409,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
 
             # Process audio
             if not verbose:
-                print("   🔧 Processing audio...")
+                print("   Processing audio...")
             try:
                 result = process_sermon_audio(
                     input_audio,
@@ -3521,7 +3521,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
     # Update metadata if we generated any
     if summary is not None or hashtags is not None:
         if not verbose:
-            print("   📤 Updating metadata...")
+            print("   Updating metadata...")
         try:
             # Get current values to preserve what we're not updating
             current_desc = (getattr(details, 'moreInfoText', None) or
@@ -3542,13 +3542,13 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
     # Apply the selected series via numeric seriesID
     if series_id is not None:
         if not verbose:
-            print("   📚 Setting series...")
+            print("   Setting series...")
         set_sermon_series(sermon_id, series_id)
 
     # Upload audio if we processed it
     if needs_audio and output_audio and os.path.exists(output_audio):
         if not verbose:
-            print("   📤 Uploading audio...")
+            print("   Uploading audio...")
         try:
             if upload_audio_file(sermon_id, output_audio):
                 logger.debug("Audio uploaded successfully")
@@ -3563,7 +3563,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
             and hasattr(details, 'media') and details.media
             and getattr(details.media, 'video', None)):
         if not verbose:
-            print("   🎬 Updating video with enhanced audio...")
+            print("   Updating video with enhanced audio...")
         try:
             import subprocess as mux_proc
             # Pick the highest-bitrate MP4 (h264 "high" preferred; fall back
@@ -3619,7 +3619,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                 if upload_media_file(sermon_id, muxed_video, "original-video"):
                     logger.debug("Video uploaded successfully")
                     if not verbose:
-                        print("   ✅ Video updated with enhanced audio")
+                        print("   Video updated with enhanced audio")
                 else:
                     logger.error("Video upload failed")
 
@@ -3631,7 +3631,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
         except Exception as e:  # pragma: no cover
             logger.error("Video update error: %s", e)
             if not verbose:
-                print(f"   ⚠️  Video update failed: {e}")
+                print(f"   Video update failed: {e}")
 
     # Cleanup temp audio file
     try:
@@ -3708,7 +3708,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                 logger.debug("Sermon data saved to database successfully")
                 if qa_processing_info and qa_processing_info.get('total_segments', 0) > 0:
                     logger.info(
-                        f"💾 Saved Q&A processing info: "
+                        f"Saved Q&A processing info: "
                         f"{qa_processing_info['total_segments']} segments"
                     )
             else:
@@ -4363,7 +4363,7 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
 
 def handle_new_sermon(args):
     """Handle new-sermon subcommand."""
-    console_print("🎵 Creating new sermon from audio file...")
+    console_print("Creating new sermon from audio file...")
 
     result = process_new_sermon(
         audio_file=args.audio_file,
@@ -4393,12 +4393,12 @@ def handle_new_sermon(args):
     if result.get('success'):
         sermon_id = result.get('sermon_id')
         if sermon_id:
-            console_print(f"✅ New sermon created successfully! ID: {sermon_id}")
+            console_print(f"New sermon created successfully! ID: {sermon_id}")
         else:
-            console_print("✅ New sermon processed successfully (dry run)")
+            console_print("New sermon processed successfully (dry run)")
     else:
         error_msg = result.get('error', 'Unknown error')
-        console_print(f"❌ Failed to create new sermon: {error_msg}", "error")
+        console_print(f"Failed to create new sermon: {error_msg}", "error")
         exit(1)
 
 
@@ -4437,7 +4437,7 @@ def handle_validation(args):
 
         if not llm_manager.validator_provider:
             console_print(
-                "⚠️  No validator LLM configured, using primary provider for validation", "warning"
+                "No validator LLM configured, using primary provider for validation", "warning"
             )
 
         # Parse sermon IDs if provided
@@ -4446,11 +4446,11 @@ def handle_validation(args):
             validation_sermon_ids = [
                 sid.strip() for sid in args.validation_sermon_ids.split(',') if sid.strip()
             ]
-            console_print(f"🎯 Validating {len(validation_sermon_ids)} specific sermons")
+            console_print(f"Validating {len(validation_sermon_ids)} specific sermons")
 
         # Run validation
         if args.validate_and_regenerate:
-            console_print("🔍 Validating descriptions and regenerating failed ones...")
+            console_print("Validating descriptions and regenerating failed ones...")
             results = validate_and_regenerate_descriptions(
                 validator=validator,
                 sermon_ids=validation_sermon_ids,
@@ -4460,12 +4460,12 @@ def handle_validation(args):
             )
             # results is a dict: {'validated', 'regenerated', 'failed', ...}
             console_print(
-                f"📊 Validated {results.get('validated', 0)}, "
+                f"Validated {results.get('validated', 0)}, "
                 f"regenerated {results.get('regenerated', 0)}, "
                 f"failed {results.get('failed', 0)}"
             )
         else:
-            console_print("🔍 Validating descriptions...")
+            console_print("Validating descriptions...")
             results = validator.validate_local_sermons(validation_sermon_ids)
             summary = validator.generate_summary(results)
 
@@ -4474,18 +4474,18 @@ def handle_validation(args):
 
             if args.export_validation_csv:
                 validator.export_to_csv(results, args.export_validation_csv)
-                console_print(f"📊 Validation results exported to {args.export_validation_csv}")
+                console_print(f"Validation results exported to {args.export_validation_csv}")
 
             if args.export_validation_json:
                 validator.export_to_json(results, summary, args.export_validation_json)
                 console_print(
-                    f"📊 Detailed validation results exported to {args.export_validation_json}"
+                    f"Detailed validation results exported to {args.export_validation_json}"
                 )
 
-        console_print("✅ Validation Complete!")
+        console_print("Validation Complete!")
 
     except Exception as e:
-        console_print(f"❌ Validation failed: {e}", "error")
+        console_print(f"Validation failed: {e}", "error")
         exit(1)
 
 
@@ -4514,7 +4514,7 @@ def handle_original_processing(args):
     issues = orchestrator.validate_processing_requirements(processing_options, validation_options)
     if issues:
         for issue in issues:
-            console_print(f"❌ {issue}", "error")
+            console_print(f"{issue}", "error")
         return
 
     # Resolve audio and transcript save options
@@ -4546,14 +4546,14 @@ def handle_original_processing(args):
         # Display result summary for single sermon processing
         if result:
             if result.get("action") == "skipped":
-                console_print(f"⏭️  Skipped: {result.get('reason', 'No updates needed')}", "info")
+                console_print(f"Skipped: {result.get('reason', 'No updates needed')}", "info")
             elif result.get("action") == "processed":
                 completed = result.get("completed", [])
                 if completed:
                     actions_text = ", ".join(completed)
-                    console_print(f"✅ Completed: Updated {actions_text}", "success")
+                    console_print(f"Completed: Updated {actions_text}", "success")
                 else:
-                    console_print("✅ Processing completed", "success")
+                    console_print("Processing completed", "success")
 
         return
 
@@ -4640,18 +4640,18 @@ def handle_original_processing(args):
     skip_audio = getattr(args, 'metadata_only', False) or getattr(args, 'skip_audio', False)
 
     # Show processing summary and settings
-    console_print(f"🎯 Processing {len(sermons)} sermons...")
+    console_print(f"Processing {len(sermons)} sermons...")
     if args.dry_run:
-        console_print("🔍 DRY RUN MODE - No changes will be made", "warning")
+        console_print("DRY RUN MODE - No changes will be made", "warning")
     if args.no_upload:
-        console_print("📁 NO UPLOAD MODE - Audio will not be uploaded", "warning")
+        console_print("NO UPLOAD MODE - Audio will not be uploaded", "warning")
 
     # Show processing settings summary
     settings_info = []
     if skip_audio:
-        settings_info.append("⚙️ Metadata only (no audio processing)")
+        settings_info.append("Metadata only (no audio processing)")
     else:
-        settings_info.append("⚙️ Full processing (metadata + audio)")
+        settings_info.append("Full processing (metadata + audio)")
 
     # LLM provider info
     provider_info = llm_manager.get_provider_info()
@@ -4733,24 +4733,24 @@ def handle_original_processing(args):
             if not args.verbose:
                 if result and result.get("action") == "skipped":
                     reason = result.get('reason', 'No updates needed')
-                    msg = f"[{idx}/{len(sermons)}] ⏭️  Skipped: {s.displayTitle} - {reason}"
+                    msg = f"[{idx}/{len(sermons)}] Skipped: {s.displayTitle} - {reason}"
                     console_print(msg, "info")
                 elif result and result.get("action") == "processed":
                     completed = result.get("completed", [])
                     if completed:
                         actions_text = ", ".join(completed)
-                        msg = (f"[{idx}/{len(sermons)}] ✅ Updated: {s.displayTitle} - "
+                        msg = (f"[{idx}/{len(sermons)}] Updated: {s.displayTitle} - "
                                f"{actions_text}")
                         console_print(msg, "success")
                     else:
-                        msg = f"[{idx}/{len(sermons)}] ✅ Completed: {s.displayTitle}"
+                        msg = f"[{idx}/{len(sermons)}] Completed: {s.displayTitle}"
                         console_print(msg, "success")
                 else:
-                    msg = f"[{idx}/{len(sermons)}] ✅ Completed: {s.displayTitle}"
+                    msg = f"[{idx}/{len(sermons)}] Completed: {s.displayTitle}"
                     console_print(msg, "success")
         except Exception as e:  # pragma: no cover
             errors += 1
-            error_msg = f"[{idx}/{len(sermons)}] ❌ Error: {s.displayTitle} - {e}"
+            error_msg = f"[{idx}/{len(sermons)}] Error: {s.displayTitle} - {e}"
             if args.verbose:
                 console_print(error_msg, "error")
                 traceback.print_exc()
@@ -4760,32 +4760,32 @@ def handle_original_processing(args):
 
     # Final summary
     if success > 0:
-        console_print(f"✅ Completed successfully: {success} sermons", "success")
+        console_print(f"Completed successfully: {success} sermons", "success")
     if errors > 0:
-        console_print(f"❌ Errors encountered: {errors} sermons", "error")
+        console_print(f"Errors encountered: {errors} sermons", "error")
     else:
-        console_print("🎉 All sermons processed without errors!", "success")
+        console_print("All sermons processed without errors!", "success")
 
     # Validation summary
     total_validated = sum(validation_stats.values())
     if total_validated > 0:
-        console_print("\n📋 Description Validation Summary:", "info")
+        console_print("\nDescription Validation Summary:", "info")
         if validation_stats['approved_primary'] > 0:
             count = validation_stats['approved_primary']
-            console_print(f"   ✅ Approved (Primary): {count}", "success")
+            console_print(f"   Approved (Primary): {count}", "success")
         if validation_stats['approved_fallback'] > 0:
             count = validation_stats['approved_fallback']
-            console_print(f"   ✅ Approved (Fallback): {count}", "success")
+            console_print(f"   Approved (Fallback): {count}", "success")
         if validation_stats['no_validation'] > 0:
-            console_print(f"   ℹ️  No Validation: {validation_stats['no_validation']}", "info")
+            console_print(f"   No Validation: {validation_stats['no_validation']}", "info")
         if validation_stats['needs_review'] > 0:
-            console_print(f"   ⚠️  Needs Review: {validation_stats['needs_review']}", "warning")
+            console_print(f"   Needs Review: {validation_stats['needs_review']}", "warning")
 
     # Manual review items
     if needs_review:
-        console_print("\n⚠️  Sermons requiring manual review:", "warning")
+        console_print("\nSermons requiring manual review:", "warning")
         for item in needs_review:
-            console_print(f"   📝 {item['title']} (ID: {item['id']})", "warning")
+            console_print(f"   {item['title']} (ID: {item['id']})", "warning")
             for attempt in item['validation_attempts']:
                 provider = attempt['provider'].title()
                 reason = attempt['reason']

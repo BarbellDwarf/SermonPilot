@@ -252,42 +252,42 @@ if __name__ == "__main__":
     """Command-line interface for configuration validation."""
     import sys
 
-    print("🔍 SermonPilot - Configuration Security Validator")
+    print("SermonPilot - Configuration Security Validator")
     print("=" * 60)
 
     try:
         # Validate environment setup
         env_status = validate_environment_setup()
 
-        print("\n📋 Environment Setup Status:")
+        print("\nEnvironment Setup Status:")
         for check, status in env_status.items():
-            icon = "✅" if status else "❌"
+            icon = "[OK]" if status else "[FAIL]"
             print(f"  {icon} {check.replace('_', ' ').title()}: {status}")
 
         # Try to load configuration
-        print("\n🔧 Loading Configuration...")
+        print("\nLoading Configuration...")
 
         if Path('config.yaml').exists():
             config = load_secure_config()
-            print("✅ Configuration loaded successfully")
-            print(f"   - API Key configured: {'✅' if 'api_key' in str(config) else '❌'}")
+            print("Configuration loaded successfully")
+            print(f"   - API Key configured: {'[OK]' if 'api_key' in str(config) else '[FAIL]'}")
             print(f"   - LLM providers configured: {len(config.get('llm', {}).get('primary', {}))}")
-            print(f"   - Debug mode: {'🟡 Enabled' if config.get('debug') else '✅ Disabled'}")
+            print(f"   - Debug mode: {'Enabled' if config.get('debug') else 'Disabled'}")
         else:
-            print("⚠️  No config.yaml found - using config/config.example.yaml for validation")
+            print("No config.yaml found - using config/config.example.yaml for validation")
             config = load_secure_config('config/config.example.yaml', validate_security=False)
-            print("✅ Example configuration structure is valid")
+            print("Example configuration structure is valid")
 
-        print("\n🔒 Security validation passed!")
+        print("\nSecurity validation passed!")
 
     except ConfigSecurityError as e:
-        print("\n❌ Security Validation Failed:")
+        print("\nSecurity Validation Failed:")
         print(f"   {e}")
         sys.exit(1)
 
     except Exception as e:
-        print("\n💥 Configuration Error:")
+        print("\nConfiguration Error:")
         print(f"   {e}")
         sys.exit(1)
 
-    print("\n🎉 All security checks passed! Configuration is ready for use.")
+    print("\nAll security checks passed! Configuration is ready for use.")
