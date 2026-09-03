@@ -1,20 +1,61 @@
 """
 Configuration utilities for the Streamlit UI
 
-Provides functions for loading and reloading configuration with proper
-session state management.
+Provides the single configuration resolution path used by the UI, the
+engine, and the job executors, plus session state helpers.
 """
 
+import copy
+import datetime
 import logging
 import os
+import re
 import shutil
 import time
 from pathlib import Path
+from typing import Any
 
 import yaml
 
+try:
+    from src.core.config import (
+        ENV_CONFIG_MAP,
+        apply_env_overrides,
+        expand_env_value,
+    )
+except ImportError:  # src dir placed directly on sys.path
+    from core.config import (  # type: ignore[no-redef]
+        ENV_CONFIG_MAP,
+        apply_env_overrides,
+        expand_env_value,
+    )
+
 # Get project root for config path
 project_root = Path(__file__).parent.parent
+
+logger = logging.getLogger(__name__)
+
+CONFIG_SEED_VERSION = 1
+
+INFRA_ONLY_ENV_VARS: dict[str, str] = {
+    "DATABASE_URL": "SQLite location consumed directly by ui.database",
+    "APP_PASSWORD": "UI authentication consumed directly by ui.auth",
+    "ENVIRONMENT": "container runtime label with no in-app consumer",
+}
+
+BUILTIN_DEFAULTS: dict[str, Any] = {
+    "llm": {
+        "primary": {
+            "provider": "ollama",
+            "ollama": {"host": "http://localhost:11434", "model": "llama3"},
+        },
+        "fallback": {
+            "enabled": True,
+            "provider": "openai",
+            "ollama": {"host": "http://localhost:11434", "model": "llama3"},
+        },
+    },
+}
 
 
 def default_cache_root() -> Path:
@@ -25,12 +66,25 @@ def default_cache_root() -> Path:
 
 
 def sweep_stale_job_files(config: dict | None = None, max_age_hours: float = 24.0) -> None:
-    """Delete files and per-job dirs older than max_age_hours under the job temp roots."""
+    """Delete files and per-job dirs older than max_age_hours under the job temp roots.
+
+    The uploads root is filtered to the engine's own upload names (epoch-ms
+    prefix) so a custom upload_dir pointed at real media stays untouched; the
+    processing root is swept wholesale (per-job uuid dirs). A job with a silent
+    phase longer than max_age_hours could in principle have its live directory
+    swept; 24h makes that practically impossible.
+    """
     if not config:
         config = load_config_from_file()
+    upload_root = Path(
+        config.get('upload_dir') or (default_cache_root() / "sermon_uploads")
+    )
+    processing_root = Path(
+        config.get('processing_temp_dir') or (default_cache_root() / "sermon_processing")
+    )
     roots = [
-        Path(config.get('upload_dir') or (default_cache_root() / "sermon_uploads")),
-        Path(config.get('processing_temp_dir') or (default_cache_root() / "sermon_processing")),
+        (upload_root, True),
+        (processing_root, False),
     ]
     output_root = Path(config.get('output_directory') or 'processed_sermons')
     if not output_root.is_absolute():
@@ -40,7 +94,7 @@ def sweep_stale_job_files(config: dict | None = None, max_age_hours: float = 24.
     except OSError:
         return
     cutoff = time.time() - max_age_hours * 3600
-    for root in roots:
+    for root, uploads_only in roots:
         try:
             resolved = root.resolve()
             if (
@@ -53,6 +107,8 @@ def sweep_stale_job_files(config: dict | None = None, max_age_hours: float = 24.
                 continue
             for entry in resolved.iterdir():
                 try:
+                    if uploads_only and not re.match(r"^\d{10,}_", entry.name):
+                        continue
                     is_dir = not entry.is_symlink() and entry.is_dir()
                     if entry.lstat().st_mtime >= cutoff:
                         continue
@@ -66,82 +122,224 @@ def sweep_stale_job_files(config: dict | None = None, max_age_hours: float = 24.
             continue
 
 
-def load_config_from_file():
-    """Load configuration with precedence: environment > database cache > config.yaml.
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Merge override into base in place; nested dicts merge, other values replace."""
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(base.get(key), dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = copy.deepcopy(value)
+    return base
 
-    The database config_cache holds the latest settings saved from the UI and is
-    restored to config.yaml so file-based tooling stays consistent. ConfigManager
-    then re-applies environment variable overrides on top, so env vars always win.
+
+def _load_file_layer() -> dict[str, Any]:
+    """Load the optional explicit config file layer ($SA_UPDATER_CONFIG).
+
+    Only the path pointed at by SA_UPDATER_CONFIG is honored; config.yaml is
+    never required and never read for resolution.
+    """
+    config_path = os.environ.get("SA_UPDATER_CONFIG")
+    if not config_path or not Path(config_path).exists():
+        return {}
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        logger.warning("Failed to load config file %s: %s", config_path, exc)
+        return {}
+
+
+def _expand_env_placeholders(config: dict[str, Any]) -> None:
+    """Expand ${VAR} patterns in string leaves of the config in place."""
+    for key, value in config.items():
+        if isinstance(value, str):
+            config[key] = expand_env_value(value)
+        elif isinstance(value, dict):
+            _expand_env_placeholders(value)
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                if isinstance(item, str):
+                    value[index] = expand_env_value(item)
+                elif isinstance(item, dict):
+                    _expand_env_placeholders(item)
+
+
+def _seed_database_from_env(db) -> dict[str, Any] | None:
+    """Seed an empty config_cache once from built-in defaults plus env overrides.
+
+    Only runs when the database has never stored a config and at least one
+    mapped environment variable is present, so a fresh container started with
+    only a .env file persists its settings on first load. Idempotent: once
+    app_config exists, this never writes again.
+    """
+    active_vars = [var for var in ENV_CONFIG_MAP if os.environ.get(var)]
+    if not active_vars:
+        return None
+    seeded = apply_env_overrides(copy.deepcopy(BUILTIN_DEFAULTS))
+    try:
+        db.save_config(seeded)
+        db.save_config_meta({
+            "seeded_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            "version": CONFIG_SEED_VERSION,
+            "env_vars": active_vars,
+        })
+    except Exception as exc:
+        logger.warning("Could not persist env seeding to the settings database: %s", exc)
+        return seeded
+    logger.info(
+        "Seeded settings database from environment variables: %s", ", ".join(active_vars)
+    )
+    return seeded
+
+
+def _migrate_legacy_config_yaml(db) -> None:
+    """Import config.yaml into the settings database once, for existing installs.
+
+    Config resolution no longer reads config.yaml (ticket #201 demoted it to
+    an explicit import/export artifact). This carries hand-tuned settings from
+    pre-existing local installs across that change. Skipped when
+    $SA_UPDATER_CONFIG is set (the test harness owns the file layer) and when
+    the database already holds a config or a seed marker.
+    """
+    if os.environ.get("SA_UPDATER_CONFIG"):
+        return
+    try:
+        if db.load_config_meta() or db.load_config():
+            return
+        legacy = project_root / "config.yaml"
+        if not legacy.exists():
+            return
+        migrated = yaml.safe_load(legacy.read_text()) or {}
+        if not isinstance(migrated, dict) or not migrated:
+            return
+        db.save_config(migrated)
+        logger.info("Imported legacy config.yaml into the settings database")
+    except Exception as exc:
+        logger.warning("Legacy config.yaml import skipped: %s", exc)
+
+
+def _open_database():
+    from ui.database import SermonDatabase
+
+    return SermonDatabase()
+
+
+def _resolve_layers(db=None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Resolve config layers and return (config, db_layer, file_layer).
+
+    Precedence, lowest to highest:
+      1. Built-in defaults.
+      2. Optional file layer: $SA_UPDATER_CONFIG when that file exists.
+      3. SQLite config_cache (app_config row). On a fresh database with
+         environment variables present, the env-derived config is seeded into
+         the database once (see _seed_database_from_env).
+      4. Environment overrides for mapped keys: env always wins over the
+         database because it is operator intent for the running process.
+      5. ${VAR} / ${VAR:-default} expansion of remaining string values.
+
+    DATABASE_URL, APP_PASSWORD, and ENVIRONMENT are infra-only variables
+    consumed directly from the environment and never enter the config dict.
+    """
+    file_layer = _load_file_layer()
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(project_root / ".env")
+    except ImportError:
+        pass
+    db_layer: dict[str, Any] | None = None
+    if db is None:
+        try:
+            db = _open_database()
+        except Exception as exc:
+            logger.warning("Settings database unavailable: %s", exc)
+    if db is not None:
+        try:
+            db_layer = db.load_config()
+        except Exception as exc:
+            logger.warning("Failed to read settings database: %s", exc)
+            db_layer = None
+        if db_layer is None:
+            _migrate_legacy_config_yaml(db)
+            db_layer = db.load_config()
+            if db_layer is None:
+                db_layer = _seed_database_from_env(db) or {}
+
+    config = copy.deepcopy(BUILTIN_DEFAULTS)
+    if file_layer:
+        _deep_merge(config, file_layer)
+    if db_layer:
+        _deep_merge(config, db_layer)
+    _expand_env_placeholders(config)
+    apply_env_overrides(config)
+    return config, db_layer or {}, file_layer
+
+
+def resolve_config(db=None) -> dict[str, Any]:
+    """Resolve the effective configuration; see _resolve_layers for precedence."""
+    config, _, _ = _resolve_layers(db)
+    return config
+
+
+def resolve_config_with_sources(db=None) -> tuple[dict[str, Any], dict[str, str]]:
+    """Resolve the effective configuration and map each leaf path to its source.
+
+    Source is one of 'env', 'file', 'db', or 'default'.
+    """
+    config, db_layer, file_layer = _resolve_layers(db)
+    return config, _config_sources(config, db_layer, file_layer)
+
+
+def _flatten_leaves(value: Any, prefix: str = "") -> dict[str, Any]:
+    """Flatten nested dicts into dotted leaf paths; lists count as leaves."""
+    leaves: dict[str, Any] = {}
+    if isinstance(value, dict):
+        for key, item in value.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            leaves.update(_flatten_leaves(item, path))
+    elif prefix:
+        leaves[prefix] = value
+    return leaves
+
+
+def _config_sources(
+    config: dict[str, Any],
+    db_layer: dict[str, Any],
+    file_layer: dict[str, Any],
+) -> dict[str, str]:
+    """Map each dotted leaf path of a resolved config to env/file/db/default."""
+    env_paths: set[str] = set()
+    for env_var, config_paths in ENV_CONFIG_MAP.items():
+        if os.environ.get(env_var):
+            for config_path in config_paths:
+                env_paths.add(".".join(config_path))
+    db_leaves = _flatten_leaves(db_layer)
+    file_leaves = _flatten_leaves(file_layer)
+    sources: dict[str, str] = {}
+    for path in _flatten_leaves(config):
+        if path in env_paths:
+            sources[path] = "env"
+        elif path in file_leaves:
+            sources[path] = "file"
+        elif path in db_leaves:
+            sources[path] = "db"
+        else:
+            sources[path] = "default"
+    return sources
+
+
+def load_config_from_file():
+    """Resolve the effective configuration (database, env overrides, defaults).
+
+    config.yaml is never required: resolution reads the settings database,
+    applies environment overrides, and falls back to built-in defaults.
+    See resolve_config / _resolve_layers for the exact precedence.
     """
     try:
-        import sys
-
-        sys.path.insert(0, str(project_root))
-        from sermon_updater import load_config
-
-        config_path = project_root / "config.yaml"
-        example_config = project_root / "config" / "config.example.yaml"
-
-        # Prefer settings saved in the database (survives container recreation)
-        try:
-            from ui.database import SermonDatabase
-
-            db = SermonDatabase()
-            db_config = db.load_config()
-            if db_config:
-                # Restore config.yaml from DB so file-based tools still work
-                with open(config_path, "w") as f:
-                    yaml.dump(db_config, f, default_flow_style=False, sort_keys=True)
-        except Exception:
-            pass
-
-        config = None
-
-        if config_path.exists():
-            config = load_config(str(config_path))
-        else:
-            # Try loading from database cache (survives Docker/git resets)
-            try:
-                from ui.database import SermonDatabase
-
-                db = SermonDatabase()
-                config = db.load_config()
-                if config:
-                    # Restore config.yaml from DB so file-based tools still work
-                    with open(config_path, "w") as f:
-                        yaml.dump(config, f, default_flow_style=False, sort_keys=True)
-            except Exception:
-                pass
-
-        if config is None:
-            # Try example config
-            if example_config.exists():
-                try:
-                    import streamlit as st
-
-                    st.warning(
-                        f"No config.yaml found. Please copy {example_config} to {config_path} "
-                        "and update with your settings."
-                    )
-                except ImportError:
-                    pass
-                return {}
-            else:
-                try:
-                    import streamlit as st
-
-                    st.error("No configuration file found. Please create config.yaml.")
-                except ImportError:
-                    pass
-                return {}
-
-        # Ensure config is never None
-        if config is None:
-            config = {}
-        _warn_plaintext_api_keys()
-        return config
-
+        config, db_layer, file_layer = _resolve_layers()
+        sources = _config_sources(config, db_layer, file_layer)
     except Exception as e:
+        logger.error("Failed to load configuration: %s", e)
         try:
             import streamlit as st
 
@@ -149,6 +347,8 @@ def load_config_from_file():
         except ImportError:
             pass
         return {}
+    _warn_plaintext_api_keys(config, sources)
+    return config
 
 
 def _find_plaintext_api_keys(config: dict) -> list[str]:
@@ -168,22 +368,26 @@ def _find_plaintext_api_keys(config: dict) -> list[str]:
     return found
 
 
-def _warn_plaintext_api_keys() -> None:
-    """Log a warning when API keys are stored in plaintext in config.yaml."""
-    config_path = project_root / "config.yaml"
-    try:
-        with open(config_path) as f:
-            raw_config = yaml.safe_load(f) or {}
-    except (OSError, yaml.YAMLError):
-        return
-    plaintext_keys = _find_plaintext_api_keys(raw_config)
+def _warn_plaintext_api_keys(
+    config: dict[str, Any], sources: dict[str, str] | None = None
+) -> None:
+    """Warn when a secret is stored in the settings database in plaintext.
+
+    Values supplied by environment variables or kept as ${VAR} placeholders
+    are fine; anything else in the database layer is plaintext at rest, so
+    recommend moving it to the environment instead.
+    """
+    plaintext_keys = _find_plaintext_api_keys(config)
+    if sources is not None:
+        plaintext_keys = [path for path in plaintext_keys if sources.get(path) != "env"]
     if not plaintext_keys:
         return
     message = (
-        "API keys are stored in plaintext in config.yaml. "
+        "API keys are stored in plaintext in the settings database "
+        f"({', '.join(plaintext_keys)}). "
         "Move them to environment variables, e.g. SERMONAUDIO_API_KEY."
     )
-    logging.warning(message)
+    logger.warning(message)
     try:
         import streamlit as st
 
@@ -193,17 +397,14 @@ def _warn_plaintext_api_keys() -> None:
 
 
 def reload_configuration():
-    """Force reload configuration from file and update session state"""
+    """Re-resolve the effective configuration and update session state"""
     try:
         import streamlit as st
 
-        # Load fresh config from file
         config = load_config_from_file()
 
-        # Update session state
         st.session_state.config = config
 
-        # Clear cached objects that depend on config
         if "llm_manager" in st.session_state:
             st.session_state.llm_manager = None
 
@@ -220,29 +421,46 @@ def reload_configuration():
 
 
 def save_config_to_file(config):
-    """Save configuration to config.yaml file and database, then reload in session"""
+    """Persist configuration to the settings database, then reload the session.
+
+    The database is the primary store and survives container recreation. A
+    config.yaml export is written only when the file already exists (container
+    users often cannot write the app directory); it is never created.
+    """
     try:
-        config_path = project_root / "config.yaml"
-
-        with open(config_path, "w") as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=True)
-
-        # Also save to database so settings survive config.yaml loss (Docker, git, etc.)
         try:
             from ui.database import SermonDatabase
 
-            db = SermonDatabase()
-            db.save_config(config)
-        except Exception:
-            pass  # DB save is best-effort
+            SermonDatabase().save_config(config)
+        except Exception as e:
+            logger.error("Failed to save configuration to the database: %s", e)
+            try:
+                import streamlit as st
 
-        # Reload the configuration from file to ensure consistency
+                st.error(f"Failed to save configuration to the database: {e}")
+            except ImportError:
+                pass
+            return False
+
+        exported = False
+        config_path = project_root / "config.yaml"
+        if config_path.exists():
+            try:
+                with open(config_path, "w") as f:
+                    yaml.dump(config, f, default_flow_style=False, sort_keys=True)
+                exported = True
+            except OSError as e:
+                logger.warning("Could not export config.yaml: %s", e)
+
         reload_configuration()
 
         try:
             import streamlit as st
 
-            st.info(f"Configuration saved to {config_path}")
+            message = "Configuration saved to the settings database."
+            if exported:
+                message += " Exported a copy to config.yaml."
+            st.info(message)
         except ImportError:
             pass  # Not in Streamlit context
 

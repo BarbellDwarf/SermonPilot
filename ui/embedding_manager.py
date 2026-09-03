@@ -508,13 +508,14 @@ class EmbeddingManager:
         """Create an embedding provider based on configuration."""
         provider_type = config.get("provider", "").lower()
 
-        # Extract provider-specific config if it exists as a nested dict
-        provider_config = config.get(provider_type, config)
-        # Make sure the provider type is included in the config
-        if isinstance(provider_config, dict):
-            provider_config = {**provider_config, "provider": provider_type}
+        # Shared outer keys (model, auto_download, ...) must survive even when
+        # a nested provider-specific dict exists; nested values win
+        nested = config.get(provider_type)
+        if isinstance(nested, dict):
+            provider_config = {**config, **nested}
         else:
-            provider_config = config
+            provider_config = dict(config)
+        provider_config["provider"] = provider_type
 
         if provider_type in ("sentence_transformers", "local"):
             return SentenceTransformerProvider(provider_config)
