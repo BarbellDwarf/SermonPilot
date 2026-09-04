@@ -270,24 +270,25 @@ def initialize_provider_session_state(provider_config, provider_type, key_prefix
                     'model', 'gpt-4o-mini'
                 )
 
-        elif provider_type == 'anthropic':
-            if f'{key_prefix}_anthropic_key' not in st.session_state:
-                st.session_state[f'{key_prefix}_anthropic_key'] = settings.get('api_key', '')
-            if f'{key_prefix}_anthropic_model' not in st.session_state:
-                st.session_state[f'{key_prefix}_anthropic_model'] = settings.get(
-                    'model', 'claude-3-5-sonnet-20241022'
-                )
-
-        elif provider_type == 'google':
-            if f'{key_prefix}_google_key' not in st.session_state:
-                st.session_state[f'{key_prefix}_google_key'] = settings.get('api_key', '')
-            if f'{key_prefix}_google_model' not in st.session_state:
-                st.session_state[f'{key_prefix}_google_model'] = settings.get(
-                    'model', 'gemini-1.5-flash'
+        elif provider_type in ('xai', 'groq', 'openrouter'):
+            default_models = {
+                'xai': 'grok-beta',
+                'groq': 'llama-3.1-70b-versatile',
+                'openrouter': 'openai/gpt-4o-mini',
+            }
+            if f'{key_prefix}_openai_preset' not in st.session_state:
+                st.session_state[f'{key_prefix}_openai_preset'] = provider_type.title()
+            if f'{key_prefix}_openai_key' not in st.session_state:
+                st.session_state[f'{key_prefix}_openai_key'] = settings.get('api_key', '')
+            if f'{key_prefix}_openai_url' not in st.session_state:
+                st.session_state[f'{key_prefix}_openai_url'] = settings.get('base_url', '')
+            if f'{key_prefix}_openai_model' not in st.session_state:
+                st.session_state[f'{key_prefix}_openai_model'] = settings.get(
+                    'model', default_models[provider_type]
                 )
 
         # Clear cached models when API key changes
-        if provider_type in ['openai', 'anthropic', 'google']:
+        if provider_type in ['openai', 'xai', 'groq', 'openrouter']:
             current_key = st.session_state.get(f'{key_prefix}_{provider_type}_key', '')
             stored_key = settings.get('api_key', '')
             if current_key != stored_key and current_key:
@@ -315,7 +316,7 @@ def show_llm_settings():
     col1, col2 = st.columns(2)
 
     with col1:
-        provider_options = ["ollama", "openai", "anthropic", "google"]
+        provider_options = ["ollama", "openai", "xai", "groq", "openrouter"]
         current_provider = primary_config.get('provider', 'ollama')
         if current_provider not in provider_options:
             current_provider = 'openai'
@@ -334,10 +335,8 @@ def show_llm_settings():
         show_ollama_settings("Primary", primary_config.get('ollama', {}), "primary")
     elif primary_provider == "openai":
         show_openai_settings("Primary", primary_config.get('openai', {}), "primary")
-    elif primary_provider == "anthropic":
-        show_anthropic_settings("Primary", primary_config.get('anthropic', {}), "primary")
-    elif primary_provider == "google":
-        show_google_settings("Primary", primary_config.get('google', {}), "primary")
+    elif primary_provider in ("xai", "groq", "openrouter"):
+        show_openai_settings("Primary", primary_config.get(primary_provider, {}), "primary")
 
     # Fallback Provider
     st.markdown("#### Fallback Provider")
@@ -354,7 +353,7 @@ def show_llm_settings():
 
     with col2:
         if fallback_enabled:
-            provider_options = ["openai", "ollama", "anthropic", "google"]
+            provider_options = ["openai", "ollama", "xai", "groq", "openrouter"]
             current_fallback_provider = fallback_config.get('provider', 'openai')
             if current_fallback_provider not in provider_options:
                 current_fallback_provider = 'openai'
@@ -369,10 +368,8 @@ def show_llm_settings():
             show_ollama_settings("Fallback", fallback_config.get('ollama', {}), "fallback")
         elif fallback_provider == "openai":
             show_openai_settings("Fallback", fallback_config.get('openai', {}), "fallback")
-        elif fallback_provider == "anthropic":
-            show_anthropic_settings("Fallback", fallback_config.get('anthropic', {}), "fallback")
-        elif fallback_provider == "google":
-            show_google_settings("Fallback", fallback_config.get('google', {}), "fallback")
+        elif fallback_provider in ("xai", "groq", "openrouter"):
+            show_openai_settings("Fallback", fallback_config.get(fallback_provider, {}), "fallback")
 
     # Validator Provider
     st.markdown("#### Validator Provider (Optional)")
@@ -389,7 +386,7 @@ def show_llm_settings():
         col1, col2 = st.columns(2)
 
         with col1:
-            provider_options = ["ollama", "openai", "anthropic", "google"]
+            provider_options = ["ollama", "openai", "xai", "groq", "openrouter"]
             current_validator_provider = validator_config.get('provider', 'ollama')
             if current_validator_provider not in provider_options:
                 current_validator_provider = 'openai'
@@ -403,10 +400,9 @@ def show_llm_settings():
             show_ollama_settings("Validator", validator_config.get('ollama', {}), "validator")
         elif validator_provider == "openai":
             show_openai_settings("Validator", validator_config.get('openai', {}), "validator")
-        elif validator_provider == "anthropic":
-            show_anthropic_settings("Validator", validator_config.get('anthropic', {}), "validator")
-        elif validator_provider == "google":
-            show_google_settings("Validator", validator_config.get('google', {}), "validator")
+        elif validator_provider in ("xai", "groq", "openrouter"):
+            cfg = validator_config.get(validator_provider, {})
+            show_openai_settings("Validator", cfg, "validator")
 
 def show_ollama_settings(label, config, key_prefix):
     """Show Ollama-specific settings with automatic model refresh"""
@@ -539,158 +535,7 @@ def show_openai_settings(label, config, key_prefix):
                 key=f"{key_prefix}_openai_model"
             )
 
-def show_anthropic_settings(label, config, key_prefix):
-    """Show Anthropic-specific settings with dynamic model loading"""
-    col1, col2 = st.columns(2)
 
-    with col1:
-        api_key = st.text_input(
-            f"{label} API Key",
-            type="password",
-            key=f"{key_prefix}_anthropic_key",
-            help="Your Anthropic API key (sk-ant-...)"
-        )
-
-    with col2:
-        # Dynamic model loading for Anthropic
-        available_models = []
-        model_options = [  # Default fallbacks
-            'claude-3-5-sonnet-20241022',
-            'claude-3-5-haiku-20241022',
-            'claude-3-opus-20240229',
-            'claude-3-sonnet-20240229',
-            'claude-3-haiku-20240307'
-        ]
-
-        if api_key and st.button(
-            f"Load {label} Models", key=f"{key_prefix}_load_anthropic_models"
-        ):
-            try:
-                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-                from llm_manager import AnthropicProvider
-
-                provider = AnthropicProvider({'api_key': api_key})
-                available_models = provider.list_models()
-
-                if available_models:
-                    st.session_state[f"{key_prefix}_anthropic_models"] = available_models
-                    st.success(f"Loaded {len(available_models)} models")
-                    model_options = available_models
-                else:
-                    st.warning("No models found - using default options")
-            except Exception as e:
-                st.error(f"Failed to load models: {e}")
-                st.info("Using default model options")
-
-        # Get cached models if available
-        cached_models = st.session_state.get(f"{key_prefix}_anthropic_models", [])
-        if cached_models:
-            model_options = cached_models
-
-        # Model selection
-        if model_options and len(model_options) > 1:
-            model = st.selectbox(
-                f"{label} Model",
-                options=model_options,
-                key=f"{key_prefix}_anthropic_model",
-                help="Select from available Claude models"
-            )
-        else:
-            model = st.text_input(
-                f"{label} Model",
-                key=f"{key_prefix}_anthropic_model",
-                help="Enter model name or click 'Load Models' to see available options"
-            )
-
-        # Show test button if API key is provided
-        if api_key and st.button(f"Test {label} Connection", key=f"{key_prefix}_test_anthropic"):
-            try:
-                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-                from llm_manager import AnthropicProvider
-
-                provider = AnthropicProvider({'api_key': api_key, 'model': model})
-                provider.chat([{"role": "user", "content": "Hello, this is a test."}])
-                st.success("Anthropic connection successful!")
-            except Exception as e:
-                st.error(f"Connection failed: {e}")
-
-    st.info("Anthropic endpoint (https://api.anthropic.com/v1) is automatically configured")
-
-def show_google_settings(label, config, key_prefix):
-    """Show Google-specific settings with dynamic model loading"""
-    col1, col2 = st.columns(2)
-
-    with col1:
-        api_key = st.text_input(
-            f"{label} API Key",
-            type="password",
-            key=f"{key_prefix}_google_key",
-            help="Your Google AI Studio API key"
-        )
-
-    with col2:
-        # Dynamic model loading for Google
-        available_models = []
-        model_options = [  # Default fallbacks
-            'gemini-1.5-flash',
-            'gemini-1.5-pro',
-            'gemini-1.0-pro'
-        ]
-
-        if api_key and st.button(f"Load {label} Models", key=f"{key_prefix}_load_google_models"):
-            try:
-                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-                from llm_manager import GoogleProvider
-
-                provider = GoogleProvider({'api_key': api_key})
-                available_models = provider.list_models()
-
-                if available_models:
-                    st.session_state[f"{key_prefix}_google_models"] = available_models
-                    st.success(f"Loaded {len(available_models)} models")
-                    model_options = available_models
-                else:
-                    st.warning("No models found - using default options")
-            except Exception as e:
-                st.error(f"Failed to load models: {e}")
-                st.info("Using default model options")
-
-        # Get cached models if available
-        cached_models = st.session_state.get(f"{key_prefix}_google_models", [])
-        if cached_models:
-            model_options = cached_models
-
-        # Model selection
-        if model_options and len(model_options) > 1:
-            model = st.selectbox(
-                f"{label} Model",
-                options=model_options,
-                key=f"{key_prefix}_google_model",
-                help="Select from available Gemini models"
-            )
-        else:
-            model = st.text_input(
-                f"{label} Model",
-                key=f"{key_prefix}_google_model",
-                help="Enter model name or click 'Load Models' to see available options"
-            )
-
-        # Show test button if API key is provided
-        if api_key and st.button(f"Test {label} Connection", key=f"{key_prefix}_test_google"):
-            try:
-                sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-                from llm_manager import GoogleProvider
-
-                provider = GoogleProvider({'api_key': api_key, 'model': model})
-                provider.chat([{"role": "user", "content": "Hello, this is a test."}])
-                st.success("Google AI connection successful!")
-            except Exception as e:
-                st.error(f"Connection failed: {e}")
-
-    st.info(
-        "Google AI endpoint (https://generativelanguage.googleapis.com/v1beta) "
-        "is automatically configured"
-    )
 
 def show_embedding_settings():
     """Embedding provider configuration for RAG system"""
@@ -1839,18 +1684,14 @@ def save_provider_settings(provider_config, provider_type, key_prefix):
             provider_settings['base_url'] = base_url
         provider_settings['model'] = model
 
-    elif provider_type == 'anthropic':
-        api_key = st.session_state.get(f'{key_prefix}_anthropic_key', '')
-        model = st.session_state.get(f'{key_prefix}_anthropic_model', 'claude-3-5-sonnet-20241022')
+    elif provider_type in ('xai', 'groq', 'openrouter'):
+        api_key = st.session_state.get(f'{key_prefix}_openai_key', '')
+        base_url = st.session_state.get(f'{key_prefix}_openai_url', '')
+        model = st.session_state.get(f'{key_prefix}_openai_model', '')
         if api_key:
             provider_settings['api_key'] = api_key
-        provider_settings['model'] = model
-
-    elif provider_type == 'google':
-        api_key = st.session_state.get(f'{key_prefix}_google_key', '')
-        model = st.session_state.get(f'{key_prefix}_google_model', 'gemini-1.5-flash')
-        if api_key:
-            provider_settings['api_key'] = api_key
+        if base_url:
+            provider_settings['base_url'] = base_url
         provider_settings['model'] = model
 
 def save_audio_settings():
@@ -2120,8 +1961,7 @@ def _clear_settings_widget_keys():
         for suffix in (
             "ollama_host", "ollama_model", "ollama_api_key",
             "openai_preset", "openai_key", "openai_url", "openai_model",
-            "anthropic_key", "anthropic_model", "google_key", "google_model",
-            "st_model", "openai_embedding_key", "openai_embedding_url",
+                "st_model", "openai_embedding_key", "openai_embedding_url",
             "openai_embedding_model", "ollama_embedding_host", "ollama_embedding_model",
         ):
             keys.append(f"{prefix}{suffix}")
