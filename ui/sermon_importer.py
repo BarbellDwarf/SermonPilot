@@ -279,18 +279,9 @@ class SermonImporter:
         """Fetch sermon metadata directly from SermonAudio API"""
         try:
             # Try to get configuration for API access
-            from pathlib import Path
+            from ui.config_utils import resolve_config
 
-            import yaml
-
-            # Look for config.yaml in parent directory
-            config_path = Path(__file__).parent.parent / "config.yaml"
-            if not config_path.exists():
-                logger.warning("config.yaml not found - cannot fetch API data")
-                return None
-
-            with open(config_path, encoding='utf-8') as f:
-                config = yaml.safe_load(f)
+            config = resolve_config()
 
             api_key = config.get('api_key')
             if not api_key:
