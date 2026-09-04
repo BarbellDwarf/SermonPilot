@@ -107,6 +107,7 @@ embeddings:
     ollama:
       host: "http://localhost:11434"  # Ollama server host
       model: "nomic-embed-text"  # Options: nomic-embed-text, mxbai-embed-large, snowflake-arctic-embed:*
+      auto_download: true  # Pull the model on first use
   
   # Fallback embedding providers (tried in order if primary fails)
   fallback:
