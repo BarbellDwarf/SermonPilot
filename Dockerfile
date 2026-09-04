@@ -47,6 +47,11 @@ COPY pyproject.toml ./
 # Install uv for fast dependency resolution
 RUN pip install --no-cache-dir uv
 
+# uv's default index strategy takes a package from the first index that has it;
+# the PyTorch cu124 index carries stale shadows of PyPI packages (e.g. requests),
+# so best-match across indexes is required for the GPU requirement sets.
+ENV UV_INDEX_STRATEGY=unsafe-best-match
+
 # Install core + GPU-specific dependencies
 RUN if [ "$GPU_BACKEND" = "cuda" ]; then \
         uv pip install --no-cache-dir -r requirements/requirements-gpu.txt && \
