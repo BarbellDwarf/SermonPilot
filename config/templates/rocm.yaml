@@ -117,11 +117,6 @@ embeddings:
 
 # Web UI Configuration
 web_ui:
-  items_per_page: 20  # Default items per page in lists
-  audio_player_enabled: true  # Enable audio player in viewer
-  pdf_generation: true  # Enable PDF transcript generation
-  search_suggestions: true  # Show search suggestions
-  qa_highlighting: true  # Highlight Q&A segments in transcripts
   analytics_enabled: true  # Enable analytics dashboard
 
 # Processing Options
