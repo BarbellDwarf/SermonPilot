@@ -297,3 +297,9 @@ def test_sweep_uploads_root_is_pattern_filtered(tmp_path, monkeypatch):
 
     assert not job_upload.exists()
     assert bystander.exists()
+
+
+def test_defaults_include_embedding_autodownload(clear_config_env, monkeypatch, tmp_path):
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/cfg.db")
+    config = resolve_config()
+    assert config["embeddings"]["primary"]["ollama"]["auto_download"] is True
