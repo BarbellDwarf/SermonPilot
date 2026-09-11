@@ -2,6 +2,20 @@
 
 All notable changes to SermonPilot are documented here.
 
+## v1.6.2 (2026-09-10)
+
+Docker hardening round: per-variant config templates, config resolution (DB, env, then defaults), output hygiene, and CUDA GPU enablement.
+
+### Fixed
+
+- Docker: /data volume ownership repaired or guarded at startup; per-variant config templates; variant printed at startup; uv index strategy so GPU requirement sets install CUDA torch (cu124 index shadowed PyPI packages)
+- Docker: cuda image actually uses its GPU now. ONNX Runtime pinned below 1.27 (CUDA 12 wheels) on a cuDNN-bearing base (12.4.1-cudnn-runtime); faster-whisper GPU unblocked by the same cuDNN
+- Docker: GPU override file (docker-compose.gpu.yml) attaches NVIDIA devices without editing compose; startup report prints torch CUDA state, ORT providers, and CUDA library loadability
+- Config: single-source resolution, env seeding, embeddings auto_download default True; dead config keys purged from example and templates
+- Jobs: queue serialized by default (max_workers=1); disk-backed temp/upload dirs with per-job cleanup
+- Output: plain-ASCII runtime logs everywhere (emoji banners removed)
+- App: settings page lists only constructible providers (ollama, openai, xai, groq, openrouter); stale direct config.yaml reads replaced with the resolution path
+
 ## v1.6.1 (2026-08-21)
 
 Post-release security and quality audit remediation: 109 findings addressed across UI, backend, database, jobs, pipeline, providers, and infrastructure.
