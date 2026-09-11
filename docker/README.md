@@ -60,6 +60,20 @@ curl http://localhost:8501/
 docker compose logs -f sermon-pilot
 ```
 
+The startup log shows the image variant and its config template:
+
+```
+Variant: cuda
+Config template: /app/config/templates/cuda.yaml (auto-seeds the settings database on first boot; point SA_UPDATER_CONFIG at a file to override)
+```
+
+On first boot the built-in variant template seeds the settings database together
+with the variables from `.env`, so the Settings page opens populated with
+variant-appropriate choices (transcription backend, enhancement method, LLM
+provider). Placeholder values that have no matching environment variable keep
+their `${VAR}` form until you fill them in the UI or set the variable. Once
+seeded, the database holds the config; later image upgrades do not reseed.
+
 ## Images
 
 Prebuilt images are published to GitHub Container Registry as

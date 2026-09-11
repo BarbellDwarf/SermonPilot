@@ -14,8 +14,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 # Add src directory to path
 ui_dir = Path(__file__).parent
 src_dir = ui_dir.parent / "src"
@@ -38,21 +36,18 @@ class SermonAudioAPI:
             self._load_config()
 
     def _load_config(self):
-        """Load API configuration"""
+        """Load API configuration from the settings database"""
         try:
-            config_path = Path(__file__).parent.parent / "config.yaml"
-            if config_path.exists():
-                with open(config_path, encoding='utf-8') as f:
-                    config = yaml.safe_load(f)
-                self.api_key = config.get('api_key')
-                if self.api_key:
-                    import sermonaudio
-                    sermonaudio.set_api_key(self.api_key)
-                    logger.info("SermonAudio API key loaded successfully")
-                else:
-                    logger.warning("No API key found in config.yaml")
+            from config_utils import resolve_config
+
+            config = resolve_config()
+            self.api_key = config.get('api_key')
+            if self.api_key:
+                import sermonaudio
+                sermonaudio.set_api_key(self.api_key)
+                logger.info("SermonAudio API key loaded successfully")
             else:
-                logger.warning("config.yaml not found")
+                logger.debug("No API key in the settings database")
         except Exception as e:
             logger.error(f"Error loading config: {e}")
 

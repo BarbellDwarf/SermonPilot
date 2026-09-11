@@ -76,26 +76,19 @@ def _cleanup_job_files(config: dict, uploaded_file_path: str | None,
 
 
 def _inject_sermon_updater_config(config: dict) -> None:
-    """Inject config into the sermon_updater module so its module-level
-    constants (api_key, broadcaster_id, LLM manager, etc.) are correct
-    for the current job, and propagate the API key to the sermonaudio
-    library so Node.get_sermon() and similar calls work.
+    """Point the sermon_updater module at this job's config.
+
+    The module rebuilds all of its runtime constants from the given dict (or
+    re-resolves the settings database when the job carries none), so settings
+    saved in the UI apply to the job without a restart, and an empty job
+    config can never wipe good values.
     """
     try:
         import sermon_updater
-        from sermon_updater import ConfigManager, LLMManager
-        sermon_updater.config = config
-        sermon_updater.config_manager = ConfigManager()
-        sermon_updater.llm_manager = LLMManager(config)
-        sermon_updater.SERMON_AUDIO_API_KEY = config.get('api_key')
-        sermon_updater.SERMON_AUDIO_BROADCASTER_ID = config.get('broadcaster_id')
-        try:
-            import sermonaudio
-            sermonaudio.set_api_key(sermon_updater.SERMON_AUDIO_API_KEY)
-        except Exception as e:
-            logger.warning("Failed to set sermonaudio API key: %s", e)
+
+        sermon_updater.refresh_runtime_config(config or None)
     except Exception as e:
-        logger.warning("Failed to inject config into sermon_updater: %s", e)
+        logger.warning("Failed to refresh sermon_updater runtime config: %s", e)
 
 
 def execute_validation_job(job: Job) -> JobResult:

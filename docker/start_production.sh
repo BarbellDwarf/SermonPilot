@@ -7,7 +7,7 @@ echo "Starting SermonPilot"
 VARIANT="${SERMONPILOT_VARIANT:-unknown}"
 echo "Variant: ${VARIANT}"
 if [ "${VARIANT}" != "unknown" ] && [ -f "/app/config/templates/${VARIANT}.yaml" ]; then
-    echo "Config template: /app/config/templates/${VARIANT}.yaml (import from the UI config page or point SA_UPDATER_CONFIG at it)"
+    echo "Config template: /app/config/templates/${VARIANT}.yaml (auto-seeds the settings database on first boot; point SA_UPDATER_CONFIG at a file to override)"
 fi
 
 # Non-fatal GPU report. Missing torch, missing onnxruntime, or a CPU-only

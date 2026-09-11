@@ -166,25 +166,47 @@ if missing_settings:
     )
 
 # For backward compatibility, provide config dict
-llm_manager = LLMManager(config)
+def refresh_runtime_config(config_override: dict | None = None) -> dict:
+    """Rebuild every module-level runtime constant from the settings database.
 
-SERMON_AUDIO_API_KEY = config.get('api_key')
-SERMON_AUDIO_BROADCASTER_ID = config.get('broadcaster_id')
-sermonaudio.set_api_key(SERMON_AUDIO_API_KEY)
+    UI edits land in the settings DB; the processing engine reads it fresh on
+    every sermon run, so settings saved in the UI apply without a restart.
+    Pass an explicit config dict to force those values instead.
+    """
+    global config, llm_manager, SERMON_AUDIO_API_KEY, SERMON_AUDIO_BROADCASTER_ID
+    global DRY_RUN, DEBUG, AUDIO_PARAMS
+    if config_override is None:
+        try:
+            from ui.config_utils import resolve_config
 
-DRY_RUN = config.get('dry_run', False)
-DEBUG = config.get('debug', False)
+            config_override = resolve_config()
+        except Exception as exc:
+            logger.warning(
+                "Runtime config refresh fell back to the startup config: %s", exc
+            )
+            config_override = (
+                config_manager.get_raw_config() if config_manager else {}
+            )
+    llm_manager = LLMManager(config_override)
+    SERMON_AUDIO_API_KEY = config_override.get('api_key')
+    SERMON_AUDIO_BROADCASTER_ID = config_override.get('broadcaster_id')
+    sermonaudio.set_api_key(SERMON_AUDIO_API_KEY)
+    DRY_RUN = config_override.get('dry_run', False)
+    DEBUG = config_override.get('debug', False)
+    AUDIO_PARAMS = {
+        'noise_reduction': config_override.get('audio_noise_reduction', True),
+        'amplify': config_override.get('audio_amplify', True),
+        'normalize': config_override.get('audio_normalize', True),
+        'gain_db': config_override.get('audio_gain_db', 1.0),
+        'target_level_db': config_override.get('audio_target_level_db', -22.0),
+        'enhancement_method': config_override.get('audio_enhancement_method', 'deepfilternet'),
+        'config': config_override
+    }
+    config = config_override
+    return config
 
-AUDIO_PARAMS = {
-    'noise_reduction': config.get('audio_noise_reduction', True),
-    'amplify': config.get('audio_amplify', True),
-    'normalize': config.get('audio_normalize', True),
-    'gain_db': config.get('audio_gain_db', 1.0),
-    'target_level_db': config.get('audio_target_level_db', -22.0),
-    'use_audacity': config.get('use_audacity', False),
-    'enhancement_method': config.get('audio_enhancement_method', 'deepfilternet'),
-    'config': config  # Pass full config for Q&A normalization
-}
+
+refresh_runtime_config()
 
 BASE_URL = 'https://api.sermonaudio.com/v2/'
 
@@ -1542,8 +1564,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 str(cancel_exc) or "Processing cancelled"
             ) from cancel_exc
 
-    if config is None:
-        config = globals().get('config') or {}
+    if not config:
+        refresh_runtime_config()
+        config = globals()['config']
     if series_id is None and series_title:
         series_id = resolve_series_id(series_title, create_missing=not dry_run)
 
@@ -3251,8 +3274,9 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                          audio_file: str = None,
                          series_id: int | None = None,
                          config: dict | None = None):
-    if config is None:
-        config = globals().get('config') or {}
+    if not config:
+        refresh_runtime_config()
+        config = globals()['config']
     logger.debug(f"Processing sermon_id={sermon_id}")
     details = Node.get_sermon(sermon_id)
     speaker_name = None

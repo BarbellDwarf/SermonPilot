@@ -1161,89 +1161,10 @@ class AudioProcessor:
 
 
 
-# Audacity command-line interface (alternative approach)
-class AudacityProcessor:
-    def __init__(self, use_pipe=True):
-        self.use_pipe = use_pipe
-        self.pipe_exists = False
-        if use_pipe:
-            self._check_pipe()
-
-    def _check_pipe(self):
-        """Check if Audacity pipe is available."""
-        if os.name == 'nt':  # Windows
-            self.toname = '\\.pipe\\ToSrvPipe'
-            self.fromname = '\\.pipe\\FromSrvPipe'
-        else:  # Linux/Mac
-            self.toname = '/tmp/audacity_script_pipe.to.' + str(os.getuid())
-            self.fromname = '/tmp/audacity_script_pipe.from.' + str(os.getuid())
-        self.pipe_exists = os.path.exists(self.toname) and os.path.exists(self.fromname)
-        if self.pipe_exists:
-            logger.info("Audacity pipe detected")
-        else:
-            logger.warning(
-                "Audacity pipe not found. Make sure Audacity is running "
-                "with mod-script-pipe enabled"
-            )
-
-    def send_command(self, command: str) -> str | None:
-        """Send command to Audacity via pipe."""
-        if not self.pipe_exists:
-            return None
-        try:
-            # Write command
-            with open(self.toname, 'w') as tofile:
-                tofile.write(command + ('\r\n\0' if os.name == 'nt' else '\n'))
-                tofile.flush()
-            # Read response
-            result = ''
-            with open(self.fromname) as fromfile:
-                while True:
-                    line = fromfile.readline()
-                    if line == '\n' and len(result) > 0:
-                        break
-                    result += line
-            return result
-        except Exception as e:
-            logger.error(f"Pipe command failed: {e}")
-            return None
-
-    def process_with_macro(
-        self, input_path: str, output_path: str, macro_name: str = "Sermon Edit"
-    ) -> bool:
-        """
-        Process audio using Audacity macro.
-        Args:
-            input_path: Input audio file
-            output_path: Output audio file
-            macro_name: Name of Audacity macro to apply
-        Returns:
-            Success status
-        """
-        if not self.pipe_exists:
-            logger.error("Audacity pipe not available")
-            return False
-        try:
-            # Import audio
-            self.send_command(f'Import2: Filename="{input_path}"')
-            # Select all
-            self.send_command('SelectAll')
-            # Apply macro
-            self.send_command(f'ApplyMacro: MacroName="{macro_name}"')
-            # Export
-            self.send_command(f'Export2: Filename="{output_path}" NumChannels=1')
-            # Close
-            self.send_command('Close')
-            return True
-        except Exception as e:
-            logger.error(f"Audacity processing failed: {e}")
-            return False
-
-
 # Convenience function
 def process_sermon_audio(
-    input_path: str, output_path: str, use_audacity: bool = False,
-    skip_on_error: bool = True, enhancement_method: str = "deepfilternet",
+    input_path: str, output_path: str, skip_on_error: bool = True,
+    enhancement_method: str = "deepfilternet",
     verbose: bool = False, config: dict[str, Any] | None = None,
     **kwargs,
 ) -> tuple[bool, dict[str, Any] | None]:
@@ -1253,7 +1174,6 @@ def process_sermon_audio(
     Args:
         input_path: Input audio file
         output_path: Output audio file
-        use_audacity: Use Audacity if True, else use native Python processing
         enhancement_method: AI enhancement method to use ("deepfilternet", "clear", "none")
         verbose: Show detailed processing information
         config: Configuration dictionary for Q&A normalization and other settings
@@ -1262,14 +1182,6 @@ def process_sermon_audio(
     Returns:
         Tuple of (success_status, qa_processing_info)
     """
-    if use_audacity:
-        processor = AudacityProcessor()
-        if processor.pipe_exists:
-            success = processor.process_with_macro(input_path, output_path)
-            return success, None  # Audacity doesn't provide Q&A info
-        else:
-            logger.warning(f"Audacity not available, using {enhancement_method} processing")
-
     # Use AI enhancement processing
     try:
         # Suppress DF logs if not in verbose mode

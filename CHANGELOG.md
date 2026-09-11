@@ -2,6 +2,19 @@
 
 All notable changes to SermonPilot are documented here.
 
+## v1.6.3 (2026-09-11)
+
+Single config source and first-boot correctness round, driven by field logs from the deployed GPU host.
+
+### Fixed
+
+- Settings saved in the UI now reach the processing engine without a restart: the engine rebuilds its runtime constants from the settings database on every sermon run
+- Jobs re-resolve config at execution time; a queue-time snapshot (or an empty one) can no longer wipe good values (the reported settings-not-applied loop)
+- No config file is ever written; the settings database is the only persistent store. The SermonAudio API client resolves keys through the settings DB instead of warning about a missing config.yaml
+- Fresh containers open configured out of the box: the one-time database seed merges the built-in variant template (enhancement, transcription, output settings) under the env-mapped keys
+- Audacity integration removed end to end (processor, settings toggle, templates, migration key)
+- Security-scan validates config.example.yaml (config.yaml is untracked by design); dependency-security audits the resolvable base lockfile
+
 ## v1.6.2 (2026-09-10)
 
 Docker hardening round: per-variant config templates, config resolution (DB, env, then defaults), output hygiene, and CUDA GPU enablement.
