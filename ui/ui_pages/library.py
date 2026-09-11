@@ -301,6 +301,15 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
             from ui.database import SermonRepository, get_db
             repo = SermonRepository()
 
+            if not repo.get_sermon(sermon_id):
+                _set_feedback(
+                    "This sermon is no longer in the local database "
+                    "(it may have been removed or reprocessed). "
+                    "Refresh the Library page and try again.",
+                    kind="error",
+                )
+                return
+
             update_data = {}
             if description:
                 update_data['description'] = description

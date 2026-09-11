@@ -23,7 +23,8 @@ Processing with validation (requires validator LLM configuration):
     python sermon_updater.py --sermon-id 1234567890123 --force-description
     (Automatically validates and may regenerate descriptions using fallback LLM if primary fails)
 
-Config: defaults to ``config.yaml`` (override with ``--config`` or SA_UPDATER_CONFIG env var).
+Config: resolved from the settings database (environment overrides win).
+``--config`` still accepts an explicit file for one-off CLI runs.
 """
 
 from __future__ import annotations
@@ -141,21 +142,20 @@ def setup_logging(verbose: bool = False):
         df_logger.setLevel(logging.CRITICAL)
         df_logger.disabled = True
 def load_config(path: str) -> dict:
-    # Legacy function - now uses ConfigManager
+    """Load an explicitly passed config file (CLI --config)."""
     config_manager = ConfigManager(path)
     return config_manager.get_raw_config()
 
 
 CONFIG_PATH = os.environ.get("SA_UPDATER_CONFIG", "config.yaml")
-config_manager = ConfigManager(CONFIG_PATH) if Path(CONFIG_PATH).exists() else None
 
 try:
     from ui.config_utils import resolve_config
 
     config = resolve_config()
 except Exception as exc:
-    logger.warning("Falling back to file-based configuration: %s", exc)
-    config = ConfigManager(CONFIG_PATH).get_raw_config()
+    logger.error("Settings database unavailable, starting with defaults: %s", exc)
+    config = {}
 
 missing_settings = [key for key in ('api_key', 'broadcaster_id') if not config.get(key)]
 if missing_settings:
@@ -181,12 +181,8 @@ def refresh_runtime_config(config_override: dict | None = None) -> dict:
 
             config_override = resolve_config()
         except Exception as exc:
-            logger.warning(
-                "Runtime config refresh fell back to the startup config: %s", exc
-            )
-            config_override = (
-                config_manager.get_raw_config() if config_manager else {}
-            )
+            logger.error("Settings database unavailable during refresh: %s", exc)
+            return config
     llm_manager = LLMManager(config_override)
     SERMON_AUDIO_API_KEY = config_override.get('api_key')
     SERMON_AUDIO_BROADCASTER_ID = config_override.get('broadcaster_id')
@@ -3014,12 +3010,12 @@ def generate_summary(
             f"the speaker wanted the audience to understand, believe, or do. "
             f"Avoid generic statements; "
             f"emphasize unique focus.\n\nTranscript:\n{working_text}\n\nGuidelines:\n"
-            f"- Maximum 1600 characters (STRICT LIMIT - API will reject longer text)\n"
+            f"- Target 900 to 1200 characters; stay under 1400 (the API rejects text over 1700)\n"
             f"- One paragraph format\n"
             + speaker_instruction +
             "- No intro/closing words\n- No markdown or bullets\n"
             "- Do not prefix with 'Summary:'\n- If incomplete, infer likely main message\n"
-            "- Keep under 1600 characters or the upload will fail\n"
+            "- Keep within the target length or the upload will fail\n"
             "- Use the actual speaker name, not placeholder text\n"
             "- Include specific scripture references, source material, and concrete "
             "examples from the transcript\n"
@@ -4342,7 +4338,7 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
     - validation: Validate sermon descriptions
     - list: List sermons without processing
     """
-    global config, llm_manager, DRY_RUN, DEBUG, config_manager
+    global config, llm_manager, DRY_RUN, DEBUG
     cli_parser = CLIParser(CONFIG_PATH)
     parser = cli_parser.build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
@@ -4353,8 +4349,7 @@ def cli_main(argv: Iterable[str] | None = None):  # orchestration
     if args.config and args.config != CONFIG_PATH:
         if not os.path.exists(args.config):
             parser.error(f"Config not found: {args.config}")
-        config_manager = ConfigManager(args.config)
-        config = config_manager.get_raw_config()
+        config = load_config(args.config)
         llm_manager = LLMManager(config)
         # update dependent flags
         DRY_RUN = config.get('dry_run', DRY_RUN)
