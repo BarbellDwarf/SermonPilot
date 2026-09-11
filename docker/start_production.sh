@@ -44,6 +44,17 @@ else:
         print(f"ORT providers: unavailable ({exc})")
     else:
         print(f"ORT providers: {providers}")
+        if "CUDAExecutionProvider" in providers:
+            # Wheel build lists the provider, but the EP only engages when the
+            # CUDA user-space libraries actually load. dlopen is the honest check.
+            import ctypes
+
+            for lib in ("libcudart.so.12", "libcublas.so.12", "libcudnn.so.9"):
+                try:
+                    ctypes.CDLL(lib)
+                    print(f"CUDA lib {lib}: loadable")
+                except OSError as exc:
+                    print(f"CUDA lib {lib}: NOT loadable ({exc})")
 PYEOF
 
 # Graceful shutdown handler

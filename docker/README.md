@@ -102,11 +102,13 @@ services:
 3. Use a CUDA image tag: `SERMONPILOT_TAG=v1.5.3-cuda docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`.
 
 At startup the entrypoint prints `GPU:` (torch CUDA availability and device
-name) and `ORT providers:` lines. On a cuda image, `ORT providers` must list
-`CUDAExecutionProvider`; when it is missing, GPU compute is not engaged and
-enhancement falls back to the CPU path. Torch CUDA 12.4 wheels need an NVIDIA
-driver of at least 525.60.13 (minor-version compatibility); 550 or newer is
-recommended.
+name) and `ORT providers:` lines. On a cuda image, `ORT providers` listing
+`CUDAExecutionProvider` alone does not prove the provider can load; the entry
+also dlopens `libcudart.so.12`, `libcublas.so.12`, and `libcudnn.so.9` and
+reports each as `loadable` or `NOT loadable`. All three must load and the
+enhancement log must show a `CUDAExecutionProvider` session for GPU compute
+to be engaged. Torch CUDA 12.4 wheels need an NVIDIA driver of at least
+525.60.13 (minor-version compatibility); 550 or newer is recommended.
 
 Check GPU access inside the container:
 
@@ -240,5 +242,9 @@ Then check `docker compose exec sermon-pilot nvidia-smi` and the startup
 `GPU:` and `ORT providers:` lines.
 
 **Volume permissions.** The container runs as user `sermonapp` (UID 1000).
-If a bind-mounted host directory is not writable by that UID, adjust the
-host directory ownership or permissions.
+Named volumes created by current images inherit that ownership, and the
+entrypoint self-repairs root-owned paths when the container starts as root;
+when it starts non-root, the startup log names every unwritable path and
+prints the exact `docker run --rm ... chown` repair command. If a bind-mounted
+host directory is not writable by that UID, adjust the host directory
+ownership or permissions.
