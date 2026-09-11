@@ -2,6 +2,17 @@
 
 All notable changes to SermonPilot are documented here.
 
+## v1.6.6 (2026-09-11)
+
+Description generation completeness on reasoning models.
+
+### Fixed
+
+- Ollama requests now disable hidden reasoning by default (llm.primary.ollama.think, default false). Thinking models like glm-5.3-flash:cloud were spending the entire output token budget on invisible reasoning, so descriptions ended mid-sentence with no ellipsis and Ollama reported done_reason=length. Direct answers are complete and faster; set think: true per provider when reasoning is wanted
+- Responses truncated at the token limit now log a warning naming max_tokens and the think setting, instead of failing silently
+- The Library Generate path's description prompt targets 900-1200 characters like the processing engine (it still carried the old 1600-ceiling wording)
+- Template and example configs document the think option
+
 ## v1.6.5 (2026-09-11)
 
 Status truth and prompt template visibility.

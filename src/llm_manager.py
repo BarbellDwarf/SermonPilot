@@ -112,21 +112,40 @@ class OllamaProvider(LLMProvider):
             logger.error(f"Failed to connect to Ollama for model listing: {e}")
             return []
 
+    def _warn_if_truncated(self, response) -> None:
+        if isinstance(response, dict):
+            done_reason = response.get('done_reason')
+        else:
+            done_reason = getattr(response, 'done_reason', None)
+        if done_reason == 'length':
+            logger.warning(
+                "Ollama response was truncated at the output token limit "
+                "(max_tokens=%d). Raise the model's max_tokens or set "
+                "llm.primary.ollama.think to false for non-reasoning tasks.",
+                self.max_tokens,
+            )
+
     def chat(self, messages: list[dict[str, str]]) -> str:
         """Send chat request to Ollama."""
         if not self.ollama:
             raise Exception("Ollama library not available") from None
 
+        think = bool(self.config.get('think', False))
         try:
-            response = self.ollama.chat(
-                model=self.model,
-                messages=messages,
-                options={
+            call_kwargs = {
+                'model': self.model,
+                'messages': messages,
+                'options': {
                     'temperature': self.temperature,
                     'num_ctx': self.num_ctx,
                     'num_predict': self.max_tokens,
                 },
-            )
+            }
+            try:
+                response = self.ollama.chat(think=think, **call_kwargs)
+            except TypeError:
+                response = self.ollama.chat(**call_kwargs)
+            self._warn_if_truncated(response)
             return response['message']['content']
         except Exception as e:
             # Check if it's a model not found error from ollama library
@@ -145,6 +164,7 @@ class OllamaProvider(LLMProvider):
                 "model": self.model,
                 "messages": messages,
                 "stream": False,
+                "think": bool(self.config.get('think', False)),
                 "options": {
                     "temperature": self.temperature,
                     "num_ctx": self.num_ctx,
@@ -161,6 +181,7 @@ class OllamaProvider(LLMProvider):
 
             if response.status_code == 200:
                 result = response.json()
+                self._warn_if_truncated(result)
                 return result['message']['content']
             elif response.status_code == 404:
                 # Check if it's a model not found error
