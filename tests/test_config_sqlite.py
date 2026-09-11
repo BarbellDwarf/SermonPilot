@@ -202,6 +202,19 @@ def test_plaintext_db_secret_warns(fresh_db, clear_config_env, caplog):
     assert any("plaintext" in message and "api_key" in message for message in warnings)
 
 
+def test_plaintext_warning_names_the_env_var(fresh_db, clear_config_env, caplog):
+    fresh_db.save_config(
+        {"transcription": {"whisper_openai": {"api_key": "stored-plain-key"}}}
+    )
+
+    with caplog.at_level(logging.WARNING, logger="ui.config_utils"):
+        load_config_from_file()
+
+    assert any(
+        "WHISPER_OPENAI_API_KEY" in record.message for record in caplog.records
+    )
+
+
 def test_env_secret_does_not_warn(fresh_db, clear_config_env, monkeypatch, caplog):
     fresh_db.save_config({"api_key": "stored-plain-key"})
     monkeypatch.setenv("SERMONAUDIO_API_KEY", "env-key")

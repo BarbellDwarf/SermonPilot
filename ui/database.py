@@ -1008,10 +1008,26 @@ class SermonRepository:
                     ))
 
                 conn.commit()
+                content = sermon_data.get('content', {}) or {}
+                file_paths = sermon_data.get('file_paths', {}) or {}
+                logger.info(
+                    "Sermon %s saved to settings database: status=%s, "
+                    "transcript=%d chars (sermon_content.transcript_text), "
+                    "description=%d chars (sermons.description + sermon_content.description), "
+                    "audio=%s",
+                    sermon_data.get('id'),
+                    sermon_data.get('status'),
+                    len(content.get('transcript_text') or ''),
+                    len(sermon_data.get('description') or ''),
+                    file_paths.get('audio') or 'none',
+                )
                 return True
 
         except Exception as e:
-            logger.error(f"Failed to save sermon {sermon_data.get('id')}: {e}")
+            logger.error(
+                "Failed to save sermon %s to the settings database: %s",
+                sermon_data.get('id'), e,
+            )
             return False
 
     def get_sermon(self, sermon_id: str) -> dict[str, Any] | None:

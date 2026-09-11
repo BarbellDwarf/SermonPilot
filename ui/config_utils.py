@@ -419,6 +419,17 @@ def _find_plaintext_api_keys(config: dict) -> list[str]:
     return found
 
 
+def _env_var_for_path(path: str) -> str | None:
+    """Return the environment variable that maps to a dotted config path."""
+    from core.config import ENV_CONFIG_MAP
+
+    for env_var, config_paths in ENV_CONFIG_MAP.items():
+        for config_path in config_paths:
+            if ".".join(config_path) == path:
+                return env_var
+    return None
+
+
 def _warn_plaintext_api_keys(
     config: dict[str, Any], sources: dict[str, str] | None = None
 ) -> None:
@@ -433,10 +444,14 @@ def _warn_plaintext_api_keys(
         plaintext_keys = [path for path in plaintext_keys if sources.get(path) != "env"]
     if not plaintext_keys:
         return
+    suggestions = []
+    for path in plaintext_keys:
+        env_var = _env_var_for_path(path)
+        suggestions.append(f"{path} -> {env_var}" if env_var else path)
     message = (
         "API keys are stored in plaintext in the settings database "
-        f"({', '.join(plaintext_keys)}). "
-        "Move them to environment variables, e.g. SERMONAUDIO_API_KEY."
+        f"({', '.join(suggestions)}). "
+        "Set the listed environment variables to keep them out of the database."
     )
     logger.warning(message)
     try:

@@ -1870,6 +1870,18 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     logger.warning("LLM description generation failed: %s", e)
                     description = None
 
+                if description:
+                    logger.info(
+                        "Description ready (%d chars); stored in "
+                        "sermons.description and sermon_content.description",
+                        len(description),
+                    )
+                else:
+                    logger.warning(
+                        "Description generation returned nothing; "
+                        "the template fallback will be used"
+                    )
+
             if not hashtags:
                 try:
                     _report(80, "Generating hashtags...")
