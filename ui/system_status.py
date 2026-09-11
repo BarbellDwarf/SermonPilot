@@ -594,12 +594,10 @@ def get_status_manager(config: dict[str, Any] | None = None) -> SystemStatusMana
         config is not None and config != _status_manager_config
     ):
         if config is None:
-            # Load default config
             try:
-                import yaml
-                with open('config.yaml') as f:
-                    config = yaml.safe_load(f)
-            except FileNotFoundError:
+                from ui.config_utils import resolve_config
+                config = resolve_config()
+            except Exception:
                 config = {}
 
         _status_manager = SystemStatusManager(config)

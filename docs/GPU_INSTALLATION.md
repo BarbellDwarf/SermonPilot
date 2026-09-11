@@ -10,8 +10,18 @@ setups, and Docker images built for each backend.
   `torch.cuda.is_available()` is true, with automatic ROCm detection via
   `torch.version.hip`.
 - **Clear** (the `clear-studio` and `clear-natural` methods) runs through
-  ONNX Runtime, which supports CUDA, ROCm, and CPU.
-- **Local transcription** (faster-whisper) benefits from GPU compute.
+  ONNX Runtime, which supports CUDA and CPU. On ROCm 7.x systems it runs on
+  CPU: the published `onnxruntime-rocm` wheels are built against the ROCm
+  6.4.2 ABI and are incompatible with ROCm 7.x (see the note in
+  `requirements/requirements-rocm.txt`), which is fast enough for
+  sermon-length audio.
+- **Local transcription** depends on the backend:
+  - `whisper_local` (openai-whisper) runs on torch, so it uses NVIDIA CUDA
+    and AMD ROCm GPUs (ROCm exposes HIP through the CUDA device interface).
+  - `faster_whisper_local` runs on CTranslate2, which has no ROCm support.
+    `src/transcription.py` calls `_detect_device(allow_rocm=False)` for this
+    backend, so on an AMD GPU it is forced to CPU (int8) instead of failing
+    with "CUDA driver version is insufficient".
 
 The manifest in `pyproject.toml` requires `torch>=2.6.0` and
 `torchaudio>=2.6.0`. Any PyTorch install must satisfy that floor. The
@@ -166,12 +176,23 @@ Backends: `cpu` (default), `cuda`, `rocm`. The `cuda` build installs
 
 ### Run with a GPU image
 
-Prebuilt images carry a backend suffix, for example `v1.5.3-cuda` or
-`v1.5.3-rocm`. The `latest` tag points at the latest CUDA build.
+Prebuilt images carry a backend suffix, for example `v1.6.2-cuda` or
+`v1.6.2-rocm`. Moving per-backend tags (`cuda`, `rocm`, `cpu`) track the
+latest release of each backend, and `latest` points at the latest CUDA build.
 
 ```bash
-SERMONPILOT_TAG=v1.5.3-cuda docker compose up -d
+SERMONPILOT_TAG=v1.6.2-cuda docker compose up -d
 ```
+
+Each image sets `SERMONPILOT_VARIANT` to its backend and ships a matching
+config template: `config/templates/cuda.yaml`, `config/templates/rocm.yaml`,
+or `config/templates/cpu.yaml`. The templates differ only in the
+transcription section (backend, device, compute type) matched to the image's
+hardware stack; the rocm template pins `faster_whisper_local` to CPU and
+prefers `whisper_local` on the GPU. The template is optional: import it from
+the Settings page (Import/Export) or point `SA_UPDATER_CONFIG` at it to use
+it as a file overlay. Container startup prints the variant and the template
+path when one exists.
 
 Add device access in `docker-compose.yml`:
 
@@ -216,6 +237,10 @@ docker compose exec sermon-pilot nvidia-smi
 
 - ROCm 7.x compatible GPU and driver
 - 4 GB+ GPU memory (8 GB+ recommended)
+- Transcription: `whisper_local` uses the AMD GPU; `faster_whisper_local`
+  always runs on CPU (CTranslate2 has no ROCm support), and Clear
+  enhancement runs on CPU ONNX Runtime (see above). PyTorch DSP work
+  (DeepFilterNet) still uses the GPU.
 
 ### CPU-only
 
@@ -233,11 +258,14 @@ CUDA_VISIBLE_DEVICES=0 python sermon_updater.py new-sermon audio.mp3 --speaker "
 
 ## Configuration
 
-Audio enhancement is configured through `config.yaml`:
+Audio enhancement settings are stored in the SQLite settings database and can
+be set from the Settings page in the web UI, seeded from environment variables
+(`AUDIO_ENHANCEMENT_METHOD`, `AUDIO_NOISE_REDUCTION`, `AUDIO_NORMALIZE`,
+`AUDIO_TARGET_LEVEL`, `AUDIO_GAIN_DB`), or loaded from a file through
+`SA_UPDATER_CONFIG`. There is no required config file. The relevant keys:
 
 ```yaml
 audio_enhancement_method: deepfilternet  # deepfilternet, clear-studio, clear-natural, custom, none
-clear_model_variant: natural             # Clear model variant when using Clear
 clear_custom_repo: ""                    # Custom Clear model repo (method: custom)
 clear_custom_file: ""                    # Custom Clear model file (method: custom)
 audio_noise_reduction: true
@@ -246,9 +274,13 @@ audio_target_level_db: -22.0
 audio_gain_db: 0.5
 ```
 
+The Clear ONNX model variant follows the method name: `clear-natural` loads
+`clear-natural.onnx`, `clear-studio` loads `clear-studio.onnx`.
+
 DeepFilterNet needs PyTorch with CUDA or ROCm support. Clear methods use
-ONNX Runtime and work on CUDA, ROCm, or CPU without PyTorch. Set the
-enhancement method to `none` to skip enhancement entirely.
+ONNX Runtime and work on CUDA or CPU everywhere; on ROCm 7.x they run on CPU
+(see the ONNX Runtime note above). Set the enhancement method to `none` to
+skip enhancement entirely.
 
 ## Troubleshooting
 
@@ -263,10 +295,15 @@ Reinstall with the matching wheelhouse from
 [step 3](#3-install-gpu-pytorch).
 
 **Out of memory during processing.** Close other GPU applications, reduce
-the transcription model size in `config.yaml`
+the transcription model size in the transcription settings
 (`transcription.faster_whisper_local.model` or `transcription.whisper_local.model`),
 or use a smaller enhancement model. Clear ONNX inference generally uses less
 memory than DeepFilterNet.
+
+**Faster-whisper runs on CPU even though an AMD GPU is present.** That is
+expected: CTranslate2 has no ROCm build, so `src/transcription.py` pins the
+faster-whisper device to CPU. Switch the transcription backend to
+`whisper_local` to use the AMD GPU (the rocm Docker template does this).
 
 **Import errors after switching builds.** Reinstall the base requirements:
 

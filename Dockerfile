@@ -2,11 +2,16 @@ ARG GPU_BACKEND=cpu
 
 FROM ubuntu:22.04 AS base-cpu
 
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04 AS base-cuda
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS base-cuda
 
 FROM rocm/dev-ubuntu-22.04:7.1 AS base-rocm
 
 FROM base-${GPU_BACKEND} AS base
+
+# Pre-FROM args must be redeclared to be visible inside the stage;
+# this also makes the requirements selection below actually branch.
+ARG GPU_BACKEND
+ARG SERMONPILOT_VARIANT=${GPU_BACKEND}
 
 RUN apt-get update && apt-get install -y \
     python3.11 \
@@ -28,6 +33,7 @@ RUN python3.11 -m venv /app/venv
 
 ENV PATH="/app/venv/bin:$PATH"
 ENV PYTHONPATH="/app:/app/src:/app/ui"
+ENV SERMONPILOT_VARIANT=${SERMONPILOT_VARIANT}
 
 RUN useradd -m -u 1000 sermonapp && \
     mkdir -p /app /data /models /logs /home/sermonapp/.cache && \
@@ -41,10 +47,17 @@ COPY pyproject.toml ./
 # Install uv for fast dependency resolution
 RUN pip install --no-cache-dir uv
 
+# uv's default index strategy takes a package from the first index that has it;
+# the PyTorch cu124 index carries stale shadows of PyPI packages (e.g. requests),
+# so best-match across indexes is required for the GPU requirement sets.
+ENV UV_INDEX_STRATEGY=unsafe-best-match
+
 # Install core + GPU-specific dependencies
+# ORT 1.27+ wheels target CUDA 13; this image is CUDA 12.4 with system cuDNN 9
+# from the cudnn-runtime base, so the onnxruntime-gpu pin stays below 1.27.
 RUN if [ "$GPU_BACKEND" = "cuda" ]; then \
         uv pip install --no-cache-dir -r requirements/requirements-gpu.txt && \
-        uv pip install --no-cache-dir "onnxruntime-gpu>=1.22.1"; \
+        uv pip install --no-cache-dir "onnxruntime-gpu>=1.22.1,<1.27"; \
     elif [ "$GPU_BACKEND" = "rocm" ]; then \
         uv pip install --no-cache-dir -r requirements/requirements-rocm.txt; \
     else \

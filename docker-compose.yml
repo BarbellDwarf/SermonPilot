@@ -1,3 +1,37 @@
+# SermonPilot compose deployment.
+#
+# Image variants: ghcr.io/barbelldwarf/sermonpilot ships cpu, rocm and cuda
+# tags; pick one with SERMONPILOT_TAG (e.g. SERMONPILOT_TAG=cuda). Each image
+# carries a matching config template:
+#   cuda -> /app/config/templates/cuda.yaml
+#   rocm -> /app/config/templates/rocm.yaml
+#   cpu  -> /app/config/templates/cpu.yaml
+# The templates differ only in the transcription section (backend, device,
+# compute type) matched to the image's hardware stack. Runtime configuration
+# is stored in the settings database and seeded from environment variables;
+# config.yaml is optional (export/import only). Import the matching template
+# from the UI config page, or point SA_UPDATER_CONFIG at a template to use it
+# as a file overlay.
+#
+# Environment variables consumed by config resolution (environment values
+# override values loaded from config files):
+#   SermonAudio: SERMONAUDIO_API_KEY, SERMONAUDIO_BROADCASTER_ID
+#   LLM: OPENAI_API_KEY, ANTHROPIC_API_KEY, XAI_API_KEY, GOOGLE_API_KEY,
+#     GROQ_API_KEY, OPENROUTER_API_KEY, LLM_PROVIDER, OLLAMA_HOST,
+#     OLLAMA_MODEL, OPENAI_MODEL, ANTHROPIC_MODEL, XAI_MODEL, GOOGLE_MODEL,
+#     GROQ_MODEL, OPENROUTER_MODEL
+#   Transcription: TRANSCRIPTION_BACKEND, WHISPER_MODEL
+#   Audio: AUDIO_ENHANCEMENT_METHOD, AUDIO_NOISE_REDUCTION, AUDIO_NORMALIZE,
+#     AUDIO_TARGET_LEVEL, AUDIO_GAIN_DB, QA_NORMALIZATION_ENABLED
+#   Output: OUTPUT_DIRECTORY, SAVE_TRANSCRIPT, SAVE_ORIGINAL_AUDIO
+#   Embeddings: EMBEDDING_PROVIDER, EMBEDDING_MODEL
+#   Processing: DEBUG, VERBOSE, DRY_RUN, HASHTAG_VERIFICATION
+#   Runtime: DATABASE_URL (default sqlite:///data/sermon_processor.db,
+#     resolved to /data/sermon_processor.db inside the container),
+#     APP_PASSWORD (UI sign-in when set)
+#   Compose-side only: SERMONPILOT_TAG (image tag), HOST_BIND (port bind
+#     address). ENVIRONMENT is declared here but currently unused by the app.
+
 services:
   sermon-pilot:
     image: ghcr.io/barbelldwarf/sermonpilot:${SERMONPILOT_TAG:-latest}

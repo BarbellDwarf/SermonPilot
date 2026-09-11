@@ -3,7 +3,7 @@
 SermonPilot ships a performance monitor in `ui/performance_monitor.py`. It
 collects live system metrics, reads processing statistics from the SQLite
 database, and produces optimization recommendations. The Streamlit Analytics
-page surfaces the same data in the "⚡ Performance" tab.
+page surfaces the same data in the "Performance" tab.
 
 ## What it measures
 
@@ -94,7 +94,7 @@ for rec in recommendations:
 streamlit run streamlit_app.py
 ```
 
-Open the Analytics page and switch to the "⚡ Performance" tab. The page
+Open the Analytics page and switch to the "Performance" tab. The page
 calls the module-level `get_comprehensive_performance_data()` function in
 `ui/performance_monitor.py`, which combines the system metrics, processing
 metrics, and recommendations into a single dict for display.

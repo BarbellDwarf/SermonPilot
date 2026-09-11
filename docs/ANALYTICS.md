@@ -10,7 +10,8 @@ using a ChromaDB vector store (`ui/rag_system.py`).
 
 ## Enabling Analytics
 
-Analytics is controlled from `config.yaml` under `web_ui`:
+Analytics is controlled by the `web_ui` settings (Settings page in the web
+UI, or a file layer):
 
 ```yaml
 web_ui:
@@ -26,15 +27,15 @@ Analytics is enabled by default. The data comes from two places:
 
 ## The Analytics Page
 
-Open the Streamlit UI and navigate to the "📈 Analytics" page. It has five tabs:
+Open the Streamlit UI and navigate to the Analytics page. It has five tabs:
 
 | Tab | Contents |
 |-----|----------|
-| 📊 Processing Metrics | Sermons processed per time range, success rate, error types, processing time trend |
-| 📝 Content Analysis | Speaker and event-type distribution from the local database |
-| 💰 Cost Tracking | LLM API call counts, token usage, and estimated cost per month |
-| ⚡ Performance | Live CPU, memory, disk, network, and GPU metrics via `ui/performance_monitor.py` |
-| 🎙️ SermonAudio Analytics | Two sub-tabs: a data view of API engagement metrics and the AI chat interface |
+| Processing Metrics | Sermons processed per time range, success rate, error types, processing time trend |
+| Content Analysis | Speaker and event-type distribution from the local database |
+| Cost Tracking | LLM API call counts, token usage, and estimated cost per month |
+| Performance | Live CPU, memory, disk, network, and GPU metrics via `ui/performance_monitor.py` |
+| SermonAudio Analytics | Two sub-tabs: a data view of API engagement metrics and the AI chat interface |
 
 ### SermonAudio Analytics Data View
 
@@ -53,7 +54,7 @@ warning.
 
 ## Using the Chat Interface
 
-The "💬 Chat Interface" sub-tab (`ui/analytics_chat.py`) lets you ask
+The "Chat Interface" sub-tab (`ui/analytics_chat.py`) lets you ask
 questions about your sermon analytics in plain language, for example:
 
 - "Which speaker has the most downloads?"
@@ -69,7 +70,7 @@ relevant sermons and a relevance score for each.
 ### RAG Data Flow
 
 ```
-Question → Embedding → Vector Search (ChromaDB) → Context → LLM Answer
+Question -> Embedding -> Vector Search (ChromaDB) -> Context -> LLM Answer
 ```
 
 Analytics records are added to the vector store with
@@ -80,8 +81,8 @@ Analytics records are added to the vector store with
 
 ### LLM for the Chat Interface
 
-The chat interface reuses the main `llm` configuration block in
-`config.yaml` (primary and fallback providers).
+The chat interface reuses the main `llm` configuration block from the
+resolved settings (primary and fallback providers).
 
 ### Embeddings
 
@@ -90,17 +91,20 @@ Embedding providers are configured under `embeddings`:
 ```yaml
 embeddings:
   primary:
-    provider: "sentence_transformers"  # or openai, ollama, xai, anthropic
+    provider: "sentence_transformers"  # or openai, ollama, cohere, voyageai
     model: "all-MiniLM-L6-v2"
 ```
+
+The `EMBEDDING_PROVIDER` and `EMBEDDING_MODEL` environment variables
+override the stored primary provider and model.
 
 See [EMBEDDING_PROVIDERS.md](EMBEDDING_PROVIDERS.md) for the full list of
 providers and fallback behavior.
 
 ## Troubleshooting
 
-**Analytics data not loading:** verify `web_ui.analytics_enabled: true` in
-`config.yaml`, then use the "🔄 Refresh Data" button on the Processing
+**Analytics data not loading:** verify `web_ui.analytics_enabled` is on in
+the Settings page, then use the "Refresh Data" button on the Processing
 Metrics tab to clear the cached data.
 
 **SermonAudio engagement metrics missing or zero:** the API does not provide
@@ -114,6 +118,6 @@ dimensions change, the vector store is reset automatically on the next query.
 
 ## Performance Monitoring
 
-The ⚡ Performance tab reads system metrics from `ui/performance_monitor.py`:
+The Performance tab reads system metrics from `ui/performance_monitor.py`:
 CPU usage, memory usage, disk usage, network I/O, and NVIDIA GPU utilization
 and memory when a GPU is present.

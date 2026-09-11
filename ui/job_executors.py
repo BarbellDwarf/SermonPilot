@@ -6,8 +6,8 @@ Each executor is responsible for performing the work and updating job progress.
 """
 
 import logging
+import shutil
 import sys
-import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -18,6 +18,8 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "src"))
 
 from job_queue import Job, JobCancelledError, JobResult, JobStatus, JobType  # noqa: E402
+
+from ui.config_utils import default_cache_root  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -37,27 +39,40 @@ def _raise_if_job_cancelled(job: Job) -> None:
         raise JobCancelledError("Job cancelled by user")
 
 
-def _cleanup_uploaded_copy(config: dict, uploaded_file_path: str | None,
-                           job: Job) -> None:
-    """Delete the UI's temporary upload copy after successful processing.
+def _cleanup_job_files(config: dict, uploaded_file_path: str | None,
+                       processing_dir: str | None, job: Job,
+                       keep_upload: bool = False) -> None:
+    """Delete the job's uploaded copy and per-job processing dir if still present.
 
     Only files inside the configured upload_dir are removed so a path pointing
-    at real user media can never be deleted. Kept on failure for retry.
+    at real user media can never be deleted. Safe to run more than once.
+    keep_upload=True retains the original uploaded copy (job failed or was
+    cancelled: a retry re-processes it) while still removing the derived
+    _enhanced/_cleaned siblings so a retry never reuses stale artifacts.
     """
-    if not uploaded_file_path:
-        return
     try:
         upload_dir = Path(
-            config.get('upload_dir') or (Path(tempfile.gettempdir()) / "sermon_uploads")
+            config.get('upload_dir') or (default_cache_root() / "sermon_uploads")
         ).resolve()
-        candidate = Path(uploaded_file_path).resolve()
-        if candidate.parent != upload_dir:
-            return
-        candidate.unlink(missing_ok=True)
-        job.add_log(f"Removed uploaded copy {candidate.name}")
-        logger.info("Removed uploaded copy %s", candidate)
+        if uploaded_file_path:
+            candidate = Path(uploaded_file_path).resolve()
+            derived = (
+                candidate,
+                candidate.with_name(f"{candidate.stem}_enhanced{candidate.suffix}"),
+                candidate.with_name(f"{candidate.stem}_cleaned.wav"),
+            )
+            for path in derived:
+                if path.parent != upload_dir:
+                    continue
+                if keep_upload and path == candidate:
+                    continue
+                path.unlink(missing_ok=True)
+                job.add_log(f"Removed uploaded copy {path.name}")
+                logger.info("Removed uploaded copy %s", path)
+        if processing_dir:
+            shutil.rmtree(processing_dir, ignore_errors=True)
     except Exception as e:
-        logger.warning("Failed to remove uploaded copy %s: %s", uploaded_file_path, e)
+        logger.warning("Failed to clean up job files: %s", e)
 
 
 def _inject_sermon_updater_config(config: dict) -> None:
@@ -129,30 +144,19 @@ def execute_validation_job(job: Job) -> JobResult:
                     progress, f"Validating sermon {sermon_id} ({i+1}/{len(sermon_ids)})"
                 )
 
-                # Get configuration from job parameters first, then try loading
-                # from file as fallback
+                # Get configuration from job parameters first, then resolve
                 config = job.parameters.get('config', {})
                 if not config:
-                    job.add_log("No config in job parameters, attempting to load from file...")
+                    job.add_log("No config in job parameters, resolving configuration...")
                     try:
-                        # Try to load configuration from file as fallback
-                        from pathlib import Path
+                        from ui.config_utils import load_config_from_file
 
-                        import yaml
-
-                        # Look for config.yaml in the project root
-                        config_path = Path(__file__).parent.parent / "config.yaml"
-                        if config_path.exists():
-                            with open(config_path, encoding='utf-8') as f:
-                                config = yaml.safe_load(f)
-                            job.add_log(f"Loaded configuration from {config_path}")
-                        else:
-                            raise FileNotFoundError(f"Config file not found at {config_path}")
+                        config = load_config_from_file()
                     except Exception as e:
-                        job.add_log(f"Failed to load config from file: {e}")
+                        job.add_log(f"Failed to resolve configuration: {e}")
                         raise ValueError(
-                            f"No configuration available in job parameters and failed "
-                            f"to load from file: {e}"
+                            f"No configuration available in job parameters and "
+                            f"resolution failed: {e}"
                         ) from e
 
                 if not config:
@@ -378,6 +382,8 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
                      skip_audio, skip_transcription, whisper_model, dry_run
         - config: full config dict (used to set globals in sermon_updater)
     """
+    processing_temp_dir: str | None = None
+    cleanup_state = {"keep_upload": True}
     try:
         if job.cancelled or job.status == JobStatus.CANCELLED:
             raise JobCancelledError("Job cancelled by user")
@@ -467,6 +473,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             progress_callback=progress_cb,
             cancel_check=lambda: _raise_if_job_cancelled(job),
         )
+        processing_temp_dir = result.get('processing_temp_dir')
 
         if result.get('cancelled'):
             job.add_log("Sermon processing cancelled by user")
@@ -475,7 +482,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
         if result.get('success'):
             sermon_id = result.get('sermon_id')
             job.add_log(f"Sermon created: {sermon_id or '(dry run)'}")
-            _cleanup_uploaded_copy(config, uploaded_file_path, job)
+            cleanup_state["keep_upload"] = False
             return JobResult(
                 success=True,
                 message=f"Sermon processed successfully: {sermon_id or 'dry run'}",
@@ -501,6 +508,16 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             success=False,
             message="Sermon processing job failed",
             error=str(e),
+        )
+    finally:
+        parameters = job.parameters
+        uploaded_file_path = (
+            parameters.get('uploaded_file_path')
+            or (parameters.get('form_data') or {}).get('uploaded_file_path')
+        )
+        _cleanup_job_files(
+            parameters.get('config') or {}, uploaded_file_path, processing_temp_dir, job,
+            keep_upload=cleanup_state["keep_upload"],
         )
 
 

@@ -1,7 +1,7 @@
-# SermonAudio Updater Configuration
-# Settings load from the SQLite settings database, seeded from environment
-# variables on first run (see README). This file is optional: use it via
-# the UI import or SA_UPDATER_CONFIG; config.yaml is export/import only.
+# SermonPilot configuration template - rocm image variant
+# Derived from config/config.example.yaml; the transcription section is
+# variant-specific and other sections may drift from the example over time
+# (the example remains canonical).
 
 # SermonAudio API credentials - Use environment variables for security
 api_key: "${SERMONAUDIO_API_KEY}"
@@ -129,13 +129,6 @@ output_directory: "processed_sermons"  # Directory to store processed sermon fil
 save_original_audio: true  # Save the original downloaded audio file alongside processed audio
 save_transcript: true  # Save the sermon transcript as a text file alongside other outputs
 
-# Temporary Job Storage (optional)
-# Unset keys fall back to a disk-backed folder under the user cache root
-# ($XDG_CACHE_HOME/sermonpilot or ~/.cache/sermonpilot); the previous fallback
-# was the system temp dir, which is tmpfs (RAM) on many Linux systems.
-upload_dir: "/var/tmp/sermonpilot/uploads"  # Staging area for files uploaded through the web UI
-processing_temp_dir: "/var/tmp/sermonpilot/processing"  # Parent for per-job audio processing temp dirs
-
 # Metadata Processing Settings
 metadata_processing:
   enabled: true  # Enable metadata processing (descriptions and hashtags)
@@ -162,15 +155,20 @@ metadata_processing:
 # Default search criteria
 
 # Transcription Settings
+# rocm image: AMD GPU build (ROCm torch wheels).
+# whisper_local runs on the AMD GPU: ROCm torch exposes HIP through the
+# CUDA device interface, so device "cuda" selects your AMD GPU.
+# faster-whisper uses CTranslate2, which has no ROCm support, so its
+# device is pinned to CPU int8 to avoid CUDA driver version errors.
 transcription:
-  backend: faster_whisper_local  # Options: whisper_local, faster_whisper_local, whisper_openai, whisper_openrouter
+  backend: whisper_local  # torch-based whisper uses the ROCm GPU; faster-whisper would run on CPU
   whisper_local:
-    device: auto  # Options: auto, cpu, cuda
+    device: cuda  # ROCm torch build: "cuda" here means your AMD GPU via HIP
     language: en  # Language code (en, es, fr, etc.) or None for auto-detection
     model: base  # Options: tiny, base, small, medium, large
   faster_whisper_local:
-    compute_type: float16  # Options: float16, int8, int8_float16, int8_uint8, int16, float32
-    device: auto  # Options: auto, cpu, cuda
+    compute_type: int8  # CPU int8: CTranslate2 has no ROCm support
+    device: cpu  # Pinned to CPU; CTranslate2 has no ROCm support
     language: en  # Language code (en, es, fr, etc.) or None for auto-detection
     model: base  # Options: tiny, base, small, medium, large
   whisper_openai:
