@@ -41,6 +41,22 @@ def render_sidebar_extras():
     render_system_status()
     render_queue_status()
     render_quick_actions()
+    _render_sign_out()
+
+
+def _render_sign_out() -> None:
+    import os
+
+    from ui.version import app_version
+
+    st.caption(f"SermonPilot v{app_version()}")
+    if not os.environ.get("APP_PASSWORD"):
+        return
+    from ui.auth import sign_out
+
+    if st.button("Sign out", key="sidebar_sign_out", use_container_width=True):
+        sign_out()
+        st.rerun()
 
 
 @st.cache_resource(ttl=300)
