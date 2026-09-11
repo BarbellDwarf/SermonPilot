@@ -15,6 +15,7 @@ llm:
     ollama:
       host: "http://localhost:11434"
       model: "llama3"
+      think: false  # Reasoning models only; false gives direct answers and avoids token-budget cutoffs
     openai:
       api_key: "${OPENAI_API_KEY}"
       model: "gpt-3.5-turbo"
