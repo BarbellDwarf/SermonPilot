@@ -474,9 +474,9 @@ def reload_configuration():
 def save_config_to_file(config):
     """Persist configuration to the settings database, then reload the session.
 
-    The database is the primary store and survives container recreation. A
-    config.yaml export is written only when the file already exists (container
-    users often cannot write the app directory); it is never created.
+    The database is the primary store and survives container recreation. No
+    config file is written: the file layer is a read-only compatibility
+    artifact honored only when $SA_UPDATER_CONFIG points at one.
     """
     try:
         try:
@@ -493,25 +493,12 @@ def save_config_to_file(config):
                 pass
             return False
 
-        exported = False
-        config_path = project_root / "config.yaml"
-        if config_path.exists():
-            try:
-                with open(config_path, "w") as f:
-                    yaml.dump(config, f, default_flow_style=False, sort_keys=True)
-                exported = True
-            except OSError as e:
-                logger.warning("Could not export config.yaml: %s", e)
-
         reload_configuration()
 
         try:
             import streamlit as st
 
-            message = "Configuration saved to the settings database."
-            if exported:
-                message += " Exported a copy to config.yaml."
-            st.info(message)
+            st.info("Configuration saved to the settings database.")
         except ImportError:
             pass  # Not in Streamlit context
 

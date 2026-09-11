@@ -166,7 +166,7 @@ class ConfigMigrationManager:
             return 'api'
         elif key_path.startswith('llm'):
             return 'llm'
-        elif key_path.startswith('audio') or key_path.startswith('use_audacity'):
+        elif key_path.startswith('audio'):
             return 'audio'
         elif key_path.startswith('embeddings'):
             return 'embeddings'

@@ -170,7 +170,7 @@ def test_export_import_round_trip(fresh_db, clear_config_env, monkeypatch, tmp_p
     assert loaded["metadata_processing"]["description"]["min_words"] == 55
 
 
-def test_yaml_export_only_when_file_exists(fresh_db, clear_config_env, monkeypatch, tmp_path):
+def test_save_never_writes_a_config_file(fresh_db, clear_config_env, monkeypatch, tmp_path):
     monkeypatch.setattr(config_utils, "project_root", tmp_path)
     existing = tmp_path / "config.yaml"
     existing.write_text("broadcaster_id: old-value\n", encoding="utf-8")
@@ -178,7 +178,7 @@ def test_yaml_export_only_when_file_exists(fresh_db, clear_config_env, monkeypat
     assert save_config_to_file({"broadcaster_id": "new-value"}) is True
 
     exported = yaml.safe_load(existing.read_text(encoding="utf-8"))
-    assert exported["broadcaster_id"] == "new-value"
+    assert exported["broadcaster_id"] == "old-value"
 
 
 def test_save_fails_without_database(monkeypatch):

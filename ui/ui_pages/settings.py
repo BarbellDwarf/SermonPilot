@@ -1032,12 +1032,6 @@ def show_audio_settings():
 
     with col1:
         st.checkbox(
-            "Use Audacity Integration",
-            key="settings_use_audacity",
-            help="Use Audacity with mod-script-pipe if available"
-        )
-
-        st.checkbox(
             "Noise Reduction",
             key="settings_noise_reduction",
             help="Apply noise reduction during processing"
@@ -1703,7 +1697,6 @@ def save_audio_settings():
         'audio_enhancement_method': st.session_state.get(
             'settings_enhancement_method', 'deepfilternet'
         ),
-        'use_audacity': st.session_state.get('settings_use_audacity', False),
         'audio_noise_reduction': st.session_state.get('settings_noise_reduction', True),
         'audio_amplify': st.session_state.get('settings_amplify', True),
         'audio_normalize': st.session_state.get('settings_normalize', True),
@@ -1753,7 +1746,7 @@ def save_validation_settings():
     st.success("Validation settings saved!")
 
 def save_config_to_file(config):
-    """Save configuration to config.yaml file and reload in session"""
+    """Persist configuration to the settings database and reload the session"""
     from config_utils import save_config_to_file as _save_config
     return _save_config(config)
 
@@ -1784,7 +1777,6 @@ def _init_audio_session_state(config):
         "settings_enhancement_method": method,
         "settings_custom_repo": config.get('clear_custom_repo', ''),
         "settings_custom_file": config.get('clear_custom_file', ''),
-        "settings_use_audacity": config.get('use_audacity', False),
         "settings_noise_reduction": config.get('audio_noise_reduction', True),
         "settings_amplify": config.get('audio_amplify', True),
         "settings_normalize": config.get('audio_normalize', True),
@@ -1945,7 +1937,7 @@ def _clear_settings_widget_keys():
         "validator_enabled", "validator_provider",
         "primary_embedding_provider",
         "settings_enhancement_method", "settings_custom_repo", "settings_custom_file",
-        "settings_use_audacity", "settings_noise_reduction", "settings_amplify",
+        "settings_noise_reduction", "settings_amplify",
         "settings_normalize", "settings_gain_db", "settings_target_level_db",
         "settings_trans_backend", "settings_trans_local_model", "settings_trans_device",
         "settings_trans_compute_type", "settings_trans_language",

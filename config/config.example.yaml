@@ -60,7 +60,6 @@ llm:
       model: "llama-3.1-8b-instant"  # Fast model for validation
 
 # Audio Processing Settings
-use_audacity: false  # Set to true if Audacity with mod-script-pipe is available
 audio_enhancement_method: "deepfilternet"  # Options: "deepfilternet", "clear-natural", "clear-studio", "none"
 preprocess_noise_gate: false  # Legacy pre-enhancement noise gate; keep false (it destroyed sermon speech)
 audio_noise_reduction: true

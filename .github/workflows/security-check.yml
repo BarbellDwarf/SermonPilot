@@ -31,14 +31,17 @@ jobs:
 
     - name: Validate configuration security
       run: |
-        echo "🔧 Validating configuration security..."
+        echo "Validating configuration security..."
         python - <<'EOF'
         import sys
         import yaml
 
-        cfg = yaml.safe_load(open("config.yaml"))
+        # config.yaml is untracked (runtime artifact); validate the committed
+        # example, which is the artifact contributors actually change.
+        path = "config/config.example.yaml"
+        cfg = yaml.safe_load(open(path))
         if not isinstance(cfg, dict):
-            print("config.yaml is empty or invalid")
+            print(f"{path} is empty or invalid")
             sys.exit(1)
 
         def walk(d, path):
@@ -55,11 +58,11 @@ jobs:
 
         bad = walk(cfg, "")
         if bad:
-            print("Hardcoded secret values found in config.yaml:")
+            print(f"Hardcoded secret values found in {path}:")
             for b in bad:
                 print(f"  - {b}")
             sys.exit(1)
-        print("OK: no hardcoded secrets in config.yaml")
+        print(f"OK: no hardcoded secrets in {path}")
         EOF
 
   credential-scan:
@@ -103,19 +106,18 @@ jobs:
         chmod +x osv-scanner
 
     - name: Check for known vulnerabilities
+      # Only the resolvable base lockfile goes through resolution: the
+      # per-backend requirement files pin +local torch wheels that live on
+      # the PyTorch index, which osv-scanner's resolver cannot see.
       run: |
-        echo "🔍 Checking for known vulnerabilities in dependencies..."
-        args=()
-        for f in requirements/*.txt; do
-          args+=(--lockfile "requirements.txt:$f")
-        done
-        ./osv-scanner scan "${args[@]}" --lockfile uv.lock
+        echo "Checking for known vulnerabilities in dependencies..."
+        ./osv-scanner scan --lockfile requirements.txt:requirements/requirements.txt --lockfile uv.lock
 
     - name: Run Bandit security linter
       # -lll fails the job on HIGH severity findings only; the
       # pre-existing MEDIUM/LOW findings are reported in the artifact.
       run: |
-        echo "🔒 Running Bandit security linter..."
+        echo "Running Bandit security linter..."
         bandit -r src/ ui/ sermon_updater.py streamlit_app.py -lll -f json -o bandit_report.json
 
     - name: Upload Bandit report

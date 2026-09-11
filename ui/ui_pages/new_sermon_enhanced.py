@@ -513,7 +513,6 @@ def start_enhanced_processing():
             ),
             parameters={
                 'form_data': form_data,
-                'config': config,
                 'processing_type': 'new_sermon',
                 'uploaded_file_path': str(saved_path),
             },

@@ -542,15 +542,6 @@ def start_background_validation(scope: str, options: dict):
         else:
             job_description = f"Validating {len(sermon_ids)} sermons from {scope.lower()}"
 
-        # Get current configuration from session state
-        config = st.session_state.get('config', {})
-        if not config:
-            st.error("No configuration loaded. Please check the Settings page first.")
-            st.info(
-                "Try going to Settings -> Configuration and saving your settings, "
-                "then return to this page."
-            )
-            return
 
         # Validate that essential config fields are present
         required_fields = ['api_key', 'broadcaster_id']
@@ -571,7 +562,6 @@ def start_background_validation(scope: str, options: dict):
                 'sermon_ids': sermon_ids,
                 'scope': scope,
                 'options': options,
-                'config': config  # Pass configuration to the job
             },
             priority=7  # High priority for validation jobs
         )
@@ -865,10 +855,6 @@ def regenerate_description(sermon_id):
     """Submit a regeneration job for a specific sermon"""
     try:
         from job_queue import JobType, get_job_queue
-        config = st.session_state.get('config', {})
-        if not config:
-            st.error("No configuration loaded")
-            return
         job_queue = get_job_queue()
         job_id = job_queue.add_job(
             job_type=JobType.METADATA_UPDATE,
@@ -877,7 +863,6 @@ def regenerate_description(sermon_id):
             parameters={
                 'sermon_ids': [sermon_id],
                 'actions': {'generate_description': True, 'generate_hashtags': True},
-                'config': config
             },
             priority=7
         )
@@ -920,10 +905,6 @@ def regenerate_high_priority():
         if not failed_ids:
             st.info("No high-priority failures found")
             return
-        config = st.session_state.get('config', {})
-        if not config:
-            st.error("No configuration loaded")
-            return
         job_queue = get_job_queue()
         job_id = job_queue.add_job(
             job_type=JobType.METADATA_UPDATE,
@@ -932,7 +913,6 @@ def regenerate_high_priority():
             parameters={
                 'sermon_ids': failed_ids,
                 'actions': {'generate_description': True, 'generate_hashtags': True},
-                'config': config
             },
             priority=8
         )

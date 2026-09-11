@@ -171,7 +171,10 @@ class ConfigManager:
                 logger.error(f"Failed to load config from {self.config_path}: {e}")
                 self._config = {}
         else:
-            logger.warning(f"Configuration file not found: {self.config_path}")
+            logger.debug(
+                f"Configuration file not found: {self.config_path}; "
+                "the settings database is the runtime source"
+            )
             self._config = {}
 
         # Override with environment variables
