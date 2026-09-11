@@ -2,6 +2,21 @@
 
 All notable changes to SermonPilot are documented here.
 
+## v1.6.4 (2026-09-11)
+
+Login persistence, version visibility, and the config-cleanup follow-through.
+
+### Added
+
+- Persistent sign-in: a signed cookie keeps sessions alive across browser refreshes and restarts for 30 days; changing APP_PASSWORD revokes every session. Sign out button in the sidebar
+- Version indicator in the sidebar and on the login screen, resolved from pyproject.toml
+
+### Fixed
+
+- Engine file-config vestiges removed: the settings database is the only runtime source; a database outage is a clear error, never a silent file read
+- Library AI generation validates the sermon still exists before saving (stale selections get guidance instead of a FOREIGN KEY traceback)
+- Description prompts target 900-1200 characters instead of treating the 1600 API ceiling as a goal, so responses stop being chopped with ellipses
+
 ## v1.6.3 (2026-09-11)
 
 Single config source and first-boot correctness round, driven by field logs from the deployed GPU host.
