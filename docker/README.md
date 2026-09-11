@@ -13,10 +13,9 @@ outside the container and is reached through `OLLAMA_HOST`.
 
 The container entrypoint is `docker/start_production.sh`, which:
 
-1. Creates the persistent data directories (`/data`, `/app/processed_sermons`, `/app/logs`)
-2. Waits for external services via `docker/wait_for_services.py` when `DATABASE_HOST` is set
-3. Initializes the SQLite database through `SermonRepository`
-4. Starts `streamlit run streamlit_app.py` on `0.0.0.0:8501`
+1. Creates the persistent data directories (`/data`, `/models`, `/app/api_cache`, `/app/processed_sermons`, `/app/logs`) and repairs or warns about their ownership
+2. Initializes the SQLite database through `SermonRepository`
+3. Starts `streamlit run streamlit_app.py` on `0.0.0.0:8501`
 
 ## Prerequisites
 
@@ -79,7 +78,14 @@ SERMONPILOT_TAG=v1.5.3-cuda docker compose up -d
 ### NVIDIA CUDA
 
 1. Install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
-2. Add device access to `docker-compose.yml`:
+2. Run the stack with the GPU override file:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+```
+
+   The equivalent manual device stanza, if you prefer to edit
+   `docker-compose.yml` yourself:
 
 ```yaml
 services:
@@ -93,7 +99,14 @@ services:
               capabilities: [gpu]
 ```
 
-3. Use a CUDA image tag: `SERMONPILOT_TAG=v1.5.3-cuda docker compose up -d`.
+3. Use a CUDA image tag: `SERMONPILOT_TAG=v1.5.3-cuda docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`.
+
+At startup the entrypoint prints `GPU:` (torch CUDA availability and device
+name) and `ORT providers:` lines. On a cuda image, `ORT providers` must list
+`CUDAExecutionProvider`; when it is missing, GPU compute is not engaged and
+enhancement falls back to the CPU path. Torch CUDA 12.4 wheels need an NVIDIA
+driver of at least 525.60.13 (minor-version compatibility); 550 or newer is
+recommended.
 
 Check GPU access inside the container:
 
@@ -220,10 +233,11 @@ Inside the container, `OLLAMA_HOST` must point at a reachable address. For an
 Ollama container on the same Docker host, `http://host.docker.internal:11434`
 works on Docker Desktop and recent Docker Engine releases.
 
-**GPU not detected.** Verify the toolkit is installed, the `deploy` or
-`devices` section is present in `docker-compose.yml`, and you are running an
-image built for your backend (`cuda` or `rocm` tag). Then check
-`docker compose exec sermon-pilot nvidia-smi`.
+**GPU not detected.** Verify the toolkit is installed, the GPU override file
+is in use (or the `deploy`/`devices` stanza is present in `docker-compose.yml`),
+and you are running an image built for your backend (`cuda` or `rocm` tag).
+Then check `docker compose exec sermon-pilot nvidia-smi` and the startup
+`GPU:` and `ORT providers:` lines.
 
 **Volume permissions.** The container runs as user `sermonapp` (UID 1000).
 If a bind-mounted host directory is not writable by that UID, adjust the

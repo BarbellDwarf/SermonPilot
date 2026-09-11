@@ -10,6 +10,42 @@ if [ "${VARIANT}" != "unknown" ] && [ -f "/app/config/templates/${VARIANT}.yaml"
     echo "Config template: /app/config/templates/${VARIANT}.yaml (import from the UI config page or point SA_UPDATER_CONFIG at it)"
 fi
 
+# Non-fatal GPU report. Missing torch, missing onnxruntime, or a CPU-only
+# host must never stop startup, so every failure prints one line and the
+# call is guarded against set -e.
+python - <<'PYEOF' || true
+try:
+    import torch
+except Exception as exc:
+    print(f"GPU: torch unavailable ({exc})")
+else:
+    try:
+        available = torch.cuda.is_available()
+    except Exception as exc:
+        print(f"GPU: torch.cuda.is_available() failed ({exc})")
+    else:
+        if available:
+            try:
+                name = torch.cuda.get_device_name(0)
+            except Exception:
+                name = "unknown device"
+            print(f"GPU: torch.cuda.is_available()=True ({name})")
+        else:
+            print("GPU: torch.cuda.is_available()=False")
+
+try:
+    import onnxruntime as ort
+except Exception as exc:
+    print(f"ORT providers: unavailable ({exc})")
+else:
+    try:
+        providers = ort.get_available_providers()
+    except Exception as exc:
+        print(f"ORT providers: unavailable ({exc})")
+    else:
+        print(f"ORT providers: {providers}")
+PYEOF
+
 # Graceful shutdown handler
 cleanup() {
     echo "Shutting down gracefully..."
