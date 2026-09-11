@@ -2,7 +2,7 @@ ARG GPU_BACKEND=cpu
 
 FROM ubuntu:22.04 AS base-cpu
 
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04 AS base-cuda
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS base-cuda
 
 FROM rocm/dev-ubuntu-22.04:7.1 AS base-rocm
 
@@ -53,9 +53,11 @@ RUN pip install --no-cache-dir uv
 ENV UV_INDEX_STRATEGY=unsafe-best-match
 
 # Install core + GPU-specific dependencies
+# ORT 1.27+ wheels target CUDA 13; this image is CUDA 12.4 with system cuDNN 9
+# from the cudnn-runtime base, so the onnxruntime-gpu pin stays below 1.27.
 RUN if [ "$GPU_BACKEND" = "cuda" ]; then \
         uv pip install --no-cache-dir -r requirements/requirements-gpu.txt && \
-        uv pip install --no-cache-dir "onnxruntime-gpu>=1.22.1"; \
+        uv pip install --no-cache-dir "onnxruntime-gpu>=1.22.1,<1.27"; \
     elif [ "$GPU_BACKEND" = "rocm" ]; then \
         uv pip install --no-cache-dir -r requirements/requirements-rocm.txt; \
     else \
