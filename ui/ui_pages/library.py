@@ -301,6 +301,15 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
             from ui.database import SermonRepository, get_db
             repo = SermonRepository()
 
+            if not repo.get_sermon(sermon_id):
+                _set_feedback(
+                    "This sermon is no longer in the local database "
+                    "(it may have been removed or reprocessed). "
+                    "Refresh the Library page and try again.",
+                    kind="error",
+                )
+                return
+
             update_data = {}
             if description:
                 update_data['description'] = description
@@ -1031,8 +1040,9 @@ def display_sermon_details(sermon):
             'displayEventType': 'event_type'
         }
         for api_field, display_field in field_mapping.items():
-            if api_field in api_sermon_data:
-                display_data[display_field] = api_sermon_data[api_field]
+            value = api_sermon_data.get(api_field)
+            if value not in (None, "", []):
+                display_data[display_field] = value
         if isinstance(api_sermon_data.get('speaker'), dict):
             display_data['speaker'] = api_sermon_data['speaker'].get(
                 'displayName', display_data.get('speaker', 'Unknown')
@@ -1115,20 +1125,20 @@ def display_sermon_details(sermon):
     if sermon_id:
         sermon_url = f"https://www.sermonaudio.com/sermoninfo.asp?SID={sermon_id}"
         st.markdown(f"[Listen on SermonAudio]({sermon_url})")
+        file_paths = display_data.get('file_paths', display_data.get('files', {}))
+        local_audio = file_paths.get('audio') if file_paths else None
         audio_url = display_data.get('audio_url')
         if audio_url:
             try:
                 st.audio(audio_url)
             except Exception:
                 st.caption(f"Audio link: {audio_url}")
-        else:
-            file_paths = display_data.get('file_paths', display_data.get('files', {}))
-            if file_paths and file_paths.get('audio'):
-                audio_path = file_paths['audio']
-                if Path(audio_path).exists():
-                    st.audio(audio_path)
-                else:
-                    st.caption("Audio file not found locally")
+        if local_audio and Path(local_audio).exists():
+            with st.expander("Local copy", expanded=not audio_url):
+                st.audio(local_audio)
+                st.caption(local_audio)
+        elif not audio_url:
+            st.caption("Audio file not found locally")
 
     st.markdown("### Description")
     description = display_data.get('description', '')
