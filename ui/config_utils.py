@@ -176,30 +176,69 @@ def _expand_env_placeholders(config: dict[str, Any]) -> None:
                     _expand_env_placeholders(item)
 
 
-def _seed_database_from_env(db) -> dict[str, Any] | None:
-    """Seed an empty config_cache once from built-in defaults plus env overrides.
+def _variant_template_layer() -> dict[str, Any]:
+    """Load the built-in variant template for this image flavor, if present.
 
-    Only runs when the database has never stored a config and at least one
-    mapped environment variable is present, so a fresh container started with
-    only a .env file persists its settings on first load. Idempotent: once
-    app_config exists, this never writes again.
+    Docker images ship config/templates/{cpu,cuda,rocm}.yaml (SERMONPILOT_VARIANT
+    selects one). A fresh install seeds from this template so the settings page
+    starts populated with variant-appropriate choices instead of blank defaults.
+    Values keep their ${VAR} placeholders: resolution expands them at read time,
+    so environment changes keep applying after seeding.
+    """
+    variant = os.environ.get("SERMONPILOT_VARIANT")
+    if not variant:
+        return {}
+    candidates = [
+        Path("/app/config/templates") / f"{variant}.yaml",
+        project_root / "config" / "templates" / f"{variant}.yaml",
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as exc:
+            logger.warning("Failed to load variant template %s: %s", path, exc)
+            return {}
+        if isinstance(data, dict):
+            logger.info("Variant template layer loaded from %s", path)
+            return data
+        return {}
+    return {}
+
+
+def _seed_database_from_env(db) -> dict[str, Any] | None:
+    """Seed an empty config_cache once from defaults plus the variant template
+    plus env overrides.
+
+    Only runs when the database has never stored a config, and when there is
+    something to seed: at least one mapped environment variable or a built-in
+    variant template. A fresh container started with only a .env file persists
+    its settings on first load, with variant-appropriate choices already in
+    place. Idempotent: once app_config exists, this never writes again.
     """
     active_vars = [var for var in ENV_CONFIG_MAP if os.environ.get(var)]
-    if not active_vars:
+    template_layer = _variant_template_layer()
+    if not active_vars and not template_layer:
         return None
-    seeded = apply_env_overrides(copy.deepcopy(BUILTIN_DEFAULTS))
+    base = copy.deepcopy(BUILTIN_DEFAULTS)
+    if template_layer:
+        _deep_merge(base, template_layer)
+    seeded = apply_env_overrides(base)
     try:
         db.save_config(seeded)
         db.save_config_meta({
             "seeded_at": datetime.datetime.now(datetime.UTC).isoformat(),
             "version": CONFIG_SEED_VERSION,
             "env_vars": active_vars,
+            "variant": os.environ.get("SERMONPILOT_VARIANT", ""),
         })
     except Exception as exc:
         logger.warning("Could not persist env seeding to the settings database: %s", exc)
         return seeded
     logger.info(
-        "Seeded settings database from environment variables: %s", ", ".join(active_vars)
+        "Seeded settings database from environment variables and variant template: %s",
+        ", ".join(active_vars) or "no env vars",
     )
     return seeded
 

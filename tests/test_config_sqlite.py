@@ -85,12 +85,46 @@ def test_first_run_seeding_persists_env_once(fresh_db, clear_config_env, monkeyp
     assert fresh_db.load_config_meta() == meta
 
 
-def test_no_seeding_without_env_vars(fresh_db, clear_config_env):
+def test_no_seeding_without_env_vars(fresh_db, clear_config_env, monkeypatch):
+    monkeypatch.delenv("SERMONPILOT_VARIANT", raising=False)
     config = resolve_config(fresh_db)
 
     assert fresh_db.load_config() is None
     assert fresh_db.load_config_meta() is None
     assert config["llm"]["primary"]["ollama"]["host"] == "http://localhost:11434"
+
+
+def test_fresh_seeding_uses_variant_template(fresh_db, clear_config_env, monkeypatch):
+    monkeypatch.setenv("SERMONPILOT_VARIANT", "cuda")
+    config = resolve_config(fresh_db)
+
+    stored = fresh_db.load_config()
+    assert stored is not None
+    meta = fresh_db.load_config_meta()
+    assert meta["variant"] == "cuda"
+    assert config["audio_enhancement_method"] == "deepfilternet"
+    assert config["preprocess_noise_gate"] is False
+    assert config["api_key"] == "${SERMONAUDIO_API_KEY}"
+    assert config["broadcaster_id"] == "${SERMONAUDIO_BROADCASTER_ID}"
+
+
+def test_variant_template_absent_no_seeding(fresh_db, clear_config_env, monkeypatch):
+    monkeypatch.delenv("SERMONPILOT_VARIANT", raising=False)
+    config = resolve_config(fresh_db)
+
+    assert fresh_db.load_config() is None
+    assert "audio_enhancement_method" not in config
+
+
+def test_variant_template_env_keys_win_over_placeholders(
+    fresh_db, clear_config_env, monkeypatch
+):
+    monkeypatch.setenv("SERMONPILOT_VARIANT", "cuda")
+    monkeypatch.setenv("SERMONAUDIO_API_KEY", "env-seed-key")
+    config = resolve_config(fresh_db)
+
+    assert config["api_key"] == "env-seed-key"
+    assert config["audio_enhancement_method"] == "deepfilternet"
 
 
 def test_load_config_without_any_config_file(fresh_db, clear_config_env):
