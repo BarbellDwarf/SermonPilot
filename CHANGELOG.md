@@ -2,6 +2,16 @@
 
 All notable changes to SermonPilot are documented here.
 
+## v1.6.5 (2026-09-11)
+
+Status truth and prompt template visibility.
+
+### Fixed
+
+- System status panel no longer reports false errors on Docker installs: it reads the resolved settings-database configuration instead of a config.yaml that intentionally does not exist
+- The per-variant config template now acts as a defaults layer for existing installs, so settings like audio_enhancement_method resolve even when a database predates the template seeding
+- Settings > Templates is populated out of the box: built-in prompt templates (title, short title, description, hashtags, hashtag verification) ship as defaults; enable or edit them per install
+
 ## v1.6.4 (2026-09-11)
 
 Login persistence, version visibility, and the config-cleanup follow-through.
