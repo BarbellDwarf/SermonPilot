@@ -43,6 +43,95 @@ INFRA_ONLY_ENV_VARS: dict[str, str] = {
     "ENVIRONMENT": "container runtime label with no in-app consumer",
 }
 
+BUILTIN_PROMPT_TEMPLATES: dict[str, Any] = {
+    "title": {
+        "enabled": False,
+        "system": "",
+        "user": (
+            "You are a sermon title generator.\n"
+            "Create a compelling, descriptive title for this sermon.\n\n"
+            "{context}\n\n"
+            "Guidelines for the title:\n"
+            "- Maximum 85 characters (STRICT LIMIT for API)\n"
+            "- Capture the main theme or message\n"
+            "- Be specific and engaging, not generic\n"
+            "- Avoid cliche Christian phrases\n"
+            "- Focus on the practical application or key insight\n"
+            "- If a Bible reference is given, you may include it briefly\n"
+            "- Do not use quotation marks around the title\n"
+            "- Return ONLY the title, no explanation or commentary\n\n"
+            "Sermon content (first 1000 characters):\n"
+            "{transcript}...\n\n"
+            "Generate a compelling sermon title:"
+        ),
+    },
+    "short_title": {
+        "enabled": False,
+        "system": "",
+        "user": (
+            "Shorten this sermon title to a concise version\n"
+            "(maximum 30 characters, STRICT LIMIT).\n"
+            "Keep the core meaning but make it brief. No quotes, no explanation, "
+            "just the shortened title.\n\n"
+            "Original title: {full_title}\n\n"
+            "Shortened title (max 30 chars):"
+        ),
+    },
+    "description": {
+        "enabled": False,
+        "system": "",
+        "user": (
+            "You are a {role_desc}. Read the following {body_desc} transcript and write a single, "
+            "concise description of the main message and application. Focus on what "
+            "the speaker wanted the audience to understand, believe, or do. "
+            "Avoid generic statements; emphasize unique focus.\n\n"
+            "Transcript:\n{transcript}\n\nGuidelines:\n"
+            "- Target 900 to 1200 characters; stay under 1400 (the API rejects text over 1700)\n"
+            "- One paragraph format\n"
+            "{speaker_instruction}"
+            "- No intro/closing words\n- No markdown or bullets\n"
+            "- Do not prefix with 'Summary:'\n- If incomplete, infer likely main message\n"
+            "- Keep within the target length or the upload will fail\n"
+            "- Use the actual speaker name, not placeholder text\n"
+            "- Include specific scripture references, source material, and concrete "
+            "examples from the transcript\n"
+            "- Mention the specific doctrines, rules, or texts the speaker expounded\n"
+            "- Describe the practical application the speaker gave\n"
+            "- IMPORTANT: Return ONLY the final summary paragraph. Do not include any reasoning, "
+            "thinking process, explanations, or commentary. "
+            "Start directly with the summary content."
+        ),
+    },
+    "hashtags": {
+        "enabled": False,
+        "system": "",
+        "user": (
+            "Generate 5-10 highly relevant, search-friendly hashtags (<=150 chars total) for this "
+            "sermon. Combine multi-word phrases (#ChristianLiving). Avoid duplicates & generic "
+            "(#sermon #church) unless uniquely relevant. Output ONLY space-delimited hashtags.\n\n"
+            "Text:\n{text}\n\nHashtags:"
+        ),
+    },
+    "hashtag_verification": {
+        "enabled": False,
+        "system": "",
+        "user": (
+            "You are a hashtag validator. Your job is to extract ONLY valid hashtags "
+            "from the input below. "
+            "Rules:\n"
+            "1. Output ONLY hashtags (words starting with #)\n"
+            "2. Remove any comments, explanations, or non-hashtag text\n"
+            "3. Keep hashtags space-separated\n"
+            "4. Maximum 150 characters total\n"
+            "5. If you see obvious formatting issues, fix them\n"
+            "6. If no valid hashtags found, generate 3-5 relevant ones for the sermon topic\n\n"
+            "Original sermon topic context: {original_text}...\n\n"
+            "Hashtag input to verify:\n{initial_hashtags}\n\n"
+            "Valid hashtags only:"
+        ),
+    },
+}
+
 BUILTIN_DEFAULTS: dict[str, Any] = {
     "llm": {
         "primary": {
@@ -67,6 +156,7 @@ BUILTIN_DEFAULTS: dict[str, Any] = {
             },
         },
     },
+    "prompt_templates": BUILTIN_PROMPT_TEMPLATES,
 }
 
 
@@ -317,6 +407,9 @@ def _resolve_layers(db=None) -> tuple[dict[str, Any], dict[str, Any], dict[str, 
                 db_layer = _seed_database_from_env(db) or {}
 
     config = copy.deepcopy(BUILTIN_DEFAULTS)
+    template_layer = _variant_template_layer()
+    if template_layer:
+        _deep_merge(config, template_layer)
     if file_layer:
         _deep_merge(config, file_layer)
     if db_layer:

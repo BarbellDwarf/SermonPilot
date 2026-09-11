@@ -215,6 +215,36 @@ def test_plaintext_warning_names_the_env_var(fresh_db, clear_config_env, caplog)
     )
 
 
+def test_existing_db_gets_variant_template_defaults(fresh_db, clear_config_env, monkeypatch):
+    monkeypatch.setenv("SERMONPILOT_VARIANT", "cuda")
+    fresh_db.save_config({"api_key": "db-kept-key"})
+
+    config = resolve_config(fresh_db)
+
+    assert config["api_key"] == "db-kept-key"
+    assert config["audio_enhancement_method"] == "deepfilternet"
+
+
+def test_builtin_prompt_templates_always_resolve(fresh_db, clear_config_env):
+    config = resolve_config(fresh_db)
+
+    templates = config["prompt_templates"]
+    expected = {"title", "short_title", "description", "hashtags", "hashtag_verification"}
+    assert expected <= set(templates)
+    assert templates["description"]["user"]
+
+
+def test_load_config_safely_uses_resolution(fresh_db, clear_config_env, monkeypatch):
+    monkeypatch.setenv("SERMONAUDIO_API_KEY", "env-key")
+    monkeypatch.setenv("SERMONPILOT_VARIANT", "cuda")
+    from ui.shared_navigation import load_config_safely
+
+    config = load_config_safely()
+
+    assert config["api_key"] == "env-key"
+    assert config["audio_enhancement_method"] == "deepfilternet"
+
+
 def test_env_secret_does_not_warn(fresh_db, clear_config_env, monkeypatch, caplog):
     fresh_db.save_config({"api_key": "stored-plain-key"})
     monkeypatch.setenv("SERMONAUDIO_API_KEY", "env-key")
