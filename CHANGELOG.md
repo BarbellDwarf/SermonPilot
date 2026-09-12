@@ -2,6 +2,20 @@
 
 All notable changes to SermonPilot are documented here.
 
+## v1.6.11 (2026-09-12)
+
+Publish control for SermonAudio.
+
+### Added
+
+- New Sermon page: "Publish on SermonAudio when processing completes" checkbox (default on). Off leaves the new sermon as a draft
+- Library sermon detail: a Publish/Unpublish button reflecting the sermon's actual state (PATCH publishNow / publishTimestamp null, verified against the live API)
+- Drafts are visible to SermonPilot again: church listing helpers request includeDrafts/includeScheduled, so unpublished sermons appear in speakers/events and pickers instead of vanishing
+
+### Fixed
+
+- Sermons created by SermonPilot were silently left unpublished because creation never set a publish timestamp; the pipeline now publishes after media upload unless disabled
+
 ## v1.6.10 (2026-09-12)
 
 Audio quality: no more low-bitrate re-encode on video mux.
