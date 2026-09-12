@@ -1100,6 +1100,36 @@ def upload_media_file(sermon_id: str, file_path: str,
         return False
 
 
+def set_sermon_published(sermon_id: str, published: bool) -> bool:
+    """Publish or unpublish a sermon on SermonAudio.
+
+    Publishing sets the publish timestamp to now ({"publishNow": true}).
+    Unpublishing clears it ({"publishTimestamp": null}), returning the sermon
+    to draft so it disappears from public listings.
+    """
+    payload = {"publishNow": True} if published else {"publishTimestamp": None}
+    action = "publish" if published else "unpublish"
+    try:
+        resp = requests.patch(
+            f"{BASE_URL}node/sermons/{sermon_id}",
+            headers=get_api_headers(),
+            json=payload,
+            timeout=30,
+        )
+        success = resp.status_code in (200, 204)
+        if success:
+            logger.info("Sermon %s %sed on SermonAudio", sermon_id, action)
+        else:
+            logger.warning(
+                "Failed to %s sermon %s: HTTP %s %s",
+                action, sermon_id, resp.status_code, resp.text[:200],
+            )
+        return success
+    except Exception as e:
+        logger.error("Failed to %s sermon %s: %s", action, sermon_id, e)
+        return False
+
+
 def generate_title(transcript: str, speaker_name: str = None, event_type: str = None,
                   bible_text: str = None) -> str:
     """Generate a sermon title using the LLM based on transcript content.
@@ -1528,7 +1558,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       series_id: int | None = None,
                       config: dict | None = None,
                       progress_callback=None,
-                      cancel_check: Callable[[], None] | None = None) -> dict:
+                      cancel_check: Callable[[], None] | None = None,
+                      publish: bool = True) -> dict:
     """Process a new sermon from audio file with automatic metadata generation.
 
     Args:
@@ -2309,6 +2340,13 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 f"Successfully created and uploaded {media_label} for sermon {sermon_id}"
             )
             _report(95, f"{media_label.capitalize()} uploaded successfully")
+            if publish:
+                if set_sermon_published(sermon_id, True):
+                    console_print("Published on SermonAudio")
+                else:
+                    console_print("Upload complete, but publishing failed")
+            else:
+                console_print("Left unpublished on SermonAudio (publish disabled for this run)")
 
             # Create local output directory
             output_root = Path(config.get('output_directory', 'processed_sermons'))
@@ -2495,7 +2533,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 pass  # Ignore cleanup errors
 
 
-def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
+def publish_dry_run_sermon(dry_run_id: str, publish: bool = True) -> dict[str, Any]:
     """Publish a locally-saved dry run sermon to SermonAudio.
 
     Creates a new sermon via the SermonAudio API using the dry run's stored
@@ -2632,6 +2670,8 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
 
         if upload_success:
             console_print(f"{media_label.capitalize()} uploaded successfully")
+            if publish and set_sermon_published(new_sermon_id, True):
+                console_print("Published on SermonAudio")
         else:
             console_print(f"Sermon created but {media_label} upload failed")
 
@@ -3915,6 +3955,8 @@ def get_broadcaster_pastors(limit: int = 500) -> list[str]:
             'pageSize': 50,
             'lite': 'true',
             'broadcasterID': SERMON_AUDIO_BROADCASTER_ID,
+            'includeDrafts': 'true',
+            'includeScheduled': 'true',
         }
         headers = get_api_headers()
         url = f"{BASE_URL}node/sermons"
@@ -3978,7 +4020,9 @@ def get_broadcaster_event_types(limit: int = 500) -> list[str]:
         params = {
             'page': 1,
             'pageSize': 50,
-            'lite': 'true'
+            'lite': 'true',
+            'includeDrafts': 'true',
+            'includeScheduled': 'true'
         }
         headers = get_api_headers()
         url = f"{BASE_URL}node/sermons"

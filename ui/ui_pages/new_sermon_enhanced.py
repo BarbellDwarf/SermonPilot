@@ -222,6 +222,13 @@ def _show_processing_section():
     st.checkbox("Dry Run (Preview Only)", key="dry_run",
                 help="Process locally but don't upload to SermonAudio")
 
+    st.checkbox(
+        "Publish on SermonAudio when processing completes",
+        key="publish_on_complete",
+        value=True,
+        help="Off leaves the sermon as a draft; you can publish it later from the Library",
+    )
+
 
 def _show_openai_whisper_ui():
     config = st.session_state.get('config', {})
@@ -497,6 +504,7 @@ def start_enhanced_processing():
             'custom_repo': st.session_state.get('custom_repo', ''),
             'custom_file': st.session_state.get('custom_file', ''),
             'dry_run': bool(st.session_state.get('dry_run', False)),
+            'publish': bool(st.session_state.get('publish_on_complete', True)),
             'generate_short_title': bool(st.session_state.get('generate_short_title', False)),
             'validate_quality': bool(st.session_state.get('validate_description', True)),
         }
@@ -542,7 +550,7 @@ def reset_enhanced_form():
         'whisper_model_local', 'whisper_model_openai', 'whisper_model_openrouter',
         'custom_repo', 'custom_file',
         'generate_title', 'generate_description', 'generate_hashtags',
-        'validate_description', 'generate_short_title', 'dry_run',
+        'validate_description', 'generate_short_title', 'dry_run', 'publish_on_complete',
         '_start_state',
     ]
     for key in keys_to_clear:

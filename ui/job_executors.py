@@ -448,6 +448,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             description=form_data.get('description') or None,
             hashtags=form_data.get('hashtags') or None,
             dry_run=bool(form_data.get('dry_run', False)),
+            publish=bool(form_data.get('publish', True)),
             skip_transcription=bool(form_data.get('skip_transcription', False)),
             skip_audio=bool(form_data.get('skip_audio', False)),
             skip_ai_generation=bool(form_data.get('skip_ai_generation', False)),

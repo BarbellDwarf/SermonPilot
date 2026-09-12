@@ -1144,6 +1144,30 @@ def display_sermon_details(sermon):
         elif not audio_url:
             st.caption("Audio file not found locally")
 
+        if display_data.get('status') == 'processed' and api_sermon_data is not None:
+            published = bool(api_sermon_data.get('publishTimestamp'))
+            label = (
+                "Unpublish from SermonAudio" if published else "Publish to SermonAudio"
+            )
+            if st.button(label, key=f"publish_toggle_{sermon_id}"):
+                with st.spinner("Updating publish state..."):
+                    import sermon_updater
+
+                    ok = sermon_updater.set_sermon_published(sermon_id, not published)
+                if ok:
+                    message = (
+                        "Sermon unpublished. It is now a draft on SermonAudio."
+                        if published
+                        else "Sermon published. It is now visible on SermonAudio."
+                    )
+                    _set_feedback(message, kind="success")
+                    st.rerun()
+                else:
+                    _set_feedback(
+                        "Publish state change failed. Check the API credentials and try again.",
+                        kind="error",
+                    )
+
     st.markdown("### Description")
     description = display_data.get('description', '')
     ai_description = display_data.get('ai_description', '')
