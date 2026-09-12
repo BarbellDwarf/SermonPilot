@@ -105,16 +105,24 @@ jobs:
         echo "f9f25499a2c8cc367b3af45df2ea7eeca7fbccceab9c35079968f4b3652194be  osv-scanner" | sha256sum -c -
         chmod +x osv-scanner
 
-    - name: Check for known vulnerabilities
-      # Audit the authoritative resolution (uv.lock). The requirements mirror
-      # uses >= floors, and osv-scanner resolves those at minimum versions,
-      # which reports phantom findings for packages the lock already holds at
-      # patched releases. Per-backend requirement files pin +local torch
-      # wheels the resolver cannot see; see osv-scanner.toml for the two
-      # documented exceptions and the GPU torch exposure note.
+    - name: Install uv
+      run: pip install uv
+
+    - name: Check for known vulnerabilities (lockfile)
+      # Audit the authoritative dev lock. See osv-scanner.toml for the
+      # documented exceptions (chromadb latest-with-no-fix, torch on the
+      # cu124 GPU stack).
       run: |
-        echo "Checking for known vulnerabilities in dependencies..."
+        echo "Checking the lockfile for known vulnerabilities..."
         ./osv-scanner scan --lockfile uv.lock
+
+    - name: Check for known vulnerabilities (production resolution)
+      # Docker installs from the requirements floors, so resolve them the same
+      # way at build time and audit that exact set.
+      run: |
+        echo "Checking the production resolution for known vulnerabilities..."
+        uv pip compile requirements/requirements.txt -o /tmp/prod-requirements.txt --quiet
+        ./osv-scanner scan --lockfile /tmp/prod-requirements.txt
 
     - name: Run Bandit security linter
       # -lll fails the job on HIGH severity findings only; the
