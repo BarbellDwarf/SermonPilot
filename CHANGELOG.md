@@ -2,6 +2,15 @@
 
 All notable changes to SermonPilot are documented here.
 
+## v1.6.8 (2026-09-12)
+
+Sentence-safe description trimming.
+
+### Fixed
+
+- Long descriptions are trimmed at sentence boundaries instead of mid-word: whole sentences are kept while they fit, and a single oversized sentence is cut at a word boundary and closed with a period. Applies to the Library generation flow and the processing engine's summary cap
+- Planning detection also catches "The task:" style preambles from models that restate instructions
+
 ## v1.6.7 (2026-09-11)
 
 Resource-aware queueing and clean output from planning-style models.
