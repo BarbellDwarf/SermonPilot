@@ -1,6 +1,6 @@
 [project]
 name = "sermon-audio-updater"
-version = "1.6.11"
+version = "1.7.0"
 description = "Automated sermon processing tool for SermonAudio"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,8 +20,8 @@ dependencies = [
     "librosa>=0.10.1",
     "mutagen>=1.47.0",
     # PyTorch ecosystem (single pin; per-index override files in requirements/)
-    "torch>=2.6.0",
-    "torchaudio>=2.6.0",
+    "torch>=2.13.0",
+    "torchaudio>=2.11.0",
     # AI enhancement models
     "deepfilternet>=0.5.6",
     "onnxruntime>=1.22.1",

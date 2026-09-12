@@ -21,14 +21,9 @@ id = "PYSEC-2026-3815"
 ignoreUntil = 2026-12-31T00:00:00Z
 reason = "Same chromadb situation: no fixed release exists, embedded client only, server mode unused."
 
-[[IgnoredVulns]]
-id = "GHSA-rrmf-rvhw-rf47"
-ignoreUntil = 2026-12-31T00:00:00Z
-reason = "torch memory corruption via torch.jit.script, fixed in 2.13.0. The locked CPU torch is 2.12.1 and the app never uses torch.jit.script. The GPU images pin torch 2.6.0+cu124 because the CUDA 12.4 wheel index ends at 2.6.0; moving the GPU stack to a newer CUDA platform is tracked separately. Revisit with the CUDA migration."
-
-# Not scanned automatically: requirements/requirements-gpu.txt and
-# requirements-rocm.txt pin torch with +cu124/+rocm local versions that
-# osv-scanner cannot resolve. The GPU images therefore run torch 2.6.0+cu124,
-# which is additionally affected by PYSEC-2026-139, PYSEC-2026-2286, and
-# GHSA-qfhq-4f3w-5fph (all fixed in torch 2.10.0+, unavailable on cu124).
-# The CUDA platform migration is the remediation path for that exposure.
+# Not scanned automatically: requirements-gpu.txt, requirements-cpu.txt and
+# requirements-rocm.txt pin torch with +cu126/+cpu/+rocm local versions that
+# osv-scanner cannot resolve. Those images run torch 2.14.0+cu126 (CPU/GPU)
+# and torch 2.13.0+rocm7.1, which are free of the advisories fixed in
+# torch 2.10.0 and 2.13.0. torchaudio 2.11.0 is its final upstream release
+# and carries no known advisories.

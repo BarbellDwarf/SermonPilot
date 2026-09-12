@@ -9,7 +9,7 @@ requirements/
 ├── README.md                           # This documentation
 ├── requirements.txt                    # Derived mirror of pyproject.toml runtime deps
 ├── requirements-cpu.txt               # CPU-only PyTorch override (CPU index)
-├── requirements-gpu.txt                # CUDA PyTorch override (cu124 index)
+├── requirements-gpu.txt                # CUDA PyTorch override (cu126 index)
 ├── requirements-rocm.txt               # ROCm PyTorch override (rocm7.1 index)
 ├── requirements-dev.txt               # Development tools (mirror of the [dev] extra)
 ├── requirements-linux.txt             # Linux convenience install
@@ -35,7 +35,7 @@ uv pip install -r requirements/requirements.txt
 
 ## PyTorch Index Overrides
 
-The torch family is pinned once in `pyproject.toml` (`torch>=2.6.0`, `torchaudio>=2.6.0`). Each override file adds the matching index and pins the same version with the platform suffix.
+The torch family is pinned once in `pyproject.toml` (`torch>=2.13.0`, `torchaudio>=2.11.0`). Each override file adds the matching index and pins the same version with the platform suffix.
 
 ### `requirements-cpu.txt`
 
@@ -47,7 +47,7 @@ uv pip install -r requirements/requirements-cpu.txt
 
 ### `requirements-gpu.txt`
 
-CUDA-enabled PyTorch builds from the cu124 index.
+CUDA-enabled PyTorch builds from the cu126 index.
 
 ```bash
 uv pip install -r requirements/requirements-gpu.txt --index-strategy unsafe-best-match
@@ -143,7 +143,7 @@ uv pip install -r requirements/linux/requirements-models-deepfilternet.txt  # or
 ### GPU Installation
 
 - NVIDIA GPU with CUDA Compute Capability 3.5+
-- CUDA 12.4 compatible driver
+- CUDA 12.6 compatible driver
 - 4GB+ GPU memory (8GB+ recommended for full acceleration)
 
 ### CPU Installation
@@ -170,5 +170,5 @@ uv pip install -r requirements/linux/requirements-models-deepfilternet.txt  # or
 ### Common Issues
 
 1. **Packaging conflicts**: Use `--index-strategy unsafe-best-match`
-2. **CUDA compatibility**: Ensure NVIDIA drivers match CUDA 12.4
+2. **CUDA compatibility**: Ensure NVIDIA drivers match CUDA 12.6
 3. **Virtual environment**: Always install within `.venv`
