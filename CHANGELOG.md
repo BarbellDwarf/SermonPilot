@@ -2,6 +2,20 @@
 
 All notable changes to SermonPilot are documented here.
 
+## v1.6.7 (2026-09-11)
+
+Resource-aware queueing and clean output from planning-style models.
+
+### Fixed
+
+- Descriptions no longer store the model's planning text: when a model emits "The user wants...", key points, and a "Draft:" section as visible content, the final draft is extracted before saving (library and processing paths)
+- The job queue now waits for resources instead of starting jobs into an overloaded host: a queued job only starts when free RAM clears job_queue.min_free_ram_gb (default 3 GB) and free GPU VRAM clears min_free_vram_gb (default 1.5 GB); jobs stay Queued, with a rate-limited log line explaining the wait
+- MemoryError during a job now records a clear failure message instead of a raw traceback, and does not poison subsequent jobs
+
+### Documentation
+
+- job_queue thresholds documented in the example config and all three variant templates
+
 ## v1.6.6 (2026-09-11)
 
 Description generation completeness on reasoning models.

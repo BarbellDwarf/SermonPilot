@@ -2794,6 +2794,16 @@ def _clean_llm_thinking_response(response: str) -> str:
     if not response:
         return response
 
+    from src.llm_manager import extract_final_answer
+
+    extracted = extract_final_answer(response)
+    if extracted and extracted != response.strip() and len(extracted) >= 120:
+        logger.debug(
+            "Extracted final answer from planning output (%d -> %d chars)",
+            len(response), len(extracted),
+        )
+        return extracted
+
     # Common patterns that indicate thinking/reasoning sections
     thinking_indicators = [
         "Okay, let me",

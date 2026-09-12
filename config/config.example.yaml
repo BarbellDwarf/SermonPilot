@@ -126,6 +126,11 @@ hashtag_verification: true  # Set to true to verify hashtags through a second LL
 
 # Output Settings
 output_directory: "processed_sermons"  # Directory to store processed sermon files (relative to script or absolute path)
+# Job Queue - a queued job starts only when the host has free resources
+job_queue:
+  min_free_ram_gb: 3.0   # Wait while free RAM is below this
+  min_free_vram_gb: 1.5  # Wait while free GPU VRAM is below this (when CUDA is available)
+
 save_original_audio: true  # Save the original downloaded audio file alongside processed audio
 save_transcript: true  # Save the sermon transcript as a text file alongside other outputs
 

@@ -34,6 +34,59 @@ except ImportError:
     logger.info("Database module not available for cost tracking")
 
 
+def extract_final_answer(text: str) -> str:
+    """Extract the final answer when a model emits its planning alongside it.
+
+    Some models (observed with glm-5.3-flash:cloud and thinking disabled) put
+    "The user wants...", key points, and a "Draft:" section into the visible
+    content. The last draft-style marker holds the real answer; without one,
+    leading planning paragraphs are dropped.
+    """
+    if not text:
+        return text
+
+    markers = (
+        "draft:",
+        "final answer:",
+        "final description:",
+        "final:",
+        "description:",
+        "answer:",
+    )
+    lowered = text.lower()
+    best_index = -1
+    best_marker = ""
+    for marker in markers:
+        index = lowered.rfind(marker)
+        if index > best_index:
+            best_index, best_marker = index, marker
+    if best_index != -1:
+        candidate = text[best_index + len(best_marker):]
+        candidate = candidate.lstrip(" \t\r\n\"'“”")
+        candidate = candidate.strip().strip("\"'“”").strip()
+        if len(candidate) >= 120:
+            return candidate
+
+    planning_signals = (
+        "the user wants",
+        "key points",
+        "guidelines",
+        "let me",
+        "i need to",
+        "draft:",
+        "write ~",
+        "check the character",
+    )
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    while paragraphs and any(
+        signal in paragraphs[0].lower() for signal in planning_signals
+    ):
+        paragraphs.pop(0)
+    if paragraphs:
+        return "\n\n".join(paragraphs).strip()
+    return text.strip()
+
+
 class LLMProvider:
     """Base class for LLM providers."""
 

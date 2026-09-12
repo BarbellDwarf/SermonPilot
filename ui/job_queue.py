@@ -192,6 +192,7 @@ class JobQueue:
         self._workers: list[threading.Thread] = []
         self._running = False
         self._shutdown_event = threading.Event()
+        self._resource_wait_logged_at = 0.0
 
         # Initialize database connection
         self._init_database()
@@ -465,6 +466,11 @@ class JobQueue:
         """Main worker loop that processes jobs"""
         while self._running and not self._shutdown_event.is_set():
             try:
+                # Do not claim a job without headroom; leave it queued and wait.
+                if not self._resources_available():
+                    time.sleep(10.0)
+                    continue
+
                 # Find next job to process
                 job = self._get_next_job()
                 if not job:
@@ -477,6 +483,60 @@ class JobQueue:
             except Exception as e:
                 logger.error(f"Worker error: {e}")
                 time.sleep(1.0)
+
+    def _resources_available(self) -> bool:
+        """Return True when RAM (and VRAM, if present) headroom can take a job.
+
+        Thresholds come from config job_queue.min_free_ram_gb (default 3) and
+        job_queue.min_free_vram_gb (default 1.5). Jobs stay QUEUED while the
+        check fails, so the UI shows them waiting instead of failing.
+        """
+        min_ram_gb = 3.0
+        min_vram_gb = 1.5
+        try:
+            from ui.config_utils import resolve_config
+
+            queue_cfg = resolve_config().get("job_queue", {}) or {}
+            min_ram_gb = float(queue_cfg.get("min_free_ram_gb", min_ram_gb))
+            min_vram_gb = float(queue_cfg.get("min_free_vram_gb", min_vram_gb))
+        except Exception:
+            pass
+
+        try:
+            import psutil
+
+            free_ram_gb = psutil.virtual_memory().available / 1e9
+            if free_ram_gb < min_ram_gb:
+                self._log_resource_wait(
+                    f"free RAM {free_ram_gb:.1f} GB below the {min_ram_gb:.1f} GB threshold"
+                )
+                return False
+        except Exception:
+            pass
+
+        if min_vram_gb > 0:
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    free_vram, _total = torch.cuda.mem_get_info()
+                    free_vram_gb = free_vram / 1e9
+                    if free_vram_gb < min_vram_gb:
+                        self._log_resource_wait(
+                            f"free VRAM {free_vram_gb:.1f} GB below the "
+                            f"{min_vram_gb:.1f} GB threshold"
+                        )
+                        return False
+            except Exception:
+                pass
+
+        return True
+
+    def _log_resource_wait(self, reason: str) -> None:
+        now = time.time()
+        if now - self._resource_wait_logged_at >= 60.0:
+            self._resource_wait_logged_at = now
+            logger.info("Job queue waiting for resources: %s", reason)
 
     def _get_next_job(self) -> Job | None:
         """Get the next job to process"""
@@ -548,6 +608,22 @@ class JobQueue:
             with self._queue_lock:
                 self._mark_cancelled(job)
             job.add_log("Job cancelled by user")
+
+        except MemoryError as e:
+            with self._queue_lock:
+                job.status = JobStatus.FAILED
+                job.result = JobResult(
+                    success=False,
+                    message="Job ran out of memory",
+                    error=(
+                        "The job hit a memory limit and was stopped. "
+                        "The queue waits for free RAM/VRAM before starting jobs; "
+                        "raise job_queue.min_free_ram_gb or min_free_vram_gb if this repeats."
+                    ),
+                )
+                job.completed_at = datetime.now()
+            job.add_log(f"Job ran out of memory: {e}")
+            logger.error("Job %s ran out of memory", job.id)
 
         except Exception as e:
             with self._queue_lock:
