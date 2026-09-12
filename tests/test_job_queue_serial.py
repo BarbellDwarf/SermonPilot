@@ -22,6 +22,11 @@ _TERMINAL_STATUSES = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _skip_resource_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(JobQueue, "_resources_available", lambda self: True)
+
+
 @pytest.fixture
 def queue(monkeypatch: pytest.MonkeyPatch) -> JobQueue:
     def _no_database(*args: object, **kwargs: object) -> None:

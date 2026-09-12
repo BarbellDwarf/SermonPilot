@@ -271,6 +271,9 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
                 )
 
                 description = llm.chat([{'role': 'user', 'content': desc_prompt}])
+                from src.llm_manager import extract_final_answer
+
+                description = extract_final_answer(description)
 
                 description = re.sub(
                     r'^(Okay|Alright|Let me|I\'ll|I need to|Here[^:]*:|Sure[^:]*:).*?\n',
