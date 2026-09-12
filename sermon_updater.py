@@ -1321,6 +1321,19 @@ _TRANSCODE_CODEC_ARGS = {
 }
 
 
+def _mux_audio_codec_args(audio_path: str | Path) -> list[str]:
+    """Codec arguments for muxing an enhanced audio track into a video.
+
+    Audio already in an AAC-compatible container is stream-copied so the mux
+    never re-encodes (and never falls back to ffmpeg's low default bitrate).
+    Anything else is encoded once at 192k, matching the rest of the pipeline.
+    """
+    suffix = Path(audio_path).suffix.lower()
+    if suffix in ('.mp4', '.m4a', '.aac'):
+        return ['-c:a', 'copy']
+    return ['-c:a', 'aac', '-b:a', '192k']
+
+
 def _transcode_media(src: Path, dst: Path) -> bool:
     """Transcode an audio file into the container implied by dst's extension.
 
@@ -1755,7 +1768,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         "-i", str(original_input_path),
                         "-i", str(enhanced_audio_path),
                         "-c:v", "copy",
-                        "-c:a", "aac",
+                        *_mux_audio_codec_args(enhanced_audio_path),
                         "-map", "0:v:0",
                         "-map", "1:a:0",
                         "-shortest",
@@ -3644,7 +3657,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                     "-i", downloaded_video,
                     "-i", output_audio,
                     "-c:v", "copy",
-                    "-c:a", "aac",
+                    *_mux_audio_codec_args(output_audio),
                     "-map", "0:v:0",
                     "-map", "1:a:0",
                     "-shortest",

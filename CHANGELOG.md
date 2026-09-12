@@ -2,6 +2,14 @@
 
 All notable changes to SermonPilot are documented here.
 
+## v1.6.10 (2026-09-12)
+
+Audio quality: no more low-bitrate re-encode on video mux.
+
+### Fixed
+
+- Enhanced audio muxed into video is stream-copied when already AAC (mp4/m4a/aac), instead of being re-encoded by ffmpeg's default AAC bitrate (~70k mono, measured on the deployed output). Other formats are encoded once at 192k. The previous chain was WAV -> AAC 192k -> AAC ~70k, a second lossy pass that audibly degraded speech and was introduced with the v1.4.0 video remux
+
 ## v1.6.9 (2026-09-12)
 
 Trailing self-talk removed from generated text.
