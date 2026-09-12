@@ -118,11 +118,13 @@ jobs:
 
     - name: Check for known vulnerabilities (production resolution)
       # Docker installs from the requirements floors, so resolve them the same
-      # way at build time and audit that exact set.
+      # way at build time and audit that exact set. The compiled file stays in
+      # the repo root so osv-scanner discovers osv-scanner.toml.
       run: |
         echo "Checking the production resolution for known vulnerabilities..."
-        uv pip compile requirements/requirements.txt -o /tmp/prod-requirements.txt --quiet
-        ./osv-scanner scan --lockfile /tmp/prod-requirements.txt
+        uv pip compile requirements/requirements.txt -o prod-requirements.txt --quiet
+        ./osv-scanner scan --lockfile prod-requirements.txt
+        rm -f prod-requirements.txt
 
     - name: Run Bandit security linter
       # -lll fails the job on HIGH severity findings only; the

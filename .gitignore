@@ -144,3 +144,6 @@ config.yaml
 
 # Local agent worktrees
 /.worktrees/
+
+# CI-compiled production requirements (security scan)
+prod-requirements.txt
