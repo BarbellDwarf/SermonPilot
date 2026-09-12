@@ -10,7 +10,7 @@ for _path in (str(PROJECT_ROOT), str(PROJECT_ROOT / "src")):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from src.llm_manager import extract_final_answer  # noqa: E402
+from src.llm_manager import extract_final_answer, trim_to_sentence  # noqa: E402
 
 
 def test_extracts_last_draft_section():
@@ -54,3 +54,34 @@ def test_clean_text_unchanged():
 
 def test_empty_input():
     assert extract_final_answer("") == ""
+
+
+def test_task_planning_dropped():
+    text = (
+        "The task: Write a single paragraph summarizing the sermon.\n\n"
+        "Sample Speaker opened the third petition of the Lord's Prayer, tracing the "
+        "distinction between God's decree and His precepts, and calling for "
+        "contented obedience and eschatological hope."
+    )
+
+    assert extract_final_answer(text).startswith("Sample Speaker")
+
+
+def test_trim_keeps_sentence_boundary():
+    text = "First sentence here. Second sentence that is longer. Third repeat. Fourth repeat."
+
+    result = trim_to_sentence(text, 60)
+
+    assert len(result) <= 60
+    assert result.endswith(".")
+
+
+def test_trim_single_long_sentence_closed():
+    result = trim_to_sentence("word " * 100, 50)
+
+    assert len(result) <= 51
+    assert result.endswith(".")
+
+
+def test_trim_under_limit_unchanged():
+    assert trim_to_sentence("Short text.", 100) == "Short text."

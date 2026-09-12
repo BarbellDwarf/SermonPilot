@@ -69,6 +69,7 @@ def extract_final_answer(text: str) -> str:
 
     planning_signals = (
         "the user wants",
+        "the task:",
         "key points",
         "guidelines",
         "let me",
@@ -85,6 +86,34 @@ def extract_final_answer(text: str) -> str:
     if paragraphs:
         return "\n\n".join(paragraphs).strip()
     return text.strip()
+
+
+def trim_to_sentence(text: str, limit: int) -> str:
+    """Trim text to at most limit characters, preferring a sentence boundary.
+
+    Whole sentences are kept while they fit. A single sentence longer than the
+    limit is cut at a word boundary and closed with a period, so the result
+    never ends mid-word or mid-thought without punctuation.
+    """
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    import re as _re
+
+    sentences = _re.split(r"(?<=[.!?])\s+", text)
+    out = ""
+    for sentence in sentences:
+        if not out:
+            if len(sentence) > limit:
+                cut = sentence[:limit]
+                space = cut.rfind(" ")
+                return (cut[:space].rstrip() + ".") if space > 0 else cut
+            out = sentence
+        elif len(out) + 1 + len(sentence) <= limit:
+            out = out + " " + sentence
+        else:
+            break
+    return out if out else text[:limit]
 
 
 class LLMProvider:

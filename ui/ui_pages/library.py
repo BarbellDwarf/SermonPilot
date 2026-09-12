@@ -282,9 +282,9 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
                 description = description.strip()
 
                 if len(description) > 1600:
-                    truncated = description[:1600]
-                    last_space = truncated.rfind(' ')
-                    description = truncated[:last_space] if last_space > 1500 else truncated
+                    from src.llm_manager import trim_to_sentence
+
+                    description = trim_to_sentence(description, 1600)
 
         if gen_hashtags:
             with st.spinner("Generating hashtags..."):

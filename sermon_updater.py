@@ -3060,15 +3060,11 @@ def generate_summary(
         # Ensure the response doesn't exceed SermonAudio's character limit
         max_chars = 1600  # Conservative limit (API limit is 1700)
         if len(response) > max_chars:
-            logger.warning("Generated summary too long (%d chars), truncating to %d",
+            logger.warning("Generated summary too long (%d chars), trimming to %d",
                           len(response), max_chars)
-            # Truncate at word boundary to avoid cutting words in half
-            truncated = response[:max_chars]
-            last_space = truncated.rfind(' ')
-            if last_space > max_chars - 100:  # If we can find a reasonable word boundary
-                response = truncated[:last_space] + "..."
-            else:
-                response = truncated[:-3] + "..."
+            from src.llm_manager import trim_to_sentence
+
+            response = trim_to_sentence(response, max_chars)
 
         logger.debug("Summary generated (%d chars)", len(response))
         return response
