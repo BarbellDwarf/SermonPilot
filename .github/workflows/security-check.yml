@@ -106,12 +106,15 @@ jobs:
         chmod +x osv-scanner
 
     - name: Check for known vulnerabilities
-      # Only the resolvable base lockfile goes through resolution: the
-      # per-backend requirement files pin +local torch wheels that live on
-      # the PyTorch index, which osv-scanner's resolver cannot see.
+      # Audit the authoritative resolution (uv.lock). The requirements mirror
+      # uses >= floors, and osv-scanner resolves those at minimum versions,
+      # which reports phantom findings for packages the lock already holds at
+      # patched releases. Per-backend requirement files pin +local torch
+      # wheels the resolver cannot see; see osv-scanner.toml for the two
+      # documented exceptions and the GPU torch exposure note.
       run: |
         echo "Checking for known vulnerabilities in dependencies..."
-        ./osv-scanner scan --lockfile requirements.txt:requirements/requirements.txt --lockfile uv.lock
+        ./osv-scanner scan --lockfile uv.lock
 
     - name: Run Bandit security linter
       # -lll fails the job on HIGH severity findings only; the
