@@ -232,7 +232,7 @@ processed_sermons/
 
 ## Security
 
-- **PyTorch** is pinned at `torch>=2.6.0` in `pyproject.toml`; the GPU override files resolve CUDA (`torch==2.6.0+cu124`) or ROCm (`torch==2.12.1+rocm7.1`) builds
+- **PyTorch** is pinned at `torch>=2.13.0` in `pyproject.toml`; the GPU override files resolve CUDA (`torch==2.14.0+cu126`) or ROCm (`torch==2.13.0+rocm7.1`) builds
 - **Clear enhancer** uses ONNX Runtime: zero PyTorch dependency for inference
 - API keys stored in `.env` (gitignored) or as environment variables
 - Secrets never need to touch disk in plaintext: keep them in the environment or as `${VAR}` placeholders in an imported file layer; the Settings export masks them
