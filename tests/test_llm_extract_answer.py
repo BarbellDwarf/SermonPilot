@@ -85,3 +85,18 @@ def test_trim_single_long_sentence_closed():
 
 def test_trim_under_limit_unchanged():
     assert trim_to_sentence("Short text.", 100) == "Short text."
+
+
+def test_trailing_planning_paragraphs_dropped():
+    text = (
+        'Draft: "Sample Speaker taught on the third petition of the Lord\'s Prayer, '
+        "explaining the distinction between God's will of decree and His will of "
+        "precept, and calling believers to contented obedience and eschatological "
+        'hope."\n\nParagraph: I\'ll estimate. Let me count words: roughly 220 words.'
+    )
+
+    result = extract_final_answer(text)
+
+    assert result.startswith("Sample Speaker taught")
+    assert "Let me count" not in result
+    assert not result.endswith("words.")

@@ -34,13 +34,42 @@ except ImportError:
     logger.info("Database module not available for cost tracking")
 
 
+def _drop_planning_edges(text: str) -> str:
+    """Remove planning paragraphs from the start and end of a section."""
+    planning_signals = (
+        "the user wants",
+        "the task:",
+        "key points",
+        "guidelines",
+        "let me",
+        "i need to",
+        "i'll estimate",
+        "draft:",
+        "write ~",
+        "check the character",
+        "count words",
+        "words:",
+        "paragraph:",
+    )
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    while paragraphs and any(
+        signal in paragraphs[0].lower() for signal in planning_signals
+    ):
+        paragraphs.pop(0)
+    while paragraphs and any(
+        signal in paragraphs[-1].lower() for signal in planning_signals
+    ):
+        paragraphs.pop()
+    return "\n\n".join(paragraphs).strip() if paragraphs else text.strip()
+
+
 def extract_final_answer(text: str) -> str:
     """Extract the final answer when a model emits its planning alongside it.
 
     Some models (observed with glm-5.3-flash:cloud and thinking disabled) put
     "The user wants...", key points, and a "Draft:" section into the visible
-    content. The last draft-style marker holds the real answer; without one,
-    leading planning paragraphs are dropped.
+    content. The last draft-style marker holds the real answer; planning
+    paragraphs are then dropped from both edges of the result.
     """
     if not text:
         return text
@@ -63,29 +92,12 @@ def extract_final_answer(text: str) -> str:
     if best_index != -1:
         candidate = text[best_index + len(best_marker):]
         candidate = candidate.lstrip(" \t\r\n\"'“”")
+        candidate = _drop_planning_edges(candidate)
         candidate = candidate.strip().strip("\"'“”").strip()
         if len(candidate) >= 120:
             return candidate
 
-    planning_signals = (
-        "the user wants",
-        "the task:",
-        "key points",
-        "guidelines",
-        "let me",
-        "i need to",
-        "draft:",
-        "write ~",
-        "check the character",
-    )
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-    while paragraphs and any(
-        signal in paragraphs[0].lower() for signal in planning_signals
-    ):
-        paragraphs.pop(0)
-    if paragraphs:
-        return "\n\n".join(paragraphs).strip()
-    return text.strip()
+    return _drop_planning_edges(text)
 
 
 def trim_to_sentence(text: str, limit: int) -> str:
