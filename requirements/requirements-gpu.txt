@@ -1,12 +1,14 @@
-# GPU-enabled PyTorch (CUDA 12.4 index)
+# GPU-enabled PyTorch (CUDA 12.6 index)
 # Install with: uv pip install -r requirements/requirements-gpu.txt
 # Overrides the torch family from requirements.txt with CUDA builds.
 
---extra-index-url https://download.pytorch.org/whl/cu124
+--extra-index-url https://download.pytorch.org/whl/cu126
 
 # Base runtime dependencies (mirror of pyproject.toml)
 -r requirements.txt
 
 # Per-index overrides for the torch family (single pin, same floor as pyproject)
-torch==2.6.0+cu124
-torchaudio==2.6.0+cu124
+torch==2.14.0+cu126
+# torchaudio's final upstream release is 2.11.0 and it declares no torch
+# dependency; the pair is verified against torch 2.14 (GPU resample + DF enhance)
+torchaudio==2.11.0+cu126

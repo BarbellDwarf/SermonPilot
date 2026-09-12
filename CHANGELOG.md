@@ -2,6 +2,21 @@
 
 All notable changes to SermonPilot are documented here.
 
+## v1.7.0 (2026-09-12)
+
+GPU stack migration: CUDA 12.6, torch 2.14, full PyTorch advisory clearance.
+
+### Changed
+
+- CUDA image builds on `nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04` with `torch==2.14.0+cu126` and `torchaudio==2.11.0+cu126` (torchaudio's final upstream release; the pair is verified on GPU: CUDA resample and DeepFilterNet enhancement)
+- ROCm override raises torch to `2.13.0+rocm7.1`; CPU override pins `torch==2.14.0+cpu` and `torchaudio==2.11.0+cpu`
+- `pyproject.toml` floor is now `torch>=2.13.0`, `torchaudio>=2.11.0`; the requirement mirrors and installation docs follow
+- onnxruntime-gpu stays below 1.27 (CUDA 12 wheels); the pin comments now reflect the CUDA 12.6 base
+
+### Security
+
+- Clears GHSA-rrmf-rvhw-rf47 (fixed in torch 2.13.0) on every install path, plus PYSEC-2026-139, PYSEC-2026-2286 and GHSA-qfhq-4f3w-5fph (fixed in torch 2.10.0); the stale GHSA-rrmf ignore is removed from `osv-scanner.toml`
+
 ## v1.6.11 (2026-09-12)
 
 Publish control for SermonAudio.

@@ -8,7 +8,7 @@
 -r requirements.txt
 
 # Per-index overrides for the torch family (torch/torchaudio are released independently on ROCm)
-torch==2.12.1+rocm7.1
+torch==2.13.0+rocm7.1
 torchaudio==2.11.0+rocm7.1
 
 # Note: onnxruntime-rocm pip wheels are built against ROCm 6.4.2 ABI

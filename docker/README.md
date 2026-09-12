@@ -121,8 +121,8 @@ name) and `ORT providers:` lines. On a cuda image, `ORT providers` listing
 also dlopens `libcudart.so.12`, `libcublas.so.12`, and `libcudnn.so.9` and
 reports each as `loadable` or `NOT loadable`. All three must load and the
 enhancement log must show a `CUDAExecutionProvider` session for GPU compute
-to be engaged. Torch CUDA 12.4 wheels need an NVIDIA driver of at least
-525.60.13 (minor-version compatibility); 550 or newer is recommended.
+to be engaged. Torch CUDA 12.6 wheels need an NVIDIA driver of at least
+525.60.13 (minor-version compatibility); 560 or newer is recommended.
 
 Check GPU access inside the container:
 
