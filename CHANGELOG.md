@@ -2,6 +2,15 @@
 
 All notable changes to SermonPilot are documented here.
 
+## v1.6.9 (2026-09-12)
+
+Trailing self-talk removed from generated text.
+
+### Fixed
+
+- extract_final_answer now drops planning paragraphs from both edges of the candidate, not just the start. Model self-talk like "Paragraph: I'll estimate. Let me count words: roughly 220 words." no longer ends a stored description
+- Planning signals extended with "the task:", "i'll estimate", "count words", and "paragraph:"
+
 ## v1.6.8 (2026-09-12)
 
 Sentence-safe description trimming.
