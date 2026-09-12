@@ -18,15 +18,15 @@ hardware and performance needs.
 |------|----------|
 | `requirements/requirements.txt` | Default: base runtime dependencies (torch family at the manifest floor) |
 | `requirements/requirements-cpu.txt` | CPU-only PyTorch builds (CPU index) |
-| `requirements/requirements-gpu.txt` | NVIDIA CUDA builds (cu124 index) |
+| `requirements/requirements-gpu.txt` | NVIDIA CUDA builds (cu126 index) |
 | `requirements/requirements-rocm.txt` | AMD ROCm builds (rocm7.1 index) |
 | `requirements/requirements-linux.txt` | Linux convenience install (CUDA index) |
 | `requirements/requirements-dev.txt` | Development and testing tools |
 | `requirements/requirements-models-deepfilternet.txt` | DeepFilterNet model extras |
 | `requirements/requirements-models-all.txt` | All AI enhancement models combined |
 
-The torch family is pinned once in `pyproject.toml` (`torch>=2.6.0`,
-`torchaudio>=2.6.0`). Each override file adds the matching wheelhouse index
+The torch family is pinned once in `pyproject.toml` (`torch>=2.13.0`,
+`torchaudio>=2.11.0`). Each override file adds the matching wheelhouse index
 and pins the same version with the platform suffix, so any install satisfies
 the manifest floor.
 
@@ -36,7 +36,7 @@ the manifest floor.
 ```bash
 uv pip install -r requirements/requirements-gpu.txt --index-strategy unsafe-best-match
 ```
-**Requirements:** NVIDIA GPU (4 GB+), driver compatible with CUDA 12.4
+**Requirements:** NVIDIA GPU (4 GB+), driver compatible with CUDA 12.6
 
 ### I have an AMD GPU
 ```bash
@@ -124,19 +124,19 @@ python -c "import torch; print(torch.__version__)"
 For ROCm, confirm the build carries the ROCm suffix:
 
 ```bash
-python -c "import torch; print(torch.__version__)"   # e.g. 2.12.1+rocm7.1
+python -c "import torch; print(torch.__version__)"   # e.g. 2.13.0+rocm7.1
 ```
 
 ## Troubleshooting
 
 ### GPU Installation Issues
 
-1. **CUDA version mismatch**: Ensure your NVIDIA driver supports CUDA 12.4
-   (the cu124 wheelhouse). `nvidia-smi` shows the driver's CUDA version.
+1. **CUDA version mismatch**: Ensure your NVIDIA driver supports CUDA 12.6
+   (the cu126 wheelhouse). `nvidia-smi` shows the driver's CUDA version.
 2. **Package conflicts**: Create a fresh virtual environment and use
    `--index-strategy unsafe-best-match` with the override files.
 3. **Slow transcription on GPU**: Confirm the torch build is the GPU variant
-   (`torch.__version__` shows `+cu124` or `+rocm7.1`) and that
+   (`torch.__version__` shows `+cu126` or `+rocm7.1`) and that
    `torch.cuda.is_available()` returns `True`.
 
 ### CPU Fallback
@@ -191,7 +191,7 @@ uv pip install -r requirements/requirements-gpu.txt --index-strategy unsafe-best
 - 8 GB RAM
 - NVIDIA GPU (4 GB+ memory)
 - 10 GB disk space
-- CUDA 12.4 compatible driver
+- CUDA 12.6 compatible driver
 
 ### Recommended (AMD GPU)
 - Python 3.10+

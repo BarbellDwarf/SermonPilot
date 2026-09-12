@@ -2,7 +2,7 @@ ARG GPU_BACKEND=cpu
 
 FROM ubuntu:22.04 AS base-cpu
 
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS base-cuda
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04 AS base-cuda
 
 FROM rocm/dev-ubuntu-22.04:7.1 AS base-rocm
 
@@ -48,12 +48,12 @@ COPY pyproject.toml ./
 RUN pip install --no-cache-dir uv
 
 # uv's default index strategy takes a package from the first index that has it;
-# the PyTorch cu124 index carries stale shadows of PyPI packages (e.g. requests),
+# the PyTorch cu126 index carries stale shadows of PyPI packages (e.g. requests),
 # so best-match across indexes is required for the GPU requirement sets.
 ENV UV_INDEX_STRATEGY=unsafe-best-match
 
 # Install core + GPU-specific dependencies
-# ORT 1.27+ wheels target CUDA 13; this image is CUDA 12.4 with system cuDNN 9
+# ORT 1.27+ wheels target CUDA 13; this image is CUDA 12.6 with system cuDNN 9
 # from the cudnn-runtime base, so the onnxruntime-gpu pin stays below 1.27.
 RUN if [ "$GPU_BACKEND" = "cuda" ]; then \
         uv pip install --no-cache-dir -r requirements/requirements-gpu.txt && \

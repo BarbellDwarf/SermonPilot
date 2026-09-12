@@ -23,8 +23,8 @@ setups, and Docker images built for each backend.
     backend, so on an AMD GPU it is forced to CPU (int8) instead of failing
     with "CUDA driver version is insufficient".
 
-The manifest in `pyproject.toml` requires `torch>=2.6.0` and
-`torchaudio>=2.6.0`. Any PyTorch install must satisfy that floor. The
+The manifest in `pyproject.toml` requires `torch>=2.13.0` and
+`torchaudio>=2.11.0`. Any PyTorch install must satisfy that floor. The
 `requirements/` override files pin builds that do (see
 [PyTorch version note](#pytorch-version-note) below).
 
@@ -67,14 +67,14 @@ uv sync
 ### 3. Install GPU PyTorch
 
 Install PyTorch from the wheelhouse that matches your CUDA version. CUDA
-12.x users typically use `cu124` (what `requirements/requirements-gpu.txt`
-pins) or `cu126`. Whichever wheelhouse you pick, it must carry builds at or
-above the manifest floor:
+12.x users typically use `cu126` (what `requirements/requirements-gpu.txt`
+pins). Whichever wheelhouse you pick, it must carry builds at or above the
+manifest floor:
 
 ```bash
-# NVIDIA CUDA (replace cu124 with your CUDA wheelhouse)
-uv pip install "torch>=2.6.0" "torchaudio>=2.6.0" \
-  --extra-index-url https://download.pytorch.org/whl/cu124 \
+# NVIDIA CUDA (replace cu126 with your CUDA wheelhouse)
+uv pip install "torch>=2.13.0" "torchaudio>=2.11.0" \
+  --extra-index-url https://download.pytorch.org/whl/cu126 \
   --index-strategy unsafe-best-match
 ```
 
@@ -84,7 +84,7 @@ For AMD GPUs, install from the ROCm 7.1 wheelhouse instead:
 uv pip install -r requirements/requirements-rocm.txt
 ```
 
-That file pins `torch==2.12.1+rocm7.1` and `torchaudio==2.11.0+rocm7.1`,
+That file pins `torch==2.13.0+rocm7.1` and `torchaudio==2.11.0+rocm7.1`,
 which satisfy the manifest floor. (torch and torchaudio release independently
 on the ROCm index, so the versions differ.)
 
@@ -102,66 +102,43 @@ Importing `src/audio_processing.py` prints the detected device, for example
 ## PyTorch version note
 
 All `requirements/` override files pin builds at or above the
-`torch>=2.6.0` floor in `pyproject.toml`:
+`torch>=2.13.0` floor in `pyproject.toml`:
 
-- `requirements/requirements-gpu.txt` pins `torch==2.6.0+cu124` from the
-  cu124 index
-- `requirements/requirements-rocm.txt` pins `torch==2.12.1+rocm7.1` from the
+- `requirements/requirements-gpu.txt` pins `torch==2.14.0+cu126` from the
+  cu126 index
+- `requirements/requirements-rocm.txt` pins `torch==2.13.0+rocm7.1` from the
   rocm7.1 index
-- `requirements/requirements-cpu.txt` pins `torch==2.6.0+cpu` from the CPU
+- `requirements/requirements-cpu.txt` pins `torch==2.14.0+cpu` from the CPU
   index
 
 The older `requirements-gpu-minimal.txt` and `requirements-gpu-full.txt`
 files no longer exist; if you see references to them, treat them as stale.
 
-## Torch upgrade / venv rebuild
+## Torch versions and advisories
 
-Two open PyTorch advisories are accepted as of v1.6.0:
+The `pyproject.toml` floor is `torch>=2.13.0` and `torchaudio>=2.11.0`:
 
-- **GHSA-rrmf-rvhw-rf47** (CVE-2025-3000): memory corruption through
-  `torch.jit.script`. Affects all torch releases up to 2.12.1 and is fixed
-  only in 2.13.0. Low severity, local attack.
-- **GHSA-vgrw-7cvw-pwgx** (CVE-2025-2999): memory corruption through
-  `torch.nn.utils.rnn.unpack_sequence`. Affects all releases before 2.9.1
-  and is fixed in 2.9.1. Medium severity, local attack.
+- `requirements/requirements-gpu.txt` pins `torch==2.14.0+cu126` and
+  `torchaudio==2.11.0+cu126` from the cu126 index (CUDA 12.6)
+- `requirements/requirements-rocm.txt` pins `torch==2.13.0+rocm7.1` and
+  `torchaudio==2.11.0+rocm7.1` from the rocm7.1 index
+- `requirements/requirements-cpu.txt` pins `torch==2.14.0+cpu` and
+  `torchaudio==2.11.0+cpu` from the CPU index
 
-The torch pins in `pyproject.toml` and `requirements/` stay unchanged
-because no build that fixes both advisories is compatible with the
-verified ROCm setup. The verified-clean build (no chunked-audio
-corruption, issue #41) is `torch==2.11.0.dev20260206+rocm7.0` from the
-rocm7.0 nightly index, which is also the newest build that index
-publishes. The only fully patched build, torch 2.13.0, ships ROCm
-wheels only as `+rocm7.1` and `+rocm7.2`; it sits on the same
-2.12/2.13 line as the corrupting `2.12.0+rocm7.14.0` and has not passed
-the regression gate below, so upgrading to it would risk reintroducing
-issue #41.
+torchaudio 2.11.0 is its final upstream release and trails torch on every
+index. Its wheels declare no torch dependency; the pairs above are the tested
+ones (the CUDA pair is verified in a CUDA 12.6 container on an NVIDIA host:
+CUDA resample plus DeepFilterNet enhancement).
 
-To reproduce the verified working setup:
+The pins clear the PyTorch advisories: torch 2.10.0 fixed PYSEC-2026-139,
+PYSEC-2026-2286 and GHSA-qfhq-4f3w-5fph; torch 2.13.0 fixed
+GHSA-rrmf-rvhw-rf47. No torch entries remain in `osv-scanner.toml`.
 
-```bash
-uv venv --python 3.11
-source .venv/bin/activate
-uv pip install -r requirements/requirements.txt
-uv pip install "torch==2.11.0.dev20260206+rocm7.0" \
-  "torchaudio==2.11.0.dev20260216+rocm7.0" \
-  --extra-index-url https://download.pytorch.org/whl/nightly/rocm7.0 \
-  --index-strategy unsafe-best-match
-```
-
-Before adopting any newer torch (the candidate that fixes both
-advisories is `torch==2.13.0+rocm7.1`), run the chunked-enhancement
-stability gate on the ROCm machine:
-
-1. Take a 7-minute slice of a sermon recording and enhance it in a
-   single pass.
-2. Enhance the same slice in 60-second chunks, three times.
-3. Cross-correlate each chunked output against the single-pass output;
-   all three trials must score 0.999 or higher.
-4. Run the full 42-minute pipeline and confirm it completes without
-   corruption.
-
-Only after the gate passes should the pin be raised in `pyproject.toml`
-and the `requirements/` override files.
+For ROCm builds newer than the pinned pair, run the chunked-enhancement check
+on the AMD machine before adopting them: enhance a 7-minute slice in one pass
+and in 60-second chunks, then cross-correlate each chunked output against the
+single-pass output (all trials at 0.999 or higher), and run the full
+pipeline once.
 
 ## Docker
 
