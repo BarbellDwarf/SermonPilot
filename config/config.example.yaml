@@ -75,6 +75,18 @@ llm:
       api_key: "${GROQ_API_KEY}"
       model: "llama-3.1-8b-instant"  # Fast model for validation
 
+  # Operation-scoped LLM pins (override the global primary/fallback chain for
+  # specific tasks). Auto-edit cut detection uses any OpenAI-compatible
+  # endpoint: set OPENCODE_GO_BASE_URL and OPENCODE_GO_API_KEY in .env. If the
+  # pin fails to initialize, detection falls back to the global llm chain.
+  operations:
+    auto_edit:
+      provider: "openai"  # OpenAI-compatible provider
+      openai:
+        api_key: "${OPENCODE_GO_API_KEY}"
+        base_url: "${OPENCODE_GO_BASE_URL}"
+        model: "deepseek-v4.1-flash"
+
 # Audio Processing Settings
 use_audacity: false  # Set to true if Audacity with mod-script-pipe is available
 audio_enhancement_method: "deepfilternet"  # Options: "deepfilternet", "clear-natural", "clear-studio", "none"
@@ -205,3 +217,21 @@ transcription:
     api_key: ${OPENROUTER_API_KEY}  # OpenRouter API key
     base_url: https://openrouter.ai/api/v1  # OpenRouter API base URL
     model: openai/whisper-large-v3  # Options: openai/whisper-large-v3, etc.
+
+# Auto-Edit Settings (see docs/AUTO_EDIT.md)
+auto_edit:
+  enabled: false  # Master switch for LLM cut detection and editing
+  mode: interactive  # interactive: stop at pending_review | auto: apply when confident
+  auto_confidence_threshold: 0.8  # Minimum LLM confidence for auto mode (clamped to <= 0.99)
+  qa_margin_seconds: 3.0  # Padding kept around the Q&A boundary
+  min_sermon_seconds: 600  # Plans leaving less than this fail validation and go to review
+  require_review: true  # Legacy: true behaves as interactive when mode is absent
+  logo_path: ''  # Image for the end card; empty disables the card
+  logo_hold: 3.0  # Seconds the logo card stays on screen
+  fade_to_black: true  # Fade out at the end of the content
+  keeper:
+    enabled: true  # Shrink large raw sources before processing
+    crf: 20  # libx264 -crf / nvenc -cq / vaapi -qp (crf+2)
+    nvenc: true  # Encoder detect chain: nvenc -> vaapi (Intel+AMD) -> libx264
+    delete_original: false  # Delete the raw source after a verified transcode and applied edit
+    min_source_gb: 2.0  # Only transcode sources at or above this size

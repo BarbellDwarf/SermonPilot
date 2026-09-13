@@ -2,6 +2,23 @@
 
 All notable changes to SermonPilot are documented here.
 
+## v1.7.0 (2026-09-12)
+
+Auto-edit: LLM-driven cut detection with a review gate, raw multi-GB ingest, and in-browser review.
+
+### Added
+
+- Auto-edit pipeline: LLM finds the sermon start and Q&A boundary from the timestamped transcript, then ffmpeg cuts the dead time, applies fades, and appends a logo card before metadata and upload
+- Keeper transcode: sources at or above `min_source_gb` (default 2 GB) are re-encoded at CRF 20 before processing, roughly 20-30% of the original size for multi-GB raws; encoder chain detects NVENC, then VAAPI (verified on AMD and Intel), then libx264; optional verified deletion of the raw source
+- Review gate with two modes: `interactive` stops at `pending_review` and saves the sermon as a draft for the Library, `auto` applies only when confidence clears the threshold and plan validation is clean
+- Library review panel: status and confidence badges, 0.1s timestamp inputs with live validation, evidence quote from the transcript, approve/reject, restore original (undo reuploads the source media and reverts the plan), and re-edit
+- Edit plan revisions: every edit is a new row in `edit_plans`; re-edits always re-encode from the retained original or keeper copy, never from a previous edit, and old rows are superseded
+- Operation-scoped LLM pin: `llm.operations.auto_edit` routes cut detection to any OpenAI-compatible endpoint with fallback to the global LLM chain
+- Auto Edit job type: run jobs carry the auto-edit options, apply continuation jobs finish approved plans after a `pending_review` stop
+- In-browser media viewing: localhost HTTP range sidecar with tokenized URLs, cut-point snippets in the review panel, and a player on the sermon detail page
+- CLI flags: `--auto-edit`, `--auto-edit-mode {interactive,auto}`, `--edit-plan-file`
+- `docs/AUTO_EDIT.md` feature guide and `auto_edit` block in `config/config.example.yaml`
+
 ## v1.6.1 (2026-08-21)
 
 Post-release security and quality audit remediation: 109 findings addressed across UI, backend, database, jobs, pipeline, providers, and infrastructure.
