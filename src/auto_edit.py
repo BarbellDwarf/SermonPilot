@@ -133,48 +133,59 @@ def detect_cut_points(
         {"role": "user", "content": prompt},
     ]
 
-    try:
-        response = llm_manager.chat(messages, operation="auto_edit")
-        payload = json.loads(_strip_markdown_fences(response))
-    except Exception as e:
-        logger.warning(f"auto_edit: LLM response unusable, falling back: {e}")
-        return _fallback_plan(duration, "Detection fallback: LLM output not usable", "")
+    plan: EditPlan | None = None
+    for attempt in range(1, 4):
+        try:
+            response = llm_manager.chat(messages, operation="auto_edit")
+            payload = json.loads(_strip_markdown_fences(response))
+        except Exception as e:
+            logger.warning(f"auto_edit: attempt {attempt}/3, LLM response unusable: {e}")
+            continue
 
-    try:
-        start = float(payload["start"])
-        end = float(payload["end"])
-        confidence = float(payload.get("confidence", 0.0))
-        evidence = str(payload.get("evidence", ""))
-        qa_judgment = str(payload.get("qa_judgment", "cut"))
-        reasoning = str(payload.get("reasoning", ""))
-    except (KeyError, TypeError, ValueError) as e:
-        logger.warning(f"auto_edit: LLM JSON missing or invalid fields: {e}")
-        return _fallback_plan(duration, "Detection fallback: LLM output not usable", "")
+        try:
+            start = float(payload["start"])
+            end = float(payload["end"])
+            confidence = float(payload.get("confidence", 0.0))
+            evidence = str(payload.get("evidence", ""))
+            qa_judgment = str(payload.get("qa_judgment", "cut"))
+            reasoning = str(payload.get("reasoning", ""))
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning(
+                f"auto_edit: attempt {attempt}/3, LLM JSON missing or invalid fields: {e}"
+            )
+            continue
 
-    if (
-        not (0 <= start < end)
-        or not evidence.strip()
-        or qa_judgment
-        not in (
-            "cut",
-            "teaching_continues",
+        if (
+            not (0 <= start < end)
+            or not evidence.strip()
+            or qa_judgment
+            not in (
+                "cut",
+                "teaching_continues",
+            )
+        ):
+            logger.warning(
+                f"auto_edit: attempt {attempt}/3, LLM JSON failed sanity checks, retrying"
+            )
+            continue
+
+        if duration is not None:
+            end = min(end, float(duration))
+
+        plan = EditPlan(
+            start=start,
+            end=end,
+            confidence=confidence,
+            needs_review=False,
+            evidence=evidence,
+            qa_judgment=qa_judgment,
+            reasoning=reasoning,
         )
-    ):
-        logger.warning("auto_edit: LLM JSON failed sanity checks, falling back")
+        break
+
+    if plan is None:
+        logger.warning("auto_edit: LLM output unusable after 3 attempts, falling back")
         return _fallback_plan(duration, "Detection fallback: LLM output not usable", "")
-
-    if duration is not None:
-        end = min(end, float(duration))
-
-    plan = EditPlan(
-        start=start,
-        end=end,
-        confidence=confidence,
-        needs_review=False,
-        evidence=evidence,
-        qa_judgment=qa_judgment,
-        reasoning=reasoning,
-    )
 
     problems = validate_plan(plan, duration, min_sermon_seconds)
     if problems:
