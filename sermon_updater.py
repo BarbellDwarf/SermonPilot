@@ -1582,6 +1582,29 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
     input_is_video = is_video_file(str(audio_path))
 
+    if input_is_video:
+        keeper_cfg = config.get('auto_edit', {}).get('keeper', {})
+        if bool(keeper_cfg.get('enabled', True)):
+            min_source_gb = float(keeper_cfg.get('min_source_gb', 2.0))
+            keeper_root = Path(config.get('output_directory', 'processed_sermons'))
+            if not keeper_root.is_absolute():
+                keeper_root = Path(__file__).parent / keeper_root
+            keeper_path = keeper_root / "keepers" / f"{audio_path.stem}_keeper.mp4"
+            _report(6, "Preparing keeper transcode...")
+            from src.auto_edit import transcode_to_keeper
+
+            kept_path = transcode_to_keeper(audio_path, keeper_path, config)
+            if kept_path == audio_path:
+                if audio_path.stat().st_size >= min_source_gb * 1024**3:
+                    console_print("⚠️ Keeper transcode failed, using original video")
+                else:
+                    console_print("⏭️ Keeper skipped, source below min_source_gb")
+            else:
+                audio_path = kept_path
+                console_print(f"🗜️ Keeper transcode complete: {kept_path.name}")
+        else:
+            console_print("⏭️ Keeper disabled by config, using original video")
+
     # Preprocessing: optional clean-audio.py step (runs before enhancement)
     if use_clean_audio:
         console_print("🧹 Running external clean-audio.py preprocessing...")

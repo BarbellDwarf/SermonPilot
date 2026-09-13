@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -387,3 +388,222 @@ def render_review_snippets(
             logger.warning(f"auto_edit: ending snippet failed: {e}")
 
     return snippets
+
+
+_KG = 1024**3
+_keeper_encoder_cache: tuple[str, list[str]] | None = None
+
+
+def _probe_nvenc() -> bool:
+    cmd = [
+        "ffmpeg",
+        "-v",
+        "error",
+        "-f",
+        "lavfi",
+        "-t",
+        "0.3",
+        "-i",
+        "color=c=black:s=256x256:r=25",
+        "-c:v",
+        "h264_nvenc",
+        "-f",
+        "null",
+        "-",
+    ]
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=20).returncode == 0
+    except Exception:
+        return False
+
+
+def _probe_vaapi() -> str | None:
+    if not Path("/dev/dri").exists():
+        return None
+    for node in sorted(Path("/dev/dri").glob("renderD*")):
+        cmd = [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-vaapi_device",
+            str(node),
+            "-f",
+            "lavfi",
+            "-t",
+            "0.3",
+            "-i",
+            "color=c=black:s=256x256:r=25",
+            "-vf",
+            "format=nv12,hwupload",
+            "-c:v",
+            "h264_vaapi",
+            "-qp",
+            "26",
+            "-f",
+            "null",
+            "-",
+        ]
+        try:
+            if subprocess.run(cmd, capture_output=True, text=True, timeout=20).returncode == 0:
+                return str(node)
+        except Exception:
+            continue
+    return None
+
+
+def detect_hardware_encoder() -> tuple[str, list[str]]:
+    global _keeper_encoder_cache
+    if _keeper_encoder_cache is not None:
+        return _keeper_encoder_cache
+
+    if not shutil.which("ffmpeg"):
+        result: tuple[str, list[str]] = ("libx264", [])
+    elif shutil.which("nvidia-smi") and _probe_nvenc():
+        result = ("h264_nvenc", [])
+    else:
+        node = _probe_vaapi()
+        if node:
+            result = ("h264_vaapi", ["-vaapi_device", node])
+        else:
+            result = ("libx264", [])
+
+    _keeper_encoder_cache = result
+    return result
+
+
+def _ffprobe_duration(ffprobe: str, path: Path) -> float | None:
+    proc = subprocess.run(
+        [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if proc.returncode != 0:
+        return None
+    try:
+        return float(proc.stdout.strip())
+    except ValueError:
+        return None
+
+
+def verify_keeper(source: Path, keeper: Path) -> bool:
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe or not keeper.exists() or not keeper.is_file():
+        return False
+    try:
+        src_dur = _ffprobe_duration(ffprobe, source)
+        keep_dur = _ffprobe_duration(ffprobe, keeper)
+        if src_dur is None or keep_dur is None:
+            return False
+        if abs(src_dur - keep_dur) > 2.0:
+            return False
+        streams = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "csv=p=0",
+                str(keeper),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if streams.returncode != 0:
+            return False
+        types = set(streams.stdout.split())
+        if not {"video", "audio"} <= types:
+            return False
+        return keeper.stat().st_size > 1_000_000
+    except Exception:
+        return False
+
+
+def _keeper_quality_args(encoder: str, crf: int) -> list[str]:
+    if encoder == "h264_nvenc":
+        return ["-cq", str(crf)]
+    if encoder == "h264_vaapi":
+        return ["-qp", str(crf + 2)]
+    return ["-crf", str(crf)]
+
+
+def _keeper_preset_args(encoder: str) -> list[str]:
+    if encoder == "h264_nvenc":
+        return ["-preset", "p1"]
+    if encoder == "h264_vaapi":
+        return []
+    return ["-preset", "veryfast"]
+
+
+def transcode_to_keeper(source: Path, out: Path, config: dict[str, Any]) -> Path | None:
+    keeper_cfg = config.get("auto_edit", {}).get("keeper", {})
+    if not keeper_cfg.get("enabled", True):
+        return source
+    min_gb = float(keeper_cfg.get("min_source_gb", 2.0))
+    try:
+        source_size = source.stat().st_size
+    except OSError as e:
+        logger.warning(f"auto_edit keeper: source inaccessible, skipping: {e}")
+        return source
+    if source_size < min_gb * _KG:
+        return source
+
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        logger.warning("auto_edit keeper: ffmpeg not found, skipping keeper transcode")
+        return source
+
+    encoder, extra_args = detect_hardware_encoder()
+    crf = int(keeper_cfg.get("crf", 20))
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [ffmpeg, "-y", *extra_args, "-i", str(source)]
+    if encoder == "h264_vaapi":
+        cmd += ["-vf", "format=nv12,hwupload"]
+    else:
+        cmd += ["-pix_fmt", "yuv420p"]
+    cmd += [
+        "-c:v",
+        encoder,
+        *_keeper_quality_args(encoder, crf),
+        *_keeper_preset_args(encoder),
+        "-c:a",
+        "aac",
+        "-b:a",
+        "160k",
+        str(out),
+    ]
+    logger.info(f"auto_edit keeper: transcoding {source.name} with {encoder}")
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        if proc.returncode != 0:
+            logger.warning(f"auto_edit keeper: ffmpeg failed: {(proc.stderr or '')[-400:]}")
+            return source
+    except Exception as e:
+        logger.warning(f"auto_edit keeper: transcode failed, keeping original: {e}")
+        return source
+
+    if not verify_keeper(source, out):
+        logger.warning("auto_edit keeper: output failed integrity check, keeping original")
+        return source
+    return out
+
+
+def should_delete_original(
+    source: Path, keeper: Path, config: dict[str, Any], has_applied_plan: bool
+) -> bool:
+    keeper_cfg = config.get("auto_edit", {}).get("keeper", {})
+    if not keeper_cfg.get("delete_original", False):
+        return False
+    min_gb = float(keeper_cfg.get("min_source_gb", 2.0))
+    try:
+        if source.stat().st_size < min_gb * _KG:
+            return False
+    except OSError:
+        return False
+    if not verify_keeper(source, keeper):
+        return False
+    return has_applied_plan
