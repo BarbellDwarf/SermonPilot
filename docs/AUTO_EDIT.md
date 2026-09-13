@@ -6,6 +6,11 @@ Auto-edit watches the transcript, asks an LLM to find where the sermon actually 
 
 Drop the raw multi-GB `mkv`/`mp4` straight from the recorder into the New Sermon page or the CLI. You do not pre-shrink it in kdenlive first. The keeper transcode step handles the shrink automatically before anything else runs, and it keeps the original on disk so every future re-edit starts from full quality.
 
+Two ways in:
+
+- **Server Path tab (recommended for multi-GB raw files).** Put the file in the raw-ingest folder (Docker host path `.../sermonpilot/raw_ingest`, seen inside the container as `/data/raw_ingest`), then paste the container path into the "Server Path (large files)" tab. The app reads the file from disk directly; nothing goes through the browser.
+- **Browser upload.** Works for smaller files. The limit is 30,720 MB (30 GB) by default and can be changed with the `STREAMLIT_SERVER_MAX_UPLOAD_SIZE` environment variable (Docker: set it in `.env`; standalone: same variable or edit `.streamlit/config.toml`). Streaming a 30 GB file through a browser POST is slow and memory-hungry, so prefer the Server Path tab at that size.
+
 kdenlive stays in the workflow for rare creative edits only: multi-cam cuts, titles, audio surgery. Everything routine is handled here.
 
 ## Requirements
