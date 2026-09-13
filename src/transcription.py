@@ -59,6 +59,58 @@ def _detect_device(preference: str = "auto", allow_rocm: bool = True) -> str:
     return "cpu"
 
 
+def _load_whisper_model(model_size: str, device: str):
+    """Load an openai-whisper model, raising TranscriptionError on failure."""
+    import warnings
+
+    try:
+        import whisper
+    except ImportError as e:
+        raise TranscriptionError(
+            "whisper library not installed - install with: pip install openai-whisper"
+        ) from e
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return whisper.load_model(model_size, device=device)
+    except Exception as e:
+        raise TranscriptionError(
+            f"Failed to load Whisper model {model_size} on {device}: {e}"
+        ) from e
+
+
+def _transcribe_whisper_local_segments(
+    audio_path: str,
+    model_size: str,
+    device_preference: str = "auto",
+    language: str | None = None,
+) -> list[dict[str, float | str]]:
+    """Transcribe using the `whisper` library, returning timed segments."""
+    device = _detect_device(device_preference)
+    logger.info("Local Whisper transcription: model=%s, device=%s", model_size, device)
+
+    model = _load_whisper_model(model_size, device)
+
+    try:
+        transcribe_kwargs = {"language": language} if language else {}
+        result = model.transcribe(audio_path, **transcribe_kwargs)
+        raw = result.get("segments") or []
+        segments = [
+            {
+                "start": float(seg.get("start", 0.0)),
+                "end": float(seg.get("end", 0.0)),
+                "text": str(seg.get("text", "")).strip(),
+            }
+            for seg in raw
+            if isinstance(seg, dict)
+        ]
+        logger.info("Local transcription succeeded (%d segments)", len(segments))
+        return segments
+    except Exception as e:
+        raise TranscriptionError(f"Local transcription error: {e}") from e
+
+
 def _transcribe_whisper_local(
     audio_path: str,
     model_size: str,
@@ -75,27 +127,10 @@ def _transcribe_whisper_local(
     Returns:
         Transcript text or empty string on error.
     """
-    try:
-        import warnings
-
-        import whisper
-    except ImportError as e:
-        raise TranscriptionError(
-            "whisper library not installed - install with: pip install openai-whisper"
-        ) from e
-
     device = _detect_device(device_preference)
     logger.info("Local Whisper transcription: model=%s, device=%s", model_size, device)
 
-    # Load model on detected device (cpu, cuda, or rocm)
-    try:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            model = whisper.load_model(model_size, device=device)
-    except Exception as e:
-        raise TranscriptionError(
-            f"Failed to load Whisper model {model_size} on {device}: {e}"
-        ) from e
+    model = _load_whisper_model(model_size, device)
 
     # Transcribe
     try:
@@ -161,6 +196,53 @@ def _transcribe_faster_whisper_local(
         return _transcribe_whisper_local(audio_path, model_size, device_preference)
 
 
+def _transcribe_faster_whisper_local_segments(
+    audio_path: str,
+    model_size: str,
+    device_preference: str = "auto",
+    compute_type: str | None = None,
+    language: str | None = None,
+) -> list[dict[str, float | str]]:
+    """Transcribe using faster-whisper, returning timed segments."""
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError:
+        logger.warning("faster-whisper library not installed, falling back to standard whisper")
+        return _transcribe_whisper_local_segments(audio_path, model_size, device_preference)
+
+    device = _detect_device(device_preference, allow_rocm=False)
+    effective_compute_type = compute_type or ("int8" if device == "cpu" else "float32")
+    logger.info(
+        "Faster Whisper transcription: model=%s, device=%s, compute_type=%s, language=%s",
+        model_size, device, effective_compute_type, language,
+    )
+
+    try:
+        model = WhisperModel(model_size, device=device, compute_type=effective_compute_type)
+
+        segments, info = model.transcribe(
+            audio_path,
+            beam_size=5,
+            language=language,
+            vad_filter=True,
+            vad_parameters={"min_silence_duration_ms": 500}
+        )
+
+        timed = [
+            {
+                "start": float(segment.start),
+                "end": float(segment.end),
+                "text": str(segment.text).strip(),
+            }
+            for segment in segments
+        ]
+        logger.info("Faster Whisper transcription succeeded (%d segments)", len(timed))
+        return timed
+    except Exception as e:
+        logger.error("Faster Whisper transcription error: %s", e)
+        return _transcribe_whisper_local_segments(audio_path, model_size, device_preference)
+
+
 def _transcribe_openrouter(
     audio_path: str, api_key: str, base_url: str, model: str, progress_callback=None
 ) -> str:
@@ -191,12 +273,39 @@ def _transcribe_openrouter(
         files["file"].close()
 
 
+def _parse_verbose_json_segments(resp: requests.Response) -> list[dict[str, float | str]]:
+    """Extract timed segments from a verbose_json transcription response."""
+    try:
+        payload = resp.json()
+    except ValueError as e:
+        logger.warning("OpenAI verbose_json response was not valid JSON: %s", e)
+        return []
+    raw = payload.get("segments") if isinstance(payload, dict) else None
+    if not isinstance(raw, list):
+        logger.warning("OpenAI verbose_json response contained no segments")
+        return []
+    segments: list[dict[str, float | str]] = []
+    for seg in raw:
+        if not isinstance(seg, dict):
+            continue
+        try:
+            start = float(seg.get("start", 0.0))
+            end = float(seg.get("end", 0.0))
+        except (TypeError, ValueError):
+            continue
+        segments.append({"start": start, "end": end, "text": str(seg.get("text", "")).strip()})
+    return segments
+
+
 def _transcribe_openai(audio_path: str, api_key: str, base_url: str, model: str,
-                       progress_callback=None) -> str:
+                       progress_callback=None,
+                       want_segments: bool = False) -> str | list[dict[str, float | str]]:
     """Transcribe using OpenAI's Whisper endpoint.
 
     If base_url is not provided, defaults to OpenAI's official endpoint.
     Supports SSE streaming for progress reporting when the endpoint supports it.
+    With want_segments=True, requests verbose_json and returns timed segments,
+    or an empty list when the response carries no usable timestamps.
     """
     if not api_key:
         raise TranscriptionError("OpenAI API key missing for transcription")
@@ -205,10 +314,19 @@ def _transcribe_openai(audio_path: str, api_key: str, base_url: str, model: str,
     headers = {"Authorization": f"Bearer {api_key}"}
     files = {"file": open(audio_path, "rb")}
     data = {"model": model}
+    if want_segments:
+        data["response_format"] = "verbose_json"
     try:
         logger.info("Calling OpenAI Whisper at %s", url)
-        resp = requests.post(url, headers=headers, data=data, files=files, stream=True, timeout=600)
+        resp = requests.post(
+            url, headers=headers, data=data, files=files,
+            stream=not want_segments, timeout=600,
+        )
         resp.raise_for_status()
+        if want_segments:
+            segments = _parse_verbose_json_segments(resp)
+            logger.info("OpenAI transcription returned %d segments", len(segments))
+            return segments
         content_type = resp.headers.get("content-type", "")
         if "text/event-stream" in content_type:
             transcript_parts = []
@@ -311,3 +429,77 @@ def transcribe(audio_path: str, model_size: str = "base", config: dict[str, Any]
     else:
         logger.warning("Unknown transcription backend '%s', skipping transcription", backend)
         return ""
+
+
+def _normalize_segments(raw: list[dict[str, Any]]) -> list[dict[str, float | str]]:
+    """Coerce raw segment dicts into monotonic, non-overlapping seconds."""
+    segments: list[dict[str, float | str]] = []
+    cursor = 0.0
+    for seg in raw:
+        if not isinstance(seg, dict):
+            continue
+        try:
+            start = float(seg.get("start", 0.0))
+            end = float(seg.get("end", 0.0))
+        except (TypeError, ValueError):
+            continue
+        if end < start:
+            end = start
+        if start < cursor:
+            start = cursor
+        if end < cursor:
+            end = cursor
+        cursor = end
+        segments.append({"start": start, "end": end, "text": str(seg.get("text", "")).strip()})
+    return segments
+
+
+def transcribe_segments(audio_path: str, model_size: str = "base",
+                        config: dict[str, Any] = None, backend_override: str | None = None,
+                        progress_callback=None) -> list[dict[str, float | str]]:
+    """High-level transcription dispatcher returning timed segments.
+
+    Mirrors transcribe() for backend selection. Backends without timestamp
+    support return an empty list.
+    """
+    cfg = config or {}
+    transcription_cfg = cfg.get("transcription", {})
+    backend = backend_override or transcription_cfg.get("backend", "whisper_local")
+
+    if backend == "whisper_local":
+        local_cfg = transcription_cfg.get("whisper_local", {})
+        device_pref = local_cfg.get("device", "auto")
+        language = local_cfg.get("language")
+        model = model_size or local_cfg.get("model", "base")
+        return _normalize_segments(
+            _transcribe_whisper_local_segments(audio_path, model, device_pref, language=language)
+        )
+    elif backend == "faster_whisper_local":
+        faster_cfg = transcription_cfg.get("faster_whisper_local", {})
+        device_pref = faster_cfg.get("device", "auto")
+        model = model_size or faster_cfg.get("model", "base")
+        compute_type = faster_cfg.get("compute_type")
+        language = faster_cfg.get("language")
+        return _normalize_segments(
+            _transcribe_faster_whisper_local_segments(
+                audio_path, model, device_pref, compute_type=compute_type, language=language
+            )
+        )
+    elif backend == "whisper_openrouter":
+        return []
+    elif backend == "whisper_openai":
+        oi_cfg = transcription_cfg.get("whisper_openai", {})
+        api_key = os.getenv("OPENAI_API_KEY", oi_cfg.get("api_key", ""))
+        base_url = oi_cfg.get("base_url", "https://api.openai.com/v1")
+        model = (
+            model_size if _is_cloud_model_override(model_size)
+            else oi_cfg.get("model", "whisper-1")
+        )
+        result = _transcribe_openai(
+            audio_path, api_key, base_url, model,
+            progress_callback=progress_callback, want_segments=True,
+        )
+        return _normalize_segments(result)
+    else:
+        logger.warning("Unknown transcription backend '%s', skipping transcription", backend)
+        return []
