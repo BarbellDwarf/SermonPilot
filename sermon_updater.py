@@ -30,9 +30,11 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import time
 import traceback
@@ -89,6 +91,13 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
         # Fallback no-op processor if dependencies missing
         def process_sermon_audio(*args, **kwargs):
             return False
+    from auto_edit import (
+        EditPlan,
+        apply_edit,
+        detect_cut_points,
+        should_delete_original,
+        validate_plan,
+    )
     from cli.parser import CLIParser, confirm
     from core.config import ConfigManager
     from llm_manager import LLMManager
@@ -1037,6 +1046,49 @@ def is_video_file(path: str | Path) -> bool:
     return Path(path).suffix.lower() in VIDEO_EXTENSIONS
 
 
+def _ffprobe_duration(path: str | Path) -> float | None:
+    try:
+        proc = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', str(path)],
+            capture_output=True, text=True, timeout=30,
+        )
+        if proc.returncode != 0:
+            return None
+        return float(json.loads(proc.stdout).get('format', {}).get('duration', 0) or 0)
+    except Exception:
+        return None
+
+
+_EDIT_PLAN_FILE_KEYS = {
+    'start', 'end', 'fade_in', 'logo_hold', 'fade_to_black',
+    'confidence', 'needs_review', 'evidence', 'qa_judgment', 'reasoning',
+}
+
+
+def _load_edit_plan_from_file(path: str | Path) -> EditPlan:
+    with open(path, encoding='utf-8') as f:
+        payload = json.load(f)
+    if not isinstance(payload, dict):
+        raise ValueError(f"Edit plan file must contain a JSON object: {path}")
+    fields = {k: v for k, v in payload.items() if k in _EDIT_PLAN_FILE_KEYS}
+    return EditPlan(
+        start=float(fields.get('start', 0.0)),
+        end=float(fields.get('end', 0.0)),
+        fade_in=float(fields.get('fade_in', 1.0)),
+        logo_hold=float(fields.get('logo_hold', 3.0)),
+        fade_to_black=bool(fields.get('fade_to_black', True)),
+        confidence=float(fields.get('confidence', 0.0)),
+        needs_review=bool(fields.get('needs_review', True)),
+        evidence=str(fields.get('evidence', '')),
+        qa_judgment=str(fields.get('qa_judgment', 'cut')),
+        reasoning=str(fields.get('reasoning', '')),
+    )
+
+
+def _auto_edit_confidence_threshold(auto_edit_cfg: dict[str, Any]) -> float:
+    return min(float(auto_edit_cfg.get('auto_confidence_threshold', 0.8)), 0.99)
+
+
 def _media_type_for_ext(path: str | Path) -> str:
     ext = Path(path).suffix.lower()
     return "video/mp4" if ext == ".mp4" else "video/mp4" if is_video_file(path) else "audio/mpeg"
@@ -1492,6 +1544,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       series_id: int | None = None,
                       config: dict | None = None,
                       progress_callback=None,
+                      auto_edit_mode: str | None = None,
+                      edit_plan_file: str | None = None,
                       cancel_check: Callable[[], None] | None = None) -> dict:
     """Process a new sermon from audio file with automatic metadata generation.
 
@@ -1560,6 +1614,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         'transcript_length': 0,
         'transcript': None,
         'transcript_segments': [],
+        'edit_plan_status': None,
+        'auto_edit_applied': False,
         'output_dir': None,
         'error': None,
     }
@@ -1582,6 +1638,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
     input_is_video = is_video_file(str(audio_path))
 
+    keeper_used = False
+
     if input_is_video:
         keeper_cfg = config.get('auto_edit', {}).get('keeper', {})
         if bool(keeper_cfg.get('enabled', True)):
@@ -1601,6 +1659,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     console_print("⏭️ Keeper skipped, source below min_source_gb")
             else:
                 audio_path = kept_path
+                keeper_used = True
                 console_print(f"🗜️ Keeper transcode complete: {kept_path.name}")
         else:
             console_print("⏭️ Keeper disabled by config, using original video")
@@ -1821,6 +1880,280 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         result['transcript_segments'] = transcript_segments
         result['transcript_length'] = len(transcript) if transcript else 0
 
+        auto_edit_state: dict[str, Any] | None = None
+
+        def _persist_auto_edit_pending_review() -> dict:
+            import json as review_json
+            import re as review_re
+            import shutil
+            import uuid
+
+            from src.sermon_paths import build_output_filename
+
+            review_title = title or f"Sermon by {speaker_name}"
+            review_description = description or ''
+            review_hashtags = hashtags or ''
+            safe_title = (
+                review_re.sub(r'[^a-zA-Z0-9]+', '_', review_title.strip().lower())[:40]
+            )
+            safe_speaker = (
+                review_re.sub(
+                    r'[^a-zA-Z0-9]+', '_', (speaker_name or 'Unknown').strip().lower()
+                )[:20]
+            )
+            safe_date = (recorded_date or 'nodate').replace('-', '')
+            review_id = (
+                f"draft_{safe_speaker}_{safe_date}_{safe_title}_{uuid.uuid4().hex[:8]}"
+            )
+            review_dir = get_sermon_dir(
+                _auto_edit_output_root(), speaker_name, series_title, review_title, review_id
+            )
+            review_dir.mkdir(parents=True, exist_ok=True)
+
+            ext = Path(final_upload_path).suffix
+            processed_path = review_dir / build_output_filename(
+                review_title, series_title, speaker_name, recorded_date, "Processed", ext
+            )
+            if Path(final_upload_path).exists() and (
+                Path(final_upload_path).resolve() != processed_path.resolve()
+            ):
+                shutil.copy2(final_upload_path, processed_path)
+            original_ext = Path(audio_path).suffix
+            original_path = review_dir / build_output_filename(
+                review_title, series_title, speaker_name, recorded_date, "Original", original_ext
+            )
+            if (
+                Path(audio_path).exists()
+                and not original_path.exists()
+                and Path(audio_path).resolve() != original_path.resolve()
+            ):
+                shutil.copy2(audio_path, original_path)
+
+            metadata = {
+                'sermon_id': review_id,
+                'sermonID': review_id,
+                'title': review_title,
+                'speaker': speaker_name,
+                'series_title': series_title or '',
+                'recorded_date': recorded_date,
+                'event_type': event_type,
+                'bible_text': bible_text,
+                'subtitle': subtitle,
+                'description': review_description,
+                'hashtags': review_hashtags,
+                'original_file': str(audio_path),
+                'processed_file': str(processed_path),
+                'is_video': input_is_video,
+                'upload_type': upload_type,
+                'transcript_length': len(transcript) if transcript else 0,
+                'has_transcript': bool(transcript),
+                'dry_run': bool(dry_run),
+                'edit_plan_status': 'pending_review',
+            }
+            with open(get_file_path(review_dir, "metadata"), 'w') as f:
+                review_json.dump(metadata, f, indent=2)
+            if transcript:
+                with open(
+                    get_file_path(review_dir, "transcript"), 'w', encoding='utf-8'
+                ) as f:
+                    f.write(transcript)
+                if transcript_segments:
+                    save_transcript_timestamps(review_dir, transcript_segments)
+
+            try:
+                from ui.database import SermonRepository
+                repo = SermonRepository()
+                repo.save_sermon({
+                    'id': review_id,
+                    'title': review_title,
+                    'subtitle': subtitle or '',
+                    'series_title': series_title or '',
+                    'description': review_description,
+                    'scripture_reference': bible_text or '',
+                    'speaker': speaker_name or '',
+                    'recorded_date': recorded_date or '',
+                    'event_type': event_type or '',
+                    'bible_text': bible_text or '',
+                    'duration': int(_ffprobe_duration(processed_path) or 0),
+                    'status': 'draft',
+                    'file_paths': {
+                        'audio': str(processed_path),
+                        'metadata': str(get_file_path(review_dir, "metadata")),
+                    },
+                    'content': {
+                        'transcript_text': transcript or '',
+                        'description': review_description,
+                        'hashtags': review_hashtags,
+                    },
+                })
+                console_print("💾 Sermon saved locally for review (status: draft)")
+            except Exception as e:
+                logger.warning(f"Failed to save pending review sermon to local database: {e}")
+
+            try:
+                _save_edit_plan_row(
+                    review_id, gate_plan, 'pending_review', str(edit_source), gate_notes
+                )
+            except Exception as e:
+                logger.warning(f"Failed to save edit plan revision: {e}")
+
+            console_print(f"✂️  Edit plan saved for review: {review_id}")
+            _report(100, "Auto-edit plan saved for review")
+            result.update({
+                'success': True,
+                'sermon_id': review_id,
+                'title': review_title,
+                'description': review_description,
+                'hashtags': review_hashtags,
+                'output_dir': str(review_dir),
+                'edit_plan_status': 'pending_review',
+                'auto_edit_applied': False,
+            })
+            return result
+
+        def _log_auto_edit_applied(passed_sermon_id: str, upload_failed: bool = False) -> None:
+            confidence = auto_edit_state['plan'].confidence
+            if upload_failed:
+                console_print(
+                    f"✂️  Auto edit applied for sermon {passed_sermon_id} "
+                    f"(confidence {confidence:.2f}) but media upload failed"
+                )
+                return
+            console_print(
+                f"✂️  Auto edit applied for sermon {passed_sermon_id} "
+                f"(confidence {confidence:.2f})"
+            )
+
+        def _persist_auto_edit_applied_plan(
+            passed_sermon_id: str, upload_failed: bool = False
+        ) -> None:
+            assert auto_edit_state is not None
+            _log_auto_edit_applied(passed_sermon_id, upload_failed)
+            try:
+                _save_edit_plan_row(
+                    passed_sermon_id,
+                    auto_edit_state['plan'],
+                    'auto_applied',
+                    auto_edit_state['source_path'],
+                    auto_edit_state['notes'],
+                )
+            except Exception as e:
+                logger.warning(f"Failed to save applied edit plan: {e}")
+
+        def _auto_edit_output_root() -> Path:
+            root = Path(config.get('output_directory', 'processed_sermons'))
+            if not root.is_absolute():
+                root = Path(__file__).parent / root
+            return root
+
+        def _save_edit_plan_row(sermon_id_value: str, plan: EditPlan, status: str,
+                                source_path: str, notes: str) -> None:
+            from ui.database import SermonRepository
+            repo = SermonRepository()
+            repo.save_edit_plan_revision(sermon_id_value, {
+                'proposed_start': float(plan.start),
+                'proposed_end': float(plan.end),
+                'final_start': float(plan.start),
+                'final_end': float(plan.end),
+                'confidence': float(plan.confidence),
+                'needs_review': bool(plan.needs_review),
+                'evidence': plan.evidence,
+                'qa_judgment': plan.qa_judgment,
+                'reasoning': plan.reasoning,
+                'status': status,
+                'source_path': source_path,
+                'notes': notes,
+            })
+
+        if auto_edit_mode is not None:
+            auto_edit_cfg = config.get('auto_edit', {}) if isinstance(config, dict) else {}
+            gate_active = True
+            gate_mode = auto_edit_mode
+        else:
+            auto_edit_cfg = config.get('auto_edit', {}) if isinstance(config, dict) else {}
+            gate_active = bool(auto_edit_cfg.get('enabled', False)) or bool(edit_plan_file)
+            gate_mode = auto_edit_cfg.get('mode') or (
+                'interactive' if bool(auto_edit_cfg.get('require_review', False)) else 'auto'
+            )
+
+        if gate_active and not input_is_video:
+            console_print("⏭️  Auto-edit applies to video inputs only, skipping")
+            gate_active = False
+
+        if gate_active:
+            edit_source = audio_path if keeper_used else original_input_path
+            plan_duration = _ffprobe_duration(edit_source)
+
+            if edit_plan_file:
+                try:
+                    gate_plan = _load_edit_plan_from_file(edit_plan_file)
+                    gate_notes = "Plan loaded from --edit-plan-file"
+                except Exception as e:
+                    logger.error("Failed to load edit plan file %s: %s", edit_plan_file, e)
+                    result['error'] = f"Failed to load edit plan file: {e}"
+                    return result
+            else:
+                _report(56, "Detecting cut points...")
+                gate_plan = detect_cut_points(
+                    transcript_segments, llm_manager, config, plan_duration
+                )
+                gate_notes = f"Detected cut points (mode: {gate_mode})"
+
+            confidence_threshold = _auto_edit_confidence_threshold(auto_edit_cfg)
+            min_sermon_seconds = float(auto_edit_cfg.get('min_sermon_seconds', 600))
+
+            gate_apply = (
+                gate_mode == 'auto'
+                and not gate_plan.needs_review
+                and gate_plan.confidence >= confidence_threshold
+                and not validate_plan(gate_plan, plan_duration, min_sermon_seconds)
+            )
+
+            if not gate_apply:
+                return _persist_auto_edit_pending_review()
+
+            _report(58, "Applying automatic edit...")
+            logo_cfg = auto_edit_cfg.get('logo_path')
+            edit_logo_path = (
+                Path(logo_cfg).expanduser()
+                if logo_cfg and Path(str(logo_cfg)).expanduser().exists() else None
+            )
+            gate_plan.logo_hold = float(
+                auto_edit_cfg.get('logo_hold', gate_plan.logo_hold)
+            )
+            edit_fade_to_black = bool(auto_edit_cfg.get('fade_to_black', True))
+            edited_path = _auto_edit_output_root() / "edited" / (
+                f"{original_input_path.stem}_edited{original_input_path.suffix or '.mp4'}"
+            )
+            try:
+                edited_path = apply_edit(
+                    Path(edit_source),
+                    gate_plan,
+                    edited_path,
+                    logo_path=edit_logo_path,
+                    fade_to_black=edit_fade_to_black,
+                )
+            except Exception as e:
+                logger.error("Auto edit apply failed: %s", e)
+                console_print(f"⚠️  Auto edit apply failed ({e}); saving plan for review")
+                gate_plan.needs_review = True
+                gate_notes = f"{gate_notes}; apply failed: {e}".strip("; ")
+                return _persist_auto_edit_pending_review()
+
+            final_upload_path = edited_path
+            upload_type = "original-video"
+            auto_edit_state = {
+                'plan': gate_plan,
+                'source_path': str(edit_source),
+                'edited_path': str(edited_path),
+                'notes': gate_notes,
+            }
+            result['final_upload_path'] = str(edited_path)
+            result['upload_type'] = upload_type
+            result['auto_edit_applied'] = True
+            result['edit_plan_status'] = 'auto_applied'
+            console_print(f"✂️ Auto edit ready: {edited_path.name}")
+
         # Step 3: Generate metadata using transcript or fallback
         if transcript and not skip_ai_generation:
             console_print("🤖 Generating metadata from transcript...")
@@ -1964,6 +2297,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             sermon_id = f"draft_{safe_speaker}_{safe_date}_{safe_title}_{uuid.uuid4().hex[:8]}"
             result['sermon_id'] = sermon_id
 
+
             output_root = Path(config.get('output_directory', 'processed_sermons'))
             if not output_root.is_absolute():
                 output_root = Path(__file__).parent / output_root
@@ -2078,6 +2412,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 console_print("💾 Dry run sermon saved to local database (status: draft)")
             except Exception as e:
                 logger.warning(f"Failed to save dry run sermon to local database: {e}")
+
+            if auto_edit_state:
+                _persist_auto_edit_applied_plan(sermon_id)
 
             console_print(f"📁 Dry run files saved to: {output_dir}")
             _report(100, "Dry run complete")
@@ -2262,6 +2599,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 return result
 
         result['sermon_id'] = sermon_id
+        if auto_edit_state:
+            _log_auto_edit_applied(sermon_id)
         _report(90, f"Created sermon: {sermon_id}")
 
         # Single application path for series: the API ignores it during
@@ -2422,6 +2761,22 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 logger.warning(f"Failed to save sermon to local database: {e}")
 
             console_print(f"📁 Sermon files saved to: {output_dir}")
+
+            if auto_edit_state:
+                _persist_auto_edit_applied_plan(sermon_id)
+                edit_original = Path(auto_edit_state['source_path'])
+                edit_keeper = audio_path if keeper_used else edit_original
+                try:
+                    if should_delete_original(
+                        edit_original, edit_keeper, config, has_applied_plan=True
+                    ):
+                        edit_original.unlink()
+                        console_print(
+                            f"🗑️  Deleted original after applied edit: {edit_original.name}"
+                        )
+                except Exception as e:
+                    logger.warning("Original deletion after auto edit failed: %s", e)
+
             _report(100, f"Done - sermon {sermon_id} created and uploaded")
             result['success'] = True
             return result
@@ -2455,6 +2810,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 })
             except Exception as e:
                 logger.warning(f"Failed to save failed-upload sermon to DB: {e}")
+            if auto_edit_state:
+                _persist_auto_edit_applied_plan(sermon_id, upload_failed=True)
             return result
 
     except ProcessingCancelledError:
@@ -4431,6 +4788,17 @@ def handle_new_sermon(args):
     """Handle new-sermon subcommand."""
     console_print("🎵 Creating new sermon from audio file...")
 
+    cli_auto_edit_mode = getattr(args, 'auto_edit_mode', None)
+    if cli_auto_edit_mode is None and (
+        getattr(args, 'auto_edit', False) or getattr(args, 'edit_plan_file', None)
+    ):
+        auto_edit_cfg_cli = config.get('auto_edit', {}) if isinstance(config, dict) else {}
+        cli_auto_edit_mode = auto_edit_cfg_cli.get('mode')
+        if cli_auto_edit_mode is None:
+            cli_auto_edit_mode = (
+                'interactive' if bool(auto_edit_cfg_cli.get('require_review', False)) else 'auto'
+            )
+
     result = process_new_sermon(
         audio_file=args.audio_file,
         speaker_name=args.speaker,
@@ -4453,7 +4821,11 @@ def handle_new_sermon(args):
         clean_audio_script=getattr(
             args, 'clean_audio_script', '~/Documents/Repositories/deepfilternet/clean-audio.py'
         ),
-        clean_audio_device=getattr(args, 'clean_audio_device', 'auto'),
+        clean_audio_device=getattr(
+            args, 'clean_audio_device', 'auto'
+        ),
+        auto_edit_mode=cli_auto_edit_mode,
+        edit_plan_file=getattr(args, 'edit_plan_file', None),
     )
 
     if result.get('success'):
