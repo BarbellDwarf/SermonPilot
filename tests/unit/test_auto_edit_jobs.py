@@ -357,3 +357,64 @@ def test_apply_job_missing_plan_row_fails_before_pipeline(monkeypatch) -> None:
     assert result.success is False
     assert "draft_123" in result.message
     process.assert_not_called()
+
+
+def test_refine_job_calls_refine_with_notes(monkeypatch) -> None:
+    from ui.job_executors import execute_auto_edit_refine_job
+
+    refine = Mock(return_value={
+        "success": True,
+        "sermon_id": "draft_123",
+        "start": 120.0,
+        "end": 900.0,
+        "confidence": 0.9,
+        "needs_review": False,
+        "evidence": "fresh quote",
+        "qa_judgment": "cut",
+        "reasoning": "second class only",
+    })
+    monkeypatch.setattr("sermon_updater.refine_edit_plan", refine)
+    job = _job({
+        "refine": True,
+        "sermon_id": "draft_123",
+        "notes": "Keep only the second class",
+        "config": CONFIG,
+    })
+    result = execute_auto_edit_refine_job(job)
+    assert result.success is True
+    assert result.data["start"] == 120.0
+    assert refine.call_args.kwargs["notes"] == "Keep only the second class"
+    assert refine.call_args.args[0] == "draft_123"
+
+
+def test_refine_dispatch_routes_refine_jobs(monkeypatch) -> None:
+    refine = Mock(return_value={"success": True, "confidence": 0.8})
+    process = Mock(side_effect=AssertionError("pipeline must not run"))
+    monkeypatch.setattr("sermon_updater.refine_edit_plan", refine)
+    monkeypatch.setattr("sermon_updater.process_new_sermon", process)
+    job = _job({"refine": True, "sermon_id": "draft_123", "notes": "n", "config": CONFIG})
+    result = get_executor(JobType.AUTO_EDIT)(job)
+    assert result.success is True
+    refine.assert_called_once()
+    process.assert_not_called()
+
+
+def test_refine_job_requires_sermon_id() -> None:
+    from ui.job_executors import execute_auto_edit_refine_job
+
+    result = execute_auto_edit_refine_job(_job({"refine": True, "config": CONFIG}))
+    assert result.success is False
+    assert "sermon_id" in result.error
+
+
+def test_refine_job_failure_reports_error(monkeypatch) -> None:
+    from ui.job_executors import execute_auto_edit_refine_job
+
+    monkeypatch.setattr(
+        "sermon_updater.refine_edit_plan",
+        Mock(return_value={"success": False, "error": "no timestamped transcript"}),
+    )
+    job = _job({"refine": True, "sermon_id": "draft_123", "notes": "", "config": CONFIG})
+    result = execute_auto_edit_refine_job(job)
+    assert result.success is False
+    assert "no timestamped transcript" in result.error

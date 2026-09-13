@@ -7,9 +7,8 @@ from unittest.mock import Mock
 
 import pytest
 
-import src.auto_edit as auto_edit
-from src.auto_edit import EditPlan, build_detection_prompt, detect_cut_points, validate_plan
 import src.llm_manager as llm_manager_module
+from src.auto_edit import EditPlan, build_detection_prompt, detect_cut_points, validate_plan
 from src.llm_manager import LLMManager
 
 CANNED_JSON = json.dumps(
@@ -68,6 +67,21 @@ class TestBuildDetectionPrompt:
         prompt = build_detection_prompt(SEGMENTS)
         assert "[00:00-00:10] Welcome everyone, let us pray." in prompt
 
+    def test_refinement_context_encoded(self):
+        prompt = build_detection_prompt(
+            SEGMENTS,
+            previous_plan={"start": 10.0, "end": 200.0, "evidence": "old quote"},
+            rejection_notes="Keep only the second class",
+        )
+        assert "RE-DETECTION" in prompt
+        assert "Keep only the second class" in prompt
+        assert "old quote" in prompt
+        assert "Do not reuse the previous evidence" in prompt
+
+    def test_no_refinement_markers_without_context(self):
+        prompt = build_detection_prompt(SEGMENTS)
+        assert "RE-DETECTION" not in prompt
+
 
 class TestDetectCutPoints:
     def test_canned_json_parses(self):
@@ -88,6 +102,22 @@ class TestDetectCutPoints:
         plan = detect_cut_points(SEGMENTS, manager, CONFIG, duration=3700.0)
         assert plan.start == 245.0
         assert plan.needs_review is False
+
+    def test_refinement_context_reaches_llm_prompt(self):
+        manager = FakeLLMManager(CANNED_JSON)
+        plan = detect_cut_points(
+            SEGMENTS,
+            manager,
+            CONFIG,
+            duration=3700.0,
+            previous_plan={"start": 0.0, "end": 100.0, "evidence": "fallback"},
+            rejection_notes="Only the second class please",
+        )
+        assert plan.start == 245.0
+        user_content = manager.calls[0]["messages"][1]["content"]
+        assert "RE-DETECTION" in user_content
+        assert "Only the second class please" in user_content
+        assert "fallback" in user_content
 
     def test_malformed_json_falls_back(self):
         manager = FakeLLMManager("sorry, I cannot answer that in JSON")

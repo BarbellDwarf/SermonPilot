@@ -1159,6 +1159,29 @@ def _write_edit_plan_file(plan_id: int, start: float, end: float) -> str | None:
         return None
 
 
+def _enqueue_edit_refine(sermon_id: str, notes: str = "") -> str | None:
+    """Queue a re-detection job that uses reviewer notes as refinement context."""
+    try:
+        from job_queue import JobType, get_job_queue
+
+        job_queue = get_job_queue()
+        return job_queue.add_job(
+            job_type=JobType.AUTO_EDIT,
+            title=f"Re-detect cut points: {sermon_id}",
+            description="Re-run cut detection with reviewer notes",
+            parameters={
+                'refine': True,
+                'sermon_id': sermon_id,
+                'notes': notes,
+                'config': st.session_state.get('config', {}),
+            },
+            priority=7,
+        )
+    except Exception as e:
+        _set_feedback(f"Could not start re-detection: {e}", kind="error")
+        return None
+
+
 def _apply_approved_edit(
     sermon: dict[str, Any],
     plan: dict[str, Any],
@@ -1289,7 +1312,18 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
             st.caption(f"Review snippets unavailable: {e}")
 
         if status == "rejected":
-            st.info("This plan was rejected. Hook the file back into New Sermon to regenerate.")
+            st.info("This plan was rejected. Regenerate to get a fresh proposal.")
+            reject_notes_prev = plan.get("notes") or ""
+            if reject_notes_prev:
+                st.caption(f"Your notes: {reject_notes_prev}")
+            if st.button(
+                "Regenerate with notes",
+                type="primary",
+                key=f"editplan_regen_rejected_{sermon_id}",
+            ):
+                if _enqueue_edit_refine(sermon_id, reject_notes_prev):
+                    _set_feedback("Re-running detection with your notes. Watch the Jobs page.")
+                st.rerun()
             return
 
         full_sermon = _full_sermon_or_none(sermon, repo) or {}
@@ -1442,11 +1476,26 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
         if not problems:
             st.success("Plan validates cleanly")
 
+        prior_notes = []
+        for row in history:
+            row_notes = str(row.get("notes") or "").strip()
+            if row_notes and row_notes not in prior_notes:
+                prior_notes.append(row_notes)
+        if prior_notes:
+            with st.expander("Review notes history", expanded=False):
+                for idx, note in enumerate(prior_notes, start=1):
+                    st.caption(f"{idx}. {note}")
+
         reject_notes = st.text_input(
-            "Rejection notes (optional)", key=f"editplan_reject_notes_{sermon_id}"
+            "Rejection notes / re-detection instructions (optional)",
+            key=f"editplan_reject_notes_{sermon_id}",
+            help=(
+                "Rejecting with notes re-runs detection and sends these instructions "
+                "to the LLM (for example: keep only the second class)."
+            ),
         )
 
-        col_approve, col_reject, col_gap = st.columns([1, 1, 2])
+        col_approve, col_reject, col_regen, col_gap = st.columns([1, 1, 1, 1])
         approve_help = (
             "Disabled while validation reports problems: " + "; ".join(problems)
             if problems
@@ -1478,9 +1527,27 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                     "rejected",
                     notes=reject_notes,
                 ):
-                    _set_feedback("Edit plan rejected")
+                    if reject_notes.strip():
+                        if _enqueue_edit_refine(sermon_id, reject_notes.strip()):
+                            _set_feedback(
+                                "Plan rejected. Re-running detection with your notes; "
+                                "watch the Jobs page."
+                            )
+                    else:
+                        _set_feedback("Edit plan rejected. Use Regenerate to re-run detection.")
                 else:
                     _set_feedback("Could not reject the plan.", kind="error")
+                st.rerun()
+        with col_regen:
+            if st.button(
+                "Regenerate",
+                key=f"editplan_regen_{sermon_id}",
+                help="Re-run detection now, sending all notes from previous rejections.",
+            ):
+                if _enqueue_edit_refine(sermon_id, reject_notes.strip()):
+                    _set_feedback(
+                        "Re-running detection with accumulated notes. Watch the Jobs page."
+                    )
                 st.rerun()
 
 

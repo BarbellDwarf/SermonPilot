@@ -1150,8 +1150,73 @@ def execute_auto_edit_apply_job(job: Job) -> JobResult:
         )
 
 
+def execute_auto_edit_refine_job(job: Job) -> JobResult:
+    """Re-run cut detection for a sermon using rejection notes as refinement.
+
+    Required job parameters:
+        - sermon_id: the sermon whose current plan is being refined
+        - notes: the user's refinement instructions (may be empty)
+        - config: full config dict
+    """
+    try:
+        if job.cancelled or job.status == JobStatus.CANCELLED:
+            raise JobCancelledError("Job cancelled by user")
+
+        sermon_id = job.parameters.get('sermon_id')
+        notes = job.parameters.get('notes') or ''
+        config = job.parameters.get('config') or {}
+
+        if not sermon_id:
+            return JobResult(
+                success=False,
+                message="Missing sermon_id for re-detection",
+                error="Missing sermon_id in job parameters"
+            )
+
+        _inject_sermon_updater_config(config)
+        job.update_progress(10, "Re-running cut detection with your notes...")
+
+        from sermon_updater import refine_edit_plan
+
+        result = refine_edit_plan(sermon_id, notes=notes, config=config)
+
+        if not result.get('success'):
+            err = result.get('error') or 'Re-detection failed'
+            job.add_log(err)
+            return JobResult(
+                success=False,
+                message=f"Re-detection failed: {err}",
+                error=err,
+            )
+
+        job.update_progress(100, "New cut proposal ready for review")
+        job.add_log(
+            f"Re-detected plan: start={result.get('start')}, end={result.get('end')}, "
+            f"confidence={result.get('confidence')}"
+        )
+        return JobResult(
+            success=True,
+            message=f"New cut proposal ready (confidence {result.get('confidence', 0):.2f})",
+            data=result,
+        )
+
+    except JobCancelledError:
+        raise
+    except Exception as e:
+        error_msg = f"Auto-edit re-detection job failed: {e}"
+        job.add_log(error_msg)
+        logger.exception(error_msg)
+        return JobResult(
+            success=False,
+            message="Auto-edit re-detection job failed",
+            error=str(e),
+        )
+
+
 def _execute_auto_edit_dispatch(job: Job) -> JobResult:
-    """Route AUTO_EDIT jobs: apply continuation when plan_id is present."""
+    """Route AUTO_EDIT jobs: refine, apply continuation, or fresh processing."""
+    if job.parameters.get('refine'):
+        return execute_auto_edit_refine_job(job)
     if job.parameters.get('plan_id') is not None:
         return execute_auto_edit_apply_job(job)
     return execute_auto_edit_job(job)

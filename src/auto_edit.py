@@ -38,7 +38,12 @@ def _format_timestamp(seconds: float) -> str:
     return f"{seconds // 60:02d}:{seconds % 60:02d}"
 
 
-def build_detection_prompt(segments: list[dict[str, Any]], qa_margin_seconds: float = 3.0) -> str:
+def build_detection_prompt(
+    segments: list[dict[str, Any]],
+    qa_margin_seconds: float = 3.0,
+    previous_plan: dict[str, Any] | None = None,
+    rejection_notes: str | None = None,
+) -> str:
     transcript_lines = []
     for segment in segments:
         start = float(segment.get("start", 0.0) or 0.0)
@@ -46,6 +51,31 @@ def build_detection_prompt(segments: list[dict[str, Any]], qa_margin_seconds: fl
         text = str(segment.get("text", "")).strip()
         transcript_lines.append(f"[{_format_timestamp(start)}-{_format_timestamp(end)}] {text}")
     transcript = "\n".join(transcript_lines)
+
+    refinement = ""
+    if previous_plan is not None or rejection_notes:
+        prev_start = previous_plan.get("start") if previous_plan else None
+        prev_end = previous_plan.get("end") if previous_plan else None
+        prev_evidence = (previous_plan.get("evidence") if previous_plan else "") or ""
+        notes = (rejection_notes or "").strip()
+        refinement = f"""
+
+This is a RE-DETECTION. The publisher rejected the previous proposal and gave notes.
+Treat the notes as the user's editing instructions, not just a timestamp tweak: they may
+redefine WHICH content to include or exclude entirely (for example, skip an earlier
+class when two are recorded back to back, or keep only a later session). Honour the
+notes first, then re-derive start and end from the transcript.
+
+Previous proposal:
+- start: {prev_start}
+- end: {prev_end}
+- evidence: {prev_evidence[:400]}
+
+Publisher notes (authoritative):
+"{notes}"
+
+Re-propose start and end so they satisfy the notes, and quote FRESH transcript lines
+as evidence for the new proposal. Do not reuse the previous evidence."""
 
     return f"""You are analysing a timestamped transcript of a recorded sermon video.
 Identify two cut points so the publisher can trim pre-service content and post-service Q&A
@@ -69,7 +99,7 @@ Follow these rules exactly:
 5. The END point must sit {qa_margin_seconds} seconds BEFORE the first Q&A utterance so no
    question is clipped. Subtract that margin from your natural cut time.
 6. Quote the decisive transcript lines in evidence. Evidence is mandatory and must be non-empty.
-
+{refinement}
 Respond with STRICT JSON only, in exactly this shape:
 {{"start": <seconds>, "end": <seconds>, "confidence": <0-1>, "evidence": "<quoted lines>",
 "qa_judgment": "cut"|"teaching_continues", "reasoning": "<short>"}}
@@ -110,6 +140,8 @@ def detect_cut_points(
     llm_manager: Any,
     config: dict[str, Any] | None = None,
     duration: float | None = None,
+    previous_plan: dict[str, Any] | None = None,
+    rejection_notes: str | None = None,
 ) -> EditPlan:
     auto_edit_config = (config or {}).get("auto_edit", {})
     qa_margin_seconds = float(auto_edit_config.get("qa_margin_seconds", 3.0))
@@ -127,16 +159,23 @@ def detect_cut_points(
             logger.warning(f"auto_edit fallback plan invalid: {plan_needs_review}")
         return plan
 
-    prompt = build_detection_prompt(segments, qa_margin_seconds)
+    prompt = build_detection_prompt(
+        segments,
+        qa_margin_seconds,
+        previous_plan=previous_plan,
+        rejection_notes=rejection_notes,
+    )
     messages: list[dict[str, str]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
 
     plan: EditPlan | None = None
+    last_response = ""
     for attempt in range(1, 4):
         try:
             response = llm_manager.chat(messages, operation="auto_edit")
+            last_response = response or ""
             payload = json.loads(_strip_markdown_fences(response))
         except Exception as e:
             logger.warning(f"auto_edit: attempt {attempt}/3, LLM response unusable: {e}")
@@ -184,7 +223,12 @@ def detect_cut_points(
         break
 
     if plan is None:
-        logger.warning("auto_edit: LLM output unusable after 3 attempts, falling back")
+        preview = (last_response or "").strip().replace("\n", " ")[:300]
+        logger.warning(
+            "auto_edit: LLM output unusable after 3 attempts, falling back. "
+            "Last raw response preview (scrubbed, truncated): %r",
+            preview,
+        )
         return _fallback_plan(duration, "Detection fallback: LLM output not usable", "")
 
     problems = validate_plan(plan, duration, min_sermon_seconds)

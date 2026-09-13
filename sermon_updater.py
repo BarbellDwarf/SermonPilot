@@ -1089,6 +1089,97 @@ def _auto_edit_confidence_threshold(auto_edit_cfg: dict[str, Any]) -> float:
     return min(float(auto_edit_cfg.get('auto_confidence_threshold', 0.8)), 0.99)
 
 
+def refine_edit_plan(sermon_id: str, notes: str = "", config: dict | None = None) -> dict[str, Any]:
+    """Re-run cut detection with the user's rejection notes as refinement guidance."""
+    config = config or globals().get('config') or {}
+    result: dict[str, Any] = {'success': False, 'sermon_id': sermon_id, 'error': None}
+
+    try:
+        from ui.database import SermonRepository
+
+        repo = SermonRepository()
+        current = repo.get_current_edit_plan(sermon_id)
+        history = repo.get_edit_plan_history(sermon_id)
+        prior_notes = [
+            str(row.get('notes') or '').strip()
+            for row in history
+            if str(row.get('notes') or '').strip()
+        ]
+        combined_notes = '; '.join(dict.fromkeys(
+            [str(notes or '').strip()] + prior_notes
+        )).strip('; ')
+
+        output_root = Path(config.get('output_directory', 'processed_sermons'))
+        if not output_root.is_absolute():
+            output_root = Path(__file__).parent / output_root
+        sermon_dir = find_sermon_dir(output_root, sermon_id)
+        if sermon_dir is None:
+            result['error'] = f"Sermon directory not found for {sermon_id}"
+            return result
+
+        segments = read_transcript_timestamps(sermon_dir)
+        if not segments:
+            result['error'] = "No timestamped transcript available for re-detection"
+            return result
+
+        source_path = str((current or {}).get('source_path') or '')
+        duration = None
+        if source_path and Path(source_path).exists():
+            duration = _ffprobe_duration(source_path)
+        if not duration:
+            meta = read_metadata(sermon_dir) or {}
+            duration = float(meta.get('duration') or 0) or None
+
+        previous_plan = None
+        if current:
+            previous_plan = {
+                'start': current.get('proposed_start'),
+                'end': current.get('proposed_end'),
+                'evidence': current.get('evidence') or '',
+            }
+
+        plan = detect_cut_points(
+            segments,
+            llm_manager,
+            config,
+            duration,
+            previous_plan=previous_plan,
+            rejection_notes=combined_notes,
+        )
+
+        repo.save_edit_plan_revision(sermon_id, {
+            'proposed_start': float(plan.start),
+            'proposed_end': float(plan.end),
+            'final_start': None,
+            'final_end': None,
+            'confidence': float(plan.confidence),
+            'needs_review': True,
+            'evidence': plan.evidence,
+            'qa_judgment': plan.qa_judgment,
+            'reasoning': plan.reasoning,
+            'status': 'pending_review',
+            'source_path': source_path or None,
+            'notes': combined_notes,
+        })
+
+        result.update({
+            'success': True,
+            'start': plan.start,
+            'end': plan.end,
+            'confidence': plan.confidence,
+            'needs_review': plan.needs_review,
+            'evidence': plan.evidence,
+            'qa_judgment': plan.qa_judgment,
+            'reasoning': plan.reasoning,
+            'notes': combined_notes,
+            'duration': duration,
+        })
+    except Exception as e:
+        logger.exception("Edit plan refinement failed for %s", sermon_id)
+        result['error'] = str(e)
+    return result
+
+
 def _media_type_for_ext(path: str | Path) -> str:
     ext = Path(path).suffix.lower()
     return "video/mp4" if ext == ".mp4" else "video/mp4" if is_video_file(path) else "audio/mpeg"

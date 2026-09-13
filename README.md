@@ -162,9 +162,9 @@ python sermon_updater.py list --since-days 30
 
 ## Auto-Edit
 
-Drop the raw recording in and SermonPilot finds the sermon start and the Q&A boundary, cuts the dead time, adds a logo card, and uploads the edited video. Large raw files are shrunk first by the keeper transcode (NVENC, VAAPI, or libx264 at CRF 20), so there is no manual kdenlive pass for routine uploads. Interactive mode stops at a review panel in the Library where you can nudge timestamps, approve, reject, restore the original, or re-edit from full quality.
+Drop the raw recording in and SermonPilot finds the sermon start and the Q&A boundary, cuts the dead time, adds a logo card, and uploads the edited video. Large raw files are shrunk first by the keeper transcode (NVENC, VAAPI, or libx264 at CRF 20), so there is no manual kdenlive pass for routine uploads. Interactive mode stops at a review panel in the Library where you can nudge timestamps, approve, reject with notes (which re-runs detection using your instructions), regenerate a proposal, restore the original, or re-edit from full quality.
 
-Needs `ffmpeg` and an OpenAI-compatible endpoint set via `OPENCODE_GO_BASE_URL` and `OPENCODE_GO_API_KEY` in `.env`. Full setup, config tables, CLI flags, and the review workflow: [docs/AUTO_EDIT.md](docs/AUTO_EDIT.md).
+Needs `ffmpeg`. Cut detection runs on the configured LLM chain (Ollama by default), no extra environment variables needed. Full setup, config tables, CLI flags, and the review workflow: [docs/AUTO_EDIT.md](docs/AUTO_EDIT.md).
 
 ## Audio Enhancement
 
