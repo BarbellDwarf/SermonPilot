@@ -52,7 +52,8 @@ analytics_cache/
 analytics_vector_db/
 
 # Documentation and plans
-docs/AUTO_EDIT.md
+docs/*
+!docs/AUTO_EDIT.md
 copilot-plans/
 test-log.md
 testing-environment-requirements.md
