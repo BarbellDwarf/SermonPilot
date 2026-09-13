@@ -48,54 +48,102 @@ def show_new_sermon_enhanced():
 
 
 def _show_upload_section():
-    uploaded_file = st.file_uploader(
-        "Select sermon audio or video file",
-        type=['mp3', 'wav', 'm4a', 'flac', 'ogg', 'mp4', 'mov', 'webm', 'mkv'],
-        help="Supported formats: Audio (MP3, WAV, M4A, FLAC, OGG) and Video (MP4, MOV, WebM, MKV)"
-    )
+    ingest_tab, path_tab = st.tabs(["Browser Upload", "Server Path (large files)"])
 
-    if uploaded_file:
-        st.session_state.uploaded_file = uploaded_file
-
-        if st.session_state.get('autodetected_filename') != uploaded_file.name:
-            apply_filename_autodetect(uploaded_file.name)
-            st.session_state.autodetected_filename = uploaded_file.name
-            st.session_state.expand_metadata = True
-
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("File Size", f"{uploaded_file.size / (1024*1024):.1f} MB")
-        with col2:
-            st.metric("File Type", uploaded_file.type)
-        with col3:
-            name = (
-                uploaded_file.name[:20] + "..."
-                if len(uploaded_file.name) > 20 else uploaded_file.name
-            )
-            st.metric("File Name", name)
-        with col4:
-            duration = _get_media_duration(uploaded_file)
-            if duration:
-                st.metric("Duration", f"{duration:.1f} min")
+    with path_tab:
+        st.caption(
+            "Recommended for raw multi-GB recordings: drop the file into the watched "
+            "folder on Tower (/mnt/user/docker-data/sermonpilot/raw_ingest via SMB share) "
+            "and paste its path here. No browser upload, no memory cost."
+        )
+        path_input = st.text_input(
+            "Server-side file path",
+            key="server_file_path",
+            placeholder="/data/raw_ingest/2026-09-13_service.mkv",
+        )
+        if path_input:
+            p = Path(path_input)
+            exists = p.is_file()
+            size_gb = (p.stat().st_size / (1024 ** 3)) if exists else 0.0
+            ext_ok = p.suffix.lower() in {
+                '.mp3', '.wav', '.m4a', '.flac', '.ogg',
+                '.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v',
+            }
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Exists", "Yes" if exists else "No")
+            with col2:
+                st.metric("Size", f"{size_gb:.2f} GB" if exists else "-")
+            with col3:
+                st.metric("Type OK", "Yes" if ext_ok else "No")
+            if not exists:
+                st.error("File not found on the server. Check the path and volume mount.")
+            elif not ext_ok:
+                st.error(
+                    "Unsupported extension. Use mp3/wav/m4a/flac/ogg/mp4/mov/webm/mkv/avi/m4v."
+                )
             else:
-                st.metric("Duration", "Unknown")
-
-        max_preview_size = 100 * 1024 * 1024
-        if uploaded_file.size <= max_preview_size:
-            with st.expander("Preview", expanded=False):
-                try:
-                    video_exts = ('.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v')
-                    if any(uploaded_file.name.lower().endswith(e) for e in video_exts):
-                        st.video(uploaded_file)
-                    else:
-                        st.audio(uploaded_file, format=uploaded_file.type)
-                except Exception as e:
-                    st.warning(f"Could not preview file: {e}")
+                st.session_state.server_file_path = str(p)
+                st.session_state.server_file_name = p.name
+                if st.session_state.get('autodetected_filename') != p.name:
+                    apply_filename_autodetect(p.name)
+                    st.session_state.autodetected_filename = p.name
+                    st.session_state.expand_metadata = True
         else:
-            st.info(f"Preview skipped for files over {max_preview_size // (1024*1024)} MB")
-    else:
-        st.session_state.pop('uploaded_file', None)
-        st.session_state.pop('expand_metadata', False)
+            st.session_state.pop('server_file_path', None)
+
+    with ingest_tab:
+        uploaded_file = st.file_uploader(
+            "Select sermon audio or video file",
+            type=['mp3', 'wav', 'm4a', 'flac', 'ogg', 'mp4', 'mov', 'webm', 'mkv'],
+            help=(
+                "Supported formats: Audio (MP3, WAV, M4A, FLAC, OGG) and Video "
+                "(MP4, MOV, WebM, MKV). For files over ~2GB use the Server Path tab instead."
+            ),
+        )
+
+        if uploaded_file:
+            st.session_state.uploaded_file = uploaded_file
+
+            if st.session_state.get('autodetected_filename') != uploaded_file.name:
+                apply_filename_autodetect(uploaded_file.name)
+                st.session_state.autodetected_filename = uploaded_file.name
+                st.session_state.expand_metadata = True
+
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("File Size", f"{uploaded_file.size / (1024*1024):.1f} MB")
+            with col2:
+                st.metric("File Type", uploaded_file.type)
+            with col3:
+                name = (
+                    uploaded_file.name[:20] + "..."
+                    if len(uploaded_file.name) > 20 else uploaded_file.name
+                )
+                st.metric("File Name", name)
+            with col4:
+                duration = _get_media_duration(uploaded_file)
+                if duration:
+                    st.metric("Duration", f"{duration:.1f} min")
+                else:
+                    st.metric("Duration", "Unknown")
+
+            max_preview_size = 100 * 1024 * 1024
+            if uploaded_file.size <= max_preview_size:
+                with st.expander("Preview", expanded=False):
+                    try:
+                        video_exts = ('.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v')
+                        if any(uploaded_file.name.lower().endswith(e) for e in video_exts):
+                            st.video(uploaded_file)
+                        else:
+                            st.audio(uploaded_file, format=uploaded_file.type)
+                    except Exception as e:
+                        st.warning(f"Could not preview file: {e}")
+            else:
+                st.info(f"Preview skipped for files over {max_preview_size // (1024*1024)} MB")
+        else:
+            st.session_state.pop('uploaded_file', None)
+            st.session_state.pop('expand_metadata', False)
 
 
 def _show_metadata_section():
@@ -372,6 +420,8 @@ def _get_media_duration(uploaded_file):
 
 
 def _has_uploaded_file():
+    if st.session_state.get('server_file_path'):
+        return True
     return hasattr(st.session_state, 'uploaded_file') and st.session_state.uploaded_file is not None
 
 
@@ -427,21 +477,28 @@ def start_enhanced_processing():
             )
             return
 
+        server_path = st.session_state.get('server_file_path')
         uploaded_file = st.session_state.get('uploaded_file')
-        if uploaded_file is None:
+        if not server_path and uploaded_file is None:
             st.error("No file uploaded.")
             return
 
-        # upload_dir config key overrides the TMPDIR-backed default so long
-        # jobs don't fill a small RAM disk.
-        upload_dir = Path(
-            config.get('upload_dir') or (Path(tempfile.gettempdir()) / "sermon_uploads")
-        )
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        safe_name = Path(uploaded_file.name).name
-        saved_path = upload_dir / f"{int(_time.time() * 1000)}_{safe_name}"
-        with open(saved_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+        if server_path:
+            source_path = Path(server_path)
+            original_name = source_path.name
+            saved_path = source_path
+        else:
+            # upload_dir config key overrides the TMPDIR-backed default so long
+            # jobs don't fill a small RAM disk.
+            upload_dir = Path(
+                config.get('upload_dir') or (Path(tempfile.gettempdir()) / "sermon_uploads")
+            )
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            safe_name = Path(uploaded_file.name).name
+            saved_path = upload_dir / f"{int(_time.time() * 1000)}_{safe_name}"
+            with open(saved_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            original_name = uploaded_file.name
 
         speaker_name = _resolved_speaker_name()
         event_type = _resolved_event_type()
@@ -503,7 +560,7 @@ def start_enhanced_processing():
         }
 
         form_data['uploaded_file_path'] = str(saved_path)
-        form_data['original_filename'] = uploaded_file.name
+        form_data['original_filename'] = original_name
 
         job_queue = get_job_queue()
         job_id = job_queue.add_job(
@@ -534,7 +591,8 @@ def start_enhanced_processing():
 
 def reset_enhanced_form():
     keys_to_clear = [
-        'uploaded_file', 'metadata_complete', 'autodetected_filename',
+        'uploaded_file', 'server_file_path', 'server_file_name',
+        'metadata_complete', 'autodetected_filename',
         'speaker_name_select', 'speaker_name_custom',
         'recorded_date', 'event_type_select', 'event_type_custom', 'bible_text',
         'sermon_title', 'sermon_subtitle', 'sermon_description', 'sermon_hashtags',
