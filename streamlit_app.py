@@ -319,6 +319,18 @@ def reload_configuration():
     from ui.config_utils import reload_configuration as _reload_config
     return _reload_config()
 
+def _boot_media_server() -> None:
+    try:
+        from ui.media_server import start_media_server
+
+        output_dir = (st.session_state.config or {}).get("output_directory", "processed_sermons")
+        root = Path(output_dir)
+        if not root.is_absolute():
+            root = project_root / root
+        start_media_server(root)
+    except Exception:
+        pass
+
 def ensure_metadata_cache_refresh():
     """Start a non-blocking background refresh when the cached metadata is missing or stale."""
     if st.session_state.get('metadata_cache_refresh_started'):
@@ -346,6 +358,7 @@ def main():
         load_configuration()
 
     ensure_metadata_cache_refresh()
+    _boot_media_server()
 
     landing = st.Page(
         _dashboard_landing, title="Dashboard", visibility="hidden"
