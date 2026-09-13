@@ -29,6 +29,7 @@ FILENAMES = {
     "original_video": "original.mp4",
     "temp": "temp.mp3",
     "transcript": "transcript.txt",
+    "transcript_timestamps": "transcript_timestamps.json",
     "description": "description.txt",
     "hashtags": "hashtags.txt",
     "metadata": "metadata.json",
@@ -111,6 +112,33 @@ def read_metadata(sermon_dir: str | Path) -> dict[str, Any] | None:
     except (json.JSONDecodeError, OSError) as e:
         logger.warning("Failed to read metadata from %s: %s", meta_path, e)
         return None
+
+
+def save_transcript_timestamps(sermon_dir: str | Path, segments: list[dict[str, Any]]) -> bool:
+    """Write timed transcript segments to transcript_timestamps.json."""
+    if not segments:
+        return False
+    path = Path(sermon_dir) / FILENAMES["transcript_timestamps"]
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(segments, f, indent=2)
+        return True
+    except OSError as e:
+        logger.warning("Failed to save transcript timestamps to %s: %s", path, e)
+        return False
+
+
+def read_transcript_timestamps(sermon_dir: str | Path) -> list[dict[str, Any]]:
+    """Read timed transcript segments from transcript_timestamps.json."""
+    path = Path(sermon_dir) / FILENAMES["transcript_timestamps"]
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("Failed to read transcript timestamps from %s: %s", path, e)
+        return []
 
 
 def discover_sermons(output_root: str | Path) -> list[Path]:
