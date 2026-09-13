@@ -42,6 +42,18 @@ class FakeLLMManager:
         return self.response
 
 
+class SequenceLLMManager:
+    def __init__(self, responses: list[str]):
+        self.responses = list(responses)
+        self.calls: list[dict[str, Any]] = []
+
+    def chat(self, messages: list[dict[str, str]], operation: str = "", sermon_id=None) -> str:
+        self.calls.append({"messages": messages, "operation": operation})
+        if not self.responses:
+            raise AssertionError("chat called more times than scripted")
+        return self.responses.pop(0)
+
+
 class TestBuildDetectionPrompt:
     def test_contains_policy_markers(self):
         prompt = build_detection_prompt(SEGMENTS)
@@ -150,6 +162,54 @@ class TestDetectCutPoints:
     def test_defaults_used_when_no_config(self):
         plan = detect_cut_points([], FakeLLMManager(""), None, duration=100.0)
         assert plan.needs_review is True
+
+
+class TestDetectCutPointsRetries:
+    def test_empty_then_valid_json_succeeds(self):
+        manager = SequenceLLMManager(["", "   \n", CANNED_JSON])
+        plan = detect_cut_points(SEGMENTS, manager, CONFIG, duration=3700.0)
+        assert plan.start == 245.0
+        assert plan.end == 3612.0
+        assert plan.needs_review is False
+        assert len(manager.calls) == 3
+
+    def test_garbage_then_valid_json_succeeds(self):
+        manager = SequenceLLMManager(["", "sorry, no JSON here", CANNED_JSON])
+        plan = detect_cut_points(SEGMENTS, manager, CONFIG, duration=3700.0)
+        assert plan.start == 245.0
+        assert plan.needs_review is False
+        assert len(manager.calls) == 3
+
+    def test_exhausts_three_attempts_then_falls_back(self):
+        manager = SequenceLLMManager(["", "garbage", "also garbage"])
+        plan = detect_cut_points(SEGMENTS, manager, CONFIG, duration=3700.0)
+        assert plan.start == 0.0
+        assert plan.end == 3700.0
+        assert plan.needs_review is True
+        assert plan.confidence == 0.0
+        assert len(manager.calls) == 3
+
+    def test_sanity_check_failure_retried_and_exhausted(self):
+        manager = SequenceLLMManager(
+            [
+                json.dumps(
+                    {
+                        "start": 5000.0,
+                        "end": 1000.0,
+                        "confidence": 1.0,
+                        "evidence": "x",
+                        "qa_judgment": "cut",
+                        "reasoning": "",
+                    }
+                ),
+                "",
+                CANNED_JSON,
+            ]
+        )
+        plan = detect_cut_points(SEGMENTS, manager, CONFIG, duration=3700.0)
+        assert plan.start == 245.0
+        assert plan.needs_review is False
+        assert len(manager.calls) == 3
 
 
 class TestValidatePlan:
