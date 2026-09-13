@@ -51,7 +51,7 @@ def test_process_new_sermon_dry_run_skips_api_calls(tmp_path: Path, monkeypatch)
     transcribe = Mock()
     monkeypatch.setattr(su, "create_new_sermon_api", create)
     monkeypatch.setattr(su, "upload_media_file", upload)
-    monkeypatch.setattr(su, "transcribe", transcribe)
+    monkeypatch.setattr(su, "transcribe_segments", transcribe)
 
     result = su.process_new_sermon(
         str(audio_file),
