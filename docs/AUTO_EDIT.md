@@ -11,6 +11,10 @@ Two ways in:
 - **Server Path tab (recommended for multi-GB raw files).** Put the file in the raw-ingest folder (Docker host path `.../sermonpilot/raw_ingest`, seen inside the container as `/data/raw_ingest`), then paste the container path into the "Server Path (large files)" tab. The app reads the file from disk directly; nothing goes through the browser.
 - **Browser upload.** Works for smaller files. The limit is 30,720 MB (30 GB) by default and can be changed with the `STREAMLIT_SERVER_MAX_UPLOAD_SIZE` environment variable (Docker: set it in `.env`; standalone: same variable or edit `.streamlit/config.toml`). Streaming a 30 GB file through a browser POST is slow and memory-hungry, so prefer the Server Path tab at that size.
 
+### Resumability
+
+Browser uploads are **not resumable**: Streamlit buffers the upload server-side, and an interrupted POST has to start over. For large recordings, use the Server Path tab: copying the file to the ingest folder over SMB or rsync is interruptible and resumable at the transfer layer, and the app then reads it from disk. A resumable in-browser uploader (chunked upload endpoint + JS uploader) is deliberately out of scope for v1.7.0; see the follow-up issue linked from the map.
+
 kdenlive stays in the workflow for rare creative edits only: multi-cam cuts, titles, audio surgery. Everything routine is handled here.
 
 ## Requirements
@@ -87,7 +91,7 @@ If this pin fails to initialize or errors at call time, detection falls back to 
 ## Pipeline
 
 1. Upload (raw file goes in as-is)
-2. Options
+2. Options, including the **Edit Sermon (Auto-Edit)** section on the New Sermon page: enable, approval mode, ending card image, fade to black
 3. Audio processing, with the keeper transcode as a pre-step
 4. Timestamped transcription
 5. LLM cut detection, revision 1 saved to `edit_plans`
@@ -96,6 +100,8 @@ If this pin fails to initialize or errors at call time, detection falls back to 
 8. Logo card (part of the apply)
 9. Metadata
 10. Upload
+
+The form's section writes per-run overrides into the job config; with the checkbox off, the feature is skipped for that run regardless of the config default.
 
 ### Review gate
 
