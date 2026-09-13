@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_FFMPEG_TIMEOUT_SECONDS = 3600
 
 SYSTEM_PROMPT = (
     "You are a precise sermon video editor. You analyse timestamped sermon transcripts and "
@@ -33,14 +37,12 @@ def _format_timestamp(seconds: float) -> str:
     return f"{seconds // 60:02d}:{seconds % 60:02d}"
 
 
-def build_detection_prompt(
-    segments: list[dict[str, Any]], qa_margin_seconds: float = 3.0
-) -> str:
+def build_detection_prompt(segments: list[dict[str, Any]], qa_margin_seconds: float = 3.0) -> str:
     transcript_lines = []
     for segment in segments:
-        start = float(segment.get('start', 0.0) or 0.0)
-        end = float(segment.get('end', start) or start)
-        text = str(segment.get('text', '')).strip()
+        start = float(segment.get("start", 0.0) or 0.0)
+        end = float(segment.get("end", start) or start)
+        text = str(segment.get("text", "")).strip()
         transcript_lines.append(f"[{_format_timestamp(start)}-{_format_timestamp(end)}] {text}")
     transcript = "\n".join(transcript_lines)
 
@@ -77,13 +79,13 @@ timestamps above."""
 
 def _strip_markdown_fences(text: str) -> str:
     text = text.strip()
-    if text.startswith('```'):
-        text = text.split('\n', 1)[1] if '\n' in text else text
-        if text.rstrip().endswith('```'):
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else text
+        if text.rstrip().endswith("```"):
             text = text.rstrip()[:-3]
     text = text.strip()
-    first = text.find('{')
-    last = text.rfind('}')
+    first = text.find("{")
+    last = text.rfind("}")
     if first != -1 and last > first:
         text = text[first : last + 1]
     return text.strip()
@@ -108,9 +110,9 @@ def detect_cut_points(
     config: dict[str, Any] | None = None,
     duration: float | None = None,
 ) -> EditPlan:
-    auto_edit_config = (config or {}).get('auto_edit', {})
-    qa_margin_seconds = float(auto_edit_config.get('qa_margin_seconds', 3.0))
-    min_sermon_seconds = float(auto_edit_config.get('min_sermon_seconds', 600))
+    auto_edit_config = (config or {}).get("auto_edit", {})
+    qa_margin_seconds = float(auto_edit_config.get("qa_margin_seconds", 3.0))
+    min_sermon_seconds = float(auto_edit_config.get("min_sermon_seconds", 600))
 
     if not segments:
         logger.warning("auto_edit: no timestamped segments, returning needs_review plan")
@@ -126,31 +128,36 @@ def detect_cut_points(
 
     prompt = build_detection_prompt(segments, qa_margin_seconds)
     messages: list[dict[str, str]] = [
-        {'role': 'system', 'content': SYSTEM_PROMPT},
-        {'role': 'user', 'content': prompt},
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
     ]
 
     try:
-        response = llm_manager.chat(messages, operation='auto_edit')
+        response = llm_manager.chat(messages, operation="auto_edit")
         payload = json.loads(_strip_markdown_fences(response))
     except Exception as e:
         logger.warning(f"auto_edit: LLM response unusable, falling back: {e}")
         return _fallback_plan(duration, "Detection fallback: LLM output not usable", "")
 
     try:
-        start = float(payload['start'])
-        end = float(payload['end'])
-        confidence = float(payload.get('confidence', 0.0))
-        evidence = str(payload.get('evidence', ''))
-        qa_judgment = str(payload.get('qa_judgment', 'cut'))
-        reasoning = str(payload.get('reasoning', ''))
+        start = float(payload["start"])
+        end = float(payload["end"])
+        confidence = float(payload.get("confidence", 0.0))
+        evidence = str(payload.get("evidence", ""))
+        qa_judgment = str(payload.get("qa_judgment", "cut"))
+        reasoning = str(payload.get("reasoning", ""))
     except (KeyError, TypeError, ValueError) as e:
         logger.warning(f"auto_edit: LLM JSON missing or invalid fields: {e}")
         return _fallback_plan(duration, "Detection fallback: LLM output not usable", "")
 
-    if not (0 <= start < end) or not evidence.strip() or qa_judgment not in (
-        'cut',
-        'teaching_continues',
+    if (
+        not (0 <= start < end)
+        or not evidence.strip()
+        or qa_judgment
+        not in (
+            "cut",
+            "teaching_continues",
+        )
     ):
         logger.warning("auto_edit: LLM JSON failed sanity checks, falling back")
         return _fallback_plan(duration, "Detection fallback: LLM output not usable", "")
@@ -200,3 +207,183 @@ def validate_plan(
         )
 
     return problems
+
+
+XFADE_SECONDS = 0.8
+
+
+def _run_ffmpeg(cmd: list[str]) -> None:
+    try:
+        subprocess.run(
+            cmd, capture_output=True, text=True, timeout=_FFMPEG_TIMEOUT_SECONDS, check=True
+        )
+    except subprocess.CalledProcessError as e:
+        stderr_tail = (e.stderr or "")[-400:]
+        raise RuntimeError(f"apply_edit ffmpeg failed: {stderr_tail}") from e
+
+
+def _fmt(seconds: float) -> str:
+    return f"{seconds:.3f}"
+
+
+def apply_edit(
+    source: Path,
+    plan: EditPlan,
+    out: Path,
+    logo_path: Path | None = None,
+    fade_to_black: bool | None = None,
+) -> Path:
+    if fade_to_black is None:
+        fade_to_black = plan.fade_to_black
+    if plan.start < 0 or plan.end <= plan.start:
+        raise ValueError(f"invalid edit plan: start={plan.start} end={plan.end}")
+
+    fade_in = max(plan.fade_in, 0.0)
+    logo_hold = max(plan.logo_hold, 0.0)
+    content_dur = plan.end - plan.start
+    fade_out_start = max(content_dur - fade_in, 0.0)
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd: list[str] = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        _fmt(plan.start),
+        "-to",
+        _fmt(plan.end),
+        "-i",
+        str(source),
+    ]
+
+    filters: list[str] = []
+    fade_in_filter = f"fade=t=in:st=0.000:d={_fmt(fade_in)}"
+
+    if logo_path is not None and logo_hold > 0:
+        cmd += ["-loop", "1", "-t", _fmt(logo_hold), "-i", str(logo_path)]
+        total = content_dur + logo_hold - XFADE_SECONDS
+        filters.append(
+            f"[0:v]setpts=PTS-STARTPTS,{fade_in_filter},"
+            f"fade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},settb=1/25[cv]"
+        )
+        filters.append("[1:v][cv]scale2ref=w=iw:h=ih[lg0][cvr]")
+        filters.append("[lg0]fps=25,settb=1/25[lg]")
+        filters.append(
+            f"[cvr][lg]xfade=transition=fade:duration={XFADE_SECONDS:.3f}"
+            f":offset={_fmt(content_dur - XFADE_SECONDS)}[xv]"
+        )
+        if fade_to_black:
+            end_fade_start = max(total - fade_in, 0.0)
+            filters.append(f"[xv]fade=t=out:st={_fmt(end_fade_start)}:d={_fmt(fade_in)}[vout]")
+        else:
+            filters.append("[xv]null[vout]")
+        filters.append(
+            f"[0:a]afade=t=in:st=0.000:d={_fmt(fade_in)},"
+            f"afade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},apad[aout]"
+        )
+    else:
+        total = content_dur
+        video_chain = f"[0:v]setpts=PTS-STARTPTS,{fade_in_filter}"
+        if fade_to_black and content_dur > 0:
+            audio_chain = (
+                f"afade=t=in:st=0.000:d={_fmt(fade_in)},"
+                f"afade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},apad"
+            )
+            video_chain += f",fade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)}"
+        else:
+            audio_chain = f"afade=t=in:st=0.000:d={_fmt(fade_in)}"
+        filters.append(video_chain + "[vout]")
+        filters.append(f"[0:a]{audio_chain}[aout]")
+
+    cmd += [
+        "-filter_complex",
+        ";".join(filters),
+        "-map",
+        "[vout]",
+        "-map",
+        "[aout]",
+        "-t",
+        _fmt(total),
+        "-c:v",
+        "libx264",
+        "-crf",
+        "20",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "160k",
+        str(out),
+    ]
+
+    _run_ffmpeg(cmd)
+    return out
+
+
+def _render_snippet(source: Path, start: float, end: float, out: Path) -> Path:
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        _fmt(start),
+        "-to",
+        _fmt(end),
+        "-i",
+        str(source),
+        "-c:v",
+        "libx264",
+        "-crf",
+        "28",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "96k",
+        str(out),
+    ]
+    _run_ffmpeg(cmd)
+    return out
+
+
+def render_review_snippets(
+    source: Path,
+    plan: EditPlan,
+    out_dir: Path,
+    logo_path: Path | None = None,
+) -> list[Path]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    snippets: list[Path] = []
+
+    start_window = (max(plan.start - 10.0, 0.0), plan.start + 10.0)
+    end_window = (max(plan.end - 10.0, 0.0), plan.end + 10.0)
+
+    for name, (ws, we) in (("snippet_start.mp4", start_window), ("snippet_end.mp4", end_window)):
+        if we - ws >= 0.5:
+            try:
+                snippets.append(_render_snippet(source, ws, we, out_dir / name))
+            except RuntimeError as e:
+                logger.warning(f"auto_edit: review snippet {name} failed: {e}")
+
+    span_start = max(plan.start, plan.end - 30.0)
+    if plan.end - span_start >= 0.5:
+        preview_plan = EditPlan(
+            start=span_start,
+            end=plan.end,
+            fade_in=plan.fade_in,
+            logo_hold=plan.logo_hold,
+            fade_to_black=True,
+        )
+        try:
+            snippets.append(
+                apply_edit(source, preview_plan, out_dir / "snippet_ending.mp4", logo_path)
+            )
+        except (RuntimeError, ValueError) as e:
+            logger.warning(f"auto_edit: ending snippet failed: {e}")
+
+    return snippets
