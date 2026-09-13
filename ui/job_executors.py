@@ -417,6 +417,13 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
                     error=f"Form data missing {required_key}"
                 )
 
+        auto_edit_enabled = job.parameters.get('auto_edit_enabled')
+        auto_edit_mode = job.parameters.get('auto_edit_mode')
+        if auto_edit_enabled is False:
+            auto_edit_mode = None
+        elif auto_edit_enabled is True and auto_edit_mode is None:
+            auto_edit_mode = 'interactive'
+
         # Inject the config into the sermon_updater module so that its
         # module-level constants (api_key, broadcaster_id, LLM manager, etc.)
         # are correct for this job, and the sermonaudio library gets the
@@ -468,6 +475,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             custom_file=form_data.get('custom_file'),
             config=config,
             progress_callback=progress_cb,
+            auto_edit_mode=auto_edit_mode,
             cancel_check=lambda: _raise_if_job_cancelled(job),
         )
 
@@ -477,6 +485,15 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
 
         if result.get('success'):
             sermon_id = result.get('sermon_id')
+            plan_status = result.get('edit_plan_status')
+            if plan_status == 'pending_review':
+                job.add_log("Auto-edit cut awaits manual review")
+                return JobResult(
+                    success=True,
+                    message=(f"Auto-edit cut awaiting manual review "
+                             f"({sermon_id or 'dry run'})"),
+                    data=_trim_result_payload(result),
+                )
             job.add_log(f"Sermon created: {sermon_id or '(dry run)'}")
             _cleanup_uploaded_copy(config, uploaded_file_path, job)
             return JobResult(

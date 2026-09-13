@@ -89,8 +89,6 @@ def _show_upload_section():
                     apply_filename_autodetect(p.name)
                     st.session_state.autodetected_filename = p.name
                     st.session_state.expand_metadata = True
-        else:
-            st.session_state.pop('server_file_path', None)
 
     with ingest_tab:
         uploaded_file = st.file_uploader(
@@ -268,6 +266,114 @@ def _show_processing_section():
 
     st.checkbox("Dry Run (Preview Only)", key="dry_run",
                 help="Process locally but don't upload to SermonAudio")
+
+    _show_auto_edit_section()
+
+
+def _branding_dir() -> Path:
+    config = st.session_state.get('config', {})
+    configured = config.get('branding_dir') if isinstance(config, dict) else None
+    if configured:
+        path = Path(configured)
+    elif Path('/data').is_dir() and os.access('/data', os.W_OK):
+        path = Path('/data/branding')
+    else:
+        path = project_root / 'branding'
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _show_auto_edit_section():
+    config = st.session_state.get('config', {})
+    auto_cfg = config.get('auto_edit', {}) if isinstance(config, dict) else {}
+
+    st.markdown("**Edit Sermon (Auto-Edit)**")
+    st.session_state.setdefault('auto_edit_enabled', bool(auto_cfg.get('enabled', False)))
+    auto_edit_enabled = st.checkbox(
+        "Edit Sermon (auto-detect cut points, trim, fades)",
+        key="auto_edit_enabled",
+        help=(
+            "Use the transcript to find where the teaching starts and where Q&A begins, "
+            "then trim and fade the video before upload. Video inputs only."
+        ),
+    )
+
+    if not auto_edit_enabled:
+        return
+
+    col1, col2 = st.columns(2)
+    with col1:
+        mode_options = ["interactive", "auto"]
+        default_mode = str(auto_cfg.get('mode', 'interactive')).lower()
+        if default_mode not in mode_options:
+            default_mode = "interactive"
+        st.session_state.setdefault('auto_edit_mode', default_mode)
+        st.selectbox(
+            "Approval Mode",
+            options=mode_options,
+            key="auto_edit_mode",
+            help=(
+                "interactive: stop at pending review for your approval before encode+upload. "
+                "auto: apply automatically when confident; uncertain plans always stop for review."
+            ),
+        )
+    with col2:
+        st.session_state.setdefault(
+            'auto_edit_fade_to_black', bool(auto_cfg.get('fade_to_black', True))
+        )
+        st.checkbox(
+            "Fade to Black After Ending Card",
+            key="auto_edit_fade_to_black",
+            help="Append a fade-to-black tail after the ending card.",
+        )
+
+    _show_logo_picker(auto_cfg)
+
+
+def _show_logo_picker(auto_cfg: dict):
+    branding = _branding_dir()
+    logos = sorted(
+        p.name for p in branding.iterdir()
+        if p.suffix.lower() in {'.png', '.jpg', '.jpeg', '.webp'}
+    )
+    none_label = "(none - fade to black)"
+    options = [none_label] + logos + ["Upload new..."]
+    configured = auto_cfg.get('logo_path') or ''
+    default_index = 0
+    if configured:
+        configured_name = Path(str(configured)).name
+        if configured_name in logos:
+            default_index = options.index(configured_name)
+    st.session_state.setdefault('auto_edit_logo_choice', options[default_index])
+    if st.session_state.get('auto_edit_logo_choice') not in options:
+        st.session_state.auto_edit_logo_choice = options[default_index]
+
+    choice = st.selectbox(
+        "Ending Card Image",
+        options=options,
+        key="auto_edit_logo_choice",
+        help=(
+            f"Images from the branding folder ({branding}). "
+            "Upload once, reused for future sermons."
+        ),
+    )
+
+    logo_path_value = ''
+    if choice == "Upload new...":
+        uploaded_logo = st.file_uploader(
+            "Upload logo image", type=['png', 'jpg', 'jpeg', 'webp'],
+            key="auto_edit_logo_upload",
+        )
+        if uploaded_logo is not None:
+            dest = branding / Path(uploaded_logo.name).name
+            dest.write_bytes(uploaded_logo.getbuffer())
+            logo_path_value = str(dest)
+            st.caption(f"Saved {dest.name} to the branding folder; it will be selectable next run.")
+        else:
+            logo_path_value = st.session_state.get('auto_edit_logo_path', '')
+    elif choice != none_label:
+        logo_path_value = str(branding / choice)
+    st.session_state['auto_edit_logo_path'] = logo_path_value
 
 
 def _show_openai_whisper_ui():
@@ -522,6 +628,24 @@ def start_enhanced_processing():
         transcribe = st.session_state.get('transcribe', True)
         generate_ai = st.session_state.get('generate_description', True)
 
+        auto_edit_enabled = bool(st.session_state.get('auto_edit_enabled', False))
+        auto_edit_mode = st.session_state.get('auto_edit_mode', 'interactive')
+        if auto_edit_mode not in ('interactive', 'auto'):
+            auto_edit_mode = 'interactive'
+        auto_edit_logo_path = st.session_state.get('auto_edit_logo_path', '')
+        auto_edit_fade_to_black = bool(st.session_state.get('auto_edit_fade_to_black', True))
+
+        job_config = {
+            **config,
+            'auto_edit': {
+                **config.get('auto_edit', {}),
+                'enabled': auto_edit_enabled,
+                'mode': auto_edit_mode,
+                'logo_path': auto_edit_logo_path,
+                'fade_to_black': auto_edit_fade_to_black,
+            },
+        }
+
         backend = st.session_state.get('selected_backend', 'faster_whisper_local')
         if backend == 'whisper_openai':
             whisper_model = st.session_state.get('whisper_model_openai', 'whisper-1')
@@ -557,6 +681,10 @@ def start_enhanced_processing():
             'dry_run': bool(st.session_state.get('dry_run', False)),
             'generate_short_title': bool(st.session_state.get('generate_short_title', False)),
             'validate_quality': bool(st.session_state.get('validate_description', True)),
+            'auto_edit_enabled': auto_edit_enabled,
+            'auto_edit_mode': auto_edit_mode,
+            'auto_edit_logo_path': auto_edit_logo_path,
+            'auto_edit_fade_to_black': auto_edit_fade_to_black,
         }
 
         form_data['uploaded_file_path'] = str(saved_path)
@@ -571,9 +699,11 @@ def start_enhanced_processing():
             ),
             parameters={
                 'form_data': form_data,
-                'config': config,
+                'config': job_config,
                 'processing_type': 'new_sermon',
                 'uploaded_file_path': str(saved_path),
+                'auto_edit_enabled': auto_edit_enabled,
+                'auto_edit_mode': auto_edit_mode if auto_edit_enabled else None,
             },
             priority=8
         )
