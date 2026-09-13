@@ -1059,6 +1059,63 @@ def _ffprobe_duration(path: str | Path) -> float | None:
         return None
 
 
+def _probe_stream_bounds(path: str | Path, stream: str) -> tuple[float, float] | None:
+    """Return the first and last packet PTS (seconds) for one stream, or None."""
+    duration = _ffprobe_duration(path)
+    if not duration:
+        return None
+    try:
+        first = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-select_streams', stream,
+             '-show_entries', 'packet=pts_time', '-of', 'csv=p=0',
+             '-read_intervals', '%+#1', str(path)],
+            capture_output=True, text=True, timeout=120,
+        )
+        tail_start = max(duration - 30.0, 0.0)
+        tail = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-select_streams', stream,
+             '-show_entries', 'packet=pts_time', '-of', 'csv=p=0',
+             '-read_intervals', f'{tail_start:.3f}%+30', str(path)],
+            capture_output=True, text=True, timeout=600,
+        )
+    except Exception:
+        return None
+
+    def _times(text: str) -> list[float]:
+        values: list[float] = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line == 'N/A':
+                continue
+            try:
+                values.append(float(line))
+            except ValueError:
+                continue
+        return values
+
+    starts = _times(first.stdout)
+    ends = _times(tail.stdout)
+    if not starts or not ends:
+        return None
+    return min(starts), max(ends)
+
+
+def _verify_mux_av_sync(path: str | Path, tolerance: float = 0.2) -> list[str]:
+    """Return human-readable A/V start/end offsets beyond tolerance for a muxed file."""
+    video = _probe_stream_bounds(path, 'v:0')
+    audio = _probe_stream_bounds(path, 'a:0')
+    if not video or not audio:
+        return ['could not probe A/V stream bounds']
+    problems: list[str] = []
+    start_delta = abs(video[0] - audio[0])
+    if start_delta > tolerance:
+        problems.append(f'stream start delta {start_delta:.3f}s')
+    end_delta = abs(video[1] - audio[1])
+    if end_delta > tolerance:
+        problems.append(f'stream end delta {end_delta:.3f}s')
+    return problems
+
+
 _EDIT_PLAN_FILE_KEYS = {
     'start', 'end', 'fade_in', 'logo_hold', 'fade_to_black',
     'confidence', 'needs_review', 'evidence', 'qa_judgment', 'reasoning',
@@ -1895,12 +1952,21 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     final_video = original_input_path.with_name(
                         f"{original_input_path.stem}_enhanced{original_input_path.suffix}"
                     )
+                    # Encode the enhancer's WAV directly rather than remuxing
+                    # the AAC upload copy: a second AAC generation carries
+                    # encoder priming delay the mux would not compensate.
+                    mux_audio_input = Path(enhanced_audio_path)
+                    if temp_dir is not None:
+                        wav_candidate = temp_dir / "enhanced_audio.wav"
+                        if wav_candidate.exists():
+                            mux_audio_input = wav_candidate
                     mux_cmd = [
                         "ffmpeg", "-y",
                         "-i", str(original_input_path),
-                        "-i", str(enhanced_audio_path),
+                        "-i", str(mux_audio_input),
                         "-c:v", "copy",
                         "-c:a", "aac",
+                        "-b:a", "192k",
                         "-map", "0:v:0",
                         "-map", "1:a:0",
                         "-shortest",
@@ -1908,6 +1974,15 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     ]
                     logger.info("Muxing enhanced audio into video: %s", " ".join(mux_cmd))
                     mux_proc.run(mux_cmd, capture_output=True, text=True, timeout=600, check=True)
+                    sync_problems = _verify_mux_av_sync(final_video)
+                    if sync_problems:
+                        logger.warning(
+                            "A/V sync check on %s: %s", final_video, "; ".join(sync_problems)
+                        )
+                        console_print(f"⚠️  A/V sync check: {'; '.join(sync_problems)}")
+                    else:
+                        logger.info("A/V sync check passed for %s", final_video)
+                        console_print("✅ A/V sync check passed (A/V within 0.2s)")
                     final_upload_path = final_video
                     upload_type = "original-video"
                     console_print(f"🎬 Muxed enhanced audio into video: {final_video.name}")
