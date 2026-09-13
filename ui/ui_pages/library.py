@@ -615,7 +615,7 @@ def show_library():
                 )
 
         # Main layout with two columns
-        col_list, col_detail = st.columns([3, 2])
+        col_list, col_detail = st.columns([2, 3])
 
         with col_list:
             st.markdown("### Sermons")
@@ -1495,7 +1495,7 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
             ),
         )
 
-        col_approve, col_reject, col_regen, col_gap = st.columns([1, 1, 1, 1])
+        col_approve, col_reject, col_regen = st.columns([1, 1, 1])
         approve_help = (
             "Disabled while validation reports problems: " + "; ".join(problems)
             if problems
@@ -1508,6 +1508,7 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                 key=f"editplan_approve_{sermon_id}",
                 disabled=bool(problems),
                 help=approve_help,
+                width="stretch",
             ):
                 if not repo.update_edit_plan_status(
                     plan.get("id"),
@@ -1521,7 +1522,7 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                 _apply_approved_edit(sermon, plan, repo, float(start_val), float(end_val))
                 st.rerun()
         with col_reject:
-            if st.button("Reject", key=f"editplan_reject_{sermon_id}"):
+            if st.button("Reject", key=f"editplan_reject_{sermon_id}", width="stretch"):
                 if repo.update_edit_plan_status(
                     plan.get("id"),
                     "rejected",
@@ -1543,6 +1544,7 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                 "Regenerate",
                 key=f"editplan_regen_{sermon_id}",
                 help="Re-run detection now, sending all notes from previous rejections.",
+                width="stretch",
             ):
                 if _enqueue_edit_refine(sermon_id, reject_notes.strip()):
                     _set_feedback(

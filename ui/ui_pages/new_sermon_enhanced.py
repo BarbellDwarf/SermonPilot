@@ -446,9 +446,18 @@ def _show_start_section():
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("**File & Content:**")
-        if _has_uploaded_file():
-            st.write(f"• File: {st.session_state.uploaded_file.name}")
-            st.write(f"• Size: {st.session_state.uploaded_file.size / (1024*1024):.1f} MB")
+        if st.session_state.get('server_file_path'):
+            server_path = Path(st.session_state.server_file_path)
+            st.write(f"• File: {st.session_state.get('server_file_name') or server_path.name}")
+            try:
+                size_mb = server_path.stat().st_size / (1024 * 1024)
+                st.write(f"• Size: {size_mb:.1f} MB")
+            except OSError:
+                pass
+        elif st.session_state.get('uploaded_file') is not None:
+            uploaded = st.session_state.uploaded_file
+            st.write(f"• File: {uploaded.name}")
+            st.write(f"• Size: {uploaded.size / (1024*1024):.1f} MB")
         else:
             st.write("• File: none selected")
         st.write(f"• Speaker: {_resolved_speaker_name() or 'N/A'}")
