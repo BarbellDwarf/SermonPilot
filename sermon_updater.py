@@ -59,6 +59,8 @@ from src.sermon_paths import (  # noqa: E402
     get_file_path,
     get_sermon_dir,
     read_metadata,
+    read_transcript_timestamps,
+    save_transcript_timestamps,
 )
 
 print("   🤖 Loading AI components...")
@@ -95,7 +97,7 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
         ProcessingOrchestrator,
         SermonFilter,
     )
-    from transcription import TranscriptionError, transcribe
+    from transcription import TranscriptionError, transcribe_segments
     try:
         sys.path.insert(0, str(Path(__file__).parent / "ui"))
         from database import SermonRepository
@@ -1557,6 +1559,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         'upload_type': "original-audio",
         'transcript_length': 0,
         'transcript': None,
+        'transcript_segments': [],
         'output_dir': None,
         'error': None,
     }
@@ -1743,6 +1746,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
         # Step 2: Transcribe audio for metadata generation
         transcript = ""
+        transcript_segments: list[dict[str, float | str]] = []
         if (not title or not description or not hashtags) and not skip_transcription:
             transcript = _reuse_existing_transcript(
                 original_input_path, speaker_name, series_title, title, config
@@ -1750,41 +1754,48 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             if transcript:
                 console_print(f"♻️ Reusing existing transcript ({len(transcript)} characters)")
                 _report(55, f"Reusing existing transcript ({len(transcript)} characters)")
+                transcript_segments = _reuse_existing_transcript_segments(
+                    original_input_path, speaker_name, series_title, title, config
+                )
             else:
                 _report(35, f"Starting transcription ({whisper_model} model)...")
                 try:
-                    transcript = transcribe(
+                    transcript_segments = transcribe_segments(
                         str(enhanced_audio_path),
                         model_size=whisper_model,
                         config=config,
                         backend_override=transcription_backend,
                         progress_callback=_report,
                     )
+                    transcript = _join_segment_texts(transcript_segments)
                     if not transcript:
                         _report(
                             45,
                             "First transcription attempt produced no result, "
                             "retrying with original audio...",
                         )
-                        transcript = transcribe(
+                        transcript_segments = transcribe_segments(
                             str(audio_path),
                             model_size=whisper_model,
                             config=config,
                             backend_override=transcription_backend,
                             progress_callback=_report,
                         )
+                        transcript = _join_segment_texts(transcript_segments)
                 except TranscriptionError as e:
                     logger.error("Transcription failed: %s", e)
                     raise RuntimeError(f"Transcription failed: {e}") from e
                 except Exception as e:
                     logger.warning("Transcription attempt produced no result: %s", e)
                     transcript = ""
+                    transcript_segments = []
                 _report(55, f"Transcription complete: {len(transcript)} characters")
         elif skip_transcription:
             console_print("⏭️  Skipping transcription (--skip-transcription enabled)")
             _report(55, "Skipped transcription")
 
         result['transcript'] = transcript
+        result['transcript_segments'] = transcript_segments
         result['transcript_length'] = len(transcript) if transcript else 0
 
         # Step 3: Generate metadata using transcript or fallback
@@ -1997,6 +2008,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             if transcript:
                 with open(get_file_path(output_dir, "transcript"), 'w', encoding='utf-8') as f:
                     f.write(transcript)
+                if transcript_segments:
+                    save_transcript_timestamps(output_dir, transcript_segments)
 
             # Save to local database for UI visibility
             try:
@@ -2150,6 +2163,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         encoding='utf-8',
                     ) as f:
                         f.write(transcript)
+                    if transcript_segments:
+                        save_transcript_timestamps(recovery_output_dir, transcript_segments)
 
                 try:
                     from ui.database import SermonRepository
@@ -2318,6 +2333,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             if transcript:
                 with open(get_file_path(output_dir, "transcript"), 'w', encoding='utf-8') as f:
                     f.write(transcript)
+                if transcript_segments:
+                    save_transcript_timestamps(output_dir, transcript_segments)
                 console_print(f"📝 Transcript saved ({len(transcript)} characters)")
 
             # Cancellation checkpoint: stop before persisting the local record
@@ -4098,6 +4115,11 @@ def set_sermon_series(sermon_id: str, series_id: int) -> bool:
     return False
 
 
+def _join_segment_texts(segments: list[dict[str, float | str]]) -> str:
+    """Join timed segment texts into a plain transcript string."""
+    return " ".join(str(seg.get("text", "")) for seg in segments).strip()
+
+
 def _reuse_existing_transcript(input_path: Path, speaker_name: str, series_title: str,
                                title: str, config: dict) -> str:
     """Load a saved transcript when the source file is unchanged.
@@ -4136,6 +4158,41 @@ def _reuse_existing_transcript(input_path: Path, speaker_name: str, series_title
     except Exception as e:
         logger.debug("Transcript reuse check failed: %s", e)
     return ""
+
+
+def _reuse_existing_transcript_segments(input_path: Path, speaker_name: str, series_title: str,
+                                        title: str, config: dict) -> list[dict[str, float | str]]:
+    """Load saved transcript timestamps when the source file is unchanged.
+
+    Mirrors the identity and mtime checks in _reuse_existing_transcript but
+    reads transcript_timestamps.json instead of transcript.txt.
+    """
+    try:
+        output_root = Path(config.get('output_directory', 'processed_sermons'))
+        if not output_root.is_absolute():
+            output_root = Path(__file__).parent / output_root
+        reuse_dir = get_sermon_dir(output_root, speaker_name, series_title, title, "reuse")
+        timestamps_path = get_file_path(reuse_dir, "transcript_timestamps")
+        if not timestamps_path.exists():
+            return []
+
+        meta = read_metadata(reuse_dir) or {}
+        stored_original = meta.get('original_file') or ''
+        if stored_original:
+            if _normalized_file_stem(stored_original) == _normalized_file_stem(input_path):
+                logger.info("Reusing existing transcript timestamps: %s", timestamps_path)
+                return read_transcript_timestamps(reuse_dir)
+            return []
+
+        try:
+            if timestamps_path.stat().st_mtime > Path(input_path).stat().st_mtime:
+                logger.info("Reusing existing transcript timestamps: %s", timestamps_path)
+                return read_transcript_timestamps(reuse_dir)
+        except OSError:
+            pass
+    except Exception as e:
+        logger.debug("Transcript timestamp reuse check failed: %s", e)
+    return []
 
 
 @dataclass
