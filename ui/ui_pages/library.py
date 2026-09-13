@@ -1000,6 +1000,144 @@ def _resolve_edit_media_path(sermon: dict[str, Any], repo: Any) -> str | None:
     return None
 
 
+def _load_library_config() -> dict[str, Any]:
+    try:
+        from config_utils import load_config_from_file
+
+        return load_config_from_file()
+    except Exception:
+        return {}
+
+
+def _render_media_player(sermon: dict[str, Any]) -> None:
+    try:
+        from ui.media_server import get_media_server
+
+        server = get_media_server()
+        if server is None or not server.base_url:
+            return
+        candidates: list[Path] = []
+        try:
+            from ui.database import SermonRepository
+
+            repo = SermonRepository()
+            sermon_id = sermon.get("id") or sermon.get("sermon_id") or ""
+            for row in repo.get_sermon_files(sermon_id):
+                value = row.get("file_path")
+                if value:
+                    candidates.append(Path(value))
+        except Exception:
+            pass
+        file_paths = sermon.get("file_paths") or sermon.get("files") or {}
+        for key in (
+            "processed_video",
+            "enhanced_video",
+            "processed_file",
+            "enhanced_audio",
+            "original_video",
+            "original_audio",
+            "video",
+            "audio",
+        ):
+            value = file_paths.get(key)
+            if value:
+                candidates.append(Path(value))
+        for candidate in candidates:
+            try:
+                if not candidate.is_file():
+                    continue
+            except OSError:
+                continue
+            token = server.register(sermon.get("id") or "", candidate)
+            url = f"{server.base_url}/m/{token}"
+            if candidate.suffix.lower() in {".mp3", ".wav"}:
+                st.audio(url)
+            else:
+                st.video(url)
+            return
+    except Exception as e:
+        st.caption(f"Media player unavailable: {e}")
+
+
+def _cached_edit_snippets(
+    snippet_dir: Path, signature: dict[str, float]
+) -> list[Path] | None:
+    sidecar = snippet_dir / "snippets.json"
+    try:
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if data != signature:
+        return None
+    found = [
+        snippet_dir / name
+        for name in ("snippet_start.mp4", "snippet_end.mp4", "snippet_ending.mp4")
+        if (snippet_dir / name).is_file()
+    ]
+    return found or None
+
+
+def _render_edit_snippets(sermon: dict[str, Any], plan: dict[str, Any], repo: Any) -> None:
+    media_path = _resolve_edit_media_path(sermon, repo)
+    if not media_path:
+        return
+    try:
+        from src.auto_edit import EditPlan, render_review_snippets
+    except Exception:
+        st.caption("Review snippet module unavailable")
+        return
+    auto_cfg = _load_library_config().get("auto_edit") or {}
+    logo_value = auto_cfg.get("logo_path")
+    logo = Path(logo_value) if logo_value else None
+    source = Path(media_path)
+    snippet_dir = source.parent / "snippets"
+    start = float(plan.get("proposed_start") or 0.0)
+    end = float(plan.get("proposed_end") or 0.0)
+    signature = {"start": start, "end": end}
+    snippet_paths = _cached_edit_snippets(snippet_dir, signature)
+    if snippet_paths is None:
+        edit_plan = EditPlan(
+            start=start,
+            end=end,
+            fade_in=float(auto_cfg.get("fade_in", 1.0)),
+            logo_hold=float(auto_cfg.get("logo_hold", 3.0)),
+            fade_to_black=bool(auto_cfg.get("fade_to_black", True)),
+            needs_review=True,
+        )
+        try:
+            snippet_dir.mkdir(parents=True, exist_ok=True)
+            snippet_paths = render_review_snippets(source, edit_plan, snippet_dir, logo)
+            (snippet_dir / "snippets.json").write_text(
+                json.dumps(signature), encoding="utf-8"
+            )
+        except Exception as e:
+            st.caption(f"Review snippet render failed: {e}")
+            return
+    captions = {
+        "snippet_start": (
+            "Start cut preview ("
+            f"{_format_edit_timestamp(max(start - 10.0, 0.0))} to "
+            f"{_format_edit_timestamp(start + 10.0)})"
+        ),
+        "snippet_end": (
+            "End cut preview ("
+            f"{_format_edit_timestamp(max(end - 10.0, 0.0))} to "
+            f"{_format_edit_timestamp(end + 10.0)})"
+        ),
+        "snippet_ending": (
+            "Proposed ending ("
+            f"{_format_edit_timestamp(max(start, end - 30.0))} to "
+            f"{_format_edit_timestamp(end)})"
+        ),
+    }
+    for path in snippet_paths:
+        st.caption(captions.get(path.stem, path.stem))
+        try:
+            st.video(str(path))
+        except Exception:
+            st.caption(f"Snippet not downloadable from UI: {path.name}")
+
+
 def _write_edit_plan_file(plan_id: int, start: float, end: float) -> str | None:
     payload = {
         "start": float(start),
@@ -1144,6 +1282,11 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
             st.info(f"**Evidence:** {evidence}")
         if reasoning:
             st.caption(f"Reasoning: {reasoning}")
+
+        try:
+            _render_edit_snippets(sermon, plan, repo)
+        except Exception as e:
+            st.caption(f"Review snippets unavailable: {e}")
 
         if status == "rejected":
             st.info("This plan was rejected. Hook the file back into New Sermon to regenerate.")
@@ -1605,6 +1748,10 @@ def display_sermon_details(sermon):
             for file_type, file_path in files.items():
                 file_name = Path(file_path).name if file_path else "Not available"
                 st.text(f"{file_type.title()}: {file_name}")
+        try:
+            _render_media_player(display_data)
+        except Exception as e:
+            st.caption(f"Media player unavailable: {e}")
         status = display_data.get('status', 'unknown')
         if status in ['completed', 'processed']:
             st.success("Processing completed")
