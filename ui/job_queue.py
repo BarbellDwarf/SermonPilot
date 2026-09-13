@@ -73,6 +73,7 @@ class JobType(Enum):
     AUDIO_ENHANCEMENT = "audio_enhancement"
     TRANSCRIPT_GENERATION = "transcript_generation"
     METADATA_UPDATE = "metadata_update"
+    AUTO_EDIT = "auto_edit"
 
 
 class JobStatus(Enum):
