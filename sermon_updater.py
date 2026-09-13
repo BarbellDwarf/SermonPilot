@@ -1119,6 +1119,7 @@ def _verify_mux_av_sync(path: str | Path, tolerance: float = 0.2) -> list[str]:
 _EDIT_PLAN_FILE_KEYS = {
     'start', 'end', 'fade_in', 'logo_hold', 'fade_to_black',
     'confidence', 'needs_review', 'evidence', 'qa_judgment', 'reasoning',
+    'audio_offset',
 }
 
 
@@ -1139,6 +1140,7 @@ def _load_edit_plan_from_file(path: str | Path) -> EditPlan:
         evidence=str(fields.get('evidence', '')),
         qa_judgment=str(fields.get('qa_judgment', 'cut')),
         reasoning=str(fields.get('reasoning', '')),
+        audio_offset=float(fields.get('audio_offset', 0.0)),
     )
 
 
@@ -1696,6 +1698,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       progress_callback=None,
                       auto_edit_mode: str | None = None,
                       edit_plan_file: str | None = None,
+                      audio_offset: float | None = None,
                       cancel_check: Callable[[], None] | None = None) -> dict:
     """Process a new sermon from audio file with automatic metadata generation.
 
@@ -1971,6 +1974,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                             from src.av_sync import (
                                 measure_content_offset,
                                 measure_waveform_offset,
+                                resolve_audio_correction,
                             )
                             input_offset = measure_content_offset(
                                 original_input_path,
@@ -2002,30 +2006,31 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                                 measured += input_offset.offset_seconds
                             if enh_offset.available and enh_offset.offset_seconds is not None:
                                 measured += enh_offset.offset_seconds
-                            if abs(measured) > 0.1:
-                                if abs(measured) > max_offset:
-                                    result['av_sync_needs_review'] = True
-                                    console_print(
-                                        f"⚠️  A/V offset {measured:+.2f}s exceeds "
-                                        f"max_offset_seconds={max_offset:.2f}; flagged for review"
+                            manual_offset = float(audio_offset or 0.0)
+                            if abs(manual_offset) <= 1e-6 and edit_plan_file:
+                                try:
+                                    manual_offset = float(
+                                        _load_edit_plan_from_file(
+                                            edit_plan_file
+                                        ).audio_offset or 0.0
                                     )
-                                elif not auto_correct:
-                                    console_print(
-                                        f"⚠️  A/V offset {measured:+.2f}s measured; "
-                                        f"auto-correction disabled "
-                                        f"(set av_sync.auto_correct=true to enable)"
-                                    )
-                                elif input_offset.confidence >= min_confidence:
-                                    correction = measured
-                                    console_print(
-                                        f"🔧 Correcting A/V offset by {correction:+.2f}s"
-                                    )
-                                else:
-                                    console_print(
-                                        f"⚠️  A/V offset {measured:+.2f}s below confidence "
-                                        f"threshold ({input_offset.confidence:.2f}); "
-                                        f"not corrected"
-                                    )
+                                except Exception:
+                                    manual_offset = 0.0
+                            correction, av_reason = resolve_audio_correction(
+                                manual_offset,
+                                measured,
+                                input_offset.confidence,
+                                auto_correct=auto_correct,
+                                min_confidence=min_confidence,
+                                max_offset=max_offset,
+                            )
+                            if "exceeds" in av_reason:
+                                result['av_sync_needs_review'] = True
+                            if abs(measured) > 0.1 or abs(manual_offset) > 1e-6:
+                                console_print(
+                                    f"🎯 A/V decision: measured {measured:+.2f}s, "
+                                    f"manual {manual_offset:+.2f}s -> {av_reason}"
+                                )
                             result['av_sync_offset_seconds'] = correction
                         except Exception as e:
                             logger.warning("av_sync measurement failed: %s", e)
@@ -2299,6 +2304,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'evidence': plan.evidence,
                 'qa_judgment': plan.qa_judgment,
                 'reasoning': plan.reasoning,
+                'audio_offset': float(plan.audio_offset or 0.0),
                 'status': status,
                 'source_path': source_path,
                 'notes': notes,
@@ -2337,6 +2343,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     transcript_segments, llm_manager, config, plan_duration
                 )
                 gate_notes = f"Detected cut points (mode: {gate_mode})"
+
+            if audio_offset is not None:
+                gate_plan.audio_offset = float(audio_offset)
 
             confidence_threshold = _auto_edit_confidence_threshold(auto_edit_cfg)
             min_sermon_seconds = float(auto_edit_cfg.get('min_sermon_seconds', 600))
@@ -5065,6 +5074,7 @@ def handle_new_sermon(args):
         ),
         auto_edit_mode=cli_auto_edit_mode,
         edit_plan_file=getattr(args, 'edit_plan_file', None),
+        audio_offset=getattr(args, 'audio_offset', None),
     )
 
     if result.get('success'):

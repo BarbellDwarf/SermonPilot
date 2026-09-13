@@ -236,6 +236,33 @@ def measure_content_offset(
     return OffsetMeasurement(offset, confidence, True, "content", detail)
 
 
+def resolve_audio_correction(
+    manual_offset: float,
+    auto_offset: float,
+    auto_confidence: float,
+    *,
+    auto_correct: bool,
+    min_confidence: float,
+    max_offset: float,
+) -> tuple[float, str]:
+    """Decide the mux-time correction; a manual offset is authoritative.
+
+    A non-zero manual offset is applied later by the edit render (apply_edit)
+    and is never also applied at the mux, so the returned correction is 0.
+    """
+    if abs(float(manual_offset or 0.0)) > 1e-6:
+        return 0.0, "manual offset set; auto-correction skipped"
+    if not auto_correct:
+        return 0.0, "auto-correction disabled"
+    if abs(auto_offset) <= 0.1:
+        return 0.0, "auto offset within tolerance"
+    if abs(auto_offset) > max_offset:
+        return 0.0, "auto offset exceeds max_offset_seconds; flagged for review"
+    if auto_confidence < min_confidence:
+        return 0.0, "auto offset below confidence threshold"
+    return float(auto_offset), "auto-corrected"
+
+
 def measure_waveform_offset(reference: Path, candidate: Path,
                             sample_rate: int = 8000) -> OffsetMeasurement:
     """Reliable waveform cross-correlation between two audio timelines."""

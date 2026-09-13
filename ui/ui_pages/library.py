@@ -1138,10 +1138,12 @@ def _render_edit_snippets(sermon: dict[str, Any], plan: dict[str, Any], repo: An
             st.caption(f"Snippet not downloadable from UI: {path.name}")
 
 
-def _write_edit_plan_file(plan_id: int, start: float, end: float) -> str | None:
+def _write_edit_plan_file(plan_id: int, start: float, end: float,
+                          audio_offset: float = 0.0) -> str | None:
     payload = {
         "start": float(start),
         "end": float(end),
+        "audio_offset": float(audio_offset),
         "confidence": 1.0,
         "needs_review": False,
         "evidence": "approved in Library edit-review panel",
@@ -1189,12 +1191,16 @@ def _apply_approved_edit(
     start: float,
     end: float,
     re_detect: bool = False,
+    audio_offset: float | None = None,
 ) -> None:
     import sermon_updater
 
+    if audio_offset is None:
+        audio_offset = float(plan.get("audio_offset") or 0.0)
+
     plan_file = None
     if not re_detect:
-        plan_file = _write_edit_plan_file(plan.get("id"), start, end)
+        plan_file = _write_edit_plan_file(plan.get("id"), start, end, audio_offset)
         if not plan_file:
             return
 
@@ -1357,7 +1363,20 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                 step=0.1,
                 key=f"editplan_re_end_{sermon_id}",
             )
-            candidate = EditPlan(start=float(start_val), end=float(end_val))
+            audio_offset_re = st.number_input(
+                "Audio offset (s)",
+                min_value=-5.0,
+                max_value=5.0,
+                value=float(plan.get("audio_offset") or 0.0),
+                step=0.1,
+                key=f"editplan_re_audio_offset_{sermon_id}",
+                help="Positive delays the audio later relative to video; negative moves it earlier.",
+            )
+            candidate = EditPlan(
+                start=float(start_val),
+                end=float(end_val),
+                audio_offset=float(audio_offset_re),
+            )
             problems = [] if re_detect else validate_plan(candidate, duration)
             for problem in problems:
                 st.warning(problem)
@@ -1387,6 +1406,7 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                             "evidence": evidence,
                             "qa_judgment": qa,
                             "reasoning": reasoning,
+                            "audio_offset": float(audio_offset_re),
                             "status": "pending_review",
                             "source_path": plan.get("source_path"),
                             "applied_media_id": plan.get("applied_media_id"),
@@ -1407,6 +1427,7 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                     float(start_val),
                     float(end_val),
                     re_detect=re_detect,
+                    audio_offset=float(audio_offset_re),
                 )
                 st.rerun()
 
@@ -1452,24 +1473,45 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
             return
 
         st.markdown("#### Review timestamps")
-        start_val = st.number_input(
-            "Start (s)",
-            min_value=0.0,
-            max_value=max_ts if max_ts else proposed_end + 3600.0,
-            value=min(proposed_start, max_ts or proposed_end + 3600.0),
-            step=0.1,
-            key=f"editplan_start_{sermon_id}",
-        )
-        end_val = st.number_input(
-            "End (s)",
-            min_value=0.0,
-            max_value=max_ts if max_ts else max(proposed_end, start_val) + 3600.0,
-            value=min(proposed_end, max_ts or max(proposed_end, start_val)),
-            step=0.1,
-            key=f"editplan_end_{sermon_id}",
+        ts_col1, ts_col2, off_col = st.columns([1, 1, 1])
+        with ts_col1:
+            start_val = st.number_input(
+                "Start (s)",
+                min_value=0.0,
+                max_value=max_ts if max_ts else proposed_end + 3600.0,
+                value=min(proposed_start, max_ts or proposed_end + 3600.0),
+                step=0.1,
+                key=f"editplan_start_{sermon_id}",
+            )
+        with ts_col2:
+            end_val = st.number_input(
+                "End (s)",
+                min_value=0.0,
+                max_value=max_ts if max_ts else max(proposed_end, start_val) + 3600.0,
+                value=min(proposed_end, max_ts or max(proposed_end, start_val)),
+                step=0.1,
+                key=f"editplan_end_{sermon_id}",
+            )
+        with off_col:
+            audio_offset_val = st.number_input(
+                "Audio offset (s)",
+                min_value=-5.0,
+                max_value=5.0,
+                value=float(plan.get("audio_offset") or 0.0),
+                step=0.1,
+                key=f"editplan_audio_offset_{sermon_id}",
+                help="Positive delays the audio later relative to video; negative moves it earlier.",
+            )
+        st.caption(
+            "Audio offset: positive shifts audio later than video (use when sound comes early), "
+            "negative shifts it earlier."
         )
 
-        candidate = EditPlan(start=float(start_val), end=float(end_val))
+        candidate = EditPlan(
+            start=float(start_val),
+            end=float(end_val),
+            audio_offset=float(audio_offset_val),
+        )
         problems = validate_plan(candidate, duration)
         for problem in problems:
             st.warning(problem)
@@ -1479,8 +1521,12 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
         prior_notes = []
         for row in history:
             row_notes = str(row.get("notes") or "").strip()
-            if row_notes and row_notes not in prior_notes:
-                prior_notes.append(row_notes)
+            row_offset = float(row.get("audio_offset") or 0.0)
+            label = f"r{row.get('revision')}: {row_notes}" if row_notes else f"r{row.get('revision')}"
+            if abs(row_offset) > 1e-6:
+                label += f" [audio offset {row_offset:+.1f}s]"
+            if label and label not in prior_notes:
+                prior_notes.append(label)
         if prior_notes:
             with st.expander("Review notes history", expanded=False):
                 for idx, note in enumerate(prior_notes, start=1):
@@ -1516,10 +1562,18 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                     notes=plan.get("notes") or "",
                     final_start=float(start_val),
                     final_end=float(end_val),
+                    audio_offset=float(audio_offset_val),
                 ):
                     _set_feedback("Could not update plan status.", kind="error")
                     return
-                _apply_approved_edit(sermon, plan, repo, float(start_val), float(end_val))
+                _apply_approved_edit(
+                    sermon,
+                    plan,
+                    repo,
+                    float(start_val),
+                    float(end_val),
+                    audio_offset=float(audio_offset_val),
+                )
                 st.rerun()
         with col_reject:
             if st.button("Reject", key=f"editplan_reject_{sermon_id}", width="stretch"):
