@@ -290,6 +290,36 @@ class SermonDatabase:
                 )
             """)
 
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS edit_plans (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sermon_id TEXT NOT NULL,
+                    revision INTEGER NOT NULL,
+                    proposed_start REAL,
+                    proposed_end REAL,
+                    final_start REAL,
+                    final_end REAL,
+                    confidence REAL DEFAULT 0.0,
+                    needs_review INTEGER DEFAULT 1,
+                    evidence TEXT,
+                    qa_judgment TEXT,
+                    reasoning TEXT,
+                    status TEXT DEFAULT 'pending_review',
+                    source_path TEXT,
+                    applied_media_id TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reviewed_at TIMESTAMP,
+                    notes TEXT,
+                    FOREIGN KEY (sermon_id) REFERENCES sermons(id) ON DELETE CASCADE,
+                    UNIQUE(sermon_id, revision)
+                )
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_edit_plans_sermon_id
+                ON edit_plans(sermon_id)
+            """)
+
             # LLM API usage tracking table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS llm_api_usage (
@@ -837,6 +867,102 @@ class SermonRepository:
                 WHERE sermon_id = ?
             """, (sermon_id,)).fetchall()
             return [dict(row) for row in rows]
+
+    def save_edit_plan_revision(self, sermon_id: str, plan: dict[str, Any]) -> int:
+        with self.db.get_connection() as conn:
+            row = conn.execute(
+                "SELECT MAX(revision) AS max_rev FROM edit_plans WHERE sermon_id = ?",
+                (sermon_id,)
+            ).fetchone()
+            next_revision = (row['max_rev'] or 0) + 1
+            conn.execute("""
+                UPDATE edit_plans
+                SET status = 'superseded'
+                WHERE sermon_id = ?
+                  AND status NOT IN ('superseded', 'reverted')
+            """, (sermon_id,))
+            cursor = conn.execute("""
+                INSERT INTO edit_plans (
+                    sermon_id, revision, proposed_start, proposed_end,
+                    final_start, final_end, confidence, needs_review, evidence,
+                    qa_judgment, reasoning, status, source_path, applied_media_id, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                sermon_id,
+                next_revision,
+                plan.get('proposed_start'),
+                plan.get('proposed_end'),
+                plan.get('final_start'),
+                plan.get('final_end'),
+                plan.get('confidence', 0.0),
+                1 if plan.get('needs_review', True) else 0,
+                plan.get('evidence'),
+                plan.get('qa_judgment'),
+                plan.get('reasoning'),
+                plan.get('status', 'pending_review'),
+                plan.get('source_path'),
+                plan.get('applied_media_id'),
+                plan.get('notes'),
+            ))
+            plan_id = cursor.lastrowid
+            conn.commit()
+        return plan_id
+
+    def get_current_edit_plan(self, sermon_id: str) -> dict[str, Any] | None:
+        with self.db.get_connection() as conn:
+            row = conn.execute("""
+                SELECT * FROM edit_plans
+                WHERE sermon_id = ? AND status != 'superseded'
+                ORDER BY revision DESC
+                LIMIT 1
+            """, (sermon_id,)).fetchone()
+            return dict(row) if row else None
+
+    def get_edit_plan_history(self, sermon_id: str) -> list[dict[str, Any]]:
+        with self.db.get_connection() as conn:
+            rows = conn.execute("""
+                SELECT * FROM edit_plans
+                WHERE sermon_id = ?
+                ORDER BY revision DESC
+            """, (sermon_id,)).fetchall()
+            return [dict(row) for row in rows]
+
+    def update_edit_plan_status(
+        self,
+        plan_id: int,
+        status: str,
+        notes: str = "",
+        final_start: float | None = None,
+        final_end: float | None = None,
+        applied_media_id: str | None = None
+    ) -> bool:
+        allowed = {
+            'pending_review', 'approved', 'auto_applied', 'rejected',
+            'reverted', 'superseded', 'applied',
+        }
+        if status not in allowed:
+            return False
+        sets = ["status = ?", "reviewed_at = CURRENT_TIMESTAMP"]
+        params: list[Any] = [status]
+        if final_start is not None:
+            sets.append("final_start = ?")
+            params.append(final_start)
+        if final_end is not None:
+            sets.append("final_end = ?")
+            params.append(final_end)
+        if applied_media_id is not None:
+            sets.append("applied_media_id = ?")
+            params.append(applied_media_id)
+        if notes:
+            sets.append("notes = ?")
+            params.append(notes)
+        params.append(plan_id)
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(
+                f"UPDATE edit_plans SET {', '.join(sets)} WHERE id = ?", params
+            )
+            conn.commit()
+            return cursor.rowcount > 0
 
     def save_sermon(self, sermon_data: dict[str, Any]) -> bool:
         """
