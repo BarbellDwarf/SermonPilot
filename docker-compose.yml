@@ -20,6 +20,7 @@ services:
       - DEBUG=${DEBUG:-false}
     volumes:
       - sermon_data:/data
+      - ./raw_ingest:/data/raw_ingest
       - sermon_models:/models
       - sermon_api_cache:/app/api_cache
       - sermon_output:/app/processed_sermons

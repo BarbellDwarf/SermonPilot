@@ -5,7 +5,7 @@ base = "dark"
 primaryColor = "#4f46e5"
 
 [server]
-maxUploadSize = 2000
+maxUploadSize = 30720
 
 [client]
 toolbarMode = "viewer"
