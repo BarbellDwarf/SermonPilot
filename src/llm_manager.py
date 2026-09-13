@@ -191,6 +191,7 @@ class OpenAIProvider(LLMProvider):
         self.base_url = config.get('base_url')
         self.temperature = float(config.get('temperature', 0.7))
         self.max_tokens = int(config.get('max_tokens', 2048))
+        self.extra_headers = config.get('extra_headers') or None
 
         if not self.api_key:
             raise ValueError(
@@ -201,6 +202,8 @@ class OpenAIProvider(LLMProvider):
         client_kwargs = {'api_key': self.api_key}
         if self.base_url:
             client_kwargs['base_url'] = self.base_url
+        if self.extra_headers:
+            client_kwargs['default_headers'] = self.extra_headers
 
         self.client = openai.OpenAI(**client_kwargs)
 
@@ -400,6 +403,13 @@ class LLMManager:
 
     @staticmethod
     def _resolve_env_placeholders(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: LLMManager._resolve_env_placeholders(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [LLMManager._resolve_env_placeholders(item) for item in value]
         if isinstance(value, str):
             if value.startswith('${') and value.endswith('}'):
                 return os.getenv(value[2:-1], value) or value

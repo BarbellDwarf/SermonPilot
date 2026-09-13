@@ -84,7 +84,11 @@ llm:
         api_key: "${OPENCODE_GO_API_KEY}"
         base_url: "${OPENCODE_GO_BASE_URL}"
         model: "deepseek-v4.1-flash"
+        extra_headers:
+          x-opencode-session: "sermonpilot-auto-edit"
 ```
+
+The `x-opencode-session` header is required by the OpenCode Go endpoint for request routing. Set `OPENCODE_GO_BASE_URL=https://opencode.ai/zen/go/v1` and `OPENCODE_GO_API_KEY` in `.env`.
 
 If this pin fails to initialize or errors at call time, detection falls back to the global `llm` primary/fallback chain.
 
