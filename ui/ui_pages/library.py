@@ -13,8 +13,10 @@ import io
 import json
 import re
 import sys
+import tempfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import streamlit as st
 
@@ -924,6 +926,421 @@ def _format_duration(seconds):
         return f"{int(hours)}:{int(minutes):02d}:{int(secs):02d}"
     return f"{int(minutes):02d}:{int(secs):02d}"
 
+def _format_edit_timestamp(seconds: float) -> str:
+    try:
+        value = max(float(seconds or 0), 0.0)
+    except (TypeError, ValueError):
+        value = 0.0
+    total = int(value)
+    tenths = int(round((value - total) * 10))
+    if tenths >= 10:
+        total += 1
+        tenths = 0
+    return f"{total // 60:02d}:{total % 60:02d}.{tenths}"
+
+
+def _edit_status_badge(status: str) -> str:
+    labels = {
+        "pending_review": "Pending review",
+        "auto_applied": "Auto-applied",
+        "applied": "Applied",
+        "rejected": "Rejected",
+        "reverted": "Reverted",
+    }
+    return labels.get(status, status.replace("_", " ").title() if status else "Unknown")
+
+
+def _load_edit_duration(sermon: dict[str, Any]) -> float | None:
+    try:
+        duration = float(sermon.get("duration") or 0)
+    except (TypeError, ValueError):
+        duration = 0
+    if duration <= 0:
+        return None
+    return duration
+
+
+def _read_edit_plan_metadata(sermon: dict[str, Any]) -> dict[str, Any]:
+    file_paths = sermon.get("file_paths") or {}
+    metadata_path = file_paths.get("metadata") or ""
+    if metadata_path and Path(metadata_path).exists():
+        try:
+            return json.loads(Path(metadata_path).read_text(encoding="utf-8")) or {}
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _full_sermon_or_none(sermon: dict[str, Any], repo: Any) -> dict[str, Any] | None:
+    try:
+        return repo.get_sermon(sermon.get("id") or sermon.get("sermon_id"))
+    except Exception:
+        return None
+
+
+def _resolve_edit_media_path(sermon: dict[str, Any], repo: Any) -> str | None:
+    candidates: list[Path] = []
+    metadata = _read_edit_plan_metadata(sermon)
+    for key in ("original_file", "processed_file"):
+        value = metadata.get(key)
+        if value:
+            candidates.append(Path(str(value)))
+    for source in (sermon, _full_sermon_or_none(sermon, repo)):
+        file_paths = source.get("file_paths") or {}
+        for key in ("original_audio", "original_video", "audio"):
+            value = file_paths.get(key)
+            if value:
+                candidates.append(Path(value))
+    for candidate in candidates:
+        try:
+            if candidate.exists():
+                return str(candidate)
+        except OSError:
+            continue
+    return None
+
+
+def _write_edit_plan_file(plan_id: int, start: float, end: float) -> str | None:
+    payload = {
+        "start": float(start),
+        "end": float(end),
+        "confidence": 1.0,
+        "needs_review": False,
+        "evidence": "approved in Library edit-review panel",
+        "qa_judgment": "approved",
+    }
+    try:
+        handle = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", prefix=f"edit_plan_{plan_id}_", delete=False
+        )
+        with handle as f:
+            json.dump(payload, f)
+        return handle.name
+    except OSError as e:
+        _set_feedback(f"Could not write edit plan file: {e}", kind="error")
+        return None
+
+
+def _apply_approved_edit(
+    sermon: dict[str, Any],
+    plan: dict[str, Any],
+    repo: Any,
+    start: float,
+    end: float,
+    re_detect: bool = False,
+) -> None:
+    import sermon_updater
+
+    plan_file = None
+    if not re_detect:
+        plan_file = _write_edit_plan_file(plan.get("id"), start, end)
+        if not plan_file:
+            return
+
+    full_sermon = _full_sermon_or_none(sermon, repo) or sermon
+    media_path = _resolve_edit_media_path(sermon, repo)
+    if not media_path:
+        _set_feedback(
+            "Original media file not found locally. Cannot apply the edit.",
+            kind="error",
+        )
+        return
+
+    try:
+        with st.spinner("Applying edit: trimming, encoding and uploading media..."):
+            result = sermon_updater.process_new_sermon(
+                audio_file=media_path,
+                speaker_name=full_sermon.get("speaker") or "Unknown",
+                recorded_date=full_sermon.get("recorded_date")
+                or datetime.now().strftime("%Y-%m-%d"),
+                event_type=full_sermon.get("event_type") or "Sunday Service",
+                title=full_sermon.get("title") or None,
+                series_title=full_sermon.get("series_title") or None,
+                auto_edit_mode="auto",
+                edit_plan_file=plan_file,
+            )
+        if plan_file:
+            Path(plan_file).unlink(missing_ok=True)
+    except Exception as e:
+        if plan_file:
+            Path(plan_file).unlink(missing_ok=True)
+        _set_feedback(f"Edit apply failed: {e}", kind="error")
+        return
+
+    applied_status = result.get("edit_plan_status") or "auto_applied"
+    new_id = result.get("sermon_id")
+    if result.get("success"):
+        if applied_status == "auto_applied":
+            _set_feedback(f"Edit applied and uploaded. New SermonAudio ID: {new_id}")
+        else:
+            _set_feedback(
+                "Processing finished but the plan still needs review. "
+                "Check the plan for the new sermon record.",
+                kind="warning",
+            )
+    else:
+        _set_feedback(
+            f"Edit apply failed: {result.get('error') or 'unknown error'}",
+            kind="error",
+        )
+
+
+def show_edit_review_panel(sermon: dict[str, Any]) -> None:
+    """Review panel for the sermon's current auto-edit plan"""
+    if not sermon or not isinstance(sermon, dict):
+        return
+    sermon_id = sermon.get("id") or sermon.get("sermon_id")
+    if not sermon_id:
+        return
+
+    try:
+        from src.auto_edit import EditPlan, validate_plan
+        from ui.database import SermonRepository
+
+        repo = SermonRepository()
+        plan = repo.get_current_edit_plan(sermon_id)
+        if not plan:
+            return
+    except Exception as e:
+        st.warning(f"Could not load edit plan: {e}")
+        return
+
+    status = plan.get("status") or "pending_review"
+    proposed_start = float(plan.get("proposed_start") or 0.0)
+    proposed_end = float(plan.get("proposed_end") or 0.0)
+    confidence = float(plan.get("confidence") or 0.0)
+
+    history = []
+    try:
+        history = repo.get_edit_plan_history(sermon_id)
+    except Exception:
+        history = []
+    with st.expander(
+        f"Auto Edit Review — {_edit_status_badge(status)} "
+        f"(revision {plan.get('revision', 1)} of {len(history)})",
+        expanded=(status == "auto_applied"),
+    ):
+        if status == "auto_applied":
+            st.warning(
+                f"This edit was applied automatically (confidence {confidence:.2f}). "
+                "Restore the original if it cut the wrong material, or re-edit below."
+            )
+
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric("Proposed start", _format_edit_timestamp(proposed_start))
+        with m2:
+            st.metric("Proposed end", _format_edit_timestamp(proposed_end))
+        with m3:
+            st.metric("Confidence", f"{confidence:.2f}")
+        with m4:
+            qa = plan.get("qa_judgment") or "cut"
+            qa_label = f"QA: {qa}" + (" (needs review)" if plan.get("needs_review") else "")
+            st.metric("QA", qa_label)
+
+        evidence = plan.get("evidence") or ""
+        reasoning = plan.get("reasoning") or ""
+        if evidence:
+            st.info(f"**Evidence:** {evidence}")
+        if reasoning:
+            st.caption(f"Reasoning: {reasoning}")
+
+        if status == "rejected":
+            st.info("This plan was rejected. Hook the file back into New Sermon to regenerate.")
+            return
+
+        full_sermon = _full_sermon_or_none(sermon, repo) or {}
+        duration = _load_edit_duration(full_sermon) or _load_edit_duration(sermon)
+        max_ts = duration if duration and duration > 0 else None
+
+        if status in ("applied", "auto_applied", "reverted"):
+            last_start = plan.get("final_start")
+            last_end = plan.get("final_end")
+            if last_start is None:
+                last_start = proposed_start
+            if last_end is None:
+                last_end = proposed_end
+            st.markdown("#### Adjust and re-apply")
+            re_detect = st.checkbox(
+                "Re-detect with LLM instead", key=f"editplan_redetect_{sermon_id}"
+            )
+            start_val = st.number_input(
+                "New start (s)",
+                min_value=0.0,
+                max_value=max_ts if max_ts else max(float(last_start), 1.0) + 3600.0,
+                value=min(float(last_start), max_ts or float(last_start)),
+                step=0.1,
+                key=f"editplan_re_start_{sermon_id}",
+            )
+            end_val = st.number_input(
+                "New end (s)",
+                min_value=0.0,
+                max_value=max_ts if max_ts else max(float(last_end), float(start_val)) + 3600.0,
+                value=min(float(last_end), max_ts or max(float(last_end), float(start_val))),
+                step=0.1,
+                key=f"editplan_re_end_{sermon_id}",
+            )
+            candidate = EditPlan(start=float(start_val), end=float(end_val))
+            problems = [] if re_detect else validate_plan(candidate, duration)
+            for problem in problems:
+                st.warning(problem)
+            re_notes = st.text_input("Notes (optional)", key=f"editplan_re_notes_{sermon_id}")
+            re_help = (
+                "Disabled while validation reports problems: " + "; ".join(problems)
+                if problems
+                else "Apply the adjusted edit"
+            )
+            if st.button(
+                "Apply adjusted edit",
+                type="primary",
+                key=f"editplan_re_apply_{sermon_id}",
+                disabled=bool(problems),
+                help=re_help,
+            ):
+                try:
+                    repo.save_edit_plan_revision(
+                        sermon_id,
+                        {
+                            "proposed_start": float(start_val),
+                            "proposed_end": float(end_val),
+                            "final_start": float(start_val) if not re_detect else None,
+                            "final_end": float(end_val) if not re_detect else None,
+                            "confidence": confidence,
+                            "needs_review": True,
+                            "evidence": evidence,
+                            "qa_judgment": qa,
+                            "reasoning": reasoning,
+                            "status": "pending_review",
+                            "source_path": plan.get("source_path"),
+                            "applied_media_id": plan.get("applied_media_id"),
+                            "notes": (
+                                f"{re_notes}; re-detect with LLM requested in Library"
+                                if re_detect
+                                else f"{re_notes}; re-edit from Library"
+                            ).strip("; "),
+                        },
+                    )
+                except Exception as e:
+                    _set_feedback(f"Could not save plan revision: {e}", kind="error")
+                    return
+                _apply_approved_edit(
+                    sermon,
+                    plan,
+                    repo,
+                    float(start_val),
+                    float(end_val),
+                    re_detect=re_detect,
+                )
+                st.rerun()
+
+            if status in ("auto_applied", "applied"):
+                st.markdown("#### Restore original")
+                restore_confirm = st.checkbox(
+                    "I understand this will re-upload the original media to SermonAudio",
+                    key=f"editplan_restore_confirm_{sermon_id}",
+                )
+                if st.button(
+                    "Restore original",
+                    key=f"editplan_restore_{sermon_id}",
+                    disabled=not restore_confirm,
+                ):
+                    import sermon_updater
+
+                    original_path = _resolve_edit_media_path(sermon, repo)
+                    if not original_path:
+                        _set_feedback(
+                            "No original media file found locally to restore.",
+                            kind="error",
+                        )
+                        return
+                    try:
+                        with st.spinner("Re-uploading original media..."):
+                            ok = sermon_updater.reupload_media_for_sermon(sermon_id, original_path)
+                    except Exception as e:
+                        _set_feedback(f"Restore failed: {e}", kind="error")
+                        return
+                    if ok:
+                        repo.update_edit_plan_status(
+                            plan.get("id"),
+                            "reverted",
+                            notes=plan.get("notes") or "restored original",
+                        )
+                        _set_feedback("Original media restored on SermonAudio")
+                    else:
+                        _set_feedback(
+                            "Media re-upload failed. Check your API credentials " "and try again.",
+                            kind="error",
+                        )
+                    st.rerun()
+            return
+
+        st.markdown("#### Review timestamps")
+        start_val = st.number_input(
+            "Start (s)",
+            min_value=0.0,
+            max_value=max_ts if max_ts else proposed_end + 3600.0,
+            value=min(proposed_start, max_ts or proposed_end + 3600.0),
+            step=0.1,
+            key=f"editplan_start_{sermon_id}",
+        )
+        end_val = st.number_input(
+            "End (s)",
+            min_value=0.0,
+            max_value=max_ts if max_ts else max(proposed_end, start_val) + 3600.0,
+            value=min(proposed_end, max_ts or max(proposed_end, start_val)),
+            step=0.1,
+            key=f"editplan_end_{sermon_id}",
+        )
+
+        candidate = EditPlan(start=float(start_val), end=float(end_val))
+        problems = validate_plan(candidate, duration)
+        for problem in problems:
+            st.warning(problem)
+        if not problems:
+            st.success("Plan validates cleanly")
+
+        reject_notes = st.text_input(
+            "Rejection notes (optional)", key=f"editplan_reject_notes_{sermon_id}"
+        )
+
+        col_approve, col_reject, col_gap = st.columns([1, 1, 2])
+        approve_help = (
+            "Disabled while validation reports problems: " + "; ".join(problems)
+            if problems
+            else "Apply this edit and upload the result"
+        )
+        with col_approve:
+            if st.button(
+                "Approve & apply",
+                type="primary",
+                key=f"editplan_approve_{sermon_id}",
+                disabled=bool(problems),
+                help=approve_help,
+            ):
+                if not repo.update_edit_plan_status(
+                    plan.get("id"),
+                    "approved",
+                    notes=plan.get("notes") or "",
+                    final_start=float(start_val),
+                    final_end=float(end_val),
+                ):
+                    _set_feedback("Could not update plan status.", kind="error")
+                    return
+                _apply_approved_edit(sermon, plan, repo, float(start_val), float(end_val))
+                st.rerun()
+        with col_reject:
+            if st.button("Reject", key=f"editplan_reject_{sermon_id}"):
+                if repo.update_edit_plan_status(
+                    plan.get("id"),
+                    "rejected",
+                    notes=reject_notes,
+                ):
+                    _set_feedback("Edit plan rejected")
+                else:
+                    _set_feedback("Could not reject the plan.", kind="error")
+                st.rerun()
+
+
 def display_sermon_details(sermon):
     """Display detailed sermon information with API data"""
     st.markdown("### Sermon Details")
@@ -975,6 +1392,11 @@ def display_sermon_details(sermon):
                     help="Re-process this sermon", width='stretch'):
             st.session_state.show_reprocess = sermon['id']
             st.rerun()
+
+    try:
+        show_edit_review_panel(sermon)
+    except Exception as e:
+        st.warning(f"Edit review panel unavailable: {e}")
 
     if st.session_state.get('confirm_delete_sermon') == sermon['id']:
         st.warning("Are you sure you want to delete this sermon? This cannot be undone.")
@@ -1210,7 +1632,7 @@ def display_sermon_details(sermon):
                     for key, value in processing_info.items():
                         if key not in ['processed_at', 'enhancement_method'] and value:
                             display_key = key.replace('_', ' ').title()
-                            if isinstance(value, (dict, list)):
+                            if isinstance(value, dict | list):
                                 st.json({display_key: value})
                             else:
                                 st.text(f"{display_key}: {value}")
