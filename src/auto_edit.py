@@ -31,6 +31,7 @@ class EditPlan:
     evidence: str = "No timestamped transcript available"
     qa_judgment: str = "cut"
     reasoning: str = ""
+    audio_offset: float = 0.0
 
 
 def _format_timestamp(seconds: float) -> str:
@@ -248,6 +249,12 @@ def validate_plan(
     if plan.start < 0:
         problems.append("start is negative")
 
+    if abs(float(plan.audio_offset or 0.0)) > MAX_AUDIO_OFFSET:
+        problems.append(
+            f"audio offset {plan.audio_offset:+.1f}s exceeds limit "
+            f"±{MAX_AUDIO_OFFSET:.1f}s"
+        )
+
     if duration is not None:
         if plan.end > duration + 1.0:
             problems.append("end exceeds video duration")
@@ -266,6 +273,7 @@ def validate_plan(
 
 
 XFADE_SECONDS = 0.8
+MAX_AUDIO_OFFSET = 5.0
 
 
 def _run_ffmpeg(cmd: list[str]) -> None:
@@ -301,6 +309,12 @@ def apply_edit(
 
     out.parent.mkdir(parents=True, exist_ok=True)
 
+    audio_offset = float(plan.audio_offset or 0.0)
+    pts_shift = ""
+    if abs(audio_offset) > 1e-6:
+        sign = "+" if audio_offset > 0 else "-"
+        pts_shift = f",asetpts=PTS{sign}{abs(audio_offset):.3f}/TB"
+
     cmd: list[str] = [
         "ffmpeg",
         "-y",
@@ -335,7 +349,7 @@ def apply_edit(
             filters.append("[xv]null[vout]")
         filters.append(
             f"[0:a]afade=t=in:st=0.000:d={_fmt(fade_in)},"
-            f"afade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},apad[aout]"
+            f"afade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},apad{pts_shift}[aout]"
         )
     else:
         total = content_dur
@@ -349,7 +363,7 @@ def apply_edit(
         else:
             audio_chain = f"afade=t=in:st=0.000:d={_fmt(fade_in)}"
         filters.append(video_chain + "[vout]")
-        filters.append(f"[0:a]{audio_chain}[aout]")
+        filters.append(f"[0:a]{audio_chain}{pts_shift}[aout]")
 
     cmd += [
         "-filter_complex",

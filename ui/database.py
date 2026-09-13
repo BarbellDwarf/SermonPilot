@@ -299,6 +299,7 @@ class SermonDatabase:
                     proposed_end REAL,
                     final_start REAL,
                     final_end REAL,
+                    audio_offset REAL DEFAULT 0.0,
                     confidence REAL DEFAULT 0.0,
                     needs_review INTEGER DEFAULT 1,
                     evidence TEXT,
@@ -319,6 +320,13 @@ class SermonDatabase:
                 CREATE INDEX IF NOT EXISTS idx_edit_plans_sermon_id
                 ON edit_plans(sermon_id)
             """)
+
+            try:
+                conn.execute(
+                    "ALTER TABLE edit_plans ADD COLUMN audio_offset REAL DEFAULT 0.0"
+                )
+            except Exception:
+                pass  # Column already exists
 
             # LLM API usage tracking table
             conn.execute("""
@@ -884,9 +892,9 @@ class SermonRepository:
             cursor = conn.execute("""
                 INSERT INTO edit_plans (
                     sermon_id, revision, proposed_start, proposed_end,
-                    final_start, final_end, confidence, needs_review, evidence,
+                    final_start, final_end, audio_offset, confidence, needs_review, evidence,
                     qa_judgment, reasoning, status, source_path, applied_media_id, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 sermon_id,
                 next_revision,
@@ -894,6 +902,7 @@ class SermonRepository:
                 plan.get('proposed_end'),
                 plan.get('final_start'),
                 plan.get('final_end'),
+                plan.get('audio_offset', 0.0),
                 plan.get('confidence', 0.0),
                 1 if plan.get('needs_review', True) else 0,
                 plan.get('evidence'),
@@ -934,6 +943,7 @@ class SermonRepository:
         notes: str = "",
         final_start: float | None = None,
         final_end: float | None = None,
+        audio_offset: float | None = None,
         applied_media_id: str | None = None
     ) -> bool:
         allowed = {
@@ -950,6 +960,9 @@ class SermonRepository:
         if final_end is not None:
             sets.append("final_end = ?")
             params.append(final_end)
+        if audio_offset is not None:
+            sets.append("audio_offset = ?")
+            params.append(float(audio_offset))
         if applied_media_id is not None:
             sets.append("applied_media_id = ?")
             params.append(applied_media_id)
