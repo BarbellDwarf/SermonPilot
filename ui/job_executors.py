@@ -5,11 +5,14 @@ Contains the actual execution logic for different types of background jobs.
 Each executor is responsible for performing the work and updating job progress.
 """
 
+import json
 import logging
+import os
 import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 # Add project paths for imports
 ui_dir = Path(__file__).parent
@@ -504,6 +507,159 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
         )
 
 
+def execute_auto_edit_job(job: Job) -> JobResult:
+    """Execute an auto-edit job: run the pipeline with the auto-edit gate active.
+
+    Required job parameters:
+        - audio_file: path to the uploaded audio/video file
+        - form_data: dict with keys: speaker_name, recorded_date, event_type,
+                     bible_text, title, subtitle, description, hashtags,
+                     skip_audio, skip_transcription, whisper_model, dry_run
+        - config: full config dict (used to set globals in sermon_updater)
+
+    Optional job parameters:
+        - auto_edit_mode: 'auto' or 'interactive' (activates the gate when set)
+        - edit_plan_file: path to a JSON edit plan (see _load_edit_plan_from_file)
+    """
+    try:
+        if job.cancelled or job.status == JobStatus.CANCELLED:
+            raise JobCancelledError("Job cancelled by user")
+
+        job.update_progress(5, "Initializing auto-edit processing...")
+
+        form_data = job.parameters.get('form_data') or {}
+        config = job.parameters.get('config') or {}
+        audio_file = job.parameters.get('audio_file') or form_data.get('audio_file')
+
+        if not audio_file:
+            return JobResult(
+                success=False,
+                message="No audio file path provided",
+                error="Missing audio_file in job parameters"
+            )
+
+        if not Path(audio_file).exists():
+            return JobResult(
+                success=False,
+                message=f"Audio file not found: {audio_file}",
+                error="Audio file is missing on disk"
+            )
+
+        for required_key in ('speaker_name', 'recorded_date'):
+            if not form_data.get(required_key):
+                return JobResult(
+                    success=False,
+                    message=f"Missing required field: {required_key}",
+                    error=f"Form data missing {required_key}"
+                )
+
+        auto_edit_enabled = job.parameters.get('auto_edit_enabled')
+        auto_edit_mode = job.parameters.get('auto_edit_mode')
+        edit_plan_file = job.parameters.get('edit_plan_file')
+
+        if auto_edit_enabled is False and not edit_plan_file:
+            auto_edit_mode = None
+        elif auto_edit_mode is None:
+            auto_edit_mode = 'interactive'
+
+        _inject_sermon_updater_config(config)
+        job.add_log("Config injected for this job")
+
+        def progress_cb(pct, msg):
+            if job.cancelled or job.status == JobStatus.CANCELLED:
+                raise JobCancelledError("Job cancelled by user")
+            try:
+                job.update_progress(pct, msg)
+            except Exception:
+                pass
+
+        job.update_progress(10, f"Processing: {Path(audio_file).name}")
+        job.add_log(f"Audio file: {audio_file}")
+
+        from sermon_updater import process_new_sermon
+
+        kwargs: dict[str, Any] = {
+            'audio_file': audio_file,
+            'speaker_name': form_data.get('speaker_name'),
+            'recorded_date': form_data.get('recorded_date'),
+            'event_type': form_data.get('event_type', 'Sunday Service'),
+            'bible_text': form_data.get('bible_text') or None,
+            'title': form_data.get('title') or None,
+            'subtitle': form_data.get('subtitle') or None,
+            'series_title': form_data.get('series_title') or None,
+            'series_id': form_data.get('series_id'),
+            'description': form_data.get('description') or None,
+            'hashtags': form_data.get('hashtags') or None,
+            'dry_run': bool(form_data.get('dry_run', False)),
+            'skip_transcription': bool(form_data.get('skip_transcription', False)),
+            'skip_audio': bool(form_data.get('skip_audio', False)),
+            'skip_ai_generation': bool(form_data.get('skip_ai_generation', False)),
+            'whisper_model': form_data.get('whisper_model', 'large'),
+            'transcription_backend': form_data.get('transcription_backend',
+                                                    'whisper_local'),
+            'use_clean_audio': bool(form_data.get('use_clean_audio', False)),
+            'clean_audio_script': form_data.get(
+                'clean_audio_script',
+                '~/Documents/Repositories/deepfilternet/clean-audio.py'),
+            'clean_audio_device': form_data.get('clean_audio_device', 'auto'),
+            'generate_short_title': bool(form_data.get('generate_short_title', False)),
+            'force_validation': bool(form_data.get('validate_quality', False)),
+            'enhancement_method': form_data.get('enhancement_method'),
+            'custom_repo': form_data.get('custom_repo'),
+            'custom_file': form_data.get('custom_file'),
+            'config': config,
+            'progress_callback': progress_cb,
+            'auto_edit_mode': auto_edit_mode,
+            'edit_plan_file': edit_plan_file,
+            'cancel_check': lambda: _raise_if_job_cancelled(job),
+        }
+
+        result = process_new_sermon(**kwargs)
+
+        if result.get('cancelled'):
+            job.add_log("Auto-edit processing cancelled by user")
+            raise JobCancelledError("Job cancelled by user")
+
+        if result.get('success'):
+            sermon_id = result.get('sermon_id')
+            plan_status = result.get('edit_plan_status')
+            if plan_status == 'pending_review':
+                job.add_log("Auto-edit cut awaits manual review")
+                return JobResult(
+                    success=True,
+                    message=(f"Auto-edit cut awaiting manual review "
+                             f"({sermon_id or 'dry run'})"),
+                    data=_trim_result_payload(result),
+                )
+            job.add_log(f"Sermon created: {sermon_id or '(dry run)'}")
+            return JobResult(
+                success=True,
+                message=f"Auto-edit applied: {sermon_id or 'dry run'}",
+                data=_trim_result_payload(result),
+            )
+
+        err = result.get('error') or 'Unknown processing error'
+        job.add_log(err)
+        return JobResult(
+            success=False,
+            message=f"Auto-edit processing failed: {err}",
+            error=err,
+            data=_trim_result_payload(result),
+        )
+
+    except JobCancelledError:
+        raise
+    except Exception as e:
+        error_msg = f"Auto-edit job failed: {e}"
+        job.add_log(error_msg)
+        logger.exception(error_msg)
+        return JobResult(
+            success=False,
+            message="Auto-edit job failed",
+            error=str(e),
+        )
+
+
 def execute_batch_processing_job(job: Job) -> JobResult:
     """Execute a batch processing job"""
     try:
@@ -750,6 +906,240 @@ def execute_metadata_update_job(job: Job) -> JobResult:
         return JobResult(success=False, message="Metadata update job failed", error=str(e))
 
 
+def execute_auto_edit_apply_job(job: Job) -> JobResult:
+    """Execute an apply job: persist the reviewed cut and re-run the pipeline.
+
+    Continuation of an AUTO_EDIT job whose plan ended up in 'pending_review'.
+
+    Required job parameters:
+        - sermon_id: draft sermon id from the pending-review pass
+        - plan_id: edit_plans row id to approve
+        - final_start: user-reviewed cut start (seconds)
+        - final_end: user-reviewed cut end (seconds)
+        - audio_file: path to the source media
+        - form_data: same keys as execute_auto_edit_job
+        - config: full config dict
+
+    Optional job parameters:
+        - logo_path: overrides config auto_edit.logo_path for this run
+        - re_edit: true when the user re-edited an already applied plan;
+          the pipeline saves revision N+1 via save_edit_plan_revision
+    """
+    try:
+        if job.cancelled or job.status == JobStatus.CANCELLED:
+            raise JobCancelledError("Job cancelled by user")
+
+        job.update_progress(5, "Initializing auto-edit apply...")
+
+        sermon_id = job.parameters.get('sermon_id')
+        plan_id = job.parameters.get('plan_id')
+        final_start = job.parameters.get('final_start')
+        final_end = job.parameters.get('final_end')
+        logo_path = job.parameters.get('logo_path')
+        re_edit = bool(job.parameters.get('re_edit', False))
+        form_data = job.parameters.get('form_data') or {}
+        config = job.parameters.get('config') or {}
+        audio_file = job.parameters.get('audio_file') or form_data.get('audio_file')
+
+        if not sermon_id or not plan_id:
+            return JobResult(
+                success=False,
+                message="Missing sermon_id or plan_id",
+                error="Auto-edit apply requires sermon_id and plan_id"
+            )
+
+        for required_key in ('final_start', 'final_end'):
+            if not isinstance(job.parameters.get(required_key), int | float):
+                return JobResult(
+                    success=False,
+                    message=f"Missing required field: {required_key}",
+                    error=f"Auto-edit apply requires a numeric {required_key}"
+                )
+
+        if not audio_file:
+            return JobResult(
+                success=False,
+                message="No audio file path provided",
+                error="Missing audio_file in job parameters"
+            )
+
+        for required_key in ('speaker_name', 'recorded_date'):
+            if not form_data.get(required_key):
+                return JobResult(
+                    success=False,
+                    message=f"Missing required field: {required_key}",
+                    error=f"Form data missing {required_key}"
+                )
+
+        from ui.database import SermonRepository
+
+        repo = SermonRepository()
+
+        notes = (
+            "re-edit approved by user" if re_edit else "approved by user"
+        )
+        if not repo.update_edit_plan_status(
+            plan_id,
+            'approved',
+            notes=notes,
+            final_start=float(final_start),
+            final_end=float(final_end),
+        ):
+            return JobResult(
+                success=False,
+                message=f"Edit plan {plan_id} not found for sermon {sermon_id}",
+                error="update_edit_plan_status matched no row"
+            )
+        job.add_log(f"Edit plan {plan_id} approved "
+                    f"({final_start:.1f}s - {final_end:.1f}s)")
+
+        run_config = config
+        if logo_path:
+            run_config = dict(config)
+            auto_edit_cfg = dict(run_config.get('auto_edit') or {})
+            auto_edit_cfg['logo_path'] = logo_path
+            run_config['auto_edit'] = auto_edit_cfg
+
+        plan_payload = {
+            'start': float(final_start),
+            'end': float(final_end),
+            'fade_in': 1.0,
+            'logo_hold': 3.0,
+            'fade_to_black': True,
+            'confidence': 1.0,
+            'needs_review': False,
+            'qa_judgment': 'approved',
+        }
+        plan_file = Path(tempfile.gettempdir()) / (
+            f"sermon_edit_plan_{plan_id}_{os.getpid()}.json"
+        )
+        try:
+            with open(plan_file, 'w', encoding='utf-8') as f:
+                json.dump(plan_payload, f)
+            job.add_log(f"Wrote approved plan overrides to {plan_file.name}")
+
+            _inject_sermon_updater_config(run_config)
+            job.add_log("Config injected for this job")
+
+            def progress_cb(pct, msg):
+                if job.cancelled or job.status == JobStatus.CANCELLED:
+                    raise JobCancelledError("Job cancelled by user")
+                try:
+                    job.update_progress(pct, msg)
+                except Exception:
+                    pass
+
+            _raise_if_job_cancelled(job)
+            job.update_progress(10, f"Re-processing {Path(audio_file).name}")
+
+            from sermon_updater import process_new_sermon
+
+            result = process_new_sermon(
+                audio_file=audio_file,
+                speaker_name=form_data.get('speaker_name'),
+                recorded_date=form_data.get('recorded_date'),
+                event_type=form_data.get('event_type', 'Sunday Service'),
+                bible_text=form_data.get('bible_text') or None,
+                title=form_data.get('title') or None,
+                subtitle=form_data.get('subtitle') or None,
+                series_title=form_data.get('series_title') or None,
+                series_id=form_data.get('series_id'),
+                description=form_data.get('description') or None,
+                hashtags=form_data.get('hashtags') or None,
+                dry_run=bool(form_data.get('dry_run', False)),
+                skip_transcription=bool(form_data.get('skip_transcription', False)),
+                skip_audio=bool(form_data.get('skip_audio', False)),
+                skip_ai_generation=bool(form_data.get('skip_ai_generation', False)),
+                whisper_model=form_data.get('whisper_model', 'large'),
+                transcription_backend=form_data.get('transcription_backend',
+                                                    'whisper_local'),
+                use_clean_audio=bool(form_data.get('use_clean_audio', False)),
+                clean_audio_script=form_data.get(
+                    'clean_audio_script',
+                    '~/Documents/Repositories/deepfilternet/clean-audio.py'),
+                clean_audio_device=form_data.get('clean_audio_device', 'auto'),
+                generate_short_title=bool(form_data.get('generate_short_title', False)),
+                force_validation=bool(form_data.get('validate_quality', False)),
+                enhancement_method=form_data.get('enhancement_method'),
+                custom_repo=form_data.get('custom_repo'),
+                custom_file=form_data.get('custom_file'),
+                config=run_config,
+                progress_callback=progress_cb,
+                auto_edit_mode='auto',
+                edit_plan_file=str(plan_file),
+                cancel_check=lambda: _raise_if_job_cancelled(job),
+            )
+            if result.get('cancelled'):
+                job.add_log("Auto-edit apply cancelled by user")
+                raise JobCancelledError("Job cancelled by user")
+
+            if result.get('success') and result.get('edit_plan_status') == 'auto_applied':
+                media_id = (
+                    result.get('final_upload_path')
+                    or result.get('output_dir')
+                    or result.get('sermon_id')
+                )
+                repo.update_edit_plan_status(
+                    plan_id,
+                    'applied',
+                    applied_media_id=media_id,
+                )
+                job.add_log(f"Edit plan {plan_id} applied to {media_id}")
+                summary = (
+                    f"Approved cut re-applied for {result.get('sermon_id') or sermon_id}"
+                    + (" (new revision saved)" if re_edit else "")
+                )
+                return JobResult(
+                    success=True,
+                    message=summary,
+                    data=_trim_result_payload(result),
+                )
+
+            if result.get('success'):
+                err = ("Pipeline finished but the cut was not applied "
+                       "(returned pending_review)")
+                job.add_log(err)
+                return JobResult(
+                    success=False,
+                    message=err,
+                    error='edit_plan_status did not reach auto_applied',
+                    data=_trim_result_payload(result),
+                )
+
+            err = result.get('error') or 'Unknown processing error'
+            job.add_log(err)
+            return JobResult(
+                success=False,
+                message=f"Auto-edit apply failed: {err}",
+                error=err,
+                data=_trim_result_payload(result),
+            )
+        finally:
+            try:
+                plan_file.unlink(missing_ok=True)
+            except Exception as e:
+                logger.warning("Failed to remove edit plan file %s: %s", plan_file, e)
+
+    except JobCancelledError:
+        raise
+    except Exception as e:
+        error_msg = f"Auto-edit apply job failed: {e}"
+        job.add_log(error_msg)
+        logger.exception(error_msg)
+        return JobResult(
+            success=False,
+            message="Auto-edit apply job failed",
+            error=str(e),
+        )
+
+
+def _execute_auto_edit_dispatch(job: Job) -> JobResult:
+    """Route AUTO_EDIT jobs: apply continuation when plan_id is present."""
+    if job.parameters.get('plan_id') is not None:
+        return execute_auto_edit_apply_job(job)
+    return execute_auto_edit_job(job)
+
+
 # Job executor registry
 _EXECUTORS: dict[JobType, Callable[[Job], JobResult]] = {
     JobType.VALIDATION: execute_validation_job,
@@ -757,6 +1147,7 @@ _EXECUTORS: dict[JobType, Callable[[Job], JobResult]] = {
     JobType.SERMON_PROCESSING: execute_sermon_processing_job,
     JobType.BATCH_PROCESSING: execute_batch_processing_job,
     JobType.METADATA_UPDATE: execute_metadata_update_job,
+    JobType.AUTO_EDIT: _execute_auto_edit_dispatch,
 }
 
 
