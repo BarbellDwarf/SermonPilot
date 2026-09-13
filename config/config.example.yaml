@@ -13,6 +13,12 @@ llm:
     ollama:
       host: "http://localhost:11434"
       model: "llama3"
+      # Context window and output budget. Cut detection sends a full timestamped
+      # transcript and reasoning models (for example glm-5.3-flash:cloud) spend
+      # output tokens thinking before the JSON answer. Defaults that are too low
+      # truncate the prompt or produce an empty content field.
+      num_ctx: 32768
+      max_tokens: 16000
     openai:
       api_key: "${OPENAI_API_KEY}"
       model: "gpt-3.5-turbo"
