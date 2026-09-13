@@ -1960,9 +1960,80 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         wav_candidate = temp_dir / "enhanced_audio.wav"
                         if wav_candidate.exists():
                             mux_audio_input = wav_candidate
-                    mux_cmd = [
-                        "ffmpeg", "-y",
-                        "-i", str(original_input_path),
+
+                    correction = 0.0
+                    av_cfg = config.get('av_sync') or {}
+                    if av_cfg.get('enabled', True):
+                        max_offset = float(av_cfg.get('max_offset_seconds', 2.0))
+                        min_confidence = float(av_cfg.get('min_confidence', 0.12))
+                        auto_correct = bool(av_cfg.get('auto_correct', False))
+                        try:
+                            from src.av_sync import (
+                                measure_content_offset,
+                                measure_waveform_offset,
+                            )
+                            input_offset = measure_content_offset(
+                                original_input_path,
+                                model_dir=Path(av_cfg.get('model_dir') or '/tmp/av_sync_models'),
+                            )
+                            if input_offset.available and input_offset.offset_seconds is not None:
+                                console_print(
+                                    f"🎯 Input A/V offset: "
+                                    f"{input_offset.offset_seconds:+.2f}s "
+                                    f"(confidence {input_offset.confidence:.2f}, "
+                                    f"{input_offset.detail})"
+                                )
+                                logger.info("av_sync input: %s", input_offset)
+                            else:
+                                console_print(
+                                    f"🎯 Input A/V offset not measured ({input_offset.detail})"
+                                )
+                            enh_offset = measure_waveform_offset(
+                                original_input_path, mux_audio_input
+                            )
+                            if enh_offset.available and enh_offset.offset_seconds is not None:
+                                console_print(
+                                    f"🎧 Enhancement audio offset: "
+                                    f"{enh_offset.offset_seconds:+.3f}s"
+                                )
+                                logger.info("av_sync enhancement: %s", enh_offset)
+                            measured = 0.0
+                            if input_offset.available and input_offset.offset_seconds is not None:
+                                measured += input_offset.offset_seconds
+                            if enh_offset.available and enh_offset.offset_seconds is not None:
+                                measured += enh_offset.offset_seconds
+                            if abs(measured) > 0.1:
+                                if abs(measured) > max_offset:
+                                    result['av_sync_needs_review'] = True
+                                    console_print(
+                                        f"⚠️  A/V offset {measured:+.2f}s exceeds "
+                                        f"max_offset_seconds={max_offset:.2f}; flagged for review"
+                                    )
+                                elif not auto_correct:
+                                    console_print(
+                                        f"⚠️  A/V offset {measured:+.2f}s measured; "
+                                        f"auto-correction disabled "
+                                        f"(set av_sync.auto_correct=true to enable)"
+                                    )
+                                elif input_offset.confidence >= min_confidence:
+                                    correction = measured
+                                    console_print(
+                                        f"🔧 Correcting A/V offset by {correction:+.2f}s"
+                                    )
+                                else:
+                                    console_print(
+                                        f"⚠️  A/V offset {measured:+.2f}s below confidence "
+                                        f"threshold ({input_offset.confidence:.2f}); "
+                                        f"not corrected"
+                                    )
+                            result['av_sync_offset_seconds'] = correction
+                        except Exception as e:
+                            logger.warning("av_sync measurement failed: %s", e)
+
+                    mux_cmd = ["ffmpeg", "-y", "-i", str(original_input_path)]
+                    if abs(correction) > 1e-6:
+                        mux_cmd += ["-itsoffset", f"{correction:.3f}"]
+                    mux_cmd += [
                         "-i", str(mux_audio_input),
                         "-c:v", "copy",
                         "-c:a", "aac",
