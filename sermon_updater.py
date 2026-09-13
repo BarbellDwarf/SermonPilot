@@ -1100,14 +1100,16 @@ def refine_edit_plan(sermon_id: str, notes: str = "", config: dict | None = None
         repo = SermonRepository()
         current = repo.get_current_edit_plan(sermon_id)
         history = repo.get_edit_plan_history(sermon_id)
-        prior_notes = [
-            str(row.get('notes') or '').strip()
-            for row in history
-            if str(row.get('notes') or '').strip()
-        ]
-        combined_notes = '; '.join(dict.fromkeys(
-            [str(notes or '').strip()] + prior_notes
-        )).strip('; ')
+        prior_notes: list[str] = []
+        for row in history:
+            for part in str(row.get('notes') or '').split(';'):
+                part = part.strip()
+                if part and part not in prior_notes:
+                    prior_notes.append(part)
+        combined_notes = '; '.join(prior_notes)
+        new_notes = str(notes or '').strip()
+        if new_notes and new_notes not in prior_notes:
+            combined_notes = f"{new_notes}; {combined_notes}".strip('; ')
 
         output_root = Path(config.get('output_directory', 'processed_sermons'))
         if not output_root.is_absolute():
