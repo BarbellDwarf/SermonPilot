@@ -20,13 +20,7 @@ kdenlive stays in the workflow for rare creative edits only: multi-cam cuts, tit
 ## Requirements
 
 - `ffmpeg` on the PATH (keeper transcode and apply both shell out to it)
-- An OpenAI-compatible endpoint for cut detection, configured through two env vars in `.env`:
-
-```bash
-OPENCODE_GO_BASE_URL=https://your-openai-compatible-endpoint/v1
-OPENCODE_GO_API_KEY=your-key
-```
-
+- A configured LLM provider for cut detection. Detection uses the global `llm` chain by default (the shipped config runs Ollama with `glm-5.3-flash:cloud`), so no extra environment variables are needed. An optional per-operation pin is documented under "LLM for cut detection".
 - Hardware encoding is optional. The keeper picks its encoder at runtime: NVENC when an NVIDIA GPU is present, then VAAPI (verified on AMD and Intel), then plain `libx264`.
 
 ## Configuration
@@ -71,9 +65,11 @@ auto_edit:
 
 Set `logo_path` once and every edit and re-edit picks it up automatically, so the card survives the whole life of the sermon.
 
-### LLM pin for cut detection
+### LLM for cut detection
 
-Cut detection uses its own provider so it does not inherit your metadata model:
+Cut detection runs on the global LLM chain by default: the provider and model in `llm.primary` (the shipped config uses Ollama with `glm-5.3-flash:cloud`). No extra environment variables are required.
+
+If you later want a dedicated model for detection only, add an optional per-operation pin; when absent, detection keeps using the primary chain:
 
 ```yaml
 llm:
@@ -81,16 +77,13 @@ llm:
     auto_edit:
       provider: "openai"   # any OpenAI-compatible endpoint
       openai:
-        api_key: "${OPENCODE_GO_API_KEY}"
-        base_url: "${OPENCODE_GO_BASE_URL}"
-        model: "deepseek-v4.1-flash"
-        extra_headers:
-          x-opencode-session: "sermonpilot-auto-edit"
+        api_key: "${AUTO_EDIT_LLM_API_KEY}"
+        base_url: "${AUTO_EDIT_LLM_BASE_URL}"
+        model: "your-model"
+        extra_headers: {}  # optional; some gateways need a routing/session header
 ```
 
-The `x-opencode-session` header is required by the OpenCode Go endpoint for request routing. Set `OPENCODE_GO_BASE_URL=https://opencode.ai/zen/go/v1` and `OPENCODE_GO_API_KEY` in `.env`.
-
-If this pin fails to initialize or errors at call time, detection falls back to the global `llm` primary/fallback chain.
+If the pin fails to initialize or errors at call time, detection falls back to the global chain. Detection retries up to 3 times on empty or unusable model output, then returns a `needs_review` plan.
 
 ## Pipeline
 
@@ -123,10 +116,14 @@ Open the sermon in the Library and expand the review panel:
 - Badges show the plan status and confidence
 - Start and end timestamp inputs at 0.1s resolution, validated live against the plan rules (problems are listed inline)
 - The LLM's evidence quote from the transcript
-- Approve applies the plan and continues the pipeline. Reject drops it.
+- Approve applies the plan and continues the pipeline
+- **Reject** drops the plan. If you typed rejection notes, rejecting immediately queues a fresh detection run that sends your notes to the LLM as refinement instructions. Notes can redefine scope, not just timestamps: "keep only the second class" moves the start point to that class.
+- **Regenerate** re-runs detection manually, sending accumulated notes from every previous rejection as context.
 - Already auto-applied plans show their applied section here
 - **Restore original** undoes an applied edit: the original media is reuploaded and the plan is reverted
 - **Re-edit** starts a new revision, always in interactive mode
+
+Each re-detection creates a new revision; older rows stay but are superseded, and the notes history is visible in the panel.
 
 ## Re-edit semantics
 

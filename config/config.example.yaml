@@ -75,19 +75,20 @@ llm:
       api_key: "${GROQ_API_KEY}"
       model: "llama-3.1-8b-instant"  # Fast model for validation
 
-  # Operation-scoped LLM pins (override the global primary/fallback chain for
-  # specific tasks). Auto-edit cut detection uses any OpenAI-compatible
-  # endpoint: set OPENCODE_GO_BASE_URL and OPENCODE_GO_API_KEY in .env. If the
-  # pin fails to initialize, detection falls back to the global llm chain.
-  operations:
-    auto_edit:
-      provider: "openai"  # OpenAI-compatible provider
-      openai:
-        api_key: "${OPENCODE_GO_API_KEY}"
-        base_url: "${OPENCODE_GO_BASE_URL}"
-        model: "deepseek-v4.1-flash"
-        extra_headers:
-          x-opencode-session: "sermonpilot-auto-edit"
+  # Operation-scoped LLM pins (optional). If absent for an operation,
+  # that operation uses the global primary/fallback chain above.
+  # Example: pin auto-edit cut detection to a dedicated OpenAI-compatible
+  # endpoint. Uncomment and fill in to use it; otherwise detection runs on
+  # the primary chain (for example Ollama glm-5.3-flash:cloud).
+  # operations:
+  #   auto_edit:
+  #     provider: "openai"
+  #     openai:
+  #       api_key: "${AUTO_EDIT_LLM_API_KEY}"
+  #       base_url: "${AUTO_EDIT_LLM_BASE_URL}"
+  #       model: "your-model"
+  #       extra_headers:
+  #         x-opencode-session: "sermonpilot-auto-edit"
 
 # Audio Processing Settings
 use_audacity: false  # Set to true if Audacity with mod-script-pipe is available
