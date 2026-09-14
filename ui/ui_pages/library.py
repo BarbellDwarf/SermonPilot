@@ -11,6 +11,7 @@ import csv
 import html
 import io
 import json
+import logging
 import re
 import sys
 import tempfile
@@ -26,6 +27,9 @@ ui_dir = Path(__file__).parent.parent
 src_dir = ui_dir.parent / "src"
 sys.path.insert(0, str(ui_dir))
 sys.path.insert(0, str(src_dir))
+
+logger = logging.getLogger(__name__)
+
 
 def _set_feedback(message, kind="success", details=None):
     """Persist feedback in session state so it survives reruns"""
@@ -1194,19 +1198,47 @@ def _enqueue_edit_refine(sermon_id: str, notes: str = "") -> str | None:
         return None
 
 
+def _looks_like_processed_artifact(value: str) -> bool:
+    stem = Path(str(value)).stem.lower()
+    return "processed" in stem and "_keeper" not in stem
+
+
 def _resolve_apply_source(sermon: dict[str, Any], repo: Any) -> tuple[str | None, bool]:
     """Media to trim for an apply plus whether it is already enhanced.
 
     The processed file already carries the enhanced audio, so trimming it skips
     the DeepFilterNet stage entirely (and its GPU memory).
     """
-    metadata = _read_edit_plan_metadata(sermon)
-    processed = metadata.get("processed_file")
-    if processed:
-        path = Path(str(processed))
-        if path.exists():
-            return str(path), True
-    return _resolve_edit_media_path(sermon, repo), False
+    full = _full_sermon_or_none(sermon, repo)
+    for source in (sermon, full):
+        if not isinstance(source, dict):
+            continue
+        metadata = _read_edit_plan_metadata(source)
+        processed = metadata.get("processed_file")
+        if processed:
+            path = Path(str(processed))
+            if path.exists():
+                logger.info(
+                    "apply source %s already_enhanced=True (metadata processed_file)",
+                    path,
+                )
+                return str(path), True
+    for source in (full, sermon):
+        if not isinstance(source, dict):
+            continue
+        audio = (source.get("file_paths") or {}).get("audio") or ""
+        if audio and _looks_like_processed_artifact(audio) and Path(str(audio)).exists():
+            logger.info(
+                "apply source %s already_enhanced=True (file_paths audio fallback)",
+                audio,
+            )
+            return str(audio), True
+    media_path = _resolve_edit_media_path(sermon, repo)
+    logger.info(
+        "apply source %s already_enhanced=False (fallback original)",
+        media_path,
+    )
+    return media_path, False
 
 
 def _build_apply_kwargs(
@@ -1255,7 +1287,7 @@ def _apply_approved_edit(
             return
 
     full_sermon = _full_sermon_or_none(sermon, repo) or sermon
-    media_path, already_enhanced = _resolve_apply_source(sermon, repo)
+    media_path, already_enhanced = _resolve_apply_source(full_sermon, repo)
     if not media_path:
         _set_feedback(
             "Original media file not found locally. Cannot apply the edit.",
