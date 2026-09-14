@@ -41,6 +41,10 @@ _SECRET_KEY_NAMES = frozenset({'password', 'passwd', 'token', 'secret', 'auth', 
 # Result payload keys that are too bulky to persist with every job record
 _RESULT_STRIP_FIELDS = frozenset({'transcript'})
 
+# JobResult dataclass fields. Persisted result dicts with extra keys (e.g.
+# self-managed edit-apply rows) are coerced: extras fold into data.
+_RESULT_FIELDS = frozenset({'success', 'message', 'data', 'error'})
+
 # Terminal jobs older than this are pruned from memory and the database
 JOB_RETENTION_DAYS = 30
 
@@ -165,9 +169,33 @@ class Job:
 
         # Handle result if present
         if data.get('result'):
-            data['result'] = JobResult(**data['result'])
+            data['result'] = _coerce_job_result(data['result'])
 
         return cls(**data)
+
+
+def _coerce_job_result(data: dict[str, Any]) -> JobResult:
+    """Build a JobResult from a persisted dict, tolerating extra keys.
+
+    Self-managed flows (edit applies) write compact result dicts such as
+    {"success": ..., "render_only": ..., "elapsed_seconds": ...} straight
+    to background_jobs.result. Unknown keys fold into data so the Jobs page
+    parses those rows instead of logging a parse error per row per refresh.
+    """
+    known = {k: v for k, v in data.items() if k in _RESULT_FIELDS}
+    extras = {k: v for k, v in data.items() if k not in _RESULT_FIELDS}
+    payload = known.get('data')
+    if extras:
+        if isinstance(payload, dict):
+            payload = {**payload, **extras}
+        elif payload is None:
+            payload = extras
+        known['data'] = payload
+    if 'success' not in known:
+        known['success'] = False
+    if 'message' not in known:
+        known['message'] = ''
+    return JobResult(**known)
 
 
 def _result_for_persistence(result: JobResult) -> dict[str, Any]:
@@ -641,7 +669,7 @@ class JobQueue:
             }
             if row['result']:
                 result_data = json.loads(row['result'])
-                job_data['result'] = JobResult(**result_data)
+                job_data['result'] = _coerce_job_result(result_data)
             return Job(**job_data)
         except Exception as e:
             logger.error(f"Failed to parse job {row['id']}: {e}")
