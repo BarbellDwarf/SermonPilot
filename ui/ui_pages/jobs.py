@@ -16,6 +16,7 @@ Features:
 from datetime import datetime, timedelta
 
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 
 # Import job queue components at module level
 try:
@@ -362,7 +363,7 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
 
         # Enhanced expandable details for compact view
         if job.logs or job.result or job.parameters:
-            with st.expander(f"Details - {job.id[:8]}", expanded=False):
+            with managed_expander(f"Details - {job.id[:8]}", expanded=False):
                 detail_col1, detail_col2 = st.columns(2)
 
                 with detail_col1:

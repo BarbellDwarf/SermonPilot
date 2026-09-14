@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 
 # Add src directory to Python path for imports
 ui_dir = Path(__file__).parent
@@ -378,7 +379,7 @@ def show_metadata_refresh_section():
     Show a collapsible section for refreshing metadata from API.
     Call this in UI pages that use the metadata dropdowns.
     """
-    with st.expander("Refresh Metadata from SermonAudio"):
+    with managed_expander("Refresh Metadata from SermonAudio"):
         feedback = st.session_state.pop('metadata_refresh_feedback', None)
         if feedback:
             st.success(feedback)

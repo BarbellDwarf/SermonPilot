@@ -9,6 +9,7 @@ import time as _time
 from pathlib import Path
 
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -38,11 +39,11 @@ def show_new_sermon_enhanced():
         return
 
     _show_start_section()
-    with st.expander("1. Upload Audio/Video File", expanded=True):
+    with managed_expander("1. Upload Audio/Video File", expanded=True):
         _show_upload_section()
-    with st.expander("2. Sermon Metadata", expanded=st.session_state.pop('expand_metadata', False)):
+    with managed_expander("2. Sermon Metadata", expanded=st.session_state.pop('expand_metadata', False)):
         _show_metadata_section()
-    with st.expander("3. Processing Options", expanded=False):
+    with managed_expander("3. Processing Options", expanded=False):
         _show_processing_section()
     _sync_start_section_state()
 
@@ -128,7 +129,7 @@ def _show_upload_section():
 
             max_preview_size = 100 * 1024 * 1024
             if uploaded_file.size <= max_preview_size:
-                with st.expander("Preview", expanded=False):
+                with managed_expander("Preview", expanded=False):
                     try:
                         video_exts = ('.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v')
                         if any(uploaded_file.name.lower().endswith(e) for e in video_exts):
@@ -762,7 +763,7 @@ def _show_enhanced_processing_progress(job):
     st.text(f"Progress: {job.progress:.1f}%")
 
     if job.logs:
-        with st.expander("Recent Activity", expanded=True):
+        with managed_expander("Recent Activity", expanded=True):
             for log in job.logs[-5:]:
                 st.text(log)
 

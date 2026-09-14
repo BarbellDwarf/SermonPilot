@@ -3,6 +3,7 @@ from typing import Any
 
 import numpy as np
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 
 
 class AudioEditor:
@@ -100,7 +101,7 @@ class AudioEditor:
                 }
 
         # Advanced controls
-        with st.expander("Advanced Editing Options"):
+        with managed_expander("Advanced Editing Options"):
             advanced_controls = self._render_advanced_controls()
 
         return {
