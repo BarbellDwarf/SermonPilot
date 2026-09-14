@@ -74,6 +74,7 @@ class JobType(Enum):
     TRANSCRIPT_GENERATION = "transcript_generation"
     METADATA_UPDATE = "metadata_update"
     AUTO_EDIT = "auto_edit"
+    AUTO_EDIT_APPLY = "auto_edit_apply"
 
 
 class JobStatus(Enum):

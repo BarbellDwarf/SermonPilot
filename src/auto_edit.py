@@ -277,6 +277,9 @@ MAX_AUDIO_OFFSET = 5.0
 
 
 def _run_ffmpeg(cmd: list[str]) -> None:
+    import time as _time
+
+    start = _time.time()
     try:
         subprocess.run(
             cmd, capture_output=True, text=True, timeout=_FFMPEG_TIMEOUT_SECONDS, check=True
@@ -284,6 +287,13 @@ def _run_ffmpeg(cmd: list[str]) -> None:
     except subprocess.CalledProcessError as e:
         stderr_tail = (e.stderr or "")[-400:]
         raise RuntimeError(f"apply_edit ffmpeg failed: {stderr_tail}") from e
+    finally:
+        logger.info(
+            "ffmpeg stage %.1fs: %s -> %s",
+            _time.time() - start,
+            " ".join(cmd[:2]),
+            cmd[-1],
+        )
 
 
 def _fmt(seconds: float) -> str:
