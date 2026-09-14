@@ -59,6 +59,52 @@ def _detect_device(preference: str = "auto", allow_rocm: bool = True) -> str:
     return "cpu"
 
 
+def log_cuda_memory(stage: str) -> None:
+    """Log free/total VRAM for a pipeline stage when CUDA is present."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            free, total = torch.cuda.mem_get_info()
+            logger.info("VRAM %s: %.2f/%.2f GB free", stage, free / 1e9, total / 1e9)
+    except Exception:
+        pass
+
+
+def release_transcription_gpu() -> None:
+    """Return reserved CUDA memory to the driver after a transcription stage."""
+    import gc
+
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            if hasattr(torch.cuda, "ipc_collect"):
+                torch.cuda.ipc_collect()
+    except Exception:
+        pass
+
+
+def _with_gpu_release(fn):
+    """Release cached CUDA memory after a local transcription backend returns.
+
+    PyTorch keeps reserved blocks in its caching allocator; without an explicit
+    empty_cache the Streamlit process holds several GB after the job finishes
+    and the next model load OOMs.
+    """
+
+    def wrapper(*args, **kwargs):
+        log_cuda_memory("before transcription")
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            release_transcription_gpu()
+            log_cuda_memory("after transcription release")
+
+    wrapper.__name__ = getattr(fn, "__name__", "wrapped")
+    return wrapper
+
+
 def _load_whisper_model(model_size: str, device: str):
     """Load an openai-whisper model, raising TranscriptionError on failure."""
     import warnings
@@ -80,6 +126,7 @@ def _load_whisper_model(model_size: str, device: str):
         ) from e
 
 
+@_with_gpu_release
 def _transcribe_whisper_local_segments(
     audio_path: str,
     model_size: str,
@@ -111,6 +158,7 @@ def _transcribe_whisper_local_segments(
         raise TranscriptionError(f"Local transcription error: {e}") from e
 
 
+@_with_gpu_release
 def _transcribe_whisper_local(
     audio_path: str,
     model_size: str,
@@ -143,6 +191,7 @@ def _transcribe_whisper_local(
         raise TranscriptionError(f"Local transcription error: {e}") from e
 
 
+@_with_gpu_release
 def _transcribe_faster_whisper_local(
     audio_path: str,
     model_size: str,
@@ -196,6 +245,7 @@ def _transcribe_faster_whisper_local(
         return _transcribe_whisper_local(audio_path, model_size, device_preference)
 
 
+@_with_gpu_release
 def _transcribe_faster_whisper_local_segments(
     audio_path: str,
     model_size: str,

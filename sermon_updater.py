@@ -1921,6 +1921,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     enhanced_audio_path = audio_path
                 else:
                     _report(30, "Audio enhancement complete")
+                try:
+                    processor.release_gpu()
+                    del processor
+                except Exception:
+                    pass
             else:
                 logger.warning("AudioProcessor unavailable, skipping enhancement")
                 enhanced_audio_path = audio_path
