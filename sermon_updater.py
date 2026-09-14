@@ -4764,12 +4764,18 @@ def _reuse_existing_transcript(input_path: Path, speaker_name: str, series_title
     compared on stems with that prefix stripped instead.
     """
     try:
+        local_transcript = Path(input_path).parent / "transcript.txt"
+        if local_transcript.exists() and local_transcript.stat().st_size > 0:
+            logger.info("Reusing existing transcript next to media: %s", local_transcript)
+            return local_transcript.read_text(encoding='utf-8')
+
         output_root = Path(config.get('output_directory', 'processed_sermons'))
         if not output_root.is_absolute():
             output_root = Path(__file__).parent / output_root
         reuse_dir = get_sermon_dir(output_root, speaker_name, series_title, title, "reuse")
         transcript_path = get_file_path(reuse_dir, "transcript")
         if not transcript_path.exists():
+            logger.info("Transcript reuse miss: no file at %s", transcript_path)
             return ""
 
         meta = read_metadata(reuse_dir) or {}
@@ -4778,6 +4784,10 @@ def _reuse_existing_transcript(input_path: Path, speaker_name: str, series_title
             if _normalized_file_stem(stored_original) == _normalized_file_stem(input_path):
                 logger.info("Reusing existing transcript: %s", transcript_path)
                 return transcript_path.read_text(encoding='utf-8')
+            logger.info(
+                "Transcript reuse miss: stored original %r does not match input %r",
+                stored_original, str(input_path),
+            )
             return ""
 
         # Legacy output dirs carry no original_file; keep the old mtime
