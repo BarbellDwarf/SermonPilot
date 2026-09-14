@@ -1194,12 +1194,28 @@ def _enqueue_edit_refine(sermon_id: str, notes: str = "") -> str | None:
         return None
 
 
+def _resolve_apply_source(sermon: dict[str, Any], repo: Any) -> tuple[str | None, bool]:
+    """Media to trim for an apply plus whether it is already enhanced.
+
+    The processed file already carries the enhanced audio, so trimming it skips
+    the DeepFilterNet stage entirely (and its GPU memory).
+    """
+    metadata = _read_edit_plan_metadata(sermon)
+    processed = metadata.get("processed_file")
+    if processed:
+        path = Path(str(processed))
+        if path.exists():
+            return str(path), True
+    return _resolve_edit_media_path(sermon, repo), False
+
+
 def _build_apply_kwargs(
     full_sermon: dict[str, Any],
     media_path: str,
     plan_file: str | None,
     render_only: bool,
     audio_offset: float,
+    skip_audio: bool = False,
 ) -> dict[str, Any]:
     return {
         "audio_file": media_path,
@@ -1213,6 +1229,7 @@ def _build_apply_kwargs(
         "edit_plan_file": plan_file,
         "audio_offset": audio_offset,
         "dry_run": render_only,
+        "skip_audio": skip_audio,
     }
 
 
@@ -1238,7 +1255,7 @@ def _apply_approved_edit(
             return
 
     full_sermon = _full_sermon_or_none(sermon, repo) or sermon
-    media_path = _resolve_edit_media_path(sermon, repo)
+    media_path, already_enhanced = _resolve_apply_source(sermon, repo)
     if not media_path:
         _set_feedback(
             "Original media file not found locally. Cannot apply the edit.",
@@ -1260,6 +1277,7 @@ def _apply_approved_edit(
                     plan_file,
                     render_only,
                     audio_offset,
+                    skip_audio=already_enhanced,
                 )
             )
         if plan_file:
