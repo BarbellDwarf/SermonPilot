@@ -393,6 +393,28 @@ def apply_edit(
     return out
 
 
+def shift_snippet_audio(base: Path, offset: float, out: Path) -> Path:
+    """Remux a snippet with the audio track shifted by offset seconds.
+
+    No re-encode: both streams are copied, so repeated nudges are near-instant.
+    Positive offset delays the audio later; negative advances it.
+    """
+    if abs(offset) < 1e-6:
+        return base
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(base),
+        "-itsoffset", _fmt(offset), "-i", str(base),
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-c", "copy",
+        "-shortest",
+        str(out),
+    ]
+    _run_ffmpeg(cmd)
+    return out
+
+
 def _render_snippet(source: Path, start: float, end: float, out: Path) -> Path:
     cmd = [
         "ffmpeg",

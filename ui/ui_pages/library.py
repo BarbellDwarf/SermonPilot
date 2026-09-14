@@ -1301,6 +1301,54 @@ def _apply_approved_edit(
         )
 
 
+def _plan_working_values(plan: dict[str, Any],
+                         full_reset: bool = False) -> tuple[float, float, float]:
+    """Working values for the offset editor: (start, end, audio_offset)."""
+    start = float(plan.get("proposed_start") or 0.0)
+    end = float(plan.get("proposed_end") or 0.0)
+    offset = 0.0 if full_reset else float(plan.get("audio_offset") or 0.0)
+    return start, end, offset
+
+
+def _preview_offset_snippets(sermon: dict[str, Any], plan: dict[str, Any], repo: Any,
+                             start: float, end: float, audio_offset: float) -> list[Path]:
+    """Render offset-preview snippets without touching the plan or source files."""
+    try:
+        from src.auto_edit import EditPlan, render_review_snippets, shift_snippet_audio
+    except Exception:
+        return []
+    media_path = _resolve_edit_media_path(sermon, repo)
+    if not media_path:
+        return []
+    source = Path(media_path)
+    snippet_dir = source.parent / "snippets"
+    signature = {"start": float(start), "end": float(end)}
+    try:
+        bases = _cached_edit_snippets(snippet_dir, signature)
+        if bases is None:
+            snippet_dir.mkdir(parents=True, exist_ok=True)
+            edit_plan = EditPlan(start=float(start), end=float(end), needs_review=True)
+            bases = render_review_snippets(source, edit_plan, snippet_dir, None)
+            (snippet_dir / "snippets.json").write_text(
+                json.dumps(signature), encoding="utf-8"
+            )
+        shifted: list[Path] = []
+        for base in bases:
+            if abs(audio_offset) < 1e-6:
+                shifted.append(base)
+                continue
+            target = base.with_name(f"{base.stem}_off_{audio_offset:+.1f}.mp4")
+            if not target.exists() or target.stat().st_mtime < base.stat().st_mtime:
+                try:
+                    shift_snippet_audio(base, float(audio_offset), target)
+                except Exception:
+                    continue
+            shifted.append(target)
+        return shifted
+    except Exception:
+        return []
+
+
 def show_edit_review_panel(sermon: dict[str, Any]) -> None:
     """Review panel for the sermon's current auto-edit plan"""
     if not sermon or not isinstance(sermon, dict):
@@ -1574,33 +1622,35 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
             return
 
         st.markdown("#### Review timestamps")
+        gen = st.session_state.get(f"editplan_gen_{sermon_id}", 0)
+        default_start, default_end, default_offset = _plan_working_values(plan)
         ts_col1, ts_col2, off_col = st.columns([1, 1, 1])
         with ts_col1:
             start_val = st.number_input(
                 "Start (s)",
                 min_value=0.0,
                 max_value=max_ts if max_ts else proposed_end + 3600.0,
-                value=min(proposed_start, max_ts or proposed_end + 3600.0),
+                value=min(default_start, max_ts or default_start),
                 step=0.1,
-                key=f"editplan_start_{sermon_id}",
+                key=f"editplan_start_{sermon_id}_{gen}",
             )
         with ts_col2:
             end_val = st.number_input(
                 "End (s)",
                 min_value=0.0,
                 max_value=max_ts if max_ts else max(proposed_end, start_val) + 3600.0,
-                value=min(proposed_end, max_ts or max(proposed_end, start_val)),
+                value=min(default_end, max_ts or default_end),
                 step=0.1,
-                key=f"editplan_end_{sermon_id}",
+                key=f"editplan_end_{sermon_id}_{gen}",
             )
         with off_col:
             audio_offset_val = st.number_input(
                 "Audio offset (s)",
                 min_value=-5.0,
                 max_value=5.0,
-                value=float(plan.get("audio_offset") or 0.0),
+                value=default_offset,
                 step=0.1,
-                key=f"editplan_audio_offset_{sermon_id}",
+                key=f"editplan_audio_offset_{sermon_id}_{gen}",
                 help="Positive delays the audio later relative to video; negative moves it earlier.",
             )
         st.caption(
@@ -1634,6 +1684,98 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
             st.warning(problem)
         if not problems:
             st.success("Plan validates cleanly")
+
+        preview_cols = st.columns(4)
+        with preview_cols[0]:
+            preview_clicked = st.button(
+                "Preview offset",
+                key=f"editplan_preview_{sermon_id}",
+                width="stretch",
+                help="Render short snippets with the current offset; no plan or file changes.",
+            )
+        with preview_cols[1]:
+            save_values_clicked = st.button(
+                "Apply to plan",
+                key=f"editplan_save_values_{sermon_id}",
+                width="stretch",
+                help="Save the current values as a new plan revision; nothing is uploaded.",
+            )
+        with preview_cols[2]:
+            reset_values_clicked = st.button(
+                "Reset values",
+                key=f"editplan_reset_values_{sermon_id}",
+                width="stretch",
+                help="Revert the fields to the plan's saved values.",
+            )
+        with preview_cols[3]:
+            full_reset_clicked = st.button(
+                "Reset to proposal",
+                key=f"editplan_full_reset_{sermon_id}",
+                width="stretch",
+                help="Restore the original proposal timestamps and set the audio offset to 0.",
+            )
+
+        if preview_clicked:
+            with st.spinner("Rendering offset preview (no plan changes)..."):
+                preview_paths = _preview_offset_snippets(
+                    sermon, plan, repo, float(start_val), float(end_val),
+                    float(audio_offset_val),
+                )
+            st.session_state[f"editplan_preview_paths_{sermon_id}"] = [
+                str(path) for path in preview_paths
+            ]
+            _set_feedback("Preview rendered. The plan and media files were not changed.")
+
+        preview_paths = st.session_state.get(f"editplan_preview_paths_{sermon_id}") or []
+        if preview_paths:
+            st.caption(
+                f"Offset preview @ {float(audio_offset_val):+.1f}s "
+                f"(plan and files unchanged):"
+            )
+            for path in preview_paths:
+                if Path(path).exists():
+                    st.video(str(path))
+
+        if save_values_clicked:
+            try:
+                repo.save_edit_plan_revision(
+                    sermon_id,
+                    {
+                        "proposed_start": float(start_val),
+                        "proposed_end": float(end_val),
+                        "final_start": float(start_val),
+                        "final_end": float(end_val),
+                        "audio_offset": float(audio_offset_val),
+                        "confidence": confidence,
+                        "needs_review": True,
+                        "evidence": evidence,
+                        "qa_judgment": qa,
+                        "reasoning": reasoning,
+                        "status": "pending_review",
+                        "source_path": plan.get("source_path"),
+                        "applied_media_id": plan.get("applied_media_id"),
+                        "notes": (
+                            (plan.get("notes") or "") + "; values saved from Library"
+                        ).strip("; "),
+                    },
+                )
+            except Exception as e:
+                _set_feedback(f"Could not save plan revision: {e}", kind="error")
+                return
+            _set_feedback("Values saved as a new plan revision (no upload).")
+            st.rerun()
+
+        if reset_values_clicked:
+            st.session_state[f"editplan_gen_{sermon_id}"] = gen + 1
+            _set_feedback("Fields reset to the plan's saved values.")
+            st.rerun()
+
+        if full_reset_clicked:
+            st.session_state[f"editplan_gen_{sermon_id}"] = gen + 1
+            _set_feedback(
+                "Reset to the original proposal: timestamps restored, audio offset 0."
+            )
+            st.rerun()
 
         prior_notes = []
         for row in history:
