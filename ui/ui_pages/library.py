@@ -944,10 +944,16 @@ def _edit_status_badge(status: str) -> str:
         "pending_review": "Pending review",
         "auto_applied": "Auto-applied",
         "applied": "Applied",
+        "applied_local": "Rendered, not uploaded",
         "rejected": "Rejected",
         "reverted": "Reverted",
     }
     return labels.get(status, status.replace("_", " ").title() if status else "Unknown")
+
+
+def _default_apply_mode(sermon_id: str) -> str:
+    """Drafts default to a local render; uploaded sermons default to render+upload."""
+    return "render_only" if str(sermon_id or "").startswith("draft_") else "upload"
 
 
 def _load_edit_duration(sermon: dict[str, Any]) -> float | None:
@@ -1184,6 +1190,28 @@ def _enqueue_edit_refine(sermon_id: str, notes: str = "") -> str | None:
         return None
 
 
+def _build_apply_kwargs(
+    full_sermon: dict[str, Any],
+    media_path: str,
+    plan_file: str | None,
+    render_only: bool,
+    audio_offset: float,
+) -> dict[str, Any]:
+    return {
+        "audio_file": media_path,
+        "speaker_name": full_sermon.get("speaker") or "Unknown",
+        "recorded_date": full_sermon.get("recorded_date")
+        or datetime.now().strftime("%Y-%m-%d"),
+        "event_type": full_sermon.get("event_type") or "Sunday Service",
+        "title": full_sermon.get("title") or None,
+        "series_title": full_sermon.get("series_title") or None,
+        "auto_edit_mode": "auto",
+        "edit_plan_file": plan_file,
+        "audio_offset": audio_offset,
+        "dry_run": render_only,
+    }
+
+
 def _apply_approved_edit(
     sermon: dict[str, Any],
     plan: dict[str, Any],
@@ -1192,6 +1220,7 @@ def _apply_approved_edit(
     end: float,
     re_detect: bool = False,
     audio_offset: float | None = None,
+    render_only: bool = False,
 ) -> None:
     import sermon_updater
 
@@ -1213,18 +1242,21 @@ def _apply_approved_edit(
         )
         return
 
+    spinner_text = (
+        "Rendering edit locally (no upload)..."
+        if render_only
+        else "Applying edit: trimming, encoding and uploading media..."
+    )
     try:
-        with st.spinner("Applying edit: trimming, encoding and uploading media..."):
+        with st.spinner(spinner_text):
             result = sermon_updater.process_new_sermon(
-                audio_file=media_path,
-                speaker_name=full_sermon.get("speaker") or "Unknown",
-                recorded_date=full_sermon.get("recorded_date")
-                or datetime.now().strftime("%Y-%m-%d"),
-                event_type=full_sermon.get("event_type") or "Sunday Service",
-                title=full_sermon.get("title") or None,
-                series_title=full_sermon.get("series_title") or None,
-                auto_edit_mode="auto",
-                edit_plan_file=plan_file,
+                **_build_apply_kwargs(
+                    full_sermon,
+                    media_path,
+                    plan_file,
+                    render_only,
+                    audio_offset,
+                )
             )
         if plan_file:
             Path(plan_file).unlink(missing_ok=True)
@@ -1232,6 +1264,23 @@ def _apply_approved_edit(
         if plan_file:
             Path(plan_file).unlink(missing_ok=True)
         _set_feedback(f"Edit apply failed: {e}", kind="error")
+        return
+
+    if render_only and result.get("success"):
+        rendered_id = str(result.get("sermon_id") or "")
+        if plan.get("id"):
+            repo.update_edit_plan_status(
+                plan.get("id"),
+                "applied_local",
+                notes=(
+                    (plan.get("notes") or "") + "; rendered locally, not uploaded"
+                ).strip("; "),
+                applied_media_id=rendered_id,
+            )
+        _set_feedback(
+            "Edit rendered locally; nothing was uploaded. Review the media, "
+            "then use Upload now when you are ready to publish."
+        )
         return
 
     applied_status = result.get("edit_plan_status") or "auto_applied"
@@ -1332,11 +1381,50 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                 st.rerun()
             return
 
+        if status == "applied_local":
+            st.info(
+                "Rendered locally, not uploaded. The local record is in the Library; "
+                "upload it when you are ready."
+            )
+            rendered_id = str(plan.get("applied_media_id") or "")
+            if st.button(
+                "Upload now",
+                type="primary",
+                key=f"editplan_upload_now_{sermon_id}",
+                width="stretch",
+            ):
+                import sermon_updater
+
+                if not rendered_id:
+                    _set_feedback(
+                        "No locally rendered record linked to this plan. Re-render first.",
+                        kind="error",
+                    )
+                else:
+                    with st.spinner("Uploading rendered media to SermonAudio..."):
+                        upload_result = sermon_updater.publish_dry_run_sermon(rendered_id)
+                    if upload_result.get("success"):
+                        repo.update_edit_plan_status(
+                            plan.get("id"),
+                            "applied",
+                            notes=(
+                                (plan.get("notes") or "") + "; uploaded from Upload now"
+                            ).strip("; "),
+                        )
+                        _set_feedback("Uploaded to SermonAudio.")
+                    else:
+                        _set_feedback(
+                            f"Upload failed: "
+                            f"{upload_result.get('error') or 'unknown error'}",
+                            kind="error",
+                        )
+                st.rerun()
+
         full_sermon = _full_sermon_or_none(sermon, repo) or {}
         duration = _load_edit_duration(full_sermon) or _load_edit_duration(sermon)
         max_ts = duration if duration and duration > 0 else None
 
-        if status in ("applied", "auto_applied", "reverted"):
+        if status in ("applied", "auto_applied", "reverted", "applied_local"):
             last_start = plan.get("final_start")
             last_end = plan.get("final_end")
             if last_start is None:
@@ -1506,6 +1594,22 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
             "Audio offset: positive shifts audio later than video (use when sound comes early), "
             "negative shifts it earlier."
         )
+        apply_mode = st.radio(
+            "Apply target",
+            options=["render_only", "upload"],
+            format_func=lambda value: (
+                "Render only (no upload)"
+                if value == "render_only"
+                else "Render + upload to SermonAudio"
+            ),
+            index=0 if _default_apply_mode(str(sermon_id)) == "render_only" else 1,
+            key=f"editplan_apply_mode_{sermon_id}",
+            horizontal=True,
+            help=(
+                "Render only encodes the edit locally and skips SermonAudio; "
+                "use Upload now when you are ready to publish."
+            ),
+        )
 
         candidate = EditPlan(
             start=float(start_val),
@@ -1573,6 +1677,7 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                     float(start_val),
                     float(end_val),
                     audio_offset=float(audio_offset_val),
+                    render_only=(apply_mode == "render_only"),
                 )
                 st.rerun()
         with col_reject:

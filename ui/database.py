@@ -948,7 +948,7 @@ class SermonRepository:
     ) -> bool:
         allowed = {
             'pending_review', 'approved', 'auto_applied', 'rejected',
-            'reverted', 'superseded', 'applied',
+            'reverted', 'superseded', 'applied', 'applied_local',
         }
         if status not in allowed:
             return False
