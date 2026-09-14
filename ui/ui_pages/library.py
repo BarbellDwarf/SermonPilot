@@ -1460,6 +1460,18 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                 key=f"editplan_re_audio_offset_{sermon_id}",
                 help="Positive delays the audio later relative to video; negative moves it earlier.",
             )
+            apply_mode_re = st.radio(
+                "Apply target",
+                options=["render_only", "upload"],
+                format_func=lambda value: (
+                    "Render only (no upload)"
+                    if value == "render_only"
+                    else "Render + upload to SermonAudio"
+                ),
+                index=0 if _default_apply_mode(str(sermon_id)) == "render_only" else 1,
+                key=f"editplan_re_apply_mode_{sermon_id}",
+                horizontal=True,
+            )
             candidate = EditPlan(
                 start=float(start_val),
                 end=float(end_val),
@@ -1516,6 +1528,7 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                     float(end_val),
                     re_detect=re_detect,
                     audio_offset=float(audio_offset_re),
+                    render_only=(apply_mode_re == "render_only"),
                 )
                 st.rerun()
 
