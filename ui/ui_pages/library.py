@@ -544,7 +544,8 @@ def show_library():
             )
 
         with toolbar[1]:
-            with st.popover("Sort", use_container_width=True):
+            with st.popover("Sort", use_container_width=True,
+                            key="library_sort_popover"):
                 sort_labels_list = list(sort_labels.values())
                 current_pair = (
                     st.session_state.get('library_sort_by', 'Date'),
@@ -563,7 +564,8 @@ def show_library():
             st.session_state.library_sort_order = sort_order
 
         with toolbar[2]:
-            with st.popover("Filters", use_container_width=True):
+            with st.popover("Filters", use_container_width=True,
+                            key="library_filters_popover"):
                 fcol1, fcol2 = st.columns(2)
                 with fcol1:
                     st.selectbox(
@@ -601,7 +603,8 @@ def show_library():
         )
 
         with toolbar[3]:
-            with st.popover("Export", use_container_width=True):
+            with st.popover("Export", use_container_width=True,
+                            key="library_export_popover"):
                 st.caption(f"{len(filtered_sermons)} sermons in this view")
                 st.download_button(
                     "Download CSV", data=_export_csv(filtered_sermons),
@@ -1379,11 +1382,11 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
         history = repo.get_edit_plan_history(sermon_id)
     except Exception:
         history = []
-    with st.expander(
-        f"Auto Edit Review — {_edit_status_badge(status)} "
-        f"(revision {plan.get('revision', 1)} of {len(history)})",
-        expanded=(status == "auto_applied"),
-    ):
+    st.markdown(
+        f"#### Auto Edit Review — {_edit_status_badge(status)} "
+        f"(revision {plan.get('revision', 1)} of {len(history)})"
+    )
+    with st.container():
         if status == "auto_applied":
             st.warning(
                 f"This edit was applied automatically (confidence {confidence:.2f}). "
@@ -1787,7 +1790,8 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
             if label and label not in prior_notes:
                 prior_notes.append(label)
         if prior_notes:
-            with st.expander("Review notes history", expanded=False):
+            with st.expander("Review notes history", expanded=False,
+                             key=f"review_notes_history_{sermon_id}"):
                 for idx, note in enumerate(prior_notes, start=1):
                     st.caption(f"{idx}. {note}")
 
@@ -1961,7 +1965,8 @@ def display_sermon_details(sermon):
             st.session_state[gen_key] = True
             st.rerun()
         if st.session_state.get(gen_key):
-            with st.popover("Select what to generate"):
+            with st.popover("Select what to generate",
+                            key=f"generate_popover_{sermon['id']}"):
                 gen_desc = st.checkbox("Description", value=True, key=f"gen_desc_{sermon['id']}")
                 gen_tags = st.checkbox("Hashtags", value=True, key=f"gen_tags_{sermon['id']}")
                 if st.button("Generate", type="primary", key=f"gen_go_{sermon['id']}"):
@@ -2187,7 +2192,8 @@ def display_sermon_details(sermon):
         if scripture_ref:
             st.markdown(f"**Reference:** {scripture_ref}")
         if verses:
-            with st.expander("Scripture Text", expanded=False):
+            with st.expander("Scripture Text", expanded=False,
+                             key=f"scripture_text_{sermon['id']}"):
                 st.markdown(verses)
 
     topics = display_data.get('key_topics') or display_data.get('content', {}).get('key_topics', [])
@@ -2196,7 +2202,8 @@ def display_sermon_details(sermon):
     if topics:
         st.markdown(f"**Key Topics:** {' · '.join(topics)}")
 
-    with st.expander("Files & Processing", expanded=False):
+    with st.expander("Files & Processing", expanded=False,
+                     key=f"files_processing_{sermon['id']}"):
         files = display_data.get('files', display_data.get('file_paths', {}))
         if files:
             for file_type, file_path in files.items():
@@ -2226,7 +2233,8 @@ def display_sermon_details(sermon):
             st.text(f"Enhancement: {processing_info['enhancement_method']}")
 
     if processing_info or api_sermon_data:
-        with st.expander("Advanced Information", expanded=False):
+        with st.expander("Advanced Information", expanded=False,
+                         key=f"advanced_info_{sermon['id']}"):
             col1, col2 = st.columns(2)
             with col1:
                 if processing_info:
@@ -2245,7 +2253,8 @@ def display_sermon_details(sermon):
 
     # Re-process form
     if st.session_state.get('show_reprocess') == sermon.get('id'):
-        with st.expander("Re-process Sermon", expanded=True):
+        with st.expander("Re-process Sermon", expanded=True,
+                         key=f"reprocess_{sermon['id']}"):
             st.markdown("Select which processing steps to run:")
             rp_audio = st.checkbox("Audio enhancement", value=True, key=f"rp_audio_{sermon['id']}")
             rp_transcript = st.checkbox("Transcription", value=True, key=f"rp_trans_{sermon['id']}")
@@ -2312,7 +2321,8 @@ def display_sermon_details(sermon):
                     st.rerun()
 
     # Transcript viewer/editor
-    with st.expander("Transcript", expanded=False):
+    with st.expander("Transcript", expanded=False,
+                     key=f"transcript_expander_{sermon['id']}"):
         repo = None
         try:
             from ui.database import SermonRepository
@@ -2348,7 +2358,8 @@ def display_sermon_details(sermon):
             st.caption(
                 f"Local timestamps available ({timestamped.count(chr(10)) + 1} segments)."
             )
-            with st.expander("Timestamped transcript", expanded=False):
+            with st.expander("Timestamped transcript", expanded=False,
+                             key=f"timestamped_transcript_{sermon['id']}"):
                 st.text(timestamped)
 
     # Notes
