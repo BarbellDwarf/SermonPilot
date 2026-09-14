@@ -1795,7 +1795,13 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
     if input_is_video:
         keeper_cfg = config.get('auto_edit', {}).get('keeper', {})
-        if bool(keeper_cfg.get('enabled', True)):
+        if skip_audio:
+            console_print(
+                "⏭️ Keeper skipped for apply render "
+                "(source is already a processed artifact)"
+            )
+            logger.info("Keeper transcode skipped: skip_audio/apply flow")
+        elif bool(keeper_cfg.get('enabled', True)):
             min_source_gb = float(keeper_cfg.get('min_source_gb', 2.0))
             keeper_root = Path(config.get('output_directory', 'processed_sermons'))
             if not keeper_root.is_absolute():
