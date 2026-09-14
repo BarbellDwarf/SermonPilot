@@ -28,6 +28,7 @@ RUN python3.11 -m venv /app/venv
 
 ENV PATH="/app/venv/bin:$PATH"
 ENV PYTHONPATH="/app:/app/src:/app/ui"
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 RUN useradd -m -u 1000 sermonapp && \
     mkdir -p /app /data /models /logs /home/sermonapp/.cache && \
