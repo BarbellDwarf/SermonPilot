@@ -1867,6 +1867,77 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                 st.rerun()
 
 
+def _load_local_transcript_files(audio_path: str | None) -> tuple[str, str]:
+    """Return (plain, timestamped) transcript text from the sermon directory."""
+    if not audio_path:
+        return "", ""
+    base = Path(audio_path).parent
+    plain = ""
+    stamped = ""
+    txt_file = base / "transcript.txt"
+    ts_file = base / "transcript_timestamps.json"
+    if txt_file.is_file():
+        try:
+            plain = txt_file.read_text(encoding="utf-8")
+        except OSError:
+            plain = ""
+    if ts_file.is_file():
+        try:
+            segments = json.loads(ts_file.read_text(encoding="utf-8"))
+            lines = []
+            for segment in segments:
+                start = float(segment.get("start") or 0.0)
+                text = str(segment.get("text") or "").strip()
+                lines.append(f"[{int(start) // 60:02d}:{int(start) % 60:02d}] {text}")
+            stamped = "\n".join(lines)
+        except Exception:
+            stamped = ""
+        if not plain:
+            plain = stamped
+    return plain, stamped
+
+
+def _resolve_local_transcript(sermon: dict[str, Any], repo: Any) -> tuple[str, str]:
+    """Local-first transcript lookup: DB content, then files next to the media."""
+    transcript = str(sermon.get("transcript") or sermon.get("transcript_text") or "")
+    content = sermon.get("content")
+    if not transcript and isinstance(content, dict):
+        transcript = str(content.get("transcript_text") or "")
+
+    full = None
+    if not transcript:
+        full = _full_sermon_or_none(sermon, repo) or {}
+        transcript = str(full.get("transcript") or full.get("transcript_text") or "")
+        content = full.get("content")
+        if not transcript and isinstance(content, dict):
+            transcript = str(content.get("transcript_text") or "")
+
+    stamped = ""
+    sermon_id = sermon.get("id") or sermon.get("sermon_id") or ""
+    audio_path = None
+    try:
+        for row in repo.get_sermon_files(sermon_id):
+            if row.get("file_type") in (
+                "audio", "video", "processed_video", "original_audio", "original_video",
+            ):
+                audio_path = row.get("file_path")
+                break
+    except Exception:
+        audio_path = None
+    if not transcript or not stamped:
+        file_plain, file_stamped = _load_local_transcript_files(audio_path)
+        transcript = transcript or file_plain
+        stamped = stamped or file_stamped
+
+    if not transcript:
+        media_path = _resolve_edit_media_path(sermon, repo)
+        if media_path:
+            file_plain, file_stamped = _load_local_transcript_files(media_path)
+            transcript = transcript or file_plain
+            stamped = stamped or file_stamped
+    return transcript, stamped
+
+
 def display_sermon_details(sermon):
     """Display detailed sermon information with API data"""
     st.markdown("### Sermon Details")
@@ -2242,9 +2313,27 @@ def display_sermon_details(sermon):
 
     # Transcript viewer/editor
     with st.expander("Transcript", expanded=False):
-        transcript = sermon.get('transcript') or sermon.get('transcript_text', '')
-        if sermon.get('content') and isinstance(sermon.get('content'), dict):
-            transcript = transcript or sermon['content'].get('transcript_text', '')
+        repo = None
+        try:
+            from ui.database import SermonRepository
+            repo = SermonRepository()
+        except Exception:
+            repo = None
+        transcript, timestamped = (
+            _resolve_local_transcript(sermon, repo) if repo else ("", "")
+        )
+        if not transcript:
+            # Remote fallback only: the local copy is authoritative for drafts.
+            try:
+                import sermon_updater
+                with st.spinner("Fetching transcript from SermonAudio..."):
+                    fetched = sermon_updater.get_sermon_transcript(sermon['id'])
+                if fetched:
+                    transcript = fetched
+                    if repo:
+                        repo.update_sermon(sermon['id'], {'transcript': transcript})
+            except Exception:
+                pass
         with st.form(f"transcript_form_{sermon['id']}"):
             edited_transcript = st.text_area("Edit transcript", value=transcript, height=200)
             save_transcript = st.form_submit_button("Save Transcript", type="primary")
@@ -2255,6 +2344,12 @@ def display_sermon_details(sermon):
             _set_feedback("Transcript saved")
             st.session_state.selected_sermon = repo.get_sermon(sermon['id'])
             st.rerun()
+        if timestamped:
+            st.caption(
+                f"Local timestamps available ({timestamped.count(chr(10)) + 1} segments)."
+            )
+            with st.expander("Timestamped transcript", expanded=False):
+                st.text(timestamped)
 
     # Notes
     with st.expander("Notes", expanded=False):
