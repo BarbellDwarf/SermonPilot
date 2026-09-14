@@ -1268,25 +1268,77 @@ def _apply_approved_edit(
         if render_only
         else "Applying edit: trimming, encoding and uploading media..."
     )
+    import time as _time
+    import uuid as _uuid
+
+    sermon_id = str(sermon.get("id") or "")
+    job_id = f"apply_{_uuid.uuid4().hex[:12]}"
+    job_started = _time.time()
+    job_ok = False
+    try:
+        job_ok = repo.start_apply_job(
+            job_id,
+            sermon_id,
+            str(full_sermon.get("title") or sermon_id),
+            {
+                "sermon_id": sermon_id,
+                "start": float(start),
+                "end": float(end),
+                "audio_offset": float(audio_offset),
+                "render_only": bool(render_only),
+                "source": str(media_path),
+            },
+        )
+    except Exception:
+        job_ok = False
+
+    def _apply_progress(progress_pct, message):
+        if job_ok:
+            repo.update_apply_job(job_id, progress=float(progress_pct))
+
     try:
         with st.spinner(spinner_text):
-            result = sermon_updater.process_new_sermon(
-                **_build_apply_kwargs(
-                    full_sermon,
-                    media_path,
-                    plan_file,
-                    render_only,
-                    audio_offset,
-                    skip_audio=already_enhanced,
-                )
+            apply_kwargs = _build_apply_kwargs(
+                full_sermon,
+                media_path,
+                plan_file,
+                render_only,
+                audio_offset,
+                skip_audio=already_enhanced,
             )
+            apply_kwargs["progress_callback"] = _apply_progress
+            result = sermon_updater.process_new_sermon(**apply_kwargs)
         if plan_file:
             Path(plan_file).unlink(missing_ok=True)
     except Exception as e:
         if plan_file:
             Path(plan_file).unlink(missing_ok=True)
+        if job_ok:
+            repo.update_apply_job(
+                job_id,
+                status="failed",
+                result={
+                    "error": str(e),
+                    "elapsed_seconds": round(_time.time() - job_started, 1),
+                    "render_only": bool(render_only),
+                },
+            )
         _set_feedback(f"Edit apply failed: {e}", kind="error")
         return
+
+    if job_ok:
+        repo.update_apply_job(
+            job_id,
+            status="completed" if result.get("success") else "failed",
+            progress=100,
+            result={
+                "success": bool(result.get("success")),
+                "render_only": bool(render_only),
+                "elapsed_seconds": round(_time.time() - job_started, 1),
+                "sermon_id": result.get("sermon_id"),
+                "error": result.get("error"),
+            },
+        )
 
     if render_only and result.get("success"):
         rendered_id = str(result.get("sermon_id") or "")
@@ -1410,6 +1462,17 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
             st.warning(
                 f"This edit was applied automatically (confidence {confidence:.2f}). "
                 "Restore the original if it cut the wrong material, or re-edit below."
+            )
+
+        try:
+            latest_apply = repo.get_latest_apply_job(str(sermon_id))
+        except Exception:
+            latest_apply = None
+        if latest_apply:
+            st.caption(
+                f"Latest apply: {latest_apply.get('status')} "
+                f"({int(latest_apply.get('progress') or 0)}%) | "
+                f"started {latest_apply.get('created_at')}"
             )
 
         m1, m2, m3, m4 = st.columns(4)
