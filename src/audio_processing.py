@@ -187,6 +187,19 @@ class AudioProcessor:
         if self._models_initialized:
             return
 
+        # Return our own cached blocks to the driver before requesting more.
+        try:
+            import torch
+            if torch.cuda.is_available():
+                free, total = torch.cuda.mem_get_info()
+                logger.info(
+                    "VRAM before %s init: %.2f/%.2f GB free",
+                    self.enhancement_method, free / 1e9, total / 1e9,
+                )
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+
         logger.info(f"Initializing {self.enhancement_method} model for audio processing...")
 
         if self.enhancement_method == "deepfilternet":
