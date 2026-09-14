@@ -926,7 +926,8 @@ class SermonRepository:
                     "progress, parameters, can_cancel, can_retry, started_at) "
                     "VALUES (?, 'auto_edit_apply', ?, ?, 'running', 0, ?, 0, 0, "
                     "CURRENT_TIMESTAMP)",
-                    (job_id, f"Apply edit: {title}", json.dumps(parameters)),
+                    (job_id, f"Apply edit: {title}", f"Apply edit for {sermon_id}",
+                     json.dumps(parameters)),
                 )
                 conn.commit()
             return True
