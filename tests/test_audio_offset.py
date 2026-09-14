@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.auto_edit import EditPlan, apply_edit, validate_plan
+from src.auto_edit import EditPlan, _render_snippet, apply_edit, shift_snippet_audio, validate_plan
 from src.av_sync import resolve_audio_correction
 
 FFMPEG = shutil.which("ffmpeg")
@@ -106,3 +106,16 @@ def test_apply_edit_without_offset_stays_aligned(tmp_path):
     apply_edit(source, plan, out)
     delta = _first_pts(out, "a:0") - _first_pts(out, "v:0")
     assert abs(delta) <= 0.05
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("offset", [0.5, -0.5])
+def test_shift_snippet_audio_remuxes_offset(tmp_path, offset):
+    source = tmp_path / "source.mp4"
+    _make_source(source)
+    base = tmp_path / "base.mp4"
+    _render_snippet(source, 0.5, 3.0, base)
+    out = tmp_path / f"shifted_{offset:+.1f}.mp4"
+    shift_snippet_audio(base, offset, out)
+    delta = _first_pts(out, "a:0") - _first_pts(out, "v:0")
+    assert delta == pytest.approx(offset, abs=0.12)

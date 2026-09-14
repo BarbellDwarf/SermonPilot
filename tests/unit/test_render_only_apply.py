@@ -60,6 +60,14 @@ def test_badge_for_applied_local():
     assert _edit_status_badge("applied_local") == "Rendered, not uploaded"
 
 
+def test_plan_working_values_reset_and_full_reset():
+    from ui.ui_pages.library import _plan_working_values
+
+    plan = {"proposed_start": 40.0, "proposed_end": 2958.0, "audio_offset": 0.4}
+    assert _plan_working_values(plan) == (40.0, 2958.0, 0.4)
+    assert _plan_working_values(plan, full_reset=True) == (40.0, 2958.0, 0.0)
+
+
 def test_applied_local_status_persists_render_link(repo: SermonRepository):
     repo.save_sermon({"id": "s1", "title": "S1"})
     plan_id = repo.save_edit_plan_revision("s1", _plan())
