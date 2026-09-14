@@ -975,6 +975,45 @@ class SermonRepository:
         except Exception:
             return None
 
+    def get_apply_jobs_by_status(
+        self, job_type: str, statuses: list[str]
+    ) -> list[dict[str, Any]]:
+        try:
+            with self.db.get_connection() as conn:
+                placeholders = ",".join("?" for _ in statuses)
+                rows = conn.execute(
+                    "SELECT id, status, progress, parameters, created_at, "
+                    "completed_at, result FROM background_jobs "
+                    f"WHERE type = ? AND status IN ({placeholders}) "
+                    "ORDER BY created_at DESC",
+                    (job_type, *statuses),
+                ).fetchall()
+            return [dict(row) for row in rows]
+        except Exception:
+            return []
+
+    def get_active_apply_job(
+        self, sermon_id: str, plan_revision: int | None = None
+    ) -> dict[str, Any] | None:
+        rows = self.get_apply_jobs_by_status(
+            "auto_edit_apply", ["queued", "running"]
+        )
+        for row in rows:
+            try:
+                params = json.loads(row.get("parameters") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                params = {}
+            if str(params.get("sermon_id") or "") != str(sermon_id):
+                continue
+            if plan_revision is not None and params.get("plan_revision") is not None:
+                try:
+                    if int(params.get("plan_revision")) != int(plan_revision):
+                        continue
+                except (TypeError, ValueError):
+                    pass
+            return row
+        return None
+
     def get_current_edit_plan(self, sermon_id: str) -> dict[str, Any] | None:
         with self.db.get_connection() as conn:
             row = conn.execute("""
