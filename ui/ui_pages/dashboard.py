@@ -61,31 +61,34 @@ def show_quick_stats():
                     last_24h += 1
             except Exception:
                 pass
-        if s.get('status') == 'processed':
+        if s.get('status') == 'processed' and s.get('upload_status') != 'failed':
             processed_status += 1
 
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         st.metric("Total Sermons", str(total_sermons),
-                  f"+{last_24h} today" if last_24h > 0 else "No recent activity",
-                  delta_color="off" if last_24h == 0 else "normal")
+                  help=f"{last_24h} sermons updated in the last 24h"
+                  if last_24h > 0 else "No sermons updated in the last 24h")
 
     with col2:
         st.metric("Processed", str(processed_status),
-                  f"{processed_status}/{total_sermons}" if total_sermons > 0 else "N/A",
-                  delta_color="off")
+                  help=f"{processed_status} of {total_sermons} sermons processed"
+                  if total_sermons > 0 else "No sermons yet")
 
     with col3:
-        uploaded = sum(1 for s in sermons if s.get('upload_status'))
+        uploaded = sum(
+            1 for s in sermons
+            if s.get('upload_status') and s.get('upload_status') != 'failed'
+        )
         st.metric("Uploaded to SA", str(uploaded),
-                  f"{uploaded}/{total_sermons}" if total_sermons > 0 else "N/A",
-                  delta_color="off")
+                  help=f"{uploaded} of {total_sermons} uploaded to SermonAudio"
+                  if total_sermons > 0 else "No sermons yet")
 
     with col4:
         st.metric("Last 24h", str(last_24h),
-                  f"out of {total_sermons} total" if total_sermons > 0 else "N/A",
-                  delta_color="off")
+                  help=f"Sermons updated in the last 24h, out of {total_sermons} total"
+                  if total_sermons > 0 else "No sermons yet")
 
 def show_recent_activity():
     """Show recent sermons from the database"""

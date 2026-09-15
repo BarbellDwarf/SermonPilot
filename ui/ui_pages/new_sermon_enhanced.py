@@ -9,6 +9,7 @@ import time as _time
 from pathlib import Path
 
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -25,6 +26,21 @@ from ui.sermon_metadata import (  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
+DURATION_PROBE_MAX_BYTES = 50 * 1024 * 1024
+PREVIEW_MAX_BYTES = 25 * 1024 * 1024
+
+
+def _duration_cache_key(name: str, size: int) -> str:
+    return f"media_duration_{name}_{size}"
+
+
+def _should_probe_duration(size: int) -> bool:
+    return size <= DURATION_PROBE_MAX_BYTES
+
+
+def _should_show_preview(size: int) -> bool:
+    return size <= PREVIEW_MAX_BYTES
+
 
 def show_new_sermon_enhanced():
     st.markdown('<div class="main-header">New Sermon</div>', unsafe_allow_html=True)
@@ -38,64 +54,126 @@ def show_new_sermon_enhanced():
         return
 
     _show_start_section()
-    with st.expander("1. Upload Audio/Video File", expanded=True):
+    with managed_expander("1. Upload Audio/Video File", expanded=True):
         _show_upload_section()
-    with st.expander("2. Sermon Metadata", expanded=st.session_state.pop('expand_metadata', False)):
-        _show_metadata_section()
-    with st.expander("3. Processing Options", expanded=False):
-        _show_processing_section()
+    _show_form_fragment()
     _sync_start_section_state()
 
 
+@st.fragment
+def _show_form_fragment():
+    with managed_expander("2. Sermon Metadata", expanded=st.session_state.pop('expand_metadata', False)):
+        _show_metadata_section()
+    with managed_expander("3. Processing Options", expanded=False):
+        _show_processing_section()
+
+
 def _show_upload_section():
-    uploaded_file = st.file_uploader(
-        "Select sermon audio or video file",
-        type=['mp3', 'wav', 'm4a', 'flac', 'ogg', 'mp4', 'mov', 'webm', 'mkv'],
-        help="Supported formats: Audio (MP3, WAV, M4A, FLAC, OGG) and Video (MP4, MOV, WebM, MKV)"
-    )
+    ingest_tab, path_tab = st.tabs(["Browser Upload", "Server Path (large files)"])
 
-    if uploaded_file:
-        st.session_state.uploaded_file = uploaded_file
-
-        if st.session_state.get('autodetected_filename') != uploaded_file.name:
-            apply_filename_autodetect(uploaded_file.name)
-            st.session_state.autodetected_filename = uploaded_file.name
-            st.session_state.expand_metadata = True
-
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("File Size", f"{uploaded_file.size / (1024*1024):.1f} MB")
-        with col2:
-            st.metric("File Type", uploaded_file.type)
-        with col3:
-            name = (
-                uploaded_file.name[:20] + "..."
-                if len(uploaded_file.name) > 20 else uploaded_file.name
-            )
-            st.metric("File Name", name)
-        with col4:
-            duration = _get_media_duration(uploaded_file)
-            if duration:
-                st.metric("Duration", f"{duration:.1f} min")
+    with path_tab:
+        st.caption(
+            "Recommended for raw multi-GB recordings: drop the file into the watched "
+            "folder on Tower (/mnt/user/docker-data/sermonpilot/raw_ingest via SMB share) "
+            "and paste its path here. No browser upload, no memory cost."
+        )
+        path_input = st.text_input(
+            "Server-side file path",
+            key="server_file_path",
+            placeholder="/data/raw_ingest/2026-09-13_service.mkv",
+        )
+        if path_input:
+            p = Path(path_input)
+            exists = p.is_file()
+            size_gb = (p.stat().st_size / (1024 ** 3)) if exists else 0.0
+            ext_ok = p.suffix.lower() in {
+                '.mp3', '.wav', '.m4a', '.flac', '.ogg',
+                '.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v',
+            }
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Exists", "Yes" if exists else "No")
+            with col2:
+                st.metric("Size", f"{size_gb:.2f} GB" if exists else "-")
+            with col3:
+                st.metric("Type OK", "Yes" if ext_ok else "No")
+            if not exists:
+                st.error("File not found on the server. Check the path and volume mount.")
+            elif not ext_ok:
+                st.error(
+                    "Unsupported extension. Use mp3/wav/m4a/flac/ogg/mp4/mov/webm/mkv/avi/m4v."
+                )
             else:
-                st.metric("Duration", "Unknown")
+                st.session_state.server_file_path = str(p)
+                st.session_state.server_file_name = p.name
+                if st.session_state.get('autodetected_filename') != p.name:
+                    apply_filename_autodetect(p.name)
+                    st.session_state.autodetected_filename = p.name
+                    st.session_state.expand_metadata = True
+                    st.session_state.pop('new_sermon_show_preview', None)
 
-        max_preview_size = 100 * 1024 * 1024
-        if uploaded_file.size <= max_preview_size:
-            with st.expander("Preview", expanded=False):
-                try:
-                    video_exts = ('.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v')
-                    if any(uploaded_file.name.lower().endswith(e) for e in video_exts):
-                        st.video(uploaded_file)
+    with ingest_tab:
+        uploaded_file = st.file_uploader(
+            "Select sermon audio or video file",
+            type=['mp3', 'wav', 'm4a', 'flac', 'ogg', 'mp4', 'mov', 'webm', 'mkv'],
+            help=(
+                "Supported formats: Audio (MP3, WAV, M4A, FLAC, OGG) and Video "
+                "(MP4, MOV, WebM, MKV). For files over ~2GB use the Server Path tab instead."
+            ),
+        )
+
+        if uploaded_file:
+            st.session_state.uploaded_file = uploaded_file
+
+            if st.session_state.get('autodetected_filename') != uploaded_file.name:
+                apply_filename_autodetect(uploaded_file.name)
+                st.session_state.autodetected_filename = uploaded_file.name
+                st.session_state.expand_metadata = True
+                st.session_state.pop('new_sermon_show_preview', None)
+
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("File Size", f"{uploaded_file.size / (1024*1024):.1f} MB")
+            with col2:
+                st.metric("File Type", uploaded_file.type)
+            with col3:
+                name = (
+                    uploaded_file.name[:20] + "..."
+                    if len(uploaded_file.name) > 20 else uploaded_file.name
+                )
+                st.metric("File Name", name)
+            with col4:
+                if _should_probe_duration(uploaded_file.size):
+                    duration = _get_media_duration(uploaded_file)
+                    if duration:
+                        st.metric("Duration", f"{duration:.1f} min")
                     else:
-                        st.audio(uploaded_file, format=uploaded_file.type)
-                except Exception as e:
-                    st.warning(f"Could not preview file: {e}")
+                        st.metric("Duration", "Unknown")
+                else:
+                    st.metric("Duration", "computed at submit")
+
+            if _should_show_preview(uploaded_file.size):
+                show_preview = st.checkbox(
+                    "Show preview",
+                    key="new_sermon_show_preview",
+                    help="Mounts the media player only on demand; off by default so field edits never re-transfer the file.",
+                )
+                if show_preview:
+                    with managed_expander("Preview", expanded=True):
+                        try:
+                            video_exts = ('.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v')
+                            if any(uploaded_file.name.lower().endswith(e) for e in video_exts):
+                                st.video(uploaded_file)
+                            else:
+                                st.audio(uploaded_file, format=uploaded_file.type)
+                        except Exception as e:
+                            st.warning(f"Could not preview file: {e}")
+            else:
+                st.session_state.pop('new_sermon_show_preview', None)
+                st.info(f"Preview skipped for files over {PREVIEW_MAX_BYTES // (1024*1024)} MB")
         else:
-            st.info(f"Preview skipped for files over {max_preview_size // (1024*1024)} MB")
-    else:
-        st.session_state.pop('uploaded_file', None)
-        st.session_state.pop('expand_metadata', False)
+            st.session_state.pop('uploaded_file', None)
+            st.session_state.pop('expand_metadata', False)
 
 
 def _show_metadata_section():
@@ -221,6 +299,114 @@ def _show_processing_section():
     st.checkbox("Dry Run (Preview Only)", key="dry_run",
                 help="Process locally but don't upload to SermonAudio")
 
+    _show_auto_edit_section()
+
+
+def _branding_dir() -> Path:
+    config = st.session_state.get('config', {})
+    configured = config.get('branding_dir') if isinstance(config, dict) else None
+    if configured:
+        path = Path(configured)
+    elif Path('/data').is_dir() and os.access('/data', os.W_OK):
+        path = Path('/data/branding')
+    else:
+        path = project_root / 'branding'
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _show_auto_edit_section():
+    config = st.session_state.get('config', {})
+    auto_cfg = config.get('auto_edit', {}) if isinstance(config, dict) else {}
+
+    st.markdown("**Edit Sermon (Auto-Edit)**")
+    st.session_state.setdefault('auto_edit_enabled', bool(auto_cfg.get('enabled', False)))
+    auto_edit_enabled = st.checkbox(
+        "Edit Sermon (auto-detect cut points, trim, fades)",
+        key="auto_edit_enabled",
+        help=(
+            "Use the transcript to find where the teaching starts and where Q&A begins, "
+            "then trim and fade the video before upload. Video inputs only."
+        ),
+    )
+
+    if not auto_edit_enabled:
+        return
+
+    col1, col2 = st.columns(2)
+    with col1:
+        mode_options = ["interactive", "auto"]
+        default_mode = str(auto_cfg.get('mode', 'interactive')).lower()
+        if default_mode not in mode_options:
+            default_mode = "interactive"
+        st.session_state.setdefault('auto_edit_mode', default_mode)
+        st.selectbox(
+            "Approval Mode",
+            options=mode_options,
+            key="auto_edit_mode",
+            help=(
+                "interactive: stop at pending review for your approval before encode+upload. "
+                "auto: apply automatically when confident; uncertain plans always stop for review."
+            ),
+        )
+    with col2:
+        st.session_state.setdefault(
+            'auto_edit_fade_to_black', bool(auto_cfg.get('fade_to_black', True))
+        )
+        st.checkbox(
+            "Fade to Black After Ending Card",
+            key="auto_edit_fade_to_black",
+            help="Append a fade-to-black tail after the ending card.",
+        )
+
+    _show_logo_picker(auto_cfg)
+
+
+def _show_logo_picker(auto_cfg: dict):
+    branding = _branding_dir()
+    logos = sorted(
+        p.name for p in branding.iterdir()
+        if p.suffix.lower() in {'.png', '.jpg', '.jpeg', '.webp'}
+    )
+    none_label = "(none - fade to black)"
+    options = [none_label] + logos + ["Upload new..."]
+    configured = auto_cfg.get('logo_path') or ''
+    default_index = 0
+    if configured:
+        configured_name = Path(str(configured)).name
+        if configured_name in logos:
+            default_index = options.index(configured_name)
+    st.session_state.setdefault('auto_edit_logo_choice', options[default_index])
+    if st.session_state.get('auto_edit_logo_choice') not in options:
+        st.session_state.auto_edit_logo_choice = options[default_index]
+
+    choice = st.selectbox(
+        "Ending Card Image",
+        options=options,
+        key="auto_edit_logo_choice",
+        help=(
+            f"Images from the branding folder ({branding}). "
+            "Upload once, reused for future sermons."
+        ),
+    )
+
+    logo_path_value = ''
+    if choice == "Upload new...":
+        uploaded_logo = st.file_uploader(
+            "Upload logo image", type=['png', 'jpg', 'jpeg', 'webp'],
+            key="auto_edit_logo_upload",
+        )
+        if uploaded_logo is not None:
+            dest = branding / Path(uploaded_logo.name).name
+            dest.write_bytes(uploaded_logo.getbuffer())
+            logo_path_value = str(dest)
+            st.caption(f"Saved {dest.name} to the branding folder; it will be selectable next run.")
+        else:
+            logo_path_value = st.session_state.get('auto_edit_logo_path', '')
+    elif choice != none_label:
+        logo_path_value = str(branding / choice)
+    st.session_state['auto_edit_logo_path'] = logo_path_value
+
 
 def _show_openai_whisper_ui():
     config = st.session_state.get('config', {})
@@ -292,9 +478,18 @@ def _show_start_section():
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("**File & Content:**")
-        if _has_uploaded_file():
-            st.write(f"• File: {st.session_state.uploaded_file.name}")
-            st.write(f"• Size: {st.session_state.uploaded_file.size / (1024*1024):.1f} MB")
+        if st.session_state.get('server_file_path'):
+            server_path = Path(st.session_state.server_file_path)
+            st.write(f"• File: {st.session_state.get('server_file_name') or server_path.name}")
+            try:
+                size_mb = server_path.stat().st_size / (1024 * 1024)
+                st.write(f"• Size: {size_mb:.1f} MB")
+            except OSError:
+                pass
+        elif st.session_state.get('uploaded_file') is not None:
+            uploaded = st.session_state.uploaded_file
+            st.write(f"• File: {uploaded.name}")
+            st.write(f"• Size: {uploaded.size / (1024*1024):.1f} MB")
         else:
             st.write("• File: none selected")
         st.write(f"• Speaker: {_resolved_speaker_name() or 'N/A'}")
@@ -343,7 +538,13 @@ def _show_start_section():
 
 
 def _get_media_duration(uploaded_file):
-    cache_key = f"media_duration_{uploaded_file.name}_{uploaded_file.size}"
+    try:
+        size = int(uploaded_file.size)
+    except Exception:
+        return None
+    if not _should_probe_duration(size):
+        return None
+    cache_key = _duration_cache_key(uploaded_file.name, size)
     if cache_key in st.session_state:
         return st.session_state[cache_key]
     try:
@@ -372,6 +573,8 @@ def _get_media_duration(uploaded_file):
 
 
 def _has_uploaded_file():
+    if st.session_state.get('server_file_path'):
+        return True
     return hasattr(st.session_state, 'uploaded_file') and st.session_state.uploaded_file is not None
 
 
@@ -384,8 +587,8 @@ def _resolved_speaker_name() -> str | None:
 
 def _resolved_event_type() -> str | None:
     event_type = st.session_state.get('event_type_select')
-    if not event_type or event_type in ('[Select Event Type]', '[Add New Event Type]'):
-        event_type = st.session_state.get('event_type_custom')
+    if not event_type or event_type == '[Select Event Type]':
+        return None
     return event_type
 
 
@@ -427,21 +630,28 @@ def start_enhanced_processing():
             )
             return
 
+        server_path = st.session_state.get('server_file_path')
         uploaded_file = st.session_state.get('uploaded_file')
-        if uploaded_file is None:
+        if not server_path and uploaded_file is None:
             st.error("No file uploaded.")
             return
 
-        # upload_dir config key overrides the TMPDIR-backed default so long
-        # jobs don't fill a small RAM disk.
-        upload_dir = Path(
-            config.get('upload_dir') or (Path(tempfile.gettempdir()) / "sermon_uploads")
-        )
-        upload_dir.mkdir(parents=True, exist_ok=True)
-        safe_name = Path(uploaded_file.name).name
-        saved_path = upload_dir / f"{int(_time.time() * 1000)}_{safe_name}"
-        with open(saved_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+        if server_path:
+            source_path = Path(server_path)
+            original_name = source_path.name
+            saved_path = source_path
+        else:
+            # upload_dir config key overrides the TMPDIR-backed default so long
+            # jobs don't fill a small RAM disk.
+            upload_dir = Path(
+                config.get('upload_dir') or (Path(tempfile.gettempdir()) / "sermon_uploads")
+            )
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            safe_name = Path(uploaded_file.name).name
+            saved_path = upload_dir / f"{int(_time.time() * 1000)}_{safe_name}"
+            with open(saved_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            original_name = uploaded_file.name
 
         speaker_name = _resolved_speaker_name()
         event_type = _resolved_event_type()
@@ -464,6 +674,24 @@ def start_enhanced_processing():
         enhance_audio = st.session_state.get('enhance_audio', True)
         transcribe = st.session_state.get('transcribe', True)
         generate_ai = st.session_state.get('generate_description', True)
+
+        auto_edit_enabled = bool(st.session_state.get('auto_edit_enabled', False))
+        auto_edit_mode = st.session_state.get('auto_edit_mode', 'interactive')
+        if auto_edit_mode not in ('interactive', 'auto'):
+            auto_edit_mode = 'interactive'
+        auto_edit_logo_path = st.session_state.get('auto_edit_logo_path', '')
+        auto_edit_fade_to_black = bool(st.session_state.get('auto_edit_fade_to_black', True))
+
+        job_config = {
+            **config,
+            'auto_edit': {
+                **config.get('auto_edit', {}),
+                'enabled': auto_edit_enabled,
+                'mode': auto_edit_mode,
+                'logo_path': auto_edit_logo_path,
+                'fade_to_black': auto_edit_fade_to_black,
+            },
+        }
 
         backend = st.session_state.get('selected_backend', 'faster_whisper_local')
         if backend == 'whisper_openai':
@@ -500,10 +728,14 @@ def start_enhanced_processing():
             'dry_run': bool(st.session_state.get('dry_run', False)),
             'generate_short_title': bool(st.session_state.get('generate_short_title', False)),
             'validate_quality': bool(st.session_state.get('validate_description', True)),
+            'auto_edit_enabled': auto_edit_enabled,
+            'auto_edit_mode': auto_edit_mode,
+            'auto_edit_logo_path': auto_edit_logo_path,
+            'auto_edit_fade_to_black': auto_edit_fade_to_black,
         }
 
         form_data['uploaded_file_path'] = str(saved_path)
-        form_data['original_filename'] = uploaded_file.name
+        form_data['original_filename'] = original_name
 
         job_queue = get_job_queue()
         job_id = job_queue.add_job(
@@ -514,9 +746,11 @@ def start_enhanced_processing():
             ),
             parameters={
                 'form_data': form_data,
-                'config': config,
+                'config': job_config,
                 'processing_type': 'new_sermon',
                 'uploaded_file_path': str(saved_path),
+                'auto_edit_enabled': auto_edit_enabled,
+                'auto_edit_mode': auto_edit_mode if auto_edit_enabled else None,
             },
             priority=8
         )
@@ -534,9 +768,11 @@ def start_enhanced_processing():
 
 def reset_enhanced_form():
     keys_to_clear = [
-        'uploaded_file', 'metadata_complete', 'autodetected_filename',
+        'uploaded_file', 'server_file_path', 'server_file_name',
+        'new_sermon_show_preview',
+        'metadata_complete', 'autodetected_filename',
         'speaker_name_select', 'speaker_name_custom',
-        'recorded_date', 'event_type_select', 'event_type_custom', 'bible_text',
+        'recorded_date', 'event_type_select', 'bible_text',
         'sermon_title', 'sermon_subtitle', 'sermon_description', 'sermon_hashtags',
         'sermon_series_select', 'sermon_series_custom', 'sermon_series_id', 'sermon_series',
         'enhance_audio', 'transcribe', 'enhancement_method',
@@ -565,7 +801,7 @@ def _show_enhanced_processing_progress(job):
     st.text(f"Progress: {job.progress:.1f}%")
 
     if job.logs:
-        with st.expander("Recent Activity", expanded=True):
+        with managed_expander("Recent Activity", expanded=True):
             for log in job.logs[-5:]:
                 st.text(log)
 

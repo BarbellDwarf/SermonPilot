@@ -417,6 +417,13 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
                     error=f"Form data missing {required_key}"
                 )
 
+        auto_edit_enabled = job.parameters.get('auto_edit_enabled')
+        auto_edit_mode = job.parameters.get('auto_edit_mode')
+        if auto_edit_enabled is False:
+            auto_edit_mode = None
+        elif auto_edit_enabled is True and auto_edit_mode is None:
+            auto_edit_mode = 'interactive'
+
         # Inject the config into the sermon_updater module so that its
         # module-level constants (api_key, broadcaster_id, LLM manager, etc.)
         # are correct for this job, and the sermonaudio library gets the
@@ -468,6 +475,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             custom_file=form_data.get('custom_file'),
             config=config,
             progress_callback=progress_cb,
+            auto_edit_mode=auto_edit_mode,
             cancel_check=lambda: _raise_if_job_cancelled(job),
         )
 
@@ -477,6 +485,15 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
 
         if result.get('success'):
             sermon_id = result.get('sermon_id')
+            plan_status = result.get('edit_plan_status')
+            if plan_status == 'pending_review':
+                job.add_log("Auto-edit cut awaits manual review")
+                return JobResult(
+                    success=True,
+                    message=(f"Auto-edit cut awaiting manual review "
+                             f"({sermon_id or 'dry run'})"),
+                    data=_trim_result_payload(result),
+                )
             job.add_log(f"Sermon created: {sermon_id or '(dry run)'}")
             _cleanup_uploaded_copy(config, uploaded_file_path, job)
             return JobResult(
@@ -1133,8 +1150,223 @@ def execute_auto_edit_apply_job(job: Job) -> JobResult:
         )
 
 
+def execute_auto_edit_refine_job(job: Job) -> JobResult:
+    """Re-run cut detection for a sermon using rejection notes as refinement.
+
+    Required job parameters:
+        - sermon_id: the sermon whose current plan is being refined
+        - notes: the user's refinement instructions (may be empty)
+        - config: full config dict
+    """
+    try:
+        if job.cancelled or job.status == JobStatus.CANCELLED:
+            raise JobCancelledError("Job cancelled by user")
+
+        sermon_id = job.parameters.get('sermon_id')
+        notes = job.parameters.get('notes') or ''
+        config = job.parameters.get('config') or {}
+
+        if not sermon_id:
+            return JobResult(
+                success=False,
+                message="Missing sermon_id for re-detection",
+                error="Missing sermon_id in job parameters"
+            )
+
+        _inject_sermon_updater_config(config)
+        job.update_progress(10, "Re-running cut detection with your notes...")
+
+        from sermon_updater import refine_edit_plan
+
+        result = refine_edit_plan(sermon_id, notes=notes, config=config)
+
+        if not result.get('success'):
+            err = result.get('error') or 'Re-detection failed'
+            job.add_log(err)
+            return JobResult(
+                success=False,
+                message=f"Re-detection failed: {err}",
+                error=err,
+            )
+
+        job.update_progress(100, "New cut proposal ready for review")
+        job.add_log(
+            f"Re-detected plan: start={result.get('start')}, end={result.get('end')}, "
+            f"confidence={result.get('confidence')}"
+        )
+        return JobResult(
+            success=True,
+            message=f"New cut proposal ready (confidence {result.get('confidence', 0):.2f})",
+            data=result,
+        )
+
+    except JobCancelledError:
+        raise
+    except Exception as e:
+        error_msg = f"Auto-edit re-detection job failed: {e}"
+        job.add_log(error_msg)
+        logger.exception(error_msg)
+        return JobResult(
+            success=False,
+            message="Auto-edit re-detection job failed",
+            error=str(e),
+        )
+
+
+def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
+    """Execute a Library review-panel apply outside the page lifecycle.
+
+    Job parameters (enqueued by the Library page, never built inline):
+        - sermon_id, start, end, audio_offset, render_only, mode,
+          plan_id, plan_revision, re_detect, config.
+
+    The shared ``run_library_apply`` core performs the trim + encode via
+    ``process_new_sermon`` (``dry_run=True`` when ``render_only``) and marks
+    the plan ``applied_local`` on a local render. The worker's own
+    ``background_jobs`` row is the single row per apply; progress flows
+    through ``job.update_progress``.
+    """
+    try:
+        if job.cancelled or job.status == JobStatus.CANCELLED:
+            raise JobCancelledError("Job cancelled by user")
+
+        params = job.parameters or {}
+        sermon_id = params.get("sermon_id")
+        start = params.get("start")
+        end = params.get("end")
+        audio_offset = params.get("audio_offset", 0.0) or 0.0
+        render_only = bool(params.get("render_only", False))
+        re_detect = bool(params.get("re_detect", False))
+        plan_id = params.get("plan_id")
+        config = params.get("config") or {}
+
+        if not sermon_id:
+            return JobResult(
+                success=False,
+                message="Missing sermon_id for library apply",
+                error="Missing sermon_id in job parameters",
+            )
+        for key, value in (("start", start), ("end", end)):
+            if not isinstance(value, int | float) or isinstance(value, bool):
+                return JobResult(
+                    success=False,
+                    message=f"Missing required field: {key}",
+                    error=f"Library apply requires a numeric {key}",
+                )
+
+        try:
+            from auto_edit_apply import run_library_apply
+        except ImportError:
+            from ui.auto_edit_apply import run_library_apply
+
+        job.update_progress(5, "Initializing library edit apply...")
+        if config:
+            _inject_sermon_updater_config(config)
+            job.add_log("Config injected for this job")
+
+        def progress_cb(pct, msg):
+            if job.cancelled or job.status == JobStatus.CANCELLED:
+                raise JobCancelledError("Job cancelled by user")
+            try:
+                job.update_progress(pct, msg)
+            except Exception:
+                pass
+
+        job.update_progress(10, f"Applying approved edit for {sermon_id}")
+        result = run_library_apply(
+            __import__("ui.database", fromlist=["SermonRepository"]).SermonRepository(),
+            str(sermon_id),
+            float(start),
+            float(end),
+            audio_offset=float(audio_offset),
+            render_only=render_only,
+            re_detect=re_detect,
+            plan_id=plan_id,
+            progress_callback=progress_cb,
+            cancel_check=lambda: _raise_if_job_cancelled(job),
+            config=config or None,
+        )
+
+        if result.get("cancelled"):
+            job.add_log("Library apply cancelled by user")
+            raise JobCancelledError("Job cancelled by user")
+
+        if render_only and result.get("success"):
+            if bool(result.get("auto_edit_applied")) and result.get("edit_plan_status") in (
+                "auto_applied",
+                "applied_local",
+            ):
+                rendered_id = result.get("sermon_id") or ""
+                job.add_log(f"Edit rendered locally, not uploaded ({rendered_id})")
+                return JobResult(
+                    success=True,
+                    message=(
+                        "Edit rendered locally; nothing was uploaded. Review the media, "
+                        "then use Upload now when ready."
+                    ),
+                    data=_trim_result_payload(result),
+                )
+            err = result.get("error") or (
+                "Pipeline finished without rendering the approved cut "
+                f"(edit_plan_status={result.get('edit_plan_status')}); nothing was rendered."
+            )
+            job.add_log(err)
+            return JobResult(
+                success=False,
+                message=f"Edit apply failed: {err}",
+                error=err,
+                data=_trim_result_payload(result),
+            )
+
+        if result.get("success"):
+            applied_status = result.get("edit_plan_status") or "auto_applied"
+            if applied_status == "auto_applied" and bool(result.get("auto_edit_applied")):
+                job.add_log(f"Edit applied and uploaded ({result.get('sermon_id')})")
+                return JobResult(
+                    success=True,
+                    message=(
+                        f"Edit applied and uploaded ({result.get('sermon_id')})"
+                    ),
+                    data=_trim_result_payload(result),
+                )
+            err = (
+                "Processing finished but the plan still needs review. "
+                "Check the plan for the new sermon record."
+            )
+            job.add_log(err)
+            return JobResult(
+                success=False,
+                message=err,
+                error="edit_plan_status did not reach auto_applied",
+                data=_trim_result_payload(result),
+            )
+
+        err = result.get("error") or "Unknown processing error"
+        job.add_log(err)
+        return JobResult(
+            success=False,
+            message=f"Edit apply failed: {err}",
+            error=err,
+            data=_trim_result_payload(result),
+        )
+
+    except JobCancelledError:
+        raise
+    except Exception as e:
+        error_msg = f"Library apply job failed: {e}"
+        job.add_log(error_msg)
+        logger.exception(error_msg)
+        return JobResult(
+            success=False,
+            message="Library apply job failed",
+            error=str(e),
+        )
+
+
 def _execute_auto_edit_dispatch(job: Job) -> JobResult:
-    """Route AUTO_EDIT jobs: apply continuation when plan_id is present."""
+    """Route AUTO_EDIT jobs: refine, apply continuation, or fresh processing."""
+    if job.parameters.get('refine'):
+        return execute_auto_edit_refine_job(job)
     if job.parameters.get('plan_id') is not None:
         return execute_auto_edit_apply_job(job)
     return execute_auto_edit_job(job)
@@ -1148,6 +1380,7 @@ _EXECUTORS: dict[JobType, Callable[[Job], JobResult]] = {
     JobType.BATCH_PROCESSING: execute_batch_processing_job,
     JobType.METADATA_UPDATE: execute_metadata_update_job,
     JobType.AUTO_EDIT: _execute_auto_edit_dispatch,
+    JobType.AUTO_EDIT_APPLY: execute_library_auto_edit_apply_job,
 }
 
 

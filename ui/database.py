@@ -299,6 +299,7 @@ class SermonDatabase:
                     proposed_end REAL,
                     final_start REAL,
                     final_end REAL,
+                    audio_offset REAL DEFAULT 0.0,
                     confidence REAL DEFAULT 0.0,
                     needs_review INTEGER DEFAULT 1,
                     evidence TEXT,
@@ -319,6 +320,13 @@ class SermonDatabase:
                 CREATE INDEX IF NOT EXISTS idx_edit_plans_sermon_id
                 ON edit_plans(sermon_id)
             """)
+
+            try:
+                conn.execute(
+                    "ALTER TABLE edit_plans ADD COLUMN audio_offset REAL DEFAULT 0.0"
+                )
+            except Exception:
+                pass  # Column already exists
 
             # LLM API usage tracking table
             conn.execute("""
@@ -884,9 +892,9 @@ class SermonRepository:
             cursor = conn.execute("""
                 INSERT INTO edit_plans (
                     sermon_id, revision, proposed_start, proposed_end,
-                    final_start, final_end, confidence, needs_review, evidence,
+                    final_start, final_end, audio_offset, confidence, needs_review, evidence,
                     qa_judgment, reasoning, status, source_path, applied_media_id, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 sermon_id,
                 next_revision,
@@ -894,6 +902,7 @@ class SermonRepository:
                 plan.get('proposed_end'),
                 plan.get('final_start'),
                 plan.get('final_end'),
+                plan.get('audio_offset', 0.0),
                 plan.get('confidence', 0.0),
                 1 if plan.get('needs_review', True) else 0,
                 plan.get('evidence'),
@@ -907,6 +916,104 @@ class SermonRepository:
             plan_id = cursor.lastrowid
             conn.commit()
         return plan_id
+
+    def start_apply_job(self, job_id: str, sermon_id: str, title: str,
+                        parameters: dict[str, Any]) -> bool:
+        try:
+            with self.db.get_connection() as conn:
+                conn.execute(
+                    "INSERT INTO background_jobs (id, type, title, description, status, "
+                    "progress, parameters, can_cancel, can_retry, started_at) "
+                    "VALUES (?, 'auto_edit_apply', ?, ?, 'running', 0, ?, 0, 0, "
+                    "CURRENT_TIMESTAMP)",
+                    (job_id, f"Apply edit: {title}", f"Apply edit for {sermon_id}",
+                     json.dumps(parameters)),
+                )
+                conn.commit()
+            return True
+        except Exception:
+            return False
+
+    def update_apply_job(self, job_id: str, *, status: str | None = None,
+                         progress: float | None = None,
+                         result: dict[str, Any] | None = None) -> None:
+        sets: list[str] = []
+        params: list[Any] = []
+        if status is not None:
+            sets.append("status = ?")
+            params.append(status)
+            if status in ("completed", "failed"):
+                sets.append("completed_at = CURRENT_TIMESTAMP")
+        if progress is not None:
+            sets.append("progress = ?")
+            params.append(float(progress))
+        if result is not None:
+            sets.append("result = ?")
+            params.append(json.dumps(result))
+        if not sets:
+            return
+        params.append(job_id)
+        try:
+            with self.db.get_connection() as conn:
+                conn.execute(
+                    f"UPDATE background_jobs SET {', '.join(sets)} WHERE id = ?", params
+                )
+                conn.commit()
+        except Exception:
+            pass
+
+    def get_latest_apply_job(self, sermon_id: str) -> dict[str, Any] | None:
+        try:
+            with self.db.get_connection() as conn:
+                row = conn.execute(
+                    "SELECT id, status, progress, created_at, completed_at, result "
+                    "FROM background_jobs WHERE type = 'auto_edit_apply' "
+                    "AND parameters LIKE ? ORDER BY created_at DESC LIMIT 1",
+                    (f'%"{sermon_id}"%',),
+                ).fetchone()
+            return dict(row) if row else None
+        except Exception:
+            return None
+
+    def get_apply_jobs_by_status(
+        self, job_type: str, statuses: list[str]
+    ) -> list[dict[str, Any]]:
+        try:
+            with self.db.get_connection() as conn:
+                placeholders = ",".join("?" for _ in statuses)
+                rows = conn.execute(
+                    "SELECT id, status, progress, parameters, created_at, "
+                    "completed_at, result FROM background_jobs "
+                    f"WHERE type = ? AND status IN ({placeholders}) "
+                    "ORDER BY created_at DESC",
+                    (job_type, *statuses),
+                ).fetchall()
+            return [dict(row) for row in rows]
+        except Exception:
+            return []
+
+    def get_active_apply_job(
+        self, sermon_id: str, plan_revision: int | None = None
+    ) -> dict[str, Any] | None:
+        """Newest queued/running apply for a sermon, whatever its plan revision.
+
+        ``plan_revision`` is accepted for call-site compatibility but never
+        filters: an apply started from a superseded revision still occupies
+        the sermon, so it must block a re-apply of the current revision and
+        vice versa.
+        """
+        rows = self.get_apply_jobs_by_status(
+            "auto_edit_apply", ["queued", "running"]
+        )
+        for row in rows:
+            try:
+                params = json.loads(row.get("parameters") or "{}")
+            except (json.JSONDecodeError, TypeError):
+                params = {}
+            if str(params.get("sermon_id") or "") != str(sermon_id):
+                continue
+            return row
+        return None
 
     def get_current_edit_plan(self, sermon_id: str) -> dict[str, Any] | None:
         with self.db.get_connection() as conn:
@@ -934,11 +1041,12 @@ class SermonRepository:
         notes: str = "",
         final_start: float | None = None,
         final_end: float | None = None,
+        audio_offset: float | None = None,
         applied_media_id: str | None = None
     ) -> bool:
         allowed = {
             'pending_review', 'approved', 'auto_applied', 'rejected',
-            'reverted', 'superseded', 'applied',
+            'reverted', 'superseded', 'applied', 'applied_local',
         }
         if status not in allowed:
             return False
@@ -950,6 +1058,9 @@ class SermonRepository:
         if final_end is not None:
             sets.append("final_end = ?")
             params.append(final_end)
+        if audio_offset is not None:
+            sets.append("audio_offset = ?")
+            params.append(float(audio_offset))
         if applied_media_id is not None:
             sets.append("applied_media_id = ?")
             params.append(applied_media_id)

@@ -128,7 +128,8 @@ def _auto_edit_config(
 
 
 def _stub_apply_edit(destination_dir: Path):
-    def fake_apply_edit(source, plan, out, logo_path=None, fade_to_black=None):
+    def fake_apply_edit(source, plan, out, logo_path=None, fade_to_black=None,
+                        fade_out_tail_seconds=2.0):
         out = Path(out)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"edited video bytes")

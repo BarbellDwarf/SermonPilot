@@ -73,6 +73,8 @@ def test_fade_to_black_no_logo_includes_fade_out(
     captured: dict[str, str] = {}
 
     def fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if "ffprobe" in cmd[0]:
+            return subprocess.CompletedProcess(cmd, 1, "", "")
         captured["fc"] = cmd[cmd.index("-filter_complex") + 1]
         captured["t"] = cmd[cmd.index("-t") + 1]
         return subprocess.CompletedProcess(cmd, 0, "ok", "")
@@ -113,6 +115,8 @@ def test_ffmpeg_failure_raises_runtime_error_with_stderr_tail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if "ffprobe" in cmd[0]:
+            return subprocess.CompletedProcess(cmd, 1, "", "")
         raise subprocess.CalledProcessError(1, cmd, output="", stderr="E" * 500 + "boom")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -127,6 +131,8 @@ def test_render_review_snippets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     runs: list[list[str]] = []
 
     def fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if "ffprobe" in cmd[0]:
+            return subprocess.CompletedProcess(cmd, 1, "", "")
         runs.append(cmd)
         out_file = Path(cmd[-1])
         out_file.write_bytes(b"fake")
@@ -140,7 +146,9 @@ def test_render_review_snippets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
     assert len(snippets) == 3
     assert all(snippet.exists() for snippet in snippets)
     windows = {
-        Path(cmd[-1]).name: (cmd[cmd.index("-ss") + 1], cmd[cmd.index("-to") + 1]) for cmd in runs
+        Path(cmd[-1]).name: (cmd[cmd.index("-ss") + 1], cmd[cmd.index("-to") + 1])
+        for cmd in runs
+        if cmd[0] == "ffmpeg"
     }
     assert windows == {
         "snippet_start.mp4": ("0.000", "20.000"),
@@ -247,7 +255,7 @@ class TestApplyEditRealFfmpeg:
         types = {stream["codec_type"] for stream in streams}
         assert types == {"video", "audio"}
         duration = float(_probe_json(out, "format")["format"]["duration"])
-        assert 4.2 == pytest.approx(duration, abs=0.6)
+        assert 5.2 == pytest.approx(duration, abs=0.6)
 
     def test_apply_edit_hard_end_no_logo(self, tmp_path: Path, sample: Path) -> None:
         out = tmp_path / "edited_hard.mp4"
@@ -256,4 +264,4 @@ class TestApplyEditRealFfmpeg:
         types = {stream["codec_type"] for stream in streams}
         assert types == {"video", "audio"}
         duration = float(_probe_json(out, "format")["format"]["duration"])
-        assert 3.0 == pytest.approx(duration, abs=0.6)
+        assert 5.0 == pytest.approx(duration, abs=0.6)

@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any
 
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 
 from ui.rag_system import SermonAnalyticsRAG, initialize_rag_system_with_data
 from ui.sermonaudio_analytics import SermonAudioAnalytics
@@ -206,7 +207,7 @@ class AnalyticsChatInterface:
 
                     # Show relevant sermons if available
                     if message.get('relevant_sermons'):
-                        with st.expander("Relevant Sermons"):
+                        with managed_expander("Relevant Sermons"):
                             self._render_relevant_sermons(message['relevant_sermons'])
 
             elif message['type'] == 'error':
@@ -273,7 +274,7 @@ class AnalyticsChatInterface:
 
     def render_chat_settings(self):
         """Render chat settings and configuration"""
-        with st.expander("Chat Settings", expanded=False):
+        with managed_expander("Chat Settings", expanded=False):
             # RAG system settings
             if st.button("Reset Chat System", key="reset_rag"):
                 if self.rag_system:
@@ -563,7 +564,7 @@ def render_analytics_chat_tab():
     chat_interface.render_chat_settings()
 
     # Example questions in an expander
-    with st.expander("Example Questions", expanded=False):
+    with managed_expander("Example Questions", expanded=False):
         chat_interface.render_example_questions()
 
 

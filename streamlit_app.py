@@ -62,7 +62,7 @@ from ui.shared_navigation import enforce_authentication, render_sidebar_extras  
 st.set_page_config(
     page_title="SermonPilot",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
     menu_items={
         'Get Help': 'https://github.com/BarbellDwarf/SermonPilot',
         'Report a bug': 'https://github.com/BarbellDwarf/SermonPilot/issues',
@@ -283,6 +283,70 @@ st.markdown("""
     /* Hide the Streamlit skills promo banner */
     [data-testid="stSkillsNudgeAnchor"] {
         display: none !important;
+    }
+
+    /* ---- Mobile (<= 640px): stack columns, bigger touch targets ---- */
+    @media (max-width: 640px) {
+        [data-testid="stMainBlockContainer"] {
+            padding-left: 0.75rem;
+            padding-right: 0.75rem;
+        }
+
+        .main-header {
+            font-size: 1.6rem;
+        }
+
+        /* Streamlit has no native responsive columns; stack every column row */
+        [data-testid="stHorizontalBlock"] {
+            flex-direction: column !important;
+            gap: 0.4rem !important;
+        }
+
+        [data-testid="stColumn"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            min-width: 0 !important;
+        }
+
+        /* Touch targets: buttons, inputs, steppers */
+        [data-testid="stBaseButton-primary"],
+        [data-testid="stBaseButton-secondary"] {
+            min-height: 48px;
+            font-size: 1rem;
+        }
+
+        [data-testid="stTextInputRootElement"],
+        [data-testid="stNumberInputField"] {
+            min-height: 44px;
+            font-size: 1rem;
+        }
+
+        [data-testid="stNumberInputStepUp"],
+        [data-testid="stNumberInputStepDown"] {
+            min-height: 44px;
+            min-width: 44px;
+        }
+
+        [data-testid="stSelectbox"] [data-baseweb="select"] {
+            min-height: 44px;
+        }
+
+        /* Tabs scroll horizontally instead of cramming */
+        [data-testid="stTabs"] [data-baseweb="tab-list"] {
+            overflow-x: auto;
+            flex-wrap: nowrap;
+        }
+
+        /* Sidebar nav links: easier to tap */
+        [data-testid="stSidebarNavLink"] {
+            min-height: 44px;
+        }
+
+        /* Library cards: let title/meta wrap when stacked */
+        .sermon-title,
+        .sermon-meta {
+            white-space: normal;
+        }
     }
 
 </style>

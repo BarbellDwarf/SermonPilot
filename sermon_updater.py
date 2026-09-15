@@ -1059,9 +1059,67 @@ def _ffprobe_duration(path: str | Path) -> float | None:
         return None
 
 
+def _probe_stream_bounds(path: str | Path, stream: str) -> tuple[float, float] | None:
+    """Return the first and last packet PTS (seconds) for one stream, or None."""
+    duration = _ffprobe_duration(path)
+    if not duration:
+        return None
+    try:
+        first = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-select_streams', stream,
+             '-show_entries', 'packet=pts_time', '-of', 'csv=p=0',
+             '-read_intervals', '%+#1', str(path)],
+            capture_output=True, text=True, timeout=120,
+        )
+        tail_start = max(duration - 30.0, 0.0)
+        tail = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-select_streams', stream,
+             '-show_entries', 'packet=pts_time', '-of', 'csv=p=0',
+             '-read_intervals', f'{tail_start:.3f}%+30', str(path)],
+            capture_output=True, text=True, timeout=600,
+        )
+    except Exception:
+        return None
+
+    def _times(text: str) -> list[float]:
+        values: list[float] = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line == 'N/A':
+                continue
+            try:
+                values.append(float(line))
+            except ValueError:
+                continue
+        return values
+
+    starts = _times(first.stdout)
+    ends = _times(tail.stdout)
+    if not starts or not ends:
+        return None
+    return min(starts), max(ends)
+
+
+def _verify_mux_av_sync(path: str | Path, tolerance: float = 0.2) -> list[str]:
+    """Return human-readable A/V start/end offsets beyond tolerance for a muxed file."""
+    video = _probe_stream_bounds(path, 'v:0')
+    audio = _probe_stream_bounds(path, 'a:0')
+    if not video or not audio:
+        return ['could not probe A/V stream bounds']
+    problems: list[str] = []
+    start_delta = abs(video[0] - audio[0])
+    if start_delta > tolerance:
+        problems.append(f'stream start delta {start_delta:.3f}s')
+    end_delta = abs(video[1] - audio[1])
+    if end_delta > tolerance:
+        problems.append(f'stream end delta {end_delta:.3f}s')
+    return problems
+
+
 _EDIT_PLAN_FILE_KEYS = {
     'start', 'end', 'fade_in', 'logo_hold', 'fade_to_black',
     'confidence', 'needs_review', 'evidence', 'qa_judgment', 'reasoning',
+    'audio_offset',
 }
 
 
@@ -1082,11 +1140,105 @@ def _load_edit_plan_from_file(path: str | Path) -> EditPlan:
         evidence=str(fields.get('evidence', '')),
         qa_judgment=str(fields.get('qa_judgment', 'cut')),
         reasoning=str(fields.get('reasoning', '')),
+        audio_offset=float(fields.get('audio_offset', 0.0)),
     )
 
 
 def _auto_edit_confidence_threshold(auto_edit_cfg: dict[str, Any]) -> float:
     return min(float(auto_edit_cfg.get('auto_confidence_threshold', 0.8)), 0.99)
+
+
+def refine_edit_plan(sermon_id: str, notes: str = "", config: dict | None = None) -> dict[str, Any]:
+    """Re-run cut detection with the user's rejection notes as refinement guidance."""
+    config = config or globals().get('config') or {}
+    result: dict[str, Any] = {'success': False, 'sermon_id': sermon_id, 'error': None}
+
+    try:
+        from ui.database import SermonRepository
+
+        repo = SermonRepository()
+        current = repo.get_current_edit_plan(sermon_id)
+        history = repo.get_edit_plan_history(sermon_id)
+        prior_notes: list[str] = []
+        for row in history:
+            for part in str(row.get('notes') or '').split(';'):
+                part = part.strip()
+                if part and part not in prior_notes:
+                    prior_notes.append(part)
+        combined_notes = '; '.join(prior_notes)
+        new_notes = str(notes or '').strip()
+        if new_notes and new_notes not in prior_notes:
+            combined_notes = f"{new_notes}; {combined_notes}".strip('; ')
+
+        output_root = Path(config.get('output_directory', 'processed_sermons'))
+        if not output_root.is_absolute():
+            output_root = Path(__file__).parent / output_root
+        sermon_dir = find_sermon_dir(output_root, sermon_id)
+        if sermon_dir is None:
+            result['error'] = f"Sermon directory not found for {sermon_id}"
+            return result
+
+        segments = read_transcript_timestamps(sermon_dir)
+        if not segments:
+            result['error'] = "No timestamped transcript available for re-detection"
+            return result
+
+        source_path = str((current or {}).get('source_path') or '')
+        duration = None
+        if source_path and Path(source_path).exists():
+            duration = _ffprobe_duration(source_path)
+        if not duration:
+            meta = read_metadata(sermon_dir) or {}
+            duration = float(meta.get('duration') or 0) or None
+
+        previous_plan = None
+        if current:
+            previous_plan = {
+                'start': current.get('proposed_start'),
+                'end': current.get('proposed_end'),
+                'evidence': current.get('evidence') or '',
+            }
+
+        plan = detect_cut_points(
+            segments,
+            llm_manager,
+            config,
+            duration,
+            previous_plan=previous_plan,
+            rejection_notes=combined_notes,
+        )
+
+        repo.save_edit_plan_revision(sermon_id, {
+            'proposed_start': float(plan.start),
+            'proposed_end': float(plan.end),
+            'final_start': None,
+            'final_end': None,
+            'confidence': float(plan.confidence),
+            'needs_review': True,
+            'evidence': plan.evidence,
+            'qa_judgment': plan.qa_judgment,
+            'reasoning': plan.reasoning,
+            'status': 'pending_review',
+            'source_path': source_path or None,
+            'notes': combined_notes,
+        })
+
+        result.update({
+            'success': True,
+            'start': plan.start,
+            'end': plan.end,
+            'confidence': plan.confidence,
+            'needs_review': plan.needs_review,
+            'evidence': plan.evidence,
+            'qa_judgment': plan.qa_judgment,
+            'reasoning': plan.reasoning,
+            'notes': combined_notes,
+            'duration': duration,
+        })
+    except Exception as e:
+        logger.exception("Edit plan refinement failed for %s", sermon_id)
+        result['error'] = str(e)
+    return result
 
 
 def _media_type_for_ext(path: str | Path) -> str:
@@ -1417,11 +1569,13 @@ def _find_existing_processed_sermon_id(title: str | None, speaker_name: str | No
         repo = SermonRepository()
         with repo.db.get_connection() as conn:
             row = conn.execute("""
-                SELECT id FROM sermons
-                WHERE title = ? AND speaker = ? AND recorded_date = ?
-                  AND status = 'processed'
-                  AND id NOT LIKE 'draft\\_%' ESCAPE '\\'
-                ORDER BY updated_at DESC
+                SELECT s.id FROM sermons s
+                LEFT JOIN upload_info ui ON ui.sermon_id = s.id
+                WHERE s.title = ? AND s.speaker = ? AND s.recorded_date = ?
+                  AND s.status = 'processed'
+                  AND s.id NOT LIKE 'draft\\_%' ESCAPE '\\'
+                  AND (ui.upload_status IS NULL OR ui.upload_status != 'failed')
+                ORDER BY s.updated_at DESC
                 LIMIT 1
             """, (title, speaker_name, recorded_date or '')).fetchone()
             if row:
@@ -1429,6 +1583,24 @@ def _find_existing_processed_sermon_id(title: str | None, speaker_name: str | No
     except Exception as e:
         logger.debug("Existing processed sermon lookup failed: %s", e)
     return None
+
+
+def _remote_sermon_exists(sermon_id: str) -> bool:
+    """Check a candidate reuse id still exists on SermonAudio.
+
+    Wraps get_sermon_details: 404/empty means not reusable, and any API
+    error fails safe to not reusable so the caller falls through to the
+    normal create path (a duplicate is recoverable; a shadowed publish
+    is not).
+    """
+    try:
+        return bool(get_sermon_details(str(sermon_id)))
+    except Exception as e:
+        logger.warning(
+            "Remote existence check failed for %s; not reusing: %s",
+            sermon_id, e,
+        )
+        return False
 
 
 def _record_publication_id(repo: Any, draft_id: str, remote_sermon_id: str) -> None:
@@ -1444,6 +1616,31 @@ def _record_publication_id(repo: Any, draft_id: str, remote_sermon_id: str) -> N
             conn.commit()
     except Exception as e:
         logger.debug("Could not record publication id for %s: %s", draft_id, e)
+
+
+def validate_event_type_for_api(event_type: str | None) -> None:
+    """Reject an event_type the SermonAudio API would refuse with 422.
+
+    Compares against get_event_types() (API-backed cache with a hardcoded
+    fallback). Raises ValueError naming the allowed options when that list
+    is non-empty and the value is not in it. Skips the guard when the
+    allowed list is empty or unavailable, never blocking on unknown.
+    """
+    try:
+        from ui.sermon_metadata import get_event_types
+        allowed = get_event_types()
+    except Exception as e:
+        logger.warning(
+            "Could not load allowed event types; skipping event-type guard: %s", e
+        )
+        return
+    if not allowed:
+        return
+    if event_type not in allowed:
+        raise ValueError(
+            f"Invalid event_type {event_type!r}: SermonAudio accepts only "
+            f"{', '.join(allowed)}"
+        )
 
 
 def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
@@ -1469,9 +1666,15 @@ def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
     Series is intentionally not sent here: the API ignores it during creation,
     so callers apply it once via set_sermon_series() after creation.
 
+    Raises:
+        ValueError: If event_type is not one of the allowed options from
+            get_event_types(). Never fires a create the API would 422.
+
     Returns:
         Created sermon ID if successful, None if failed
     """
+    validate_event_type_for_api(event_type)
+
     url = BASE_URL + 'node/sermons'
     headers = get_api_headers()
 
@@ -1546,6 +1749,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       progress_callback=None,
                       auto_edit_mode: str | None = None,
                       edit_plan_file: str | None = None,
+                      audio_offset: float | None = None,
                       cancel_check: Callable[[], None] | None = None) -> dict:
     """Process a new sermon from audio file with automatic metadata generation.
 
@@ -1620,6 +1824,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         'error': None,
     }
 
+    try:
+        validate_event_type_for_api(event_type)
+    except ValueError as e:
+        result['error'] = str(e)
+        return result
+
     from pathlib import Path
 
     try:
@@ -1642,7 +1852,13 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
     if input_is_video:
         keeper_cfg = config.get('auto_edit', {}).get('keeper', {})
-        if bool(keeper_cfg.get('enabled', True)):
+        if skip_audio:
+            console_print(
+                "⏭️ Keeper skipped for apply render "
+                "(source is already a processed artifact)"
+            )
+            logger.info("Keeper transcode skipped: skip_audio/apply flow")
+        elif bool(keeper_cfg.get('enabled', True)):
             min_source_gb = float(keeper_cfg.get('min_source_gb', 2.0))
             keeper_root = Path(config.get('output_directory', 'processed_sermons'))
             if not keeper_root.is_absolute():
@@ -1768,6 +1984,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     enhanced_audio_path = audio_path
                 else:
                     _report(30, "Audio enhancement complete")
+                try:
+                    processor.release_gpu()
+                    del processor
+                except Exception:
+                    pass
             else:
                 logger.warning("AudioProcessor unavailable, skipping enhancement")
                 enhanced_audio_path = audio_path
@@ -1802,12 +2023,94 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     final_video = original_input_path.with_name(
                         f"{original_input_path.stem}_enhanced{original_input_path.suffix}"
                     )
-                    mux_cmd = [
-                        "ffmpeg", "-y",
-                        "-i", str(original_input_path),
-                        "-i", str(enhanced_audio_path),
+                    # Encode the enhancer's WAV directly rather than remuxing
+                    # the AAC upload copy: a second AAC generation carries
+                    # encoder priming delay the mux would not compensate.
+                    mux_audio_input = Path(enhanced_audio_path)
+                    if temp_dir is not None:
+                        wav_candidate = temp_dir / "enhanced_audio.wav"
+                        if wav_candidate.exists():
+                            mux_audio_input = wav_candidate
+
+                    correction = 0.0
+                    av_cfg = config.get('av_sync') or {}
+                    if av_cfg.get('enabled', True):
+                        max_offset = float(av_cfg.get('max_offset_seconds', 2.0))
+                        min_confidence = float(av_cfg.get('min_confidence', 0.12))
+                        auto_correct = bool(av_cfg.get('auto_correct', False))
+                        try:
+                            from src.av_sync import (
+                                measure_content_offset,
+                                measure_waveform_offset,
+                                resolve_audio_correction,
+                            )
+                            input_offset = measure_content_offset(
+                                original_input_path,
+                                model_dir=Path(av_cfg.get('model_dir') or '/tmp/av_sync_models'),
+                            )
+                            if input_offset.available and input_offset.offset_seconds is not None:
+                                console_print(
+                                    f"🎯 Input A/V offset: "
+                                    f"{input_offset.offset_seconds:+.2f}s "
+                                    f"(confidence {input_offset.confidence:.2f}, "
+                                    f"{input_offset.detail})"
+                                )
+                                logger.info("av_sync input: %s", input_offset)
+                            else:
+                                console_print(
+                                    f"🎯 Input A/V offset not measured ({input_offset.detail})"
+                                )
+                            enh_offset = measure_waveform_offset(
+                                original_input_path, mux_audio_input
+                            )
+                            if enh_offset.available and enh_offset.offset_seconds is not None:
+                                console_print(
+                                    f"🎧 Enhancement audio offset: "
+                                    f"{enh_offset.offset_seconds:+.3f}s"
+                                )
+                                logger.info("av_sync enhancement: %s", enh_offset)
+                            measured = 0.0
+                            if input_offset.available and input_offset.offset_seconds is not None:
+                                measured += input_offset.offset_seconds
+                            if enh_offset.available and enh_offset.offset_seconds is not None:
+                                measured += enh_offset.offset_seconds
+                            manual_offset = float(audio_offset or 0.0)
+                            if abs(manual_offset) <= 1e-6 and edit_plan_file:
+                                try:
+                                    manual_offset = float(
+                                        _load_edit_plan_from_file(
+                                            edit_plan_file
+                                        ).audio_offset or 0.0
+                                    )
+                                except Exception:
+                                    manual_offset = 0.0
+                            correction, av_reason = resolve_audio_correction(
+                                manual_offset,
+                                measured,
+                                input_offset.confidence,
+                                auto_correct=auto_correct,
+                                min_confidence=min_confidence,
+                                max_offset=max_offset,
+                            )
+                            if "exceeds" in av_reason:
+                                result['av_sync_needs_review'] = True
+                            if abs(measured) > 0.1 or abs(manual_offset) > 1e-6:
+                                console_print(
+                                    f"🎯 A/V decision: measured {measured:+.2f}s, "
+                                    f"manual {manual_offset:+.2f}s -> {av_reason}"
+                                )
+                            result['av_sync_offset_seconds'] = correction
+                        except Exception as e:
+                            logger.warning("av_sync measurement failed: %s", e)
+
+                    mux_cmd = ["ffmpeg", "-y", "-i", str(original_input_path)]
+                    if abs(correction) > 1e-6:
+                        mux_cmd += ["-itsoffset", f"{correction:.3f}"]
+                    mux_cmd += [
+                        "-i", str(mux_audio_input),
                         "-c:v", "copy",
                         "-c:a", "aac",
+                        "-b:a", "192k",
                         "-map", "0:v:0",
                         "-map", "1:a:0",
                         "-shortest",
@@ -1815,6 +2118,15 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     ]
                     logger.info("Muxing enhanced audio into video: %s", " ".join(mux_cmd))
                     mux_proc.run(mux_cmd, capture_output=True, text=True, timeout=600, check=True)
+                    sync_problems = _verify_mux_av_sync(final_video)
+                    if sync_problems:
+                        logger.warning(
+                            "A/V sync check on %s: %s", final_video, "; ".join(sync_problems)
+                        )
+                        console_print(f"⚠️  A/V sync check: {'; '.join(sync_problems)}")
+                    else:
+                        logger.info("A/V sync check passed for %s", final_video)
+                        console_print("✅ A/V sync check passed (A/V within 0.2s)")
                     final_upload_path = final_video
                     upload_type = "original-video"
                     console_print(f"🎬 Muxed enhanced audio into video: {final_video.name}")
@@ -2060,6 +2372,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'evidence': plan.evidence,
                 'qa_judgment': plan.qa_judgment,
                 'reasoning': plan.reasoning,
+                'audio_offset': float(plan.audio_offset or 0.0),
                 'status': status,
                 'source_path': source_path,
                 'notes': notes,
@@ -2099,6 +2412,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 )
                 gate_notes = f"Detected cut points (mode: {gate_mode})"
 
+            if audio_offset is not None:
+                gate_plan.audio_offset = float(audio_offset)
+
             confidence_threshold = _auto_edit_confidence_threshold(auto_edit_cfg)
             min_sermon_seconds = float(auto_edit_cfg.get('min_sermon_seconds', 600))
 
@@ -2108,6 +2424,27 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 and gate_plan.confidence >= confidence_threshold
                 and not validate_plan(gate_plan, plan_duration, min_sermon_seconds)
             )
+
+            if edit_plan_file and not gate_apply:
+                problems = validate_plan(gate_plan, plan_duration, min_sermon_seconds)
+                detail = "; ".join(problems) if problems else (
+                    "plan did not meet the auto-apply gate"
+                )
+                duration_text = (
+                    f"{plan_duration:.1f}s" if plan_duration is not None else "unknown"
+                )
+                logger.error(
+                    "Approved edit plan invalid (%s); nothing was rendered", detail
+                )
+                console_print(f"❌ Approved edit plan invalid ({detail}); nothing rendered")
+                result['success'] = False
+                result['auto_edit_applied'] = False
+                result['edit_plan_status'] = None
+                result['error'] = (
+                    f"Approved edit plan end {gate_plan.end:.1f}s is not applicable to "
+                    f"source duration {duration_text} ({detail}); nothing was rendered."
+                )
+                return result
 
             if not gate_apply:
                 return _persist_auto_edit_pending_review()
@@ -2122,6 +2459,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 auto_edit_cfg.get('logo_hold', gate_plan.logo_hold)
             )
             edit_fade_to_black = bool(auto_edit_cfg.get('fade_to_black', True))
+            edit_fade_out_tail = float(auto_edit_cfg.get('fade_out_tail_seconds', 2.0))
             edited_path = _auto_edit_output_root() / "edited" / (
                 f"{original_input_path.stem}_edited{original_input_path.suffix or '.mp4'}"
             )
@@ -2132,9 +2470,19 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     edited_path,
                     logo_path=edit_logo_path,
                     fade_to_black=edit_fade_to_black,
+                    fade_out_tail_seconds=edit_fade_out_tail,
                 )
             except Exception as e:
                 logger.error("Auto edit apply failed: %s", e)
+                if edit_plan_file:
+                    console_print(f"❌ Approved edit render failed ({e}); nothing was rendered")
+                    result['success'] = False
+                    result['auto_edit_applied'] = False
+                    result['edit_plan_status'] = None
+                    result['error'] = (
+                        f"Approved edit render failed ({e}); nothing was rendered."
+                    )
+                    return result
                 console_print(f"⚠️  Auto edit apply failed ({e}); saving plan for review")
                 gate_plan.needs_review = True
                 gate_notes = f"{gate_notes}; apply failed: {e}".strip("; ")
@@ -2338,6 +2686,25 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 logger.info("Saved original file to %s", original_save_path)
 
             # Save metadata
+            # For apply renders (auto_edit_state set) the output directory can
+            # collide with the source sermon's directory (get_sermon_dir ignores
+            # the sermon id, and the Processed filename is stable), so never
+            # repoint metadata original_file at the trimmed render: retain the
+            # existing on-disk full-length source for the next apply.
+            retained_original: str | None = None
+            if auto_edit_state:
+                try:
+                    import json as _retain_json
+                    existing_meta_path = get_file_path(output_dir, "metadata")
+                    if existing_meta_path.exists():
+                        existing_meta = _retain_json.loads(
+                            existing_meta_path.read_text(encoding='utf-8')
+                        )
+                        candidate = (existing_meta or {}).get('original_file')
+                        if candidate and Path(str(candidate)).exists():
+                            retained_original = str(candidate)
+                except Exception:
+                    retained_original = None
             metadata = {
                 'sermon_id': sermon_id,
                 'sermonID': sermon_id,
@@ -2350,7 +2717,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'subtitle': subtitle,
                 'description': description,
                 'hashtags': hashtags,
-                'original_file': str(audio_path),
+                'original_file': retained_original or str(audio_path),
                 'processed_file': str(final_output_path),
                 'is_video': input_is_video,
                 'upload_type': upload_type,
@@ -2432,6 +2799,17 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
         recovery_draft_id: str | None = None
         recovery_output_dir: Path | None = None
+        if reusable_sermon_id and not _remote_sermon_exists(reusable_sermon_id):
+            logger.warning(
+                "Local sermon %s matches '%s' by %s (%s) but was not found "
+                "on SermonAudio; ignoring it and creating a new sermon",
+                reusable_sermon_id, title, speaker_name, recorded_date,
+            )
+            console_print(
+                f"⚠️  Local sermon {reusable_sermon_id} not found on SermonAudio; "
+                "creating a new sermon instead of reusing it"
+            )
+            reusable_sermon_id = None
         if reusable_sermon_id:
             sermon_id = reusable_sermon_id
             console_print(
@@ -2667,6 +3045,25 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 logger.info("Saved original file to %s", original_save_path)
 
             # Save metadata
+            # For apply renders (auto_edit_state set) the output directory can
+            # collide with the source sermon's directory (get_sermon_dir ignores
+            # the sermon id, and the Processed filename is stable), so never
+            # repoint metadata original_file at the trimmed render: retain the
+            # existing on-disk full-length source for the next apply.
+            retained_original: str | None = None
+            if auto_edit_state:
+                try:
+                    import json as _retain_json
+                    existing_meta_path = get_file_path(output_dir, "metadata")
+                    if existing_meta_path.exists():
+                        existing_meta = _retain_json.loads(
+                            existing_meta_path.read_text(encoding='utf-8')
+                        )
+                        candidate = (existing_meta or {}).get('original_file')
+                        if candidate and Path(str(candidate)).exists():
+                            retained_original = str(candidate)
+                except Exception:
+                    retained_original = None
             metadata = {
                 'sermon_id': sermon_id,
                 'sermonID': sermon_id,
@@ -2679,7 +3076,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'subtitle': subtitle,
                 'description': description,
                 'hashtags': hashtags,
-                'original_file': str(audio_path),
+                'original_file': retained_original or str(audio_path),
                 'processed_file': str(final_output_path),
                 'is_video': input_is_video,
                 'upload_type': upload_type,
@@ -2734,6 +3131,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     'bible_text': bible_text or '',
                     'duration': duration,
                     'status': 'processed',
+                    'upload_info': {
+                        'sermonaudio_id': str(sermon_id),
+                        'upload_date': dt.datetime.now(),
+                        'upload_status': 'completed',
+                        'upload_message': 'Media uploaded successfully',
+                    },
                     'file_paths': {
                         'audio': str(final_output_path),
                         'metadata': str(get_file_path(output_dir, "metadata")),
@@ -2799,6 +3202,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     'event_type': event_type or '',
                     'bible_text': bible_text or '',
                     'status': 'error',
+                    'upload_info': {
+                        'sermonaudio_id': str(sermon_id),
+                        'upload_date': dt.datetime.now(),
+                        'upload_status': 'failed',
+                        'upload_message': 'Sermon created but audio upload failed',
+                    },
                     'file_paths': {
                         'audio': str(final_upload_path),
                     },
@@ -2862,6 +3271,11 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
         speaker_name = sermon_data.get('speaker', '') or ''
         recorded_date = sermon_data.get('recorded_date', '') or ''
         event_type = sermon_data.get('event_type', 'Sunday Service') or 'Sunday Service'
+        try:
+            validate_event_type_for_api(event_type)
+        except ValueError as e:
+            result['error'] = str(e)
+            return result
         bible_text = sermon_data.get('bible_text') or sermon_data.get('scripture_reference') or ''
         subtitle = sermon_data.get('subtitle', '') or ''
         series_title = sermon_data.get('series_title', '') or ''
@@ -3034,6 +3448,27 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
                     new_sermon_id, transcript or '', description or '', hashtags or '',
                     '[]', None
                 ))
+                try:
+                    upload_cols = [
+                        row[1] for row in conn.execute("PRAGMA table_info(upload_info)")
+                    ]
+                    if 'sermonaudio_id' in upload_cols and 'upload_status' in upload_cols:
+                        conn.execute("""
+                            INSERT OR REPLACE INTO upload_info
+                            (sermon_id, sermonaudio_id, upload_date, upload_status,
+                             upload_message)
+                            VALUES (?, ?, ?, ?, ?)
+                        """, (
+                            new_sermon_id, str(new_sermon_id), dt.datetime.now(),
+                            'completed' if upload_success else 'failed',
+                            'Media uploaded successfully' if upload_success
+                            else 'Sermon created but media upload failed',
+                        ))
+                except Exception as upload_err:
+                    logger.debug(
+                        "Could not record upload_info for %s: %s",
+                        new_sermon_id, upload_err,
+                    )
                 # Rebuild the FTS row across every column the table actually
                 # has, carrying over indexed topics/summary from the draft row
                 fts_cols = [
@@ -4511,12 +4946,18 @@ def _reuse_existing_transcript(input_path: Path, speaker_name: str, series_title
     compared on stems with that prefix stripped instead.
     """
     try:
+        local_transcript = Path(input_path).parent / "transcript.txt"
+        if local_transcript.exists() and local_transcript.stat().st_size > 0:
+            logger.info("Reusing existing transcript next to media: %s", local_transcript)
+            return local_transcript.read_text(encoding='utf-8')
+
         output_root = Path(config.get('output_directory', 'processed_sermons'))
         if not output_root.is_absolute():
             output_root = Path(__file__).parent / output_root
         reuse_dir = get_sermon_dir(output_root, speaker_name, series_title, title, "reuse")
         transcript_path = get_file_path(reuse_dir, "transcript")
         if not transcript_path.exists():
+            logger.info("Transcript reuse miss: no file at %s", transcript_path)
             return ""
 
         meta = read_metadata(reuse_dir) or {}
@@ -4525,6 +4966,10 @@ def _reuse_existing_transcript(input_path: Path, speaker_name: str, series_title
             if _normalized_file_stem(stored_original) == _normalized_file_stem(input_path):
                 logger.info("Reusing existing transcript: %s", transcript_path)
                 return transcript_path.read_text(encoding='utf-8')
+            logger.info(
+                "Transcript reuse miss: stored original %r does not match input %r",
+                stored_original, str(input_path),
+            )
             return ""
 
         # Legacy output dirs carry no original_file; keep the old mtime
@@ -4826,6 +5271,7 @@ def handle_new_sermon(args):
         ),
         auto_edit_mode=cli_auto_edit_mode,
         edit_plan_file=getattr(args, 'edit_plan_file', None),
+        audio_offset=getattr(args, 'audio_offset', None),
     )
 
     if result.get('success'):

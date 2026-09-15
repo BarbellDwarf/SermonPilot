@@ -99,6 +99,12 @@ class CLIParser:
                                 help='Auto-edit review mode (default: config)')
         new_sermon.add_argument('--edit-plan-file', dest='edit_plan_file', default=None,
                                 help='Use an EditPlan JSON file instead of LLM detection')
+        new_sermon.add_argument('--audio-offset', dest='audio_offset', type=float,
+                                default=None,
+                                help=(
+                                    'Manual audio shift in seconds applied by the edit '
+                                    'render (positive delays audio later, range ±5.0)'
+                                ))
         new_sermon.add_argument('--clean-audio', dest='use_clean_audio', action='store_true',
                                help=(
                                    'Use external clean-audio.py for preprocessing '

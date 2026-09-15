@@ -41,6 +41,10 @@ _SECRET_KEY_NAMES = frozenset({'password', 'passwd', 'token', 'secret', 'auth', 
 # Result payload keys that are too bulky to persist with every job record
 _RESULT_STRIP_FIELDS = frozenset({'transcript'})
 
+# JobResult dataclass fields. Persisted result dicts with extra keys (e.g.
+# self-managed edit-apply rows) are coerced: extras fold into data.
+_RESULT_FIELDS = frozenset({'success', 'message', 'data', 'error'})
+
 # Terminal jobs older than this are pruned from memory and the database
 JOB_RETENTION_DAYS = 30
 
@@ -74,6 +78,7 @@ class JobType(Enum):
     TRANSCRIPT_GENERATION = "transcript_generation"
     METADATA_UPDATE = "metadata_update"
     AUTO_EDIT = "auto_edit"
+    AUTO_EDIT_APPLY = "auto_edit_apply"
 
 
 class JobStatus(Enum):
@@ -164,9 +169,33 @@ class Job:
 
         # Handle result if present
         if data.get('result'):
-            data['result'] = JobResult(**data['result'])
+            data['result'] = _coerce_job_result(data['result'])
 
         return cls(**data)
+
+
+def _coerce_job_result(data: dict[str, Any]) -> JobResult:
+    """Build a JobResult from a persisted dict, tolerating extra keys.
+
+    Self-managed flows (edit applies) write compact result dicts such as
+    {"success": ..., "render_only": ..., "elapsed_seconds": ...} straight
+    to background_jobs.result. Unknown keys fold into data so the Jobs page
+    parses those rows instead of logging a parse error per row per refresh.
+    """
+    known = {k: v for k, v in data.items() if k in _RESULT_FIELDS}
+    extras = {k: v for k, v in data.items() if k not in _RESULT_FIELDS}
+    payload = known.get('data')
+    if extras:
+        if isinstance(payload, dict):
+            payload = {**payload, **extras}
+        elif payload is None:
+            payload = extras
+        known['data'] = payload
+    if 'success' not in known:
+        known['success'] = False
+    if 'message' not in known:
+        known['message'] = ''
+    return JobResult(**known)
 
 
 def _result_for_persistence(result: JobResult) -> dict[str, Any]:
@@ -387,6 +416,8 @@ class JobQueue:
         with self._queue_lock:
             jobs = list(self._jobs.values())
 
+        jobs = self._merge_db_jobs(jobs)
+
         if status_filter:
             jobs = [job for job in jobs if job.status == status_filter]
 
@@ -606,6 +637,68 @@ class JobQueue:
             logger.error(f"Failed to save job {job.id} to database: {e}")
             job.add_log(f"Failed to save job to database: {e}")
 
+    def _job_from_row(self, row) -> Job | None:
+        """Convert a background_jobs row into a Job, None when unparsable."""
+        try:
+            job_data = {
+                'id': row['id'],
+                'type': JobType(row['type']),
+                'title': row['title'],
+                'description': row['description'],
+                'status': JobStatus(row['status']),
+                'progress': row['progress'],
+                'parameters': (
+                    json.loads(row['parameters']) if row['parameters'] else {}
+                ),
+                'logs': json.loads(row['logs']) if row['logs'] else [],
+                'created_at': (
+                    datetime.fromisoformat(row['created_at'])
+                    if row['created_at'] else None
+                ),
+                'started_at': (
+                    datetime.fromisoformat(row['started_at'])
+                    if row['started_at'] else None
+                ),
+                'completed_at': (
+                    datetime.fromisoformat(row['completed_at'])
+                    if row['completed_at'] else None
+                ),
+                'can_cancel': bool(row['can_cancel']),
+                'can_retry': bool(row['can_retry']),
+                'priority': row['priority'],
+            }
+            if row['result']:
+                result_data = json.loads(row['result'])
+                job_data['result'] = _coerce_job_result(result_data)
+            return Job(**job_data)
+        except Exception as e:
+            logger.error(f"Failed to parse job {row['id']}: {e}")
+            return None
+
+    def _merge_db_jobs(self, jobs: list[Job]) -> list[Job]:
+        """Include DB rows not present in memory.
+
+        Self-managed flows (edit applies) write job rows straight to the
+        database; merging keeps them visible on the Jobs page without the
+        worker treating them as queued work.
+        """
+        if not self.db:
+            return jobs
+        known = {job.id for job in jobs}
+        merged = list(jobs)
+        try:
+            with self.db.get_connection() as conn:
+                rows = conn.execute("SELECT * FROM background_jobs").fetchall()
+        except Exception:
+            return merged
+        for row in rows:
+            if row['id'] in known:
+                continue
+            job = self._job_from_row(row)
+            if job is not None:
+                merged.append(job)
+        return merged
+
     def _load_jobs_from_db(self):
         """Load existing jobs from database"""
         if not self.db:
@@ -616,46 +709,9 @@ class JobQueue:
                 rows = conn.execute("SELECT * FROM background_jobs").fetchall()
 
                 for row in rows:
-                    try:
-                        # Convert database row to job
-                        job_data = {
-                            'id': row['id'],
-                            'type': JobType(row['type']),
-                            'title': row['title'],
-                            'description': row['description'],
-                            'status': JobStatus(row['status']),
-                            'progress': row['progress'],
-                            'parameters': (
-                                json.loads(row['parameters']) if row['parameters'] else {}
-                            ),
-                            'logs': json.loads(row['logs']) if row['logs'] else [],
-                            'created_at': (
-                                datetime.fromisoformat(row['created_at'])
-                                if row['created_at'] else None
-                            ),
-                            'started_at': (
-                                datetime.fromisoformat(row['started_at'])
-                                if row['started_at'] else None
-                            ),
-                            'completed_at': (
-                                datetime.fromisoformat(row['completed_at'])
-                                if row['completed_at'] else None
-                            ),
-                            'can_cancel': bool(row['can_cancel']),
-                            'can_retry': bool(row['can_retry']),
-                            'priority': row['priority']
-                        }
-
-                        # Handle result
-                        if row['result']:
-                            result_data = json.loads(row['result'])
-                            job_data['result'] = JobResult(**result_data)
-
-                        job = Job(**job_data)
+                    job = self._job_from_row(row)
+                    if job is not None:
                         self._jobs[job.id] = job
-
-                    except Exception as e:
-                        logger.error(f"Failed to load job {row['id']}: {e}")
 
             logger.info(f"Loaded {len(self._jobs)} jobs from database")
 

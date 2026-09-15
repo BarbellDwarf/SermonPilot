@@ -31,6 +31,7 @@ class EditPlan:
     evidence: str = "No timestamped transcript available"
     qa_judgment: str = "cut"
     reasoning: str = ""
+    audio_offset: float = 0.0
 
 
 def _format_timestamp(seconds: float) -> str:
@@ -38,7 +39,12 @@ def _format_timestamp(seconds: float) -> str:
     return f"{seconds // 60:02d}:{seconds % 60:02d}"
 
 
-def build_detection_prompt(segments: list[dict[str, Any]], qa_margin_seconds: float = 3.0) -> str:
+def build_detection_prompt(
+    segments: list[dict[str, Any]],
+    qa_margin_seconds: float = 3.0,
+    previous_plan: dict[str, Any] | None = None,
+    rejection_notes: str | None = None,
+) -> str:
     transcript_lines = []
     for segment in segments:
         start = float(segment.get("start", 0.0) or 0.0)
@@ -46,6 +52,31 @@ def build_detection_prompt(segments: list[dict[str, Any]], qa_margin_seconds: fl
         text = str(segment.get("text", "")).strip()
         transcript_lines.append(f"[{_format_timestamp(start)}-{_format_timestamp(end)}] {text}")
     transcript = "\n".join(transcript_lines)
+
+    refinement = ""
+    if previous_plan is not None or rejection_notes:
+        prev_start = previous_plan.get("start") if previous_plan else None
+        prev_end = previous_plan.get("end") if previous_plan else None
+        prev_evidence = (previous_plan.get("evidence") if previous_plan else "") or ""
+        notes = (rejection_notes or "").strip()
+        refinement = f"""
+
+This is a RE-DETECTION. The publisher rejected the previous proposal and gave notes.
+Treat the notes as the user's editing instructions, not just a timestamp tweak: they may
+redefine WHICH content to include or exclude entirely (for example, skip an earlier
+class when two are recorded back to back, or keep only a later session). Honour the
+notes first, then re-derive start and end from the transcript.
+
+Previous proposal:
+- start: {prev_start}
+- end: {prev_end}
+- evidence: {prev_evidence[:400]}
+
+Publisher notes (authoritative):
+"{notes}"
+
+Re-propose start and end so they satisfy the notes, and quote FRESH transcript lines
+as evidence for the new proposal. Do not reuse the previous evidence."""
 
     return f"""You are analysing a timestamped transcript of a recorded sermon video.
 Identify two cut points so the publisher can trim pre-service content and post-service Q&A
@@ -69,7 +100,7 @@ Follow these rules exactly:
 5. The END point must sit {qa_margin_seconds} seconds BEFORE the first Q&A utterance so no
    question is clipped. Subtract that margin from your natural cut time.
 6. Quote the decisive transcript lines in evidence. Evidence is mandatory and must be non-empty.
-
+{refinement}
 Respond with STRICT JSON only, in exactly this shape:
 {{"start": <seconds>, "end": <seconds>, "confidence": <0-1>, "evidence": "<quoted lines>",
 "qa_judgment": "cut"|"teaching_continues", "reasoning": "<short>"}}
@@ -110,6 +141,8 @@ def detect_cut_points(
     llm_manager: Any,
     config: dict[str, Any] | None = None,
     duration: float | None = None,
+    previous_plan: dict[str, Any] | None = None,
+    rejection_notes: str | None = None,
 ) -> EditPlan:
     auto_edit_config = (config or {}).get("auto_edit", {})
     qa_margin_seconds = float(auto_edit_config.get("qa_margin_seconds", 3.0))
@@ -127,54 +160,77 @@ def detect_cut_points(
             logger.warning(f"auto_edit fallback plan invalid: {plan_needs_review}")
         return plan
 
-    prompt = build_detection_prompt(segments, qa_margin_seconds)
+    prompt = build_detection_prompt(
+        segments,
+        qa_margin_seconds,
+        previous_plan=previous_plan,
+        rejection_notes=rejection_notes,
+    )
     messages: list[dict[str, str]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
 
-    try:
-        response = llm_manager.chat(messages, operation="auto_edit")
-        payload = json.loads(_strip_markdown_fences(response))
-    except Exception as e:
-        logger.warning(f"auto_edit: LLM response unusable, falling back: {e}")
-        return _fallback_plan(duration, "Detection fallback: LLM output not usable", "")
+    plan: EditPlan | None = None
+    last_response = ""
+    for attempt in range(1, 4):
+        try:
+            response = llm_manager.chat(messages, operation="auto_edit")
+            last_response = response or ""
+            payload = json.loads(_strip_markdown_fences(response))
+        except Exception as e:
+            logger.warning(f"auto_edit: attempt {attempt}/3, LLM response unusable: {e}")
+            continue
 
-    try:
-        start = float(payload["start"])
-        end = float(payload["end"])
-        confidence = float(payload.get("confidence", 0.0))
-        evidence = str(payload.get("evidence", ""))
-        qa_judgment = str(payload.get("qa_judgment", "cut"))
-        reasoning = str(payload.get("reasoning", ""))
-    except (KeyError, TypeError, ValueError) as e:
-        logger.warning(f"auto_edit: LLM JSON missing or invalid fields: {e}")
-        return _fallback_plan(duration, "Detection fallback: LLM output not usable", "")
+        try:
+            start = float(payload["start"])
+            end = float(payload["end"])
+            confidence = float(payload.get("confidence", 0.0))
+            evidence = str(payload.get("evidence", ""))
+            qa_judgment = str(payload.get("qa_judgment", "cut"))
+            reasoning = str(payload.get("reasoning", ""))
+        except (KeyError, TypeError, ValueError) as e:
+            logger.warning(
+                f"auto_edit: attempt {attempt}/3, LLM JSON missing or invalid fields: {e}"
+            )
+            continue
 
-    if (
-        not (0 <= start < end)
-        or not evidence.strip()
-        or qa_judgment
-        not in (
-            "cut",
-            "teaching_continues",
+        if (
+            not (0 <= start < end)
+            or not evidence.strip()
+            or qa_judgment
+            not in (
+                "cut",
+                "teaching_continues",
+            )
+        ):
+            logger.warning(
+                f"auto_edit: attempt {attempt}/3, LLM JSON failed sanity checks, retrying"
+            )
+            continue
+
+        if duration is not None:
+            end = min(end, float(duration))
+
+        plan = EditPlan(
+            start=start,
+            end=end,
+            confidence=confidence,
+            needs_review=False,
+            evidence=evidence,
+            qa_judgment=qa_judgment,
+            reasoning=reasoning,
         )
-    ):
-        logger.warning("auto_edit: LLM JSON failed sanity checks, falling back")
+        break
+
+    if plan is None:
+        preview = (last_response or "").strip().replace("\n", " ")[:300]
+        logger.warning(
+            "auto_edit: LLM output unusable after 3 attempts, falling back. "
+            "Last raw response preview (scrubbed, truncated): %r",
+            preview,
+        )
         return _fallback_plan(duration, "Detection fallback: LLM output not usable", "")
-
-    if duration is not None:
-        end = min(end, float(duration))
-
-    plan = EditPlan(
-        start=start,
-        end=end,
-        confidence=confidence,
-        needs_review=False,
-        evidence=evidence,
-        qa_judgment=qa_judgment,
-        reasoning=reasoning,
-    )
 
     problems = validate_plan(plan, duration, min_sermon_seconds)
     if problems:
@@ -192,6 +248,12 @@ def validate_plan(
 
     if plan.start < 0:
         problems.append("start is negative")
+
+    if abs(float(plan.audio_offset or 0.0)) > MAX_AUDIO_OFFSET:
+        problems.append(
+            f"audio offset {plan.audio_offset:+.1f}s exceeds limit "
+            f"±{MAX_AUDIO_OFFSET:.1f}s"
+        )
 
     if duration is not None:
         if plan.end > duration + 1.0:
@@ -211,9 +273,14 @@ def validate_plan(
 
 
 XFADE_SECONDS = 0.8
+MAX_AUDIO_OFFSET = 5.0
+DEFAULT_FADE_OUT_TAIL_SECONDS = 2.0
 
 
 def _run_ffmpeg(cmd: list[str]) -> None:
+    import time as _time
+
+    start = _time.time()
     try:
         subprocess.run(
             cmd, capture_output=True, text=True, timeout=_FFMPEG_TIMEOUT_SECONDS, check=True
@@ -221,10 +288,33 @@ def _run_ffmpeg(cmd: list[str]) -> None:
     except subprocess.CalledProcessError as e:
         stderr_tail = (e.stderr or "")[-400:]
         raise RuntimeError(f"apply_edit ffmpeg failed: {stderr_tail}") from e
+    finally:
+        logger.info(
+            "ffmpeg stage %.1fs: %s -> %s",
+            _time.time() - start,
+            " ".join(cmd[:2]),
+            cmd[-1],
+        )
 
 
 def _fmt(seconds: float) -> str:
     return f"{seconds:.3f}"
+
+
+def _resolve_tail(source: Path, end: float, d_pos: float, fade_out_tail_seconds: float) -> float:
+    wanted = max(float(fade_out_tail_seconds), 0.0)
+    if wanted <= 0:
+        return 0.0
+    ffprobe = shutil.which("ffprobe")
+    src_dur: float | None = None
+    if ffprobe:
+        try:
+            src_dur = _ffprobe_duration(ffprobe, source)
+        except Exception:
+            src_dur = None
+    if src_dur is None:
+        return 0.0
+    return min(wanted, max(0.0, src_dur - end - d_pos))
 
 
 def apply_edit(
@@ -233,6 +323,7 @@ def apply_edit(
     out: Path,
     logo_path: Path | None = None,
     fade_to_black: bool | None = None,
+    fade_out_tail_seconds: float = DEFAULT_FADE_OUT_TAIL_SECONDS,
 ) -> Path:
     if fade_to_black is None:
         fade_to_black = plan.fade_to_black
@@ -242,9 +333,20 @@ def apply_edit(
     fade_in = max(plan.fade_in, 0.0)
     logo_hold = max(plan.logo_hold, 0.0)
     content_dur = plan.end - plan.start
-    fade_out_start = max(content_dur - fade_in, 0.0)
+
+    audio_offset = float(plan.audio_offset or 0.0)
+    d_pos = max(audio_offset, 0.0)
+    tail = _resolve_tail(source, plan.end, d_pos, fade_out_tail_seconds)
+    window_end = plan.end + tail + d_pos
+    out_len = window_end - plan.start
+    fade_out_start = max(out_len - fade_in, 0.0)
 
     out.parent.mkdir(parents=True, exist_ok=True)
+
+    pts_shift = ""
+    if abs(audio_offset) > 1e-6:
+        sign = "+" if audio_offset > 0 else "-"
+        pts_shift = f",asetpts=PTS{sign}{abs(audio_offset):.3f}/TB"
 
     cmd: list[str] = [
         "ffmpeg",
@@ -252,7 +354,7 @@ def apply_edit(
         "-ss",
         _fmt(plan.start),
         "-to",
-        _fmt(plan.end),
+        _fmt(window_end),
         "-i",
         str(source),
     ]
@@ -262,7 +364,7 @@ def apply_edit(
 
     if logo_path is not None and logo_hold > 0:
         cmd += ["-loop", "1", "-t", _fmt(logo_hold), "-i", str(logo_path)]
-        total = content_dur + logo_hold - XFADE_SECONDS
+        total = out_len + logo_hold - XFADE_SECONDS
         filters.append(
             f"[0:v]setpts=PTS-STARTPTS,{fade_in_filter},"
             f"fade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},settb=1/25[cv]"
@@ -271,7 +373,7 @@ def apply_edit(
         filters.append("[lg0]fps=25,settb=1/25[lg]")
         filters.append(
             f"[cvr][lg]xfade=transition=fade:duration={XFADE_SECONDS:.3f}"
-            f":offset={_fmt(content_dur - XFADE_SECONDS)}[xv]"
+            f":offset={_fmt(out_len - XFADE_SECONDS)}[xv]"
         )
         if fade_to_black:
             end_fade_start = max(total - fade_in, 0.0)
@@ -279,20 +381,20 @@ def apply_edit(
         else:
             filters.append("[xv]null[vout]")
         filters.append(
-            f"[0:a]afade=t=in:st=0.000:d={_fmt(fade_in)},"
+            f"[0:a]afade=t=in:st=0.000:d={_fmt(fade_in)}{pts_shift},"
             f"afade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},apad[aout]"
         )
     else:
-        total = content_dur
+        total = out_len
         video_chain = f"[0:v]setpts=PTS-STARTPTS,{fade_in_filter}"
         if fade_to_black and content_dur > 0:
             audio_chain = (
-                f"afade=t=in:st=0.000:d={_fmt(fade_in)},"
+                f"afade=t=in:st=0.000:d={_fmt(fade_in)}{pts_shift},"
                 f"afade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},apad"
             )
             video_chain += f",fade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)}"
         else:
-            audio_chain = f"afade=t=in:st=0.000:d={_fmt(fade_in)}"
+            audio_chain = f"afade=t=in:st=0.000:d={_fmt(fade_in)}{pts_shift}"
         filters.append(video_chain + "[vout]")
         filters.append(f"[0:a]{audio_chain}[aout]")
 
@@ -320,6 +422,38 @@ def apply_edit(
         str(out),
     ]
 
+    _run_ffmpeg(cmd)
+    return out
+
+
+def shift_snippet_audio(base: Path, offset: float, out: Path) -> Path:
+    """Remux a snippet with the audio track shifted by offset seconds.
+
+    No re-encode: both streams are copied, so repeated nudges are near-instant.
+    Positive offset delays the audio later; negative advances it.
+    """
+    if abs(offset) < 1e-6:
+        return base
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(base),
+        "-itsoffset", _fmt(offset), "-i", str(base),
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-c", "copy",
+    ]
+    ffprobe = shutil.which("ffprobe")
+    base_dur: float | None = None
+    if ffprobe:
+        try:
+            base_dur = _ffprobe_duration(ffprobe, base)
+        except Exception:
+            base_dur = None
+    if base_dur is not None:
+        cmd += ["-t", _fmt(base_dur + max(offset, 0.0))]
+    else:
+        cmd += ["-shortest"]
+    cmd += [str(out)]
     _run_ffmpeg(cmd)
     return out
 
@@ -357,6 +491,7 @@ def render_review_snippets(
     plan: EditPlan,
     out_dir: Path,
     logo_path: Path | None = None,
+    fade_out_tail_seconds: float = DEFAULT_FADE_OUT_TAIL_SECONDS,
 ) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     snippets: list[Path] = []
@@ -382,7 +517,13 @@ def render_review_snippets(
         )
         try:
             snippets.append(
-                apply_edit(source, preview_plan, out_dir / "snippet_ending.mp4", logo_path)
+                apply_edit(
+                    source,
+                    preview_plan,
+                    out_dir / "snippet_ending.mp4",
+                    logo_path,
+                    fade_out_tail_seconds=fade_out_tail_seconds,
+                )
             )
         except (RuntimeError, ValueError) as e:
             logger.warning(f"auto_edit: ending snippet failed: {e}")

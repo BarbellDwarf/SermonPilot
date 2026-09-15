@@ -6,18 +6,21 @@ Auto-edit watches the transcript, asks an LLM to find where the sermon actually 
 
 Drop the raw multi-GB `mkv`/`mp4` straight from the recorder into the New Sermon page or the CLI. You do not pre-shrink it in kdenlive first. The keeper transcode step handles the shrink automatically before anything else runs, and it keeps the original on disk so every future re-edit starts from full quality.
 
+Two ways in:
+
+- **Server Path tab (recommended for multi-GB raw files).** Put the file in the raw-ingest folder (Docker host path `.../sermonpilot/raw_ingest`, seen inside the container as `/data/raw_ingest`), then paste the container path into the "Server Path (large files)" tab. The app reads the file from disk directly; nothing goes through the browser.
+- **Browser upload.** Works for smaller files. The limit is 30,720 MB (30 GB) by default and can be changed with the `STREAMLIT_SERVER_MAX_UPLOAD_SIZE` environment variable (Docker: set it in `.env`; standalone: same variable or edit `.streamlit/config.toml`). Streaming a 30 GB file through a browser POST is slow and memory-hungry, so prefer the Server Path tab at that size.
+
+### Resumability
+
+Browser uploads are **not resumable**: Streamlit buffers the upload server-side, and an interrupted POST has to start over. For large recordings, use the Server Path tab: copying the file to the ingest folder over SMB or rsync is interruptible and resumable at the transfer layer, and the app then reads it from disk. A resumable in-browser uploader (chunked upload endpoint + JS uploader) is deliberately out of scope for v1.7.0; see the follow-up issue linked from the map.
+
 kdenlive stays in the workflow for rare creative edits only: multi-cam cuts, titles, audio surgery. Everything routine is handled here.
 
 ## Requirements
 
 - `ffmpeg` on the PATH (keeper transcode and apply both shell out to it)
-- An OpenAI-compatible endpoint for cut detection, configured through two env vars in `.env`:
-
-```bash
-OPENCODE_GO_BASE_URL=https://your-openai-compatible-endpoint/v1
-OPENCODE_GO_API_KEY=your-key
-```
-
+- A configured LLM provider for cut detection. Detection uses the global `llm` chain by default (the shipped config runs Ollama with `glm-5.3-flash:cloud`), so no extra environment variables are needed. An optional per-operation pin is documented under "LLM for cut detection".
 - Hardware encoding is optional. The keeper picks its encoder at runtime: NVENC when an NVIDIA GPU is present, then VAAPI (verified on AMD and Intel), then plain `libx264`.
 
 ## Configuration
@@ -35,6 +38,7 @@ auto_edit:
   logo_path: ''
   logo_hold: 3.0
   fade_to_black: true
+  fade_out_tail_seconds: 2.0   # tail kept past the end cut so delayed audio + fade clear the closing words
   keeper:
     enabled: true
     crf: 20                    # libx264 -crf / nvenc -cq / vaapi -qp (crf+2)
@@ -54,6 +58,7 @@ auto_edit:
 | `logo_path` | `''` | Image shown on the end card; empty disables the card |
 | `logo_hold` | `3.0` | Seconds the logo card stays on screen |
 | `fade_to_black` | `true` | Fade out at the end of the content |
+| `fade_out_tail_seconds` | `2.0` | Extra source audio kept past the end cut so the delayed audio tail and the end fade clear the closing words (clamped to available room) |
 | `keeper.enabled` | `true` | Shrink large sources before processing |
 | `keeper.crf` | `20` | Quality level (see encoder mapping above) |
 | `keeper.nvenc` | `true` | Allow the NVENC -> VAAPI -> libx264 detection chain |
@@ -62,9 +67,11 @@ auto_edit:
 
 Set `logo_path` once and every edit and re-edit picks it up automatically, so the card survives the whole life of the sermon.
 
-### LLM pin for cut detection
+### LLM for cut detection
 
-Cut detection uses its own provider so it does not inherit your metadata model:
+Cut detection runs on the global LLM chain by default: the provider and model in `llm.primary` (the shipped config uses Ollama with `glm-5.3-flash:cloud`). No extra environment variables are required.
+
+If you later want a dedicated model for detection only, add an optional per-operation pin; when absent, detection keeps using the primary chain:
 
 ```yaml
 llm:
@@ -72,17 +79,18 @@ llm:
     auto_edit:
       provider: "openai"   # any OpenAI-compatible endpoint
       openai:
-        api_key: "${OPENCODE_GO_API_KEY}"
-        base_url: "${OPENCODE_GO_BASE_URL}"
-        model: "deepseek-v4.1-flash"
+        api_key: "${AUTO_EDIT_LLM_API_KEY}"
+        base_url: "${AUTO_EDIT_LLM_BASE_URL}"
+        model: "your-model"
+        extra_headers: {}  # optional; some gateways need a routing/session header
 ```
 
-If this pin fails to initialize or errors at call time, detection falls back to the global `llm` primary/fallback chain.
+If the pin fails to initialize or errors at call time, detection falls back to the global chain. Detection retries up to 3 times on empty or unusable model output, then returns a `needs_review` plan.
 
 ## Pipeline
 
 1. Upload (raw file goes in as-is)
-2. Options
+2. Options, including the **Edit Sermon (Auto-Edit)** section on the New Sermon page: enable, approval mode, ending card image, fade to black
 3. Audio processing, with the keeper transcode as a pre-step
 4. Timestamped transcription
 5. LLM cut detection, revision 1 saved to `edit_plans`
@@ -91,6 +99,8 @@ If this pin fails to initialize or errors at call time, detection falls back to 
 8. Logo card (part of the apply)
 9. Metadata
 10. Upload
+
+The form's section writes per-run overrides into the job config; with the checkbox off, the feature is skipped for that run regardless of the config default.
 
 ### Review gate
 
@@ -108,10 +118,14 @@ Open the sermon in the Library and expand the review panel:
 - Badges show the plan status and confidence
 - Start and end timestamp inputs at 0.1s resolution, validated live against the plan rules (problems are listed inline)
 - The LLM's evidence quote from the transcript
-- Approve applies the plan and continues the pipeline. Reject drops it.
+- Approve applies the plan and continues the pipeline
+- **Reject** drops the plan. If you typed rejection notes, rejecting immediately queues a fresh detection run that sends your notes to the LLM as refinement instructions. Notes can redefine scope, not just timestamps: "keep only the second class" moves the start point to that class.
+- **Regenerate** re-runs detection manually, sending accumulated notes from every previous rejection as context.
 - Already auto-applied plans show their applied section here
 - **Restore original** undoes an applied edit: the original media is reuploaded and the plan is reverted
 - **Re-edit** starts a new revision, always in interactive mode
+
+Each re-detection creates a new revision; older rows stay but are superseded, and the notes history is visible in the panel.
 
 ## Re-edit semantics
 
