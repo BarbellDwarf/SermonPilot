@@ -183,3 +183,62 @@ def test_latest_apply_sees_queue_row(tmp_path) -> None:
     assert latest is not None
     assert latest["id"] == "job-q-1"
     assert latest["status"] == "queued"
+
+
+def _seed_active_apply(repo, sermon_id: str, plan_id: int, revision: int, job_id: str) -> None:
+    try:
+        import auto_edit_apply as core
+    except ImportError:
+        from ui import auto_edit_apply as core
+    params = core.build_apply_job_params(
+        sermon_id, plan_id, revision, 10.0, 60.0, 0.0, True, False, {}
+    )
+    with repo.db.get_connection() as conn:
+        conn.execute(
+            "INSERT INTO background_jobs (id, type, title, description, status, "
+            "progress, parameters) VALUES (?, 'auto_edit_apply', ?, ?, "
+            "'running', 10, ?)",
+            (job_id, "Apply edit", "desc", json.dumps(params)),
+        )
+        conn.commit()
+
+
+def test_dedupe_blocks_across_plan_revisions(tmp_path) -> None:
+    """The guard keys on sermon + active status, not on plan revision.
+
+    An apply still running for a superseded revision must block a re-apply
+    of the current revision, and a running current apply must block a
+    re-apply of the superseded revision.
+    """
+    repo, sermon_id, plan_id, _media = _repo_with_sermon(tmp_path)
+    old_revision = repo.get_current_edit_plan(sermon_id)["revision"]
+    repo.save_edit_plan_revision(
+        sermon_id,
+        {
+            "proposed_start": 12.0,
+            "proposed_end": 62.0,
+            "confidence": 0.9,
+            "needs_review": False,
+            "evidence": "e",
+            "qa_judgment": "cut",
+            "reasoning": "r",
+            "status": "approved",
+            "notes": "",
+        },
+    )
+    current = repo.get_current_edit_plan(sermon_id)
+    assert current["revision"] != old_revision
+
+    _seed_active_apply(repo, sermon_id, plan_id, old_revision, "job-old-rev")
+
+    try:
+        import auto_edit_apply as core
+    except ImportError:
+        from ui import auto_edit_apply as core
+
+    blocked_current = core.get_active_apply_job(repo, sermon_id, current["revision"])
+    assert blocked_current is not None
+    assert blocked_current["id"] == "job-old-rev"
+    assert repo.get_active_apply_job(sermon_id, current["revision"])["id"] == "job-old-rev"
+    assert repo.get_active_apply_job(sermon_id, old_revision)["id"] == "job-old-rev"
+    assert repo.get_active_apply_job(sermon_id)["id"] == "job-old-rev"

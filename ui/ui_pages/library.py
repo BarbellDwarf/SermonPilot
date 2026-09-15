@@ -964,6 +964,44 @@ def _default_apply_mode(sermon_id: str) -> str:
     return "render_only" if str(sermon_id or "").startswith("draft_") else "upload"
 
 
+def _sermon_has_upload(
+    repo: Any, sermon: dict[str, Any], applied_media_id: str | None = None
+) -> bool:
+    """True once anything is actually on SermonAudio for this sermon.
+
+    Checks the row hints first (``upload_status`` from the library query or a
+    nested ``upload_info`` record), then ``upload_info`` rows for the sermon
+    id and, for applied_local plans, the rendered record id: Upload now
+    publishes the rendered record, so its row lands under
+    ``applied_media_id`` rather than the source sermon id.
+    """
+    if sermon.get("upload_info") or sermon.get("upload_status"):
+        return True
+    candidates: list[str] = []
+    for value in (sermon.get("id") or sermon.get("sermon_id"), applied_media_id):
+        text = str(value or "")
+        if text and text not in candidates:
+            candidates.append(text)
+    for candidate in candidates:
+        try:
+            full = repo.get_sermon(candidate) if repo is not None else None
+        except Exception:
+            continue
+        if isinstance(full, dict) and full.get("upload_info"):
+            return True
+    return False
+
+
+def _allow_apply_upload(status: str, ever_uploaded: bool) -> bool:
+    """Whether the Adjust panel may offer render+upload.
+
+    An applied_local plan that was never uploaded stays render-only: the
+    upload choice belongs to Upload now (or a fresh plan after upload), so a
+    re-apply cannot silently publish a draft that only exists locally.
+    """
+    return not (status == "applied_local" and not ever_uploaded)
+
+
 def _load_edit_duration(sermon: dict[str, Any]) -> float | None:
     try:
         duration = float(sermon.get("duration") or 0)
@@ -1501,6 +1539,8 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                 last_start = proposed_start
             if last_end is None:
                 last_end = proposed_end
+            ever_uploaded = _sermon_has_upload(repo, sermon, plan.get("applied_media_id"))
+            re_render_only = not _allow_apply_upload(status, ever_uploaded)
             st.markdown("#### Adjust and re-apply")
             re_detect = st.checkbox(
                 "Re-detect with LLM instead", key=f"editplan_redetect_{sermon_id}"
@@ -1530,18 +1570,25 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                 key=f"editplan_re_audio_offset_{sermon_id}",
                 help="Positive delays the audio later relative to video; negative moves it earlier.",
             )
-            apply_mode_re = st.radio(
-                "Apply target",
-                options=["render_only", "upload"],
-                format_func=lambda value: (
-                    "Render only (no upload)"
-                    if value == "render_only"
-                    else "Render + upload to SermonAudio"
-                ),
-                index=0 if _default_apply_mode(str(sermon_id)) == "render_only" else 1,
-                key=f"editplan_re_apply_mode_{sermon_id}",
-                horizontal=True,
-            )
+            apply_mode_re = None
+            if re_render_only:
+                st.caption(
+                    "Not uploaded yet: re-renders stay local. "
+                    "Use Upload now above when you are ready to publish."
+                )
+            else:
+                apply_mode_re = st.radio(
+                    "Apply target",
+                    options=["render_only", "upload"],
+                    format_func=lambda value: (
+                        "Render only (no upload)"
+                        if value == "render_only"
+                        else "Render + upload to SermonAudio"
+                    ),
+                    index=0 if _default_apply_mode(str(sermon_id)) == "render_only" else 1,
+                    key=f"editplan_re_apply_mode_{sermon_id}",
+                    horizontal=True,
+                )
             candidate = EditPlan(
                 start=float(start_val),
                 end=float(end_val),
@@ -1560,7 +1607,7 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                     else "Queue the adjusted edit as a background job"
                 )
             if st.button(
-                "Apply adjusted edit",
+                "Re-render (no upload)" if re_render_only else "Apply adjusted edit",
                 type="primary",
                 key=f"editplan_re_apply_{sermon_id}",
                 disabled=bool(problems) or apply_busy,
@@ -1607,7 +1654,7 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                     float(end_val),
                     re_detect=re_detect,
                     audio_offset=float(audio_offset_re),
-                    render_only=(apply_mode_re == "render_only"),
+                    render_only=True if re_render_only else (apply_mode_re == "render_only"),
                 )
                 st.rerun()
 
@@ -2518,11 +2565,16 @@ def display_sermon_editor(sermon, api_client, repo):
             scripture_reference = st.text_input(
                 "Scripture Reference", value=sermon.get('scripture_reference', '')
             )
+            stored_event_type = sermon.get('event_type') or None
+            if stored_event_type:
+                event_key_suffix = re.sub(r"\W+", "_", stored_event_type).strip("_")
+            else:
+                event_key_suffix = "none"
             from ui.sermon_metadata import create_event_type_selectbox
             event_type = create_event_type_selectbox(
                 "Event Type",
-                key=f"edit_event_type_{sermon['id']}",
-                value=sermon.get('event_type') or None,
+                key=f"edit_event_type_{sermon['id']}_{event_key_suffix or 'none'}",
+                value=stored_event_type,
             )
 
         description = st.text_area("Description", value=sermon.get('description', ''), height=100)
@@ -2560,6 +2612,16 @@ def display_sermon_editor(sermon, api_client, repo):
                 st.error(f"Error updating sermon: {e}")
 
         if cancel:
+            prefix = f"edit_event_type_{sermon['id']}_"
+            try:
+                stale_keys = [
+                    key for key in list(st.session_state.keys())
+                    if str(key).startswith(prefix)
+                ]
+            except Exception:
+                stale_keys = []
+            for key in stale_keys:
+                st.session_state.pop(key, None)
             st.session_state.editing_sermon = False
             st.rerun()
 
