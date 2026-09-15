@@ -4,9 +4,11 @@ import pytest
 
 from ui.database import SermonDatabase, SermonRepository
 from ui.ui_pages.library import (
+    _allow_apply_upload,
     _build_apply_kwargs,
     _default_apply_mode,
     _edit_status_badge,
+    _sermon_has_upload,
 )
 
 
@@ -80,3 +82,48 @@ def test_applied_local_status_persists_render_link(repo: SermonRepository):
     current = repo.get_current_edit_plan("s1")
     assert current["status"] == "applied_local"
     assert current["applied_media_id"] == "draft_local_1"
+
+
+def test_unuploaded_applied_local_disallows_upload_target():
+    assert _allow_apply_upload("applied_local", False) is False
+
+
+def test_uploaded_applied_local_keeps_upload_choice():
+    assert _allow_apply_upload("applied_local", True) is True
+
+
+def test_other_statuses_keep_upload_choice():
+    assert _allow_apply_upload("applied", False) is True
+    assert _allow_apply_upload("auto_applied", False) is True
+    assert _allow_apply_upload("reverted", False) is True
+    assert _allow_apply_upload("pending_review", False) is True
+
+
+def test_sermon_has_upload_false_before_any_upload(repo: SermonRepository):
+    repo.save_sermon({"id": "draft_src_1", "title": "S"})
+    assert _sermon_has_upload(repo, {"id": "draft_src_1"}, "draft_rendered_9") is False
+
+
+def test_sermon_has_upload_true_for_rendered_record_row(repo: SermonRepository):
+    repo.save_sermon({"id": "draft_src_1", "title": "S"})
+    repo.save_sermon({"id": "draft_rendered_9", "title": "R"})
+    with repo.db.get_connection() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO upload_info "
+            "(sermon_id, sermonaudio_id, upload_status) VALUES (?, ?, ?)",
+            ("draft_rendered_9", "123456", "completed"),
+        )
+        conn.commit()
+    assert _sermon_has_upload(repo, {"id": "draft_src_1"}, "draft_rendered_9") is True
+
+
+def test_sermon_has_upload_true_for_sermon_row(repo: SermonRepository):
+    repo.save_sermon({"id": "922607137246", "title": "S"})
+    with repo.db.get_connection() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO upload_info "
+            "(sermon_id, sermonaudio_id, upload_status) VALUES (?, ?, ?)",
+            ("922607137246", "922607137246", "completed"),
+        )
+        conn.commit()
+    assert _sermon_has_upload(repo, {"id": "922607137246"}, None) is True

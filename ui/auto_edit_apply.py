@@ -109,6 +109,13 @@ def build_apply_job_params(
 def get_active_apply_job(
     repo: Any, sermon_id: str, plan_revision: int | None = None
 ) -> dict[str, Any] | None:
+    """Newest queued/running apply for a sermon, whatever its plan revision.
+
+    ``plan_revision`` is accepted for call-site compatibility but never
+    filters: an apply started from a superseded revision still occupies the
+    sermon (same source media and output paths), so it must block a re-apply
+    of the current revision and vice versa.
+    """
     try:
         rows = repo.get_apply_jobs_by_status("auto_edit_apply", list(ACTIVE_APPLY_STATUSES))
     except Exception:
@@ -120,12 +127,6 @@ def get_active_apply_job(
             params = {}
         if str(params.get("sermon_id") or "") != str(sermon_id):
             continue
-        if plan_revision is not None and params.get("plan_revision") is not None:
-            try:
-                if int(params.get("plan_revision")) != int(plan_revision):
-                    continue
-            except (TypeError, ValueError):
-                pass
         return row
     return None
 
