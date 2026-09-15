@@ -1100,7 +1100,13 @@ def _render_edit_snippets(sermon: dict[str, Any], plan: dict[str, Any], repo: An
         )
         try:
             snippet_dir.mkdir(parents=True, exist_ok=True)
-            snippet_paths = render_review_snippets(source, edit_plan, snippet_dir, logo)
+            snippet_paths = render_review_snippets(
+                source,
+                edit_plan,
+                snippet_dir,
+                logo,
+                fade_out_tail_seconds=float(auto_cfg.get("fade_out_tail_seconds", 2.0)),
+            )
             (snippet_dir / "snippets.json").write_text(
                 json.dumps(signature), encoding="utf-8"
             )

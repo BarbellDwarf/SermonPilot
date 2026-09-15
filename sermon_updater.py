@@ -2439,6 +2439,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 auto_edit_cfg.get('logo_hold', gate_plan.logo_hold)
             )
             edit_fade_to_black = bool(auto_edit_cfg.get('fade_to_black', True))
+            edit_fade_out_tail = float(auto_edit_cfg.get('fade_out_tail_seconds', 2.0))
             edited_path = _auto_edit_output_root() / "edited" / (
                 f"{original_input_path.stem}_edited{original_input_path.suffix or '.mp4'}"
             )
@@ -2449,6 +2450,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     edited_path,
                     logo_path=edit_logo_path,
                     fade_to_black=edit_fade_to_black,
+                    fade_out_tail_seconds=edit_fade_out_tail,
                 )
             except Exception as e:
                 logger.error("Auto edit apply failed: %s", e)
