@@ -391,7 +391,12 @@ def _boot_media_server() -> None:
         root = Path(output_dir)
         if not root.is_absolute():
             root = project_root / root
-        start_media_server(root)
+        config = st.session_state.config or {}
+        media_config = config.get("media_server") or {}
+        host = os.environ.get("MEDIA_SERVER_HOST") or media_config.get("host") or "127.0.0.1"
+        public_host = os.environ.get("MEDIA_SERVER_PUBLIC_HOST") or media_config.get("public_host")
+        port = int(os.environ.get("MEDIA_SERVER_PORT") or media_config.get("port") or 0)
+        start_media_server(root, host=host, public_host=public_host, port=port)
     except Exception:
         pass
 

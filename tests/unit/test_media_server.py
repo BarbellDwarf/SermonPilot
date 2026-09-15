@@ -161,6 +161,57 @@ def test_root_is_resolved_localhost_only(tmp_path: Path) -> None:
         server.shutdown()
 
 
+def test_constructor_accepts_host_overrides(tmp_path: Path) -> None:
+    server = MediaServer(tmp_path, host="0.0.0.0", public_host="192.0.2.10", port=0)
+    assert server.host == "0.0.0.0"
+    assert server.public_host == "192.0.2.10"
+    assert server.requested_port == 0
+
+
+def test_start_uses_public_host_and_binds_requested_host(tmp_path: Path) -> None:
+    payload = b"0123456789"
+    (tmp_path / "clip.mp4").write_bytes(payload)
+    server = MediaServer(tmp_path, host="0.0.0.0", public_host="192.0.2.10")
+    try:
+        base, port = server.start()
+        assert base == f"http://192.0.2.10:{port}"
+        assert server.port == port
+        assert server._server.server_address[0] == "0.0.0.0"
+        token = server.register("s", tmp_path / "clip.mp4")
+        assert server.resolve(token) == tmp_path / "clip.mp4"
+        status, _, body = _get(port, f"/m/{token}", {"Range": "bytes=0-3"})
+        assert status == 206
+        assert body == b"0123"
+    finally:
+        server.shutdown()
+
+
+def test_default_construction_binds_loopback(tmp_path: Path) -> None:
+    server = MediaServer(tmp_path)
+    try:
+        _, port = server.start()
+        assert server._server.server_address[0] == "127.0.0.1"
+        assert server.base_url == f"http://127.0.0.1:{port}"
+    finally:
+        server.shutdown()
+
+
+def test_start_media_server_passes_overrides(tmp_path: Path) -> None:
+    import ui.media_server as mod
+
+    saved = mod._server
+    mod._server = None
+    try:
+        start_media_server(tmp_path, host="0.0.0.0", public_host="192.0.2.10")
+        server = get_media_server()
+        assert server.host == "0.0.0.0"
+        assert server.public_host == "192.0.2.10"
+    finally:
+        if get_media_server() is not None:
+            get_media_server().shutdown()
+        mod._server = saved
+
+
 def test_singleton_start_is_idempotent(tmp_path: Path) -> None:
     import ui.media_server as mod
 
