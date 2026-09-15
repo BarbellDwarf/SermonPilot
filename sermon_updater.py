@@ -1148,6 +1148,23 @@ def _auto_edit_confidence_threshold(auto_edit_cfg: dict[str, Any]) -> float:
     return min(float(auto_edit_cfg.get('auto_confidence_threshold', 0.8)), 0.99)
 
 
+def _auto_edit_metadata_block(auto_edit_cfg: dict[str, Any] | None) -> dict[str, Any]:
+    """Ending-card prefs persisted with a draft for deferred renders/snippets."""
+    cfg = auto_edit_cfg if isinstance(auto_edit_cfg, dict) else {}
+    logo_cfg = cfg.get("logo_path")
+    logo_path = ""
+    if logo_cfg:
+        candidate = Path(str(logo_cfg)).expanduser()
+        if candidate.exists():
+            logo_path = str(candidate)
+    return {
+        "logo_path": logo_path,
+        "logo_hold": float(cfg.get("logo_hold", 3.0)),
+        "fade_to_black": bool(cfg.get("fade_to_black", True)),
+        "fade_out_tail_seconds": float(cfg.get("fade_out_tail_seconds", 2.0)),
+    }
+
+
 def refine_edit_plan(sermon_id: str, notes: str = "", config: dict | None = None) -> dict[str, Any]:
     """Re-run cut detection with the user's rejection notes as refinement guidance."""
     config = config or globals().get('config') or {}
@@ -1797,6 +1814,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
     if config is None:
         config = globals().get('config') or {}
+    auto_edit_cfg: dict[str, Any] = {}
+    gate_active = False
     if series_id is None and series_title:
         series_id = resolve_series_id(series_title, create_missing=not dry_run)
 
@@ -2261,6 +2280,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'has_transcript': bool(transcript),
                 'dry_run': bool(dry_run),
                 'edit_plan_status': 'pending_review',
+                "auto_edit": _auto_edit_metadata_block(auto_edit_cfg),
             }
             with open(get_file_path(review_dir, "metadata"), 'w') as f:
                 review_json.dump(metadata, f, indent=2)
@@ -2726,6 +2746,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'dry_run': True,
             }
             import json
+            if gate_active:
+                metadata["auto_edit"] = _auto_edit_metadata_block(auto_edit_cfg)
             with open(get_file_path(output_dir, "metadata"), 'w') as f:
                 json.dump(metadata, f, indent=2)
 
@@ -3085,6 +3107,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             }
 
             import json
+            if gate_active:
+                metadata["auto_edit"] = _auto_edit_metadata_block(auto_edit_cfg)
             with open(get_file_path(output_dir, "metadata"), 'w') as f:
                 json.dump(metadata, f, indent=2)
 

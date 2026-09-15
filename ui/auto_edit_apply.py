@@ -142,6 +142,25 @@ def _read_edit_plan_metadata(sermon: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+_AUTO_EDIT_PREF_KEYS = ("logo_path", "logo_hold", "fade_to_black", "fade_out_tail_seconds")
+
+
+def _merge_auto_edit_prefs(
+    config: dict[str, Any] | None, metadata: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """Overlay per-sermon ending-card prefs (metadata['auto_edit']) onto the render config."""
+    prefs = metadata.get("auto_edit") if isinstance(metadata, dict) else None
+    if not isinstance(prefs, dict) or not prefs:
+        return config
+    merged = dict(config) if config else {}
+    auto_cfg = dict(merged.get("auto_edit") or {})
+    for key in _AUTO_EDIT_PREF_KEYS:
+        if key in prefs:
+            auto_cfg[key] = prefs[key]
+    merged["auto_edit"] = auto_cfg
+    return merged
+
+
 def _full_sermon_or_none(sermon: dict[str, Any], repo: Any) -> dict[str, Any] | None:
     try:
         return repo.get_sermon(sermon.get("id") or sermon.get("sermon_id"))
@@ -339,6 +358,8 @@ def run_library_apply(
     except Exception:
         sermon = {"id": sermon_id}
     full_sermon = _full_sermon_or_none(sermon, repo) or sermon
+    metadata = _read_edit_plan_metadata(full_sermon)
+    config = _merge_auto_edit_prefs(config, metadata)
     media_path, already_enhanced = _resolve_apply_source(full_sermon, repo, min_duration=float(end))
     if not media_path:
         if plan_file:

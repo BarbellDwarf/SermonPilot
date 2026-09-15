@@ -107,8 +107,28 @@ def test_logo_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert "scale2ref" in fc
     assert "fade=t=out:st=58.000:d=1.000" in fc
     assert "[cv]" in fc and "apad" in fc
+    assert "fps=30,settb=1/30[cv]" in fc
+    assert "[lg0]fps=30,settb=1/30[lg]" in fc
     assert cmd[cmd.index("-t", cmd.index("logo.png")) + 1] == "61.200"
     assert cmd[cmd.index("-b:a") + 1] == "160k"
+
+
+def test_logo_command_uses_probed_frame_rate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        captured["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, "ok", "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("src.auto_edit._ffprobe_frame_rate", lambda *_a: "30000/1001")
+    apply_edit(Path("in.mp4"), _plan(), tmp_path / "out.mp4", logo_path=Path("logo.png"))
+
+    fc = captured["cmd"][captured["cmd"].index("-filter_complex") + 1]
+    assert "fps=30000/1001,settb=1/30000[cv]" in fc
+    assert "[lg0]fps=30000/1001,settb=1/30000[lg]" in fc
 
 
 def test_ffmpeg_failure_raises_runtime_error_with_stderr_tail(
@@ -265,3 +285,47 @@ class TestApplyEditRealFfmpeg:
         assert types == {"video", "audio"}
         duration = float(_probe_json(out, "format")["format"]["duration"])
         assert 5.0 == pytest.approx(duration, abs=0.6)
+
+    def test_apply_edit_logo_card_30fps_source(self, tmp_path: Path, logo: Path) -> None:
+        if shutil.which("ffmpeg") is None:
+            pytest.skip("ffmpeg not available")
+        source = tmp_path / "sample30.mp4"
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=6:size=320x240:rate=30",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=6",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                str(source),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=600,
+            check=True,
+        )
+        out = tmp_path / "edited30.mp4"
+        result = apply_edit(
+            source,
+            _plan(start=1.0, end=5.0, logo_hold=1.0),
+            out,
+            logo_path=logo,
+            fade_to_black=False,
+        )
+
+        assert result == out and out.exists() and out.stat().st_size > 0
+        duration = float(_probe_json(out, "format")["format"]["duration"])
+        assert 5.2 == pytest.approx(duration, abs=0.6)
