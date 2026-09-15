@@ -61,7 +61,7 @@ def show_quick_stats():
                     last_24h += 1
             except Exception:
                 pass
-        if s.get('status') == 'processed':
+        if s.get('status') == 'processed' and s.get('upload_status') != 'failed':
             processed_status += 1
 
     col1, col2, col3, col4 = st.columns(4)
@@ -77,7 +77,10 @@ def show_quick_stats():
                   if total_sermons > 0 else "No sermons yet")
 
     with col3:
-        uploaded = sum(1 for s in sermons if s.get('upload_status'))
+        uploaded = sum(
+            1 for s in sermons
+            if s.get('upload_status') and s.get('upload_status') != 'failed'
+        )
         st.metric("Uploaded to SA", str(uploaded),
                   help=f"{uploaded} of {total_sermons} uploaded to SermonAudio"
                   if total_sermons > 0 else "No sermons yet")

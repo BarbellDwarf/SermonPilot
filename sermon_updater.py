@@ -1569,11 +1569,13 @@ def _find_existing_processed_sermon_id(title: str | None, speaker_name: str | No
         repo = SermonRepository()
         with repo.db.get_connection() as conn:
             row = conn.execute("""
-                SELECT id FROM sermons
-                WHERE title = ? AND speaker = ? AND recorded_date = ?
-                  AND status = 'processed'
-                  AND id NOT LIKE 'draft\\_%' ESCAPE '\\'
-                ORDER BY updated_at DESC
+                SELECT s.id FROM sermons s
+                LEFT JOIN upload_info ui ON ui.sermon_id = s.id
+                WHERE s.title = ? AND s.speaker = ? AND s.recorded_date = ?
+                  AND s.status = 'processed'
+                  AND s.id NOT LIKE 'draft\\_%' ESCAPE '\\'
+                  AND (ui.upload_status IS NULL OR ui.upload_status != 'failed')
+                ORDER BY s.updated_at DESC
                 LIMIT 1
             """, (title, speaker_name, recorded_date or '')).fetchone()
             if row:
@@ -1581,6 +1583,24 @@ def _find_existing_processed_sermon_id(title: str | None, speaker_name: str | No
     except Exception as e:
         logger.debug("Existing processed sermon lookup failed: %s", e)
     return None
+
+
+def _remote_sermon_exists(sermon_id: str) -> bool:
+    """Check a candidate reuse id still exists on SermonAudio.
+
+    Wraps get_sermon_details: 404/empty means not reusable, and any API
+    error fails safe to not reusable so the caller falls through to the
+    normal create path (a duplicate is recoverable; a shadowed publish
+    is not).
+    """
+    try:
+        return bool(get_sermon_details(str(sermon_id)))
+    except Exception as e:
+        logger.warning(
+            "Remote existence check failed for %s; not reusing: %s",
+            sermon_id, e,
+        )
+        return False
 
 
 def _record_publication_id(repo: Any, draft_id: str, remote_sermon_id: str) -> None:
@@ -2779,6 +2799,17 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
         recovery_draft_id: str | None = None
         recovery_output_dir: Path | None = None
+        if reusable_sermon_id and not _remote_sermon_exists(reusable_sermon_id):
+            logger.warning(
+                "Local sermon %s matches '%s' by %s (%s) but was not found "
+                "on SermonAudio; ignoring it and creating a new sermon",
+                reusable_sermon_id, title, speaker_name, recorded_date,
+            )
+            console_print(
+                f"⚠️  Local sermon {reusable_sermon_id} not found on SermonAudio; "
+                "creating a new sermon instead of reusing it"
+            )
+            reusable_sermon_id = None
         if reusable_sermon_id:
             sermon_id = reusable_sermon_id
             console_print(
@@ -3100,6 +3131,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     'bible_text': bible_text or '',
                     'duration': duration,
                     'status': 'processed',
+                    'upload_info': {
+                        'sermonaudio_id': str(sermon_id),
+                        'upload_date': dt.datetime.now(),
+                        'upload_status': 'completed',
+                        'upload_message': 'Media uploaded successfully',
+                    },
                     'file_paths': {
                         'audio': str(final_output_path),
                         'metadata': str(get_file_path(output_dir, "metadata")),
@@ -3165,6 +3202,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     'event_type': event_type or '',
                     'bible_text': bible_text or '',
                     'status': 'error',
+                    'upload_info': {
+                        'sermonaudio_id': str(sermon_id),
+                        'upload_date': dt.datetime.now(),
+                        'upload_status': 'failed',
+                        'upload_message': 'Sermon created but audio upload failed',
+                    },
                     'file_paths': {
                         'audio': str(final_upload_path),
                     },
@@ -3405,6 +3448,27 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
                     new_sermon_id, transcript or '', description or '', hashtags or '',
                     '[]', None
                 ))
+                try:
+                    upload_cols = [
+                        row[1] for row in conn.execute("PRAGMA table_info(upload_info)")
+                    ]
+                    if 'sermonaudio_id' in upload_cols and 'upload_status' in upload_cols:
+                        conn.execute("""
+                            INSERT OR REPLACE INTO upload_info
+                            (sermon_id, sermonaudio_id, upload_date, upload_status,
+                             upload_message)
+                            VALUES (?, ?, ?, ?, ?)
+                        """, (
+                            new_sermon_id, str(new_sermon_id), dt.datetime.now(),
+                            'completed' if upload_success else 'failed',
+                            'Media uploaded successfully' if upload_success
+                            else 'Sermon created but media upload failed',
+                        ))
+                except Exception as upload_err:
+                    logger.debug(
+                        "Could not record upload_info for %s: %s",
+                        new_sermon_id, upload_err,
+                    )
                 # Rebuild the FTS row across every column the table actually
                 # has, carrying over indexed topics/summary from the draft row
                 fts_cols = [
