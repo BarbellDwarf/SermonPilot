@@ -26,6 +26,21 @@ from ui.sermon_metadata import (  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
+DURATION_PROBE_MAX_BYTES = 50 * 1024 * 1024
+PREVIEW_MAX_BYTES = 25 * 1024 * 1024
+
+
+def _duration_cache_key(name: str, size: int) -> str:
+    return f"media_duration_{name}_{size}"
+
+
+def _should_probe_duration(size: int) -> bool:
+    return size <= DURATION_PROBE_MAX_BYTES
+
+
+def _should_show_preview(size: int) -> bool:
+    return size <= PREVIEW_MAX_BYTES
+
 
 def show_new_sermon_enhanced():
     st.markdown('<div class="main-header">New Sermon</div>', unsafe_allow_html=True)
@@ -41,11 +56,16 @@ def show_new_sermon_enhanced():
     _show_start_section()
     with managed_expander("1. Upload Audio/Video File", expanded=True):
         _show_upload_section()
+    _show_form_fragment()
+    _sync_start_section_state()
+
+
+@st.fragment
+def _show_form_fragment():
     with managed_expander("2. Sermon Metadata", expanded=st.session_state.pop('expand_metadata', False)):
         _show_metadata_section()
     with managed_expander("3. Processing Options", expanded=False):
         _show_processing_section()
-    _sync_start_section_state()
 
 
 def _show_upload_section():
@@ -90,6 +110,7 @@ def _show_upload_section():
                     apply_filename_autodetect(p.name)
                     st.session_state.autodetected_filename = p.name
                     st.session_state.expand_metadata = True
+                    st.session_state.pop('new_sermon_show_preview', None)
 
     with ingest_tab:
         uploaded_file = st.file_uploader(
@@ -108,6 +129,7 @@ def _show_upload_section():
                 apply_filename_autodetect(uploaded_file.name)
                 st.session_state.autodetected_filename = uploaded_file.name
                 st.session_state.expand_metadata = True
+                st.session_state.pop('new_sermon_show_preview', None)
 
             col1, col2, col3, col4 = st.columns(4)
             with col1:
@@ -121,25 +143,34 @@ def _show_upload_section():
                 )
                 st.metric("File Name", name)
             with col4:
-                duration = _get_media_duration(uploaded_file)
-                if duration:
-                    st.metric("Duration", f"{duration:.1f} min")
+                if _should_probe_duration(uploaded_file.size):
+                    duration = _get_media_duration(uploaded_file)
+                    if duration:
+                        st.metric("Duration", f"{duration:.1f} min")
+                    else:
+                        st.metric("Duration", "Unknown")
                 else:
-                    st.metric("Duration", "Unknown")
+                    st.metric("Duration", "computed at submit")
 
-            max_preview_size = 100 * 1024 * 1024
-            if uploaded_file.size <= max_preview_size:
-                with managed_expander("Preview", expanded=False):
-                    try:
-                        video_exts = ('.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v')
-                        if any(uploaded_file.name.lower().endswith(e) for e in video_exts):
-                            st.video(uploaded_file)
-                        else:
-                            st.audio(uploaded_file, format=uploaded_file.type)
-                    except Exception as e:
-                        st.warning(f"Could not preview file: {e}")
+            if _should_show_preview(uploaded_file.size):
+                show_preview = st.checkbox(
+                    "Show preview",
+                    key="new_sermon_show_preview",
+                    help="Mounts the media player only on demand; off by default so field edits never re-transfer the file.",
+                )
+                if show_preview:
+                    with managed_expander("Preview", expanded=True):
+                        try:
+                            video_exts = ('.mp4', '.mov', '.webm', '.mkv', '.avi', '.m4v')
+                            if any(uploaded_file.name.lower().endswith(e) for e in video_exts):
+                                st.video(uploaded_file)
+                            else:
+                                st.audio(uploaded_file, format=uploaded_file.type)
+                        except Exception as e:
+                            st.warning(f"Could not preview file: {e}")
             else:
-                st.info(f"Preview skipped for files over {max_preview_size // (1024*1024)} MB")
+                st.session_state.pop('new_sermon_show_preview', None)
+                st.info(f"Preview skipped for files over {PREVIEW_MAX_BYTES // (1024*1024)} MB")
         else:
             st.session_state.pop('uploaded_file', None)
             st.session_state.pop('expand_metadata', False)
@@ -507,7 +538,13 @@ def _show_start_section():
 
 
 def _get_media_duration(uploaded_file):
-    cache_key = f"media_duration_{uploaded_file.name}_{uploaded_file.size}"
+    try:
+        size = int(uploaded_file.size)
+    except Exception:
+        return None
+    if not _should_probe_duration(size):
+        return None
+    cache_key = _duration_cache_key(uploaded_file.name, size)
     if cache_key in st.session_state:
         return st.session_state[cache_key]
     try:
@@ -732,6 +769,7 @@ def start_enhanced_processing():
 def reset_enhanced_form():
     keys_to_clear = [
         'uploaded_file', 'server_file_path', 'server_file_name',
+        'new_sermon_show_preview',
         'metadata_complete', 'autodetected_filename',
         'speaker_name_select', 'speaker_name_custom',
         'recorded_date', 'event_type_select', 'bible_text',

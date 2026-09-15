@@ -28,17 +28,58 @@ logger = logging.getLogger(__name__)
 # Default empty fallback when API is unavailable
 DEFAULT_PASTORS = []
 
+# Authoritative SermonAudio eventType enum. There is no public GET endpoint
+# for this list; the values are documented from API validation errors.
+# get_broadcaster_event_types() only sees types the church has already used,
+# so this enum seeds the picker and every refresh merges with it.
 DEFAULT_EVENT_TYPES = [
-    "Sunday Service",
+    "Audiobook",
+    "Bible Study",
+    "Camp Meeting",
+    "Chapel Service",
+    "Children",
+    "Classic Audio",
+    "Conference",
+    "Current Events",
+    "Debate",
+    "Devotional",
+    "Funeral Service",
+    "Midweek Service",
+    "Miscellaneous",
+    "Open-Air Ministry",
+    "Podcast",
+    "Prayer Meeting",
+    "Question & Answer",
+    "Radio Broadcast",
+    "Sermon Clip",
+    "Special Meeting",
     "Sunday - AM",
     "Sunday - PM",
-    "Wednesday Service",
-    "Bible Study",
-    "Prayer Meeting",
-    "Special Event",
-    "Conference",
-    "Other"
+    "Sunday School",
+    "Sunday Service",
+    "Teaching",
+    "Testimony",
+    "TV Broadcast",
+    "Wedding",
+    "Youth",
 ]
+
+
+def merge_event_types(cached: list | None) -> list[str]:
+    """Merge broadcaster-cached types with the authoritative enum.
+
+    Enum order first, then any broadcaster-specific extras sorted. Never
+    shrinks: a refresh that finds 4 used types still returns the full enum.
+    """
+    seen: set[str] = set()
+    merged: list[str] = []
+    for value in DEFAULT_EVENT_TYPES:
+        if value not in seen:
+            seen.add(value)
+            merged.append(value)
+    extras = sorted({str(v) for v in (cached or []) if str(v) not in seen})
+    merged.extend(extras)
+    return merged
 
 DEFAULT_SERIES = [
     "Book of John",
@@ -111,8 +152,8 @@ def get_cached_metadata() -> dict[str, list[str]]:
         infos = {key: db.get_cached_metadata_info(key) for key in _METADATA_KEYS}
 
         pastors = infos['pastors']['data'] if infos['pastors'] else DEFAULT_PASTORS.copy()
-        event_types = (
-            infos['event_types']['data'] if infos['event_types'] else DEFAULT_EVENT_TYPES.copy()
+        event_types = merge_event_types(
+            infos['event_types']['data'] if infos['event_types'] else None
         )
         series = _normalize_series(
             infos['series']['data'] if infos['series'] else DEFAULT_SERIES.copy()
@@ -210,6 +251,8 @@ def fetch_and_cache_metadata(
         progress_callback(0.8, 'Fetching series...')
     series = sermon_updater.get_broadcaster_series(limit=limit)
     logger.info(f"Fetched {len(series)} series")
+
+    event_types = merge_event_types(event_types)
 
     if progress_callback:
         progress_callback(1.0, 'Saving to cache...')
