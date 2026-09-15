@@ -1598,6 +1598,31 @@ def _record_publication_id(repo: Any, draft_id: str, remote_sermon_id: str) -> N
         logger.debug("Could not record publication id for %s: %s", draft_id, e)
 
 
+def validate_event_type_for_api(event_type: str | None) -> None:
+    """Reject an event_type the SermonAudio API would refuse with 422.
+
+    Compares against get_event_types() (API-backed cache with a hardcoded
+    fallback). Raises ValueError naming the allowed options when that list
+    is non-empty and the value is not in it. Skips the guard when the
+    allowed list is empty or unavailable, never blocking on unknown.
+    """
+    try:
+        from ui.sermon_metadata import get_event_types
+        allowed = get_event_types()
+    except Exception as e:
+        logger.warning(
+            "Could not load allowed event types; skipping event-type guard: %s", e
+        )
+        return
+    if not allowed:
+        return
+    if event_type not in allowed:
+        raise ValueError(
+            f"Invalid event_type {event_type!r}: SermonAudio accepts only "
+            f"{', '.join(allowed)}"
+        )
+
+
 def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
                          event_type: str = "Sunday Service", bible_text: str = None,
                          subtitle: str = None, description: str = None,
@@ -1621,9 +1646,15 @@ def create_new_sermon_api(title: str, speaker_name: str, recorded_date: str,
     Series is intentionally not sent here: the API ignores it during creation,
     so callers apply it once via set_sermon_series() after creation.
 
+    Raises:
+        ValueError: If event_type is not one of the allowed options from
+            get_event_types(). Never fires a create the API would 422.
+
     Returns:
         Created sermon ID if successful, None if failed
     """
+    validate_event_type_for_api(event_type)
+
     url = BASE_URL + 'node/sermons'
     headers = get_api_headers()
 
@@ -1772,6 +1803,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         'output_dir': None,
         'error': None,
     }
+
+    try:
+        validate_event_type_for_api(event_type)
+    except ValueError as e:
+        result['error'] = str(e)
+        return result
 
     from pathlib import Path
 
@@ -3189,6 +3226,11 @@ def publish_dry_run_sermon(dry_run_id: str) -> dict[str, Any]:
         speaker_name = sermon_data.get('speaker', '') or ''
         recorded_date = sermon_data.get('recorded_date', '') or ''
         event_type = sermon_data.get('event_type', 'Sunday Service') or 'Sunday Service'
+        try:
+            validate_event_type_for_api(event_type)
+        except ValueError as e:
+            result['error'] = str(e)
+            return result
         bible_text = sermon_data.get('bible_text') or sermon_data.get('scripture_reference') or ''
         subtitle = sermon_data.get('subtitle', '') or ''
         series_title = sermon_data.get('series_title', '') or ''

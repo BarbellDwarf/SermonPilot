@@ -455,14 +455,25 @@ def create_pastor_selectbox(
 
 
 def create_event_type_selectbox(
-    label: str = "Event Type", key: str = "event_type", **kwargs
+    label: str = "Event Type",
+    key: str = "event_type",
+    value: str | None = None,
+    **kwargs,
 ) -> str | None:
     """
-    Create a selectbox for event type selection with option to add new type.
+    Create a selectbox for event type selection.
+
+    The picker offers only actual options from get_event_types() (plus the
+    "[Select Event Type]" placeholder). There is no free-text path: the
+    SermonAudio API rejects unknown values with 422, so anything not in the
+    allowed list cannot be submitted.
 
     Args:
         label: Label for the selectbox
         key: Unique key for the widget
+        value: Currently stored value, preselected when it is a valid option.
+            A stale value outside the allowed list falls back to the
+            placeholder with a caption so the user picks a valid option.
         **kwargs: Additional arguments passed to selectbox
 
     Returns:
@@ -470,25 +481,24 @@ def create_event_type_selectbox(
     """
     event_types = get_event_types()
 
-    # Add option for custom event type
-    options = ["[Select Event Type]"] + event_types + ["[Add New Event Type]"]
+    options = ["[Select Event Type]", *event_types]
 
-    selected = st.selectbox(label, options, key=f"{key}_select", **kwargs)
+    index = 0
+    if value and value != "[Select Event Type]":
+        try:
+            index = options.index(value)
+        except ValueError:
+            index = 0
+            st.caption(
+                f"Stored event type {value!r} is not a valid option; "
+                "select one from the list."
+            )
 
-    if selected == "[Add New Event Type]":
-        # Show text input for custom event type
-        custom_event = st.text_input(
-            "Enter event type:",
-            key=f"{key}_custom",
-            placeholder="Special Service"
-        )
-        if custom_event:
-            _persist_entity("event_types", custom_event)
-        return custom_event if custom_event else None
-    elif selected == "[Select Event Type]":
+    selected = st.selectbox(label, options, index=index, key=f"{key}_select", **kwargs)
+
+    if selected == "[Select Event Type]":
         return None
-    else:
-        return selected
+    return selected
 
 
 def create_series_selectbox(

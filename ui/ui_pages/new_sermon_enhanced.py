@@ -550,8 +550,8 @@ def _resolved_speaker_name() -> str | None:
 
 def _resolved_event_type() -> str | None:
     event_type = st.session_state.get('event_type_select')
-    if not event_type or event_type in ('[Select Event Type]', '[Add New Event Type]'):
-        event_type = st.session_state.get('event_type_custom')
+    if not event_type or event_type == '[Select Event Type]':
+        return None
     return event_type
 
 
@@ -734,7 +734,7 @@ def reset_enhanced_form():
         'uploaded_file', 'server_file_path', 'server_file_name',
         'metadata_complete', 'autodetected_filename',
         'speaker_name_select', 'speaker_name_custom',
-        'recorded_date', 'event_type_select', 'event_type_custom', 'bible_text',
+        'recorded_date', 'event_type_select', 'bible_text',
         'sermon_title', 'sermon_subtitle', 'sermon_description', 'sermon_hashtags',
         'sermon_series_select', 'sermon_series_custom', 'sermon_series_id', 'sermon_series',
         'enhance_audio', 'transcribe', 'enhancement_method',
