@@ -10,6 +10,7 @@ Automated sermon processing tool that enhances audio (Clear/DeepFilterNet), tran
 - **SermonAudio Integration**: Create, update, and upload sermons directly to SermonAudio API
 - **Auto-Edit**: LLM-driven cut detection trims dead time around the sermon start and Q&A, with a keeper transcode for raw multi-GB ingests. See [docs/AUTO_EDIT.md](docs/AUTO_EDIT.md)
 - **Streamlit Web UI**: Dashboard, library, batch processing, validation, analytics, AI chat
+- **New Web Console** (`web/`, mock-data preview): React + Vite + TypeScript + Tailwind rebuild, currently Home + Jobs screens only
 - **Directory Structure**: `processed_sermons/{speaker}/{series}/{title} - {series} - {speaker}/`
 
 ## Quick Start
