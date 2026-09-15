@@ -1043,10 +1043,19 @@ def _load_library_config() -> dict[str, Any]:
 
 def _render_media_player(sermon: dict[str, Any]) -> None:
     try:
+        from urllib.parse import urlparse
+
         from ui.media_server import get_media_server
 
         server = get_media_server()
         if server is None or not server.base_url:
+            return
+        hostname = urlparse(server.base_url).hostname or ""
+        if hostname in {"127.0.0.1", "localhost"}:
+            st.caption(
+                "Media preview unavailable: the media server is only reachable on localhost. "
+                "Set MEDIA_SERVER_PUBLIC_HOST and publish its port to enable previews."
+            )
             return
         candidates: list[Path] = []
         try:
