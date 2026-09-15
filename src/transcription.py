@@ -25,6 +25,54 @@ class TranscriptionError(Exception):
     failed with this reason instead of treating it as an empty transcript."""
 
 
+_MIN_PLAUSIBLE_API_KEY_LEN = 8
+
+_KNOWN_KEY_PLACEHOLDERS = frozenset(
+    {
+        "",
+        "test",
+        "demo",
+        "example",
+        "placeholder",
+        "none",
+        "null",
+        "xxx",
+        "your-key-here",
+        "your-openai-key-here",
+    }
+)
+
+
+def _clean_api_key(value: Any) -> str:
+    """Normalize a candidate API key, returning '' when it is unusable.
+
+    Empty-after-trim, unresolved ``${VAR}`` placeholders, known dummy
+    words, and obviously-invalid short strings (such as stray few-char
+    junk left in config files) are treated as unset so they are never
+    sent to a transcription endpoint.
+    """
+    if not isinstance(value, str):
+        return ""
+    cleaned = value.strip()
+    if not cleaned:
+        return ""
+    if "${" in cleaned or cleaned.startswith("$"):
+        return ""
+    if cleaned.lower() in _KNOWN_KEY_PLACEHOLDERS:
+        return ""
+    if len(cleaned) < _MIN_PLAUSIBLE_API_KEY_LEN:
+        return ""
+    return cleaned
+
+
+def _resolve_transcription_api_key(env_var: str, cfg_value: Any) -> str:
+    """Prefer a valid env var, fall back to a valid config value, else ''."""
+    from_env = _clean_api_key(os.getenv(env_var, ""))
+    if from_env:
+        return from_env
+    return _clean_api_key(cfg_value)
+
+
 def _detect_device(preference: str = "auto", allow_rocm: bool = True) -> str:
     """Detect the compute device for local Whisper.
 
@@ -42,6 +90,7 @@ def _detect_device(preference: str = "auto", allow_rocm: bool = True) -> str:
     # Preference "cuda" or "rocm" or "auto"
     try:
         import torch
+
         if torch.cuda.is_available():
             # Pure ROCm builds set torch.version.hip
             if getattr(torch.version, "hip", None) is not None:
@@ -63,6 +112,7 @@ def log_cuda_memory(stage: str) -> None:
     """Log free/total VRAM for a pipeline stage when CUDA is present."""
     try:
         import torch
+
         if torch.cuda.is_available():
             free, total = torch.cuda.mem_get_info()
             logger.info("VRAM %s: %.2f/%.2f GB free", stage, free / 1e9, total / 1e9)
@@ -77,6 +127,7 @@ def release_transcription_gpu() -> None:
     gc.collect()
     try:
         import torch
+
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             if hasattr(torch.cuda, "ipc_collect"):
@@ -221,7 +272,10 @@ def _transcribe_faster_whisper_local(
     effective_compute_type = compute_type or ("int8" if device == "cpu" else "float32")
     logger.info(
         "Faster Whisper transcription: model=%s, device=%s, compute_type=%s, language=%s",
-        model_size, device, effective_compute_type, language,
+        model_size,
+        device,
+        effective_compute_type,
+        language,
     )
 
     try:
@@ -233,7 +287,7 @@ def _transcribe_faster_whisper_local(
             beam_size=5,
             language=language,
             vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 500}
+            vad_parameters={"min_silence_duration_ms": 500},
         )
 
         transcript = " ".join([segment.text for segment in segments]).strip()
@@ -264,7 +318,10 @@ def _transcribe_faster_whisper_local_segments(
     effective_compute_type = compute_type or ("int8" if device == "cpu" else "float32")
     logger.info(
         "Faster Whisper transcription: model=%s, device=%s, compute_type=%s, language=%s",
-        model_size, device, effective_compute_type, language,
+        model_size,
+        device,
+        effective_compute_type,
+        language,
     )
 
     try:
@@ -275,7 +332,7 @@ def _transcribe_faster_whisper_local_segments(
             beam_size=5,
             language=language,
             vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 500}
+            vad_parameters={"min_silence_duration_ms": 500},
         )
 
         timed = [
@@ -347,9 +404,14 @@ def _parse_verbose_json_segments(resp: requests.Response) -> list[dict[str, floa
     return segments
 
 
-def _transcribe_openai(audio_path: str, api_key: str, base_url: str, model: str,
-                       progress_callback=None,
-                       want_segments: bool = False) -> str | list[dict[str, float | str]]:
+def _transcribe_openai(
+    audio_path: str,
+    api_key: str,
+    base_url: str,
+    model: str,
+    progress_callback=None,
+    want_segments: bool = False,
+) -> str | list[dict[str, float | str]]:
     """Transcribe using OpenAI's Whisper endpoint.
 
     If base_url is not provided, defaults to OpenAI's official endpoint.
@@ -359,7 +421,7 @@ def _transcribe_openai(audio_path: str, api_key: str, base_url: str, model: str,
     """
     if not api_key:
         raise TranscriptionError("OpenAI API key missing for transcription")
-    effective_base = base_url.rstrip('/') if base_url else "https://api.openai.com/v1"
+    effective_base = base_url.rstrip("/") if base_url else "https://api.openai.com/v1"
     url = f"{effective_base}/audio/transcriptions"
     headers = {"Authorization": f"Bearer {api_key}"}
     files = {"file": open(audio_path, "rb")}
@@ -369,8 +431,12 @@ def _transcribe_openai(audio_path: str, api_key: str, base_url: str, model: str,
     try:
         logger.info("Calling OpenAI Whisper at %s", url)
         resp = requests.post(
-            url, headers=headers, data=data, files=files,
-            stream=not want_segments, timeout=600,
+            url,
+            headers=headers,
+            data=data,
+            files=files,
+            stream=not want_segments,
+            timeout=600,
         )
         resp.raise_for_status()
         if want_segments:
@@ -388,6 +454,7 @@ def _transcribe_openai(audio_path: str, api_key: str, base_url: str, model: str,
                     break
                 try:
                     import json
+
                     chunk = json.loads(payload)
                     text = chunk.get("text", "")
                     if text:
@@ -420,8 +487,13 @@ def _is_cloud_model_override(model_size: str | None) -> bool:
     return model_size.lower() not in {"tiny", "base", "small", "medium", "large"}
 
 
-def transcribe(audio_path: str, model_size: str = "base", config: dict[str, Any] = None,
-                backend_override: str | None = None, progress_callback=None) -> str:
+def transcribe(
+    audio_path: str,
+    model_size: str = "base",
+    config: dict[str, Any] = None,
+    backend_override: str | None = None,
+    progress_callback=None,
+) -> str:
     """High‑level transcription dispatcher.
 
     Args:
@@ -441,9 +513,7 @@ def transcribe(audio_path: str, model_size: str = "base", config: dict[str, Any]
         device_pref = local_cfg.get("device", "auto")
         language = local_cfg.get("language")
         model = model_size or local_cfg.get("model", "base")
-        return _transcribe_whisper_local(
-            audio_path, model, device_pref, language=language
-        )
+        return _transcribe_whisper_local(audio_path, model, device_pref, language=language)
     elif backend == "faster_whisper_local":
         faster_cfg = transcription_cfg.get("faster_whisper_local", {})
         device_pref = faster_cfg.get("device", "auto")
@@ -456,10 +526,11 @@ def transcribe(audio_path: str, model_size: str = "base", config: dict[str, Any]
         )
     elif backend == "whisper_openrouter":
         or_cfg = transcription_cfg.get("whisper_openrouter", {})
-        api_key = os.getenv("OPENROUTER_API_KEY", or_cfg.get("api_key", ""))
+        api_key = _resolve_transcription_api_key("OPENROUTER_API_KEY", or_cfg.get("api_key", ""))
         base_url = or_cfg.get("base_url", "https://openrouter.ai/api/v1")
         model = (
-            model_size if _is_cloud_model_override(model_size)
+            model_size
+            if _is_cloud_model_override(model_size)
             else or_cfg.get("model", "openai/whisper-large-v3")
         )
         return _transcribe_openrouter(
@@ -467,11 +538,10 @@ def transcribe(audio_path: str, model_size: str = "base", config: dict[str, Any]
         )
     elif backend == "whisper_openai":
         oi_cfg = transcription_cfg.get("whisper_openai", {})
-        api_key = os.getenv("OPENAI_API_KEY", oi_cfg.get("api_key", ""))
+        api_key = _resolve_transcription_api_key("OPENAI_API_KEY", oi_cfg.get("api_key", ""))
         base_url = oi_cfg.get("base_url", "https://api.openai.com/v1")
         model = (
-            model_size if _is_cloud_model_override(model_size)
-            else oi_cfg.get("model", "whisper-1")
+            model_size if _is_cloud_model_override(model_size) else oi_cfg.get("model", "whisper-1")
         )
         return _transcribe_openai(
             audio_path, api_key, base_url, model, progress_callback=progress_callback
@@ -504,9 +574,13 @@ def _normalize_segments(raw: list[dict[str, Any]]) -> list[dict[str, float | str
     return segments
 
 
-def transcribe_segments(audio_path: str, model_size: str = "base",
-                        config: dict[str, Any] = None, backend_override: str | None = None,
-                        progress_callback=None) -> list[dict[str, float | str]]:
+def transcribe_segments(
+    audio_path: str,
+    model_size: str = "base",
+    config: dict[str, Any] = None,
+    backend_override: str | None = None,
+    progress_callback=None,
+) -> list[dict[str, float | str]]:
     """High-level transcription dispatcher returning timed segments.
 
     Mirrors transcribe() for backend selection. Backends without timestamp
@@ -539,15 +613,18 @@ def transcribe_segments(audio_path: str, model_size: str = "base",
         return []
     elif backend == "whisper_openai":
         oi_cfg = transcription_cfg.get("whisper_openai", {})
-        api_key = os.getenv("OPENAI_API_KEY", oi_cfg.get("api_key", ""))
+        api_key = _resolve_transcription_api_key("OPENAI_API_KEY", oi_cfg.get("api_key", ""))
         base_url = oi_cfg.get("base_url", "https://api.openai.com/v1")
         model = (
-            model_size if _is_cloud_model_override(model_size)
-            else oi_cfg.get("model", "whisper-1")
+            model_size if _is_cloud_model_override(model_size) else oi_cfg.get("model", "whisper-1")
         )
         result = _transcribe_openai(
-            audio_path, api_key, base_url, model,
-            progress_callback=progress_callback, want_segments=True,
+            audio_path,
+            api_key,
+            base_url,
+            model,
+            progress_callback=progress_callback,
+            want_segments=True,
         )
         return _normalize_segments(result)
     else:
