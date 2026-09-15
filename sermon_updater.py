@@ -2368,6 +2368,27 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 and not validate_plan(gate_plan, plan_duration, min_sermon_seconds)
             )
 
+            if edit_plan_file and not gate_apply:
+                problems = validate_plan(gate_plan, plan_duration, min_sermon_seconds)
+                detail = "; ".join(problems) if problems else (
+                    "plan did not meet the auto-apply gate"
+                )
+                duration_text = (
+                    f"{plan_duration:.1f}s" if plan_duration is not None else "unknown"
+                )
+                logger.error(
+                    "Approved edit plan invalid (%s); nothing was rendered", detail
+                )
+                console_print(f"❌ Approved edit plan invalid ({detail}); nothing rendered")
+                result['success'] = False
+                result['auto_edit_applied'] = False
+                result['edit_plan_status'] = None
+                result['error'] = (
+                    f"Approved edit plan end {gate_plan.end:.1f}s is not applicable to "
+                    f"source duration {duration_text} ({detail}); nothing was rendered."
+                )
+                return result
+
             if not gate_apply:
                 return _persist_auto_edit_pending_review()
 
@@ -2394,6 +2415,15 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 )
             except Exception as e:
                 logger.error("Auto edit apply failed: %s", e)
+                if edit_plan_file:
+                    console_print(f"❌ Approved edit render failed ({e}); nothing was rendered")
+                    result['success'] = False
+                    result['auto_edit_applied'] = False
+                    result['edit_plan_status'] = None
+                    result['error'] = (
+                        f"Approved edit render failed ({e}); nothing was rendered."
+                    )
+                    return result
                 console_print(f"⚠️  Auto edit apply failed ({e}); saving plan for review")
                 gate_plan.needs_review = True
                 gate_notes = f"{gate_notes}; apply failed: {e}".strip("; ")
@@ -2597,6 +2627,25 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 logger.info("Saved original file to %s", original_save_path)
 
             # Save metadata
+            # For apply renders (auto_edit_state set) the output directory can
+            # collide with the source sermon's directory (get_sermon_dir ignores
+            # the sermon id, and the Processed filename is stable), so never
+            # repoint metadata original_file at the trimmed render: retain the
+            # existing on-disk full-length source for the next apply.
+            retained_original: str | None = None
+            if auto_edit_state:
+                try:
+                    import json as _retain_json
+                    existing_meta_path = get_file_path(output_dir, "metadata")
+                    if existing_meta_path.exists():
+                        existing_meta = _retain_json.loads(
+                            existing_meta_path.read_text(encoding='utf-8')
+                        )
+                        candidate = (existing_meta or {}).get('original_file')
+                        if candidate and Path(str(candidate)).exists():
+                            retained_original = str(candidate)
+                except Exception:
+                    retained_original = None
             metadata = {
                 'sermon_id': sermon_id,
                 'sermonID': sermon_id,
@@ -2609,7 +2658,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'subtitle': subtitle,
                 'description': description,
                 'hashtags': hashtags,
-                'original_file': str(audio_path),
+                'original_file': retained_original or str(audio_path),
                 'processed_file': str(final_output_path),
                 'is_video': input_is_video,
                 'upload_type': upload_type,
@@ -2926,6 +2975,25 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 logger.info("Saved original file to %s", original_save_path)
 
             # Save metadata
+            # For apply renders (auto_edit_state set) the output directory can
+            # collide with the source sermon's directory (get_sermon_dir ignores
+            # the sermon id, and the Processed filename is stable), so never
+            # repoint metadata original_file at the trimmed render: retain the
+            # existing on-disk full-length source for the next apply.
+            retained_original: str | None = None
+            if auto_edit_state:
+                try:
+                    import json as _retain_json
+                    existing_meta_path = get_file_path(output_dir, "metadata")
+                    if existing_meta_path.exists():
+                        existing_meta = _retain_json.loads(
+                            existing_meta_path.read_text(encoding='utf-8')
+                        )
+                        candidate = (existing_meta or {}).get('original_file')
+                        if candidate and Path(str(candidate)).exists():
+                            retained_original = str(candidate)
+                except Exception:
+                    retained_original = None
             metadata = {
                 'sermon_id': sermon_id,
                 'sermonID': sermon_id,
@@ -2938,7 +3006,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'subtitle': subtitle,
                 'description': description,
                 'hashtags': hashtags,
-                'original_file': str(audio_path),
+                'original_file': retained_original or str(audio_path),
                 'processed_file': str(final_output_path),
                 'is_video': input_is_video,
                 'upload_type': upload_type,

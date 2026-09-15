@@ -1292,20 +1292,35 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
             raise JobCancelledError("Job cancelled by user")
 
         if render_only and result.get("success"):
-            rendered_id = result.get("sermon_id") or ""
-            job.add_log(f"Edit rendered locally, not uploaded ({rendered_id})")
+            if bool(result.get("auto_edit_applied")) and result.get("edit_plan_status") in (
+                "auto_applied",
+                "applied_local",
+            ):
+                rendered_id = result.get("sermon_id") or ""
+                job.add_log(f"Edit rendered locally, not uploaded ({rendered_id})")
+                return JobResult(
+                    success=True,
+                    message=(
+                        "Edit rendered locally; nothing was uploaded. Review the media, "
+                        "then use Upload now when ready."
+                    ),
+                    data=_trim_result_payload(result),
+                )
+            err = result.get("error") or (
+                "Pipeline finished without rendering the approved cut "
+                f"(edit_plan_status={result.get('edit_plan_status')}); nothing was rendered."
+            )
+            job.add_log(err)
             return JobResult(
-                success=True,
-                message=(
-                    "Edit rendered locally; nothing was uploaded. Review the media, "
-                    "then use Upload now when ready."
-                ),
+                success=False,
+                message=f"Edit apply failed: {err}",
+                error=err,
                 data=_trim_result_payload(result),
             )
 
         if result.get("success"):
             applied_status = result.get("edit_plan_status") or "auto_applied"
-            if applied_status == "auto_applied":
+            if applied_status == "auto_applied" and bool(result.get("auto_edit_applied")):
                 job.add_log(f"Edit applied and uploaded ({result.get('sermon_id')})")
                 return JobResult(
                     success=True,

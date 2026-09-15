@@ -11,6 +11,19 @@ No Streamlit imports here. Progress flows to the caller-supplied callback
 (the worker wires it to ``job.update_progress``), and completion handling
 (plan status updates) happens here so the worker's own ``background_jobs``
 row is the single row per apply.
+
+Source-resolution contract (metadata.json fields):
+
+- ``original_file`` is the full-length retained source. Apply write-backs
+  (``process_new_sermon`` dry-run/upload saves with an applied edit plan)
+  must preserve an existing on-disk ``original_file`` value instead of
+  repointing it at the trimmed render, or the next apply resolves its own
+  trimmed output and trips plan validation.
+- ``processed_file`` is the latest render output and may be a trimmed cut.
+  ``_resolve_apply_source`` must skip any candidate whose duration is
+  shorter than the approved plan end (``min_duration``) so a poisoned
+  ``processed_file`` pointer can never become the next apply's source while
+  the retained full-length file still exists.
 """
 
 from __future__ import annotations
@@ -26,6 +39,45 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 ACTIVE_APPLY_STATUSES = ("queued", "running")
+
+_MEDIA_EXTENSIONS = frozenset(
+    {
+        ".mp4",
+        ".mov",
+        ".avi",
+        ".webm",
+        ".mkv",
+        ".m4v",
+        ".mp3",
+        ".wav",
+        ".m4a",
+        ".ogg",
+        ".flac",
+    }
+)
+
+
+def _source_duration(path: str | Path) -> float | None:
+    try:
+        from sermon_updater import _ffprobe_duration
+    except Exception:
+        return None
+    try:
+        return _ffprobe_duration(path)
+    except Exception:
+        return None
+
+
+def _candidate_covers_plan(path: str | Path, min_duration: float | None) -> bool:
+    if min_duration is None:
+        return True
+    try:
+        duration = _source_duration(path)
+    except Exception:
+        return True
+    if duration is None:
+        return True
+    return float(min_duration) <= float(duration) + 1.0
 
 
 def build_apply_job_params(
@@ -125,8 +177,11 @@ def _looks_like_processed_artifact(value: str) -> bool:
     return "processed" in stem and "_keeper" not in stem
 
 
-def _resolve_apply_source(sermon: dict[str, Any], repo: Any) -> tuple[str | None, bool]:
+def _resolve_apply_source(
+    sermon: dict[str, Any], repo: Any, min_duration: float | None = None
+) -> tuple[str | None, bool]:
     full = _full_sermon_or_none(sermon, repo)
+    ordered: list[tuple[str, bool]] = []
     for source in (sermon, full):
         if not isinstance(source, dict):
             continue
@@ -135,13 +190,55 @@ def _resolve_apply_source(sermon: dict[str, Any], repo: Any) -> tuple[str | None
         if processed:
             path = Path(str(processed))
             if path.exists():
-                return str(path), True
+                ordered.append((str(path), True))
     for source in (full, sermon):
         if not isinstance(source, dict):
             continue
         audio = (source.get("file_paths") or {}).get("audio") or ""
         if audio and _looks_like_processed_artifact(audio) and Path(str(audio)).exists():
-            return str(audio), True
+            ordered.append((str(audio), True))
+    for source in (sermon, full):
+        if not isinstance(source, dict):
+            continue
+        metadata = _read_edit_plan_metadata(source)
+        original = metadata.get("original_file")
+        if original:
+            path = Path(str(original))
+            if path.exists():
+                ordered.append((str(path), False))
+        file_paths = source.get("file_paths") or {}
+        for key in ("original_audio", "original_video", "audio"):
+            value = file_paths.get(key)
+            if value and Path(str(value)).exists():
+                ordered.append((str(value), False))
+    for source in (sermon, full):
+        if not isinstance(source, dict):
+            continue
+        metadata_path = (source.get("file_paths") or {}).get("metadata") or ""
+        parent = Path(str(metadata_path)).parent if metadata_path else None
+        if parent is None or not parent.exists():
+            continue
+        try:
+            originals = sorted(
+                p
+                for p in parent.glob("*Original*")
+                if p.is_file() and p.suffix.lower() in _MEDIA_EXTENSIONS
+            )
+        except OSError:
+            continue
+        for original in originals:
+            ordered.append((str(original), False))
+    seen: set[str] = set()
+    deduped: list[tuple[str, bool]] = []
+    for path, enhanced in ordered:
+        if path not in seen:
+            seen.add(path)
+            deduped.append((path, enhanced))
+    for path, enhanced in deduped:
+        if _candidate_covers_plan(path, min_duration):
+            return path, enhanced
+    if deduped:
+        return deduped[0]
     media_path = _resolve_edit_media_path(sermon, repo)
     return media_path, False
 
@@ -241,7 +338,7 @@ def run_library_apply(
     except Exception:
         sermon = {"id": sermon_id}
     full_sermon = _full_sermon_or_none(sermon, repo) or sermon
-    media_path, already_enhanced = _resolve_apply_source(full_sermon, repo)
+    media_path, already_enhanced = _resolve_apply_source(full_sermon, repo, min_duration=float(end))
     if not media_path:
         if plan_file:
             Path(plan_file).unlink(missing_ok=True)
@@ -249,6 +346,21 @@ def run_library_apply(
             "success": False,
             "error": "Original media file not found locally. Cannot apply the edit.",
         }
+
+    if plan_file is not None:
+        source_duration = _source_duration(media_path)
+        if source_duration is not None and float(end) > float(source_duration) + 1.0:
+            Path(plan_file).unlink(missing_ok=True)
+            return {
+                "success": False,
+                "sermon_id": None,
+                "edit_plan_status": None,
+                "auto_edit_applied": False,
+                "error": (
+                    f"Approved edit plan end {float(end):.1f}s exceeds source duration "
+                    f"{float(source_duration):.1f}s for {media_path}; nothing was rendered."
+                ),
+            }
 
     import sermon_updater
 
@@ -276,14 +388,50 @@ def run_library_apply(
             Path(plan_file).unlink(missing_ok=True)
 
     if bool(render_only) and result.get("success"):
-        rendered_id = str(result.get("sermon_id") or "")
-        try:
-            repo.update_edit_plan_status(
-                plan.get("id"),
-                "applied_local",
-                notes=((plan.get("notes") or "") + "; rendered locally, not uploaded").strip("; "),
-                applied_media_id=rendered_id,
-            )
-        except Exception as e:
-            logger.warning("Could not mark plan applied_local: %s", e)
+        if result.get("auto_edit_applied") is True and result.get("edit_plan_status") in (
+            "auto_applied",
+            "applied_local",
+        ):
+            rendered_id = str(result.get("sermon_id") or "")
+            try:
+                repo.update_edit_plan_status(
+                    plan.get("id"),
+                    "applied_local",
+                    notes=((plan.get("notes") or "") + "; rendered locally, not uploaded").strip(
+                        "; "
+                    ),
+                    applied_media_id=rendered_id,
+                )
+            except Exception as e:
+                logger.warning("Could not mark plan applied_local: %s", e)
+            return result
+        return {
+            "success": False,
+            "sermon_id": result.get("sermon_id"),
+            "edit_plan_status": result.get("edit_plan_status"),
+            "auto_edit_applied": False,
+            "output_dir": result.get("output_dir"),
+            "error": (
+                "Pipeline returned "
+                f"{result.get('edit_plan_status') or 'no status'} for the approved plan "
+                f"(end {float(end):.1f}s); nothing was rendered."
+            ),
+        }
+    if (
+        plan_file is not None
+        and not result.get("cancelled")
+        and result.get("success")
+        and result.get("edit_plan_status") == "pending_review"
+    ):
+        return {
+            "success": False,
+            "sermon_id": result.get("sermon_id"),
+            "edit_plan_status": result.get("edit_plan_status"),
+            "auto_edit_applied": False,
+            "output_dir": result.get("output_dir"),
+            "error": (
+                "Pipeline returned pending_review for the approved plan "
+                f"(end {float(end):.1f}s); nothing was rendered."
+            ),
+        }
     return result
