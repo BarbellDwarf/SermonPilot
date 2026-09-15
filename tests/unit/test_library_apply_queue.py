@@ -110,7 +110,8 @@ def test_executor_render_only_marks_applied_local(tmp_path, monkeypatch) -> None
     rendered = {
         "success": True,
         "sermon_id": "draft_rendered_1",
-        "edit_plan_status": "applied_local",
+        "edit_plan_status": "auto_applied",
+        "auto_edit_applied": True,
         "transcript": "big body",
         "error": None,
     }
