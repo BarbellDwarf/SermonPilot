@@ -38,6 +38,7 @@ auto_edit:
   logo_path: ''
   logo_hold: 3.0
   fade_to_black: true
+  fade_out_tail_seconds: 2.0   # tail kept past the end cut so delayed audio + fade clear the closing words
   keeper:
     enabled: true
     crf: 20                    # libx264 -crf / nvenc -cq / vaapi -qp (crf+2)
@@ -57,6 +58,7 @@ auto_edit:
 | `logo_path` | `''` | Image shown on the end card; empty disables the card |
 | `logo_hold` | `3.0` | Seconds the logo card stays on screen |
 | `fade_to_black` | `true` | Fade out at the end of the content |
+| `fade_out_tail_seconds` | `2.0` | Extra source audio kept past the end cut so the delayed audio tail and the end fade clear the closing words (clamped to available room) |
 | `keeper.enabled` | `true` | Shrink large sources before processing |
 | `keeper.crf` | `20` | Quality level (see encoder mapping above) |
 | `keeper.nvenc` | `true` | Allow the NVENC -> VAAPI -> libx264 detection chain |

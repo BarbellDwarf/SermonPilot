@@ -274,6 +274,7 @@ def validate_plan(
 
 XFADE_SECONDS = 0.8
 MAX_AUDIO_OFFSET = 5.0
+DEFAULT_FADE_OUT_TAIL_SECONDS = 2.0
 
 
 def _run_ffmpeg(cmd: list[str]) -> None:
@@ -300,12 +301,29 @@ def _fmt(seconds: float) -> str:
     return f"{seconds:.3f}"
 
 
+def _resolve_tail(source: Path, end: float, d_pos: float, fade_out_tail_seconds: float) -> float:
+    wanted = max(float(fade_out_tail_seconds), 0.0)
+    if wanted <= 0:
+        return 0.0
+    ffprobe = shutil.which("ffprobe")
+    src_dur: float | None = None
+    if ffprobe:
+        try:
+            src_dur = _ffprobe_duration(ffprobe, source)
+        except Exception:
+            src_dur = None
+    if src_dur is None:
+        return 0.0
+    return min(wanted, max(0.0, src_dur - end - d_pos))
+
+
 def apply_edit(
     source: Path,
     plan: EditPlan,
     out: Path,
     logo_path: Path | None = None,
     fade_to_black: bool | None = None,
+    fade_out_tail_seconds: float = DEFAULT_FADE_OUT_TAIL_SECONDS,
 ) -> Path:
     if fade_to_black is None:
         fade_to_black = plan.fade_to_black
@@ -315,11 +333,16 @@ def apply_edit(
     fade_in = max(plan.fade_in, 0.0)
     logo_hold = max(plan.logo_hold, 0.0)
     content_dur = plan.end - plan.start
-    fade_out_start = max(content_dur - fade_in, 0.0)
+
+    audio_offset = float(plan.audio_offset or 0.0)
+    d_pos = max(audio_offset, 0.0)
+    tail = _resolve_tail(source, plan.end, d_pos, fade_out_tail_seconds)
+    window_end = plan.end + tail + d_pos
+    out_len = window_end - plan.start
+    fade_out_start = max(out_len - fade_in, 0.0)
 
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    audio_offset = float(plan.audio_offset or 0.0)
     pts_shift = ""
     if abs(audio_offset) > 1e-6:
         sign = "+" if audio_offset > 0 else "-"
@@ -331,7 +354,7 @@ def apply_edit(
         "-ss",
         _fmt(plan.start),
         "-to",
-        _fmt(plan.end),
+        _fmt(window_end),
         "-i",
         str(source),
     ]
@@ -341,7 +364,7 @@ def apply_edit(
 
     if logo_path is not None and logo_hold > 0:
         cmd += ["-loop", "1", "-t", _fmt(logo_hold), "-i", str(logo_path)]
-        total = content_dur + logo_hold - XFADE_SECONDS
+        total = out_len + logo_hold - XFADE_SECONDS
         filters.append(
             f"[0:v]setpts=PTS-STARTPTS,{fade_in_filter},"
             f"fade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},settb=1/25[cv]"
@@ -350,7 +373,7 @@ def apply_edit(
         filters.append("[lg0]fps=25,settb=1/25[lg]")
         filters.append(
             f"[cvr][lg]xfade=transition=fade:duration={XFADE_SECONDS:.3f}"
-            f":offset={_fmt(content_dur - XFADE_SECONDS)}[xv]"
+            f":offset={_fmt(out_len - XFADE_SECONDS)}[xv]"
         )
         if fade_to_black:
             end_fade_start = max(total - fade_in, 0.0)
@@ -358,22 +381,22 @@ def apply_edit(
         else:
             filters.append("[xv]null[vout]")
         filters.append(
-            f"[0:a]afade=t=in:st=0.000:d={_fmt(fade_in)},"
-            f"afade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},apad{pts_shift}[aout]"
+            f"[0:a]afade=t=in:st=0.000:d={_fmt(fade_in)}{pts_shift},"
+            f"afade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},apad[aout]"
         )
     else:
-        total = content_dur
+        total = out_len
         video_chain = f"[0:v]setpts=PTS-STARTPTS,{fade_in_filter}"
         if fade_to_black and content_dur > 0:
             audio_chain = (
-                f"afade=t=in:st=0.000:d={_fmt(fade_in)},"
+                f"afade=t=in:st=0.000:d={_fmt(fade_in)}{pts_shift},"
                 f"afade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},apad"
             )
             video_chain += f",fade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)}"
         else:
-            audio_chain = f"afade=t=in:st=0.000:d={_fmt(fade_in)}"
+            audio_chain = f"afade=t=in:st=0.000:d={_fmt(fade_in)}{pts_shift}"
         filters.append(video_chain + "[vout]")
-        filters.append(f"[0:a]{audio_chain}{pts_shift}[aout]")
+        filters.append(f"[0:a]{audio_chain}[aout]")
 
     cmd += [
         "-filter_complex",
@@ -418,9 +441,19 @@ def shift_snippet_audio(base: Path, offset: float, out: Path) -> Path:
         "-map", "0:v:0",
         "-map", "1:a:0",
         "-c", "copy",
-        "-shortest",
-        str(out),
     ]
+    ffprobe = shutil.which("ffprobe")
+    base_dur: float | None = None
+    if ffprobe:
+        try:
+            base_dur = _ffprobe_duration(ffprobe, base)
+        except Exception:
+            base_dur = None
+    if base_dur is not None:
+        cmd += ["-t", _fmt(base_dur + max(offset, 0.0))]
+    else:
+        cmd += ["-shortest"]
+    cmd += [str(out)]
     _run_ffmpeg(cmd)
     return out
 
@@ -458,6 +491,7 @@ def render_review_snippets(
     plan: EditPlan,
     out_dir: Path,
     logo_path: Path | None = None,
+    fade_out_tail_seconds: float = DEFAULT_FADE_OUT_TAIL_SECONDS,
 ) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     snippets: list[Path] = []
@@ -483,7 +517,13 @@ def render_review_snippets(
         )
         try:
             snippets.append(
-                apply_edit(source, preview_plan, out_dir / "snippet_ending.mp4", logo_path)
+                apply_edit(
+                    source,
+                    preview_plan,
+                    out_dir / "snippet_ending.mp4",
+                    logo_path,
+                    fade_out_tail_seconds=fade_out_tail_seconds,
+                )
             )
         except (RuntimeError, ValueError) as e:
             logger.warning(f"auto_edit: ending snippet failed: {e}")
