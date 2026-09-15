@@ -872,12 +872,12 @@ def display_sermon_list(filtered_sermons, all_sermons):
                     st.rerun()
             with cols[1]:
                 status = sermon.get('status', 'unknown')
-                if status in ('completed', 'processed'):
+                if sermon.get('upload_status') == 'failed' or status in ('failed', 'error'):
+                    status_cls, status_label = 'status-error', 'Error'
+                elif status in ('completed', 'processed'):
                     status_cls, status_label = 'status-ok', 'Processed'
                 elif status == 'processing':
                     status_cls, status_label = 'status-progress', 'Processing'
-                elif status in ('failed', 'error'):
-                    status_cls, status_label = 'status-error', 'Error'
                 else:
                     status_cls, status_label = 'status-neutral', status.capitalize()
                 st.markdown(
@@ -2292,11 +2292,18 @@ def display_sermon_details(sermon):
         except Exception as e:
             st.caption(f"Media player unavailable: {e}")
         status = display_data.get('status', 'unknown')
-        if status in ['completed', 'processed']:
+        if status in ['completed', 'processed'] and (
+            display_data.get('upload_status') != 'failed'
+            and not ((display_data.get('upload_info') or {}).get('upload_status') == 'failed')
+        ):
             st.success("Processing completed")
         elif status == 'processing':
             st.info("Processing in progress")
-        elif status == 'failed':
+        elif status in ('failed', 'error') or (
+            display_data.get('upload_status') == 'failed'
+        ) or (
+            (display_data.get('upload_info') or {}).get('upload_status') == 'failed'
+        ):
             st.error("Processing failed")
         else:
             st.info(f"Status: {status.title()}")
