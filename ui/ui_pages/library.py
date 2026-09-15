@@ -2512,7 +2512,12 @@ def display_sermon_editor(sermon, api_client, repo):
             scripture_reference = st.text_input(
                 "Scripture Reference", value=sermon.get('scripture_reference', '')
             )
-            event_type = st.text_input("Event Type", value=sermon.get('event_type', ''))
+            from ui.sermon_metadata import create_event_type_selectbox
+            event_type = create_event_type_selectbox(
+                "Event Type",
+                key=f"edit_event_type_{sermon['id']}",
+                value=sermon.get('event_type') or None,
+            )
 
         description = st.text_area("Description", value=sermon.get('description', ''), height=100)
 
