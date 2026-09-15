@@ -1,5 +1,24 @@
 # SermonAudio Updater Configuration
 # Copy this to config.yaml and update with your settings
+#
+# API-KEY CONTRACT: never store literal keys in this file. Every api_key
+# below is a ${VAR} placeholder resolved from the environment at load time
+# (see src/core/config.py _substitute_env_vars / _override_from_env).
+# At runtime a key may also come from the UI-saved DB config_cache, which is
+# overlaid in memory with precedence: environment > DB cache > this file.
+# The Settings UI always writes placeholders back here, never literals.
+#
+# Supported variables (see .env.example and docs/SECURITY_SETUP_GUIDE.md):
+#   SERMONAUDIO_API_KEY, SERMONAUDIO_BROADCASTER_ID,
+#   OPENAI_API_KEY, ANTHROPIC_API_KEY, XAI_API_KEY, GOOGLE_API_KEY,
+#   GROQ_API_KEY, OPENROUTER_API_KEY,
+#   AUTO_EDIT_LLM_API_KEY, AUTO_EDIT_LLM_BASE_URL,
+#   OLLAMA_HOST, OLLAMA_MODEL, LLM_PROVIDER,
+#   OPENAI_MODEL, ANTHROPIC_MODEL, XAI_MODEL, GOOGLE_MODEL, GROQ_MODEL,
+#   OPENROUTER_MODEL, WHISPER_MODEL, TRANSCRIPTION_BACKEND,
+#   EMBEDDING_PROVIDER, EMBEDDING_MODEL,
+#   OUTPUT_DIRECTORY, DRY_RUN, DEBUG, VERBOSE,
+#   DATABASE_URL, SA_UPDATER_CONFIG.
 
 # SermonAudio API credentials - Use environment variables for security
 api_key: "${SERMONAUDIO_API_KEY}"
@@ -206,24 +225,27 @@ default_criteria:
   date_range: 7  # Days back from today
 
 # Transcription Settings
+# Cloud backends read their key from the environment (preferred) or the DB
+# config_cache. Keep the ${VAR} placeholders here; short or empty values are
+# treated as unset and never sent to an endpoint.
 transcription:
   backend: faster_whisper_local  # Options: whisper_local, faster_whisper_local, whisper_openai, whisper_openrouter
   whisper_local:
     compute_type: float16  # Options: float16, int8, int8_float16, int8_uint8, int16, float32
     device: auto  # Options: auto, cpu, cuda
     language: en  # Language code (en, es, fr, etc.) or None for auto-detection
-    model: base  # Options: tiny, base, small, medium, large
+    model: base  # Options: tiny, base, small, medium, large (or ${WHISPER_MODEL})
   faster_whisper_local:
     compute_type: float16  # Options: float16, int8, int8_float16, int8_uint8, int16, float32
     device: auto  # Options: auto, cpu, cuda
     language: en  # Language code (en, es, fr, etc.) or None for auto-detection
-    model: base  # Options: tiny, base, small, medium, large
+    model: base  # Options: tiny, base, small, medium, large (or ${WHISPER_MODEL})
   whisper_openai:
-    api_key: ${OPENAI_API_KEY}  # OpenAI API key
+    api_key: "${OPENAI_API_KEY}"  # Or set OPENAI_API_KEY in the environment
     base_url: https://api.openai.com/v1  # OpenAI API base URL
     model: whisper-1  # Options: whisper-1
   whisper_openrouter:
-    api_key: ${OPENROUTER_API_KEY}  # OpenRouter API key
+    api_key: "${OPENROUTER_API_KEY}"  # Or set OPENROUTER_API_KEY in the environment
     base_url: https://openrouter.ai/api/v1  # OpenRouter API base URL
     model: openai/whisper-large-v3  # Options: openai/whisper-large-v3, etc.
 
