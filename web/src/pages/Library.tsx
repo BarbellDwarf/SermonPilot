@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { librarySermons, type LibrarySermon, type LibrarySermonStatus } from "../mock/data";
-import { Chip, EmptyState } from "../components/ui";
+import { Chip, EmptyState, PageHeader, SkeletonList, useBriefLoading } from "../components/ui";
 
 export const sermonStatusTone: Record<LibrarySermonStatus, string> = {
   draft: "neutral",
@@ -56,6 +56,7 @@ function SermonCard({ sermon }: { sermon: LibrarySermon }) {
 export function Library() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("date");
+  const loading = useBriefLoading();
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -74,10 +75,7 @@ export function Library() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Library</h1>
-        <p className="text-sm text-muted">Mock teachings with status, search, and sort.</p>
-      </div>
+      <PageHeader title="Library" sub="Mock teachings with status, search, and sort." />
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <label htmlFor="library-search" className="sr-only">
@@ -108,7 +106,9 @@ export function Library() {
         </select>
       </div>
 
-      {rows.length === 0 ? (
+      {loading ? (
+        <SkeletonList rows={4} />
+      ) : rows.length === 0 ? (
         <EmptyState
           title="No teachings match"
           body="Try a different search term, or clear the search to see everything."

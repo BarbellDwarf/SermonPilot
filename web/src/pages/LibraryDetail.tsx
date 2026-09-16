@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { editPlans, librarySermons } from "../mock/data";
 import { ReviewPanel } from "../components/ReviewPanel";
 import { sermonStatusLabel, sermonStatusTone } from "./Library";
-import { Button, Card, Chip, ConfirmDialog, EmptyState, Toast } from "../components/ui";
+import { Button, Card, Chip, ConfirmDialog, EmptyState, PageHeader, Toast } from "../components/ui";
 
 export function LibraryDetail() {
   const { id } = useParams();
@@ -66,17 +66,19 @@ export function LibraryDetail() {
         ← Library
       </Link>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>
-          <span className="rounded border border-line px-1.5 py-0.5 font-mono text-xs text-muted">
-            {sermon.series}
-          </span>
-        </div>
-        <h1 className="text-2xl font-bold tracking-tight [overflow-wrap:anywhere]">{sermon.title}</h1>
-        <p className="text-sm text-muted">
-          {sermon.speaker} · {sermon.date} · {sermon.duration}
-        </p>
+      <div className="flex min-w-0 flex-col gap-2">
+        <PageHeader
+          title={sermon.title}
+          sub={`${sermon.speaker} · ${sermon.date} · ${sermon.duration}`}
+          actions={
+            <>
+              <Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>
+              <span className="rounded border border-line px-1.5 py-0.5 font-mono text-xs text-muted">
+                {sermon.series}
+              </span>
+            </>
+          }
+        />
       </div>
 
       <section aria-label="Sermon actions" className="flex flex-col gap-2">
