@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { activeJobs, completedJobs, failedJobs, type Job } from "../mock/data";
-import { Button, Card, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast, useBriefLoading } from "../components/ui";
+import { type Job } from "../mock/data";
+import { Button, Card, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast } from "../components/ui";
+import { QueryError, useJobDetail, useJobsData } from "../api/hooks";
+import { isLive } from "../api/client";
 
 type Tab = "active" | "completed" | "failed";
 
@@ -15,14 +17,17 @@ const stateTone: Record<Job["state"], string> = {
   running: "accent",
   done: "ok",
   failed: "error",
+  cancelled: "neutral",
 };
 
 type PendingAction = { job: Job; action: "cancel" | "delete" };
 
-function JobRow({ job, onAction }: { job: Job; onAction: (a: PendingAction) => void }) {
+function JobRow({ job, onAction, readOnly }: { job: Job; onAction: (a: PendingAction) => void; readOnly: boolean }) {
   const [open, setOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const fullTitle = `${job.kind} — ${job.sermon}`;
+  const detail = useJobDetail(job.id, open);
+  const lines = readOnly ? (detail.logs ?? []) : job.log;
 
   const retry = () => {
     setRetrying(true);
@@ -55,35 +60,47 @@ function JobRow({ job, onAction }: { job: Job; onAction: (a: PendingAction) => v
             >
               {open ? "Hide log" : "View log"}
             </button>
-            {job.state === "running" ? (
-              <Button variant="danger" onClick={() => onAction({ job, action: "cancel" })}>
-                Cancel
-              </Button>
-            ) : null}
-            {job.state === "queued" ? (
-              <Button onClick={() => onAction({ job, action: "cancel" })}>
-                Cancel
-              </Button>
-            ) : null}
-            {job.state === "failed" ? (
-              <Button onClick={retry} disabled={retrying} aria-busy={retrying}>
-                {retrying ? "Retrying…" : "Retry"}
-              </Button>
-            ) : null}
-            {job.state === "done" || job.state === "failed" ? (
-              <Button variant="danger" onClick={() => onAction({ job, action: "delete" })}>
-                Delete
-              </Button>
-            ) : null}
+            {readOnly ? null : (
+              <>
+                {job.state === "running" ? (
+                  <Button variant="danger" onClick={() => onAction({ job, action: "cancel" })}>
+                    Cancel
+                  </Button>
+                ) : null}
+                {job.state === "queued" ? (
+                  <Button onClick={() => onAction({ job, action: "cancel" })}>
+                    Cancel
+                  </Button>
+                ) : null}
+                {job.state === "failed" ? (
+                  <Button onClick={retry} disabled={retrying} aria-busy={retrying}>
+                    {retrying ? "Retrying…" : "Retry"}
+                  </Button>
+                ) : null}
+                {job.state === "done" || job.state === "failed" ? (
+                  <Button variant="danger" onClick={() => onAction({ job, action: "delete" })}>
+                    Delete
+                  </Button>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
         {open ? (
           <div id={`log-${job.id}`} className="mt-3 rounded-md border border-line bg-ink p-3">
-            <ol className="flex flex-col gap-1 font-mono text-xs text-muted">
-              {job.log.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ol>
+            {readOnly && detail.isLoading ? (
+              <p className="font-mono text-xs text-muted">Loading log…</p>
+            ) : readOnly && detail.error ? (
+              <p className="font-mono text-xs text-danger">{detail.error}</p>
+            ) : lines.length === 0 ? (
+              <p className="font-mono text-xs text-muted">No log lines recorded.</p>
+            ) : (
+              <ol className="flex flex-col gap-1 font-mono text-xs text-muted">
+                {lines.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ol>
+            )}
           </div>
         ) : null}
       </Card>
@@ -96,12 +113,12 @@ export function Jobs() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [removed, setRemoved] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
-  const loading = useBriefLoading();
+  const { data, isLoading: loading, error, retry } = useJobsData();
 
   const visible =
-    tab === "active" ? activeJobs : tab === "completed" ? completedJobs : failedJobs;
+    tab === "active" ? data.active : tab === "completed" ? data.completed : data.failed;
 
-  const rows = visible.filter((j) => !removed.includes(j.id));
+  const rows = isLive ? visible : visible.filter((j) => !removed.includes(j.id));
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -117,12 +134,12 @@ export function Jobs() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Jobs" sub="Every run of the pipeline, with per-job logs." />
+      <PageHeader title="Jobs" sub={isLive ? "Every run of the pipeline, with per-job logs. Refreshes every 5 seconds." : "Every run of the pipeline, with per-job logs."} />
 
       <div role="tablist" aria-label="Job states" onKeyDown={onKeyDown} className="flex gap-1 overflow-x-auto rounded-lg border border-line bg-surface p-1">
         {tabs.map((t) => {
           const selected = tab === t.id;
-          const count = t.id === "active" ? activeJobs.length : t.id === "completed" ? completedJobs.length : failedJobs.length;
+          const count = t.id === "active" ? data.active.length : t.id === "completed" ? data.completed.length : data.failed.length;
           return (
             <button
               key={t.id}
@@ -150,6 +167,8 @@ export function Jobs() {
 
       {loading ? (
         <SkeletonList rows={3} />
+      ) : error ? (
+        <QueryError message={error} onRetry={retry} />
       ) : rows.length === 0 ? (
         <EmptyState
           title={tab === "failed" ? "No failed jobs" : tab === "active" ? "No active jobs" : "Nothing completed yet"}
@@ -164,7 +183,7 @@ export function Jobs() {
       ) : (
         <ol className="flex flex-col gap-3">
           {rows.map((j) => (
-            <JobRow key={j.id} job={j} onAction={setPending} />
+            <JobRow key={j.id} job={j} onAction={setPending} readOnly={isLive} />
           ))}
         </ol>
       )}

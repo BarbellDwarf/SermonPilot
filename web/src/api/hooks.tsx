@@ -1,0 +1,348 @@
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  activeJobs,
+  completedJobs,
+  editPlans,
+  failedJobs,
+  librarySermons,
+  recentSermons,
+  services,
+  type EditPlan,
+  type Job,
+  type JobState,
+  type LibrarySermon,
+  type PlanStatus,
+  type Sermon,
+  type SermonStatus,
+  type ServiceStatus,
+} from "../mock/data";
+import { Button, Card, useBriefLoading } from "../components/ui";
+import { api, isLive, type ApiEditPlan, type ApiJob, type ApiSermonListItem } from "./client";
+
+export type LibrarySort = "date" | "title" | "duration";
+
+export function QueryError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <Card>
+      <p className="text-sm font-semibold">Could not load data</p>
+      <p className="mt-1 text-sm text-muted">{message}</p>
+      <div className="mt-3">
+        <Button onClick={onRetry}>Retry</Button>
+      </div>
+    </Card>
+  );
+}
+
+function toSeconds(d: string): number {
+  const parts = d.split(":").map(Number);
+  if (parts.some((n) => !Number.isFinite(n))) return 0;
+  return parts.reduce((acc, n) => acc * 60 + n, 0);
+}
+
+const KNOWN_PLAN_STATUSES: PlanStatus[] = [
+  "draft",
+  "pending_review",
+  "applied_local",
+  "processed",
+  "superseded",
+];
+
+export function toEditPlan(p: ApiEditPlan): EditPlan {
+  return {
+    sermonId: p.sermon_id,
+    status: KNOWN_PLAN_STATUSES.includes(p.status as PlanStatus)
+      ? (p.status as PlanStatus)
+      : "pending_review",
+    revision: p.revision,
+    revisionsTotal: p.revisions_total,
+    confidence: p.confidence,
+    qa: p.qa_judgment || "—",
+    evidence: p.evidence,
+    startSec: p.start_sec ?? 0,
+    endSec: p.end_sec ?? 0,
+    offsetSec: p.offset_sec,
+  };
+}
+
+export function toLibrarySermon(s: ApiSermonListItem): LibrarySermon {
+  const status = s.status === "draft" ? "draft" : s.status === "processed" ? "processed" : "rendered";
+  return {
+    id: s.id,
+    title: s.title || "(untitled)",
+    speaker: s.speaker || "Unknown speaker",
+    date: s.date,
+    duration: s.duration,
+    series: s.series,
+    status,
+  };
+}
+
+const JOB_STATE_MAP: Record<string, JobState> = {
+  queued: "queued",
+  running: "running",
+  completed: "done",
+  done: "done",
+  failed: "failed",
+  cancelled: "cancelled",
+};
+
+export function toJob(j: ApiJob, logs: string[] = []): Job {
+  return {
+    id: j.id,
+    kind: j.title || j.type,
+    sermon: j.description || j.type,
+    state: JOB_STATE_MAP[j.status] ?? "queued",
+    created: j.created_at ?? "—",
+    finished: j.completed_at,
+    duration: j.duration,
+    log: logs,
+  };
+}
+
+export function useLibrarySermons(query: string, sort: LibrarySort) {
+  const briefLoading = useBriefLoading();
+  const live = useQuery({
+    queryKey: ["sermons", query, sort],
+    queryFn: () => api.sermons({ search: query, sort }),
+    enabled: isLive,
+    staleTime: 10_000,
+  });
+  const mockItems = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filtered = q
+      ? librarySermons.filter((s) =>
+          [s.title, s.speaker, s.series].some((f) => f.toLowerCase().includes(q)),
+        )
+      : [...librarySermons];
+    filtered.sort((a, b) => {
+      if (sort === "title") return a.title.localeCompare(b.title);
+      if (sort === "duration") return toSeconds(b.duration) - toSeconds(a.duration);
+      return b.date.localeCompare(a.date);
+    });
+    return filtered;
+  }, [query, sort]);
+
+  if (!isLive) {
+    return { items: mockItems, isLoading: briefLoading, error: null as string | null, retry: () => {} };
+  }
+  return {
+    items: (live.data?.items ?? []).map(toLibrarySermon),
+    isLoading: live.isPending,
+    error: live.isError ? "The teachings list could not be loaded. Check the API bridge and try again." : null,
+    retry: () => void live.refetch(),
+  };
+}
+
+export interface SermonDetailData {
+  sermon: LibrarySermon;
+  description: string | null;
+  files: { file_type: string; file_path: string; file_size: number | null }[];
+  transcriptAvailable: boolean;
+  transcriptLength: number;
+}
+
+export function useSermonDetail(id: string | undefined) {
+  const live = useQuery({
+    queryKey: ["sermon", id],
+    queryFn: () => api.sermon(id ?? ""),
+    enabled: isLive && !!id,
+    staleTime: 15_000,
+  });
+  const mockSermon = librarySermons.find((s) => s.id === id);
+
+  if (!isLive) {
+    return {
+      data: mockSermon
+        ? ({ sermon: mockSermon, description: null, files: [], transcriptAvailable: false, transcriptLength: 0 } as SermonDetailData)
+        : null,
+      isLoading: false,
+      error: null as string | null,
+      retry: () => {},
+    };
+  }
+  return {
+    data: live.data
+      ? ({
+          sermon: toLibrarySermon(live.data),
+          description: live.data.description,
+          files: live.data.files,
+          transcriptAvailable: live.data.transcript_available,
+          transcriptLength: live.data.transcript_length,
+        } as SermonDetailData)
+      : null,
+    isLoading: live.isPending,
+    error: live.isError ? "This teaching could not be loaded. Check the API bridge and try again." : null,
+    retry: () => void live.refetch(),
+  };
+}
+
+export function useSermonPlan(id: string | undefined) {
+  const live = useQuery({
+    queryKey: ["sermon-plan", id],
+    queryFn: () => api.plan(id ?? ""),
+    enabled: isLive && !!id,
+    staleTime: 15_000,
+  });
+  const mockPlan = id ? editPlans[id] : undefined;
+
+  if (!isLive) {
+    return { plan: mockPlan, isLoading: false, error: null as string | null, retry: () => {} };
+  }
+  return {
+    plan: live.data?.plan ? toEditPlan(live.data.plan) : undefined,
+    isLoading: live.isPending,
+    error: live.isError ? "The auto-edit plan could not be loaded." : null,
+    retry: () => void live.refetch(),
+  };
+}
+
+export interface JobsData {
+  active: Job[];
+  completed: Job[];
+  failed: Job[];
+}
+
+export function useJobDetail(id: string, enabled: boolean) {
+  const live = useQuery({
+    queryKey: ["job", id],
+    queryFn: () => api.job(id),
+    enabled: isLive && enabled,
+    staleTime: 0,
+  });
+
+  if (!isLive) {
+    return { logs: null as string[] | null, isLoading: false, error: null as string | null };
+  }
+  return {
+    logs: live.data?.logs ?? null,
+    isLoading: live.isPending,
+    error: live.isError ? "The job log could not be loaded." : null,
+  };
+}
+
+function partitionJobs(jobs: Job[]): JobsData {
+  return {
+    active: jobs.filter((j) => j.state === "queued" || j.state === "running"),
+    completed: jobs.filter((j) => j.state === "done"),
+    failed: jobs.filter((j) => j.state === "failed" || j.state === "cancelled"),
+  };
+}
+
+export function useJobsData() {
+  const briefLoading = useBriefLoading();
+  const live = useQuery({
+    queryKey: ["jobs"],
+    queryFn: () => api.jobs({ limit: 100 }),
+    enabled: isLive,
+    staleTime: 5_000,
+    refetchInterval: isLive ? 5_000 : false,
+  });
+  const mock = useMemo(
+    () => ({
+      active: activeJobs,
+      completed: completedJobs,
+      failed: failedJobs,
+    }),
+    [],
+  );
+
+  if (!isLive) {
+    return { data: mock, isLoading: briefLoading, error: null as string | null, retry: () => {} };
+  }
+  return {
+    data: partitionJobs((live.data?.items ?? []).map((j) => toJob(j))),
+    isLoading: live.isPending,
+    error: live.isError ? "Jobs could not be loaded. Check the API bridge and try again." : null,
+    retry: () => void live.refetch(),
+  };
+}
+
+export interface HomeData {
+  services: ServiceStatus[];
+  activeJobs: Job[];
+  recentSermons: Sermon[];
+}
+
+const SERMON_STATUS_MAP: Record<string, SermonStatus> = {
+  processed: "ready",
+  draft: "draft",
+  pending: "processing",
+  error: "failed",
+};
+
+function toRecentSermon(s: ApiSermonListItem): Sermon {
+  return {
+    id: s.id,
+    title: s.title || "(untitled)",
+    speaker: s.speaker || "Unknown speaker",
+    duration: s.duration,
+    status: SERMON_STATUS_MAP[s.status] ?? "processing",
+    updated: s.date,
+  };
+}
+
+const SERVICE_LABELS: Record<string, string> = {
+  sermonaudio_api: "API",
+  database: "Database",
+  llm_primary: "LLM",
+  local_storage: "Storage",
+};
+
+export function useHomeData() {
+  const briefLoading = useBriefLoading();
+  const statusQuery = useQuery({
+    queryKey: ["status"],
+    queryFn: api.status,
+    enabled: isLive,
+    staleTime: 15_000,
+  });
+  const jobsQuery = useQuery({
+    queryKey: ["jobs"],
+    queryFn: () => api.jobs({ limit: 100 }),
+    enabled: isLive,
+    staleTime: 5_000,
+    refetchInterval: isLive ? 5_000 : false,
+  });
+  const sermonsQuery = useQuery({
+    queryKey: ["sermons", "", "date"],
+    queryFn: () => api.sermons({ sort: "date" }),
+    enabled: isLive,
+    staleTime: 15_000,
+  });
+  const mock = useMemo(
+    () => ({ services, activeJobs, recentSermons }),
+    [],
+  );
+
+  if (!isLive) {
+    return { data: mock, isLoading: briefLoading, error: null as string | null, retry: () => {} };
+  }
+  const servicesLive: ServiceStatus[] = Object.entries(statusQuery.data?.status ?? {})
+    .filter(([id]) => id in SERVICE_LABELS)
+    .map(([id, s]) => ({
+      id,
+      label: SERVICE_LABELS[id],
+      detail: s.message || s.details,
+      state: s.status === "ok" ? "ok" : s.status === "warning" ? "warn" : "error",
+      level: s.status === "ok" ? 85 : s.status === "warning" ? 40 : 15,
+    }));
+  const allJobs = (jobsQuery.data?.items ?? []).map((j) => toJob(j));
+  const data: HomeData = {
+    services: servicesLive,
+    activeJobs: allJobs.filter((j) => j.state === "queued" || j.state === "running"),
+    recentSermons: (sermonsQuery.data?.items ?? []).slice(0, 4).map(toRecentSermon),
+  };
+  const isLoading = statusQuery.isPending || jobsQuery.isPending || sermonsQuery.isPending;
+  const isError = statusQuery.isError || jobsQuery.isError || sermonsQuery.isError;
+  return {
+    data,
+    isLoading,
+    error: isError ? "Home data could not be loaded. Check the API bridge and try again." : null,
+    retry: () => {
+      void statusQuery.refetch();
+      void jobsQuery.refetch();
+      void sermonsQuery.refetch();
+    },
+  };
+}

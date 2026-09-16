@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
-import { activeJobs, recentSermons, services, type SermonStatus } from "../mock/data";
-import { Button, Card, Chip, EmptyState, Meter, PageHeader, SkeletonList, useBriefLoading } from "../components/ui";
+import { type SermonStatus } from "../mock/data";
+import { Button, Card, Chip, EmptyState, Meter, PageHeader, SkeletonList } from "../components/ui";
+import { QueryError, useHomeData } from "../api/hooks";
 
 const sermonTone: Record<SermonStatus, string> = {
   ready: "ok",
@@ -10,7 +11,8 @@ const sermonTone: Record<SermonStatus, string> = {
 };
 
 export function Home() {
-  const loading = useBriefLoading();
+  const { data, isLoading: loading, error, retry } = useHomeData();
+  const { services, activeJobs, recentSermons } = data;
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -22,6 +24,8 @@ export function Home() {
           </Link>
         }
       />
+
+      {error ? <QueryError message={error} onRetry={retry} /> : null}
 
       <section aria-labelledby="status-h">
         <h2 id="status-h" className="mb-2 text-lg font-semibold">System status</h2>
