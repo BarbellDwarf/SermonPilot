@@ -7,6 +7,10 @@ echo "🚀 Starting SermonPilot"
 # Graceful shutdown handler
 cleanup() {
     echo "🛑 Shutting down gracefully..."
+    if [ -n "$UVICORN_PID" ]; then
+        kill -TERM "$UVICORN_PID" 2>/dev/null
+        wait "$UVICORN_PID" 2>/dev/null
+    fi
     if [ -n "$STREAMLIT_PID" ]; then
         kill -TERM "$STREAMLIT_PID" 2>/dev/null
         wait "$STREAMLIT_PID" 2>/dev/null
@@ -43,5 +47,12 @@ streamlit run streamlit_app.py \
     --browser.gatherUsageStats=false &
 STREAMLIT_PID=$!
 
-# Wait for Streamlit process
-wait $STREAMLIT_PID
+# Start read-only web API + SPA (opt out with SERMONPILOT_WEB_API=0)
+if [ "${SERMONPILOT_WEB_API:-}" != "0" ]; then
+    echo "🌐 Starting web API..."
+    uvicorn server.api.app:app --host 0.0.0.0 --port "${SERMONPILOT_WEB_PORT:-8504}" &
+    UVICORN_PID=$!
+fi
+
+# Wait for background processes
+wait $STREAMLIT_PID ${UVICORN_PID:-}
