@@ -8,6 +8,7 @@ COPY web/package.json web/package-lock.json ./
 RUN npm ci
 
 COPY web/ ./
+ARG VITE_API_MODE=live
 RUN npm run build
 
 FROM ubuntu:22.04 AS base-cpu
