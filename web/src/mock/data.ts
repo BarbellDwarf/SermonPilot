@@ -69,6 +69,69 @@ export const recentSermons: Sermon[] = [
   { id: "s-04", title: "Sample Teaching 4", speaker: "Speaker A", duration: "44:37", status: "failed", updated: "Yesterday 15:03" },
 ];
 
+export type LibrarySermonStatus = "draft" | "rendered" | "processed";
+
+export interface LibrarySermon {
+  id: string;
+  title: string;
+  speaker: string;
+  date: string;
+  duration: string;
+  series: string;
+  status: LibrarySermonStatus;
+}
+
+export const librarySermons: LibrarySermon[] = [
+  { id: "s-01", title: "Sample Teaching 1", speaker: "Speaker A", date: "2026-09-06", duration: "42:10", series: "Sample Series A", status: "rendered" },
+  { id: "s-02", title: "Sample Teaching 2", speaker: "Speaker B", date: "2026-09-05", duration: "38:44", series: "Sample Series A", status: "draft" },
+  { id: "s-03", title: "Sample Teaching 3", speaker: "Speaker C", date: "2026-09-04", duration: "51:02", series: "Sample Series B", status: "processed" },
+  { id: "s-04", title: "Sample Teaching 4", speaker: "Speaker A", date: "2026-09-03", duration: "44:37", series: "Sample Series B", status: "rendered" },
+  { id: "s-05", title: "Sample Teaching 5", speaker: "Speaker B", date: "2026-09-02", duration: "39:15", series: "Sample Series C", status: "processed" },
+  { id: "s-06", title: "Sample Teaching 6", speaker: "Speaker C", date: "2026-09-01", duration: "47:28", series: "Sample Series C", status: "draft" },
+];
+
+export type PlanStatus = "draft" | "pending_review" | "applied_local" | "processed" | "superseded";
+
+export interface EditPlan {
+  sermonId: string;
+  status: PlanStatus;
+  revision: number;
+  revisionsTotal: number;
+  confidence: number;
+  qa: string;
+  evidence: string;
+  startSec: number;
+  endSec: number;
+  offsetSec: number;
+}
+
+export const editPlans: Record<string, EditPlan> = {
+  "s-01": {
+    sermonId: "s-01",
+    status: "pending_review",
+    revision: 2,
+    revisionsTotal: 3,
+    confidence: 87,
+    qa: "Pass",
+    evidence: "Silence gate at both ends, loudness within target band.",
+    startSec: 8.5,
+    endSec: 2512.3,
+    offsetSec: 0.4,
+  },
+  "s-04": {
+    sermonId: "s-04",
+    status: "pending_review",
+    revision: 1,
+    revisionsTotal: 2,
+    confidence: 72,
+    qa: "Review",
+    evidence: "Low-confidence ending boundary, verify before render.",
+    startSec: 12.0,
+    endSec: 2650.0,
+    offsetSec: -0.3,
+  },
+};
+
 export const completedJobs: Job[] = [
   {
     id: "job-1039",
