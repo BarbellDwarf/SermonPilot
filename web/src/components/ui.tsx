@@ -104,6 +104,19 @@ export function ConfirmDialog({ open, title, body, confirmLabel, onConfirm, onCl
   );
 }
 
+export function Toast({ message }: { message: string | null }) {
+  if (!message) return null;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-4 left-1/2 z-50 w-[min(26rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-line bg-raised px-4 py-3 text-sm font-medium text-mist shadow-lg"
+    >
+      {message}
+    </div>
+  );
+}
+
 export function Meter({ level, state }: { level: number; state: "ok" | "warn" | "error" }) {
   return (
     <div

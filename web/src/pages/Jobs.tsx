@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { activeJobs, completedJobs, failedJobs, type Job } from "../mock/data";
-import { Button, Card, Chip, ConfirmDialog, EmptyState } from "../components/ui";
+import { Button, Card, Chip, ConfirmDialog, EmptyState, Toast } from "../components/ui";
 
 type Tab = "active" | "completed" | "failed";
 
@@ -17,9 +17,12 @@ const stateTone: Record<Job["state"], string> = {
   failed: "error",
 };
 
-function JobRow({ job, onDelete }: { job: Job; onDelete: (j: Job) => void }) {
+type PendingAction = { job: Job; action: "cancel" | "delete" };
+
+function JobRow({ job, onAction }: { job: Job; onAction: (a: PendingAction) => void }) {
   const [open, setOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const fullTitle = `${job.kind} — ${job.sermon}`;
 
   const retry = () => {
     setRetrying(true);
@@ -31,8 +34,13 @@ function JobRow({ job, onDelete }: { job: Job; onDelete: (j: Job) => void }) {
       <Card>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Chip tone={stateTone[job.state]}>{job.state}</Chip>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">{job.kind} — {job.sermon}</p>
+          <div className="min-w-0 flex-1 basis-40">
+            <p className="truncate text-sm font-semibold sm:hidden" title={fullTitle}>
+              {fullTitle}
+            </p>
+            <p className="hidden text-sm font-semibold [overflow-wrap:anywhere] sm:block">
+              {fullTitle}
+            </p>
             <p className="truncate font-mono text-xs text-muted">
               {job.id} · created {job.created}{job.finished ? ` · finished ${job.finished}` : ""} · {job.duration}
             </p>
@@ -47,14 +55,26 @@ function JobRow({ job, onDelete }: { job: Job; onDelete: (j: Job) => void }) {
             >
               {open ? "Hide log" : "View log"}
             </button>
+            {job.state === "running" ? (
+              <Button variant="danger" onClick={() => onAction({ job, action: "cancel" })}>
+                Cancel
+              </Button>
+            ) : null}
+            {job.state === "queued" ? (
+              <Button onClick={() => onAction({ job, action: "cancel" })}>
+                Cancel
+              </Button>
+            ) : null}
             {job.state === "failed" ? (
               <Button onClick={retry} disabled={retrying} aria-busy={retrying}>
                 {retrying ? "Retrying…" : "Retry"}
               </Button>
             ) : null}
-            <Button variant="danger" onClick={() => onDelete(job)}>
-              Delete
-            </Button>
+            {job.state === "done" || job.state === "failed" ? (
+              <Button variant="danger" onClick={() => onAction({ job, action: "delete" })}>
+                Delete
+              </Button>
+            ) : null}
           </div>
         </div>
         {open ? (
@@ -73,13 +93,19 @@ function JobRow({ job, onDelete }: { job: Job; onDelete: (j: Job) => void }) {
 
 export function Jobs() {
   const [tab, setTab] = useState<Tab>("active");
-  const [pendingDelete, setPendingDelete] = useState<Job | null>(null);
-  const [deleted, setDeleted] = useState<string[]>([]);
+  const [pending, setPending] = useState<PendingAction | null>(null);
+  const [removed, setRemoved] = useState<string[]>([]);
+  const [toast, setToast] = useState<string | null>(null);
 
   const visible =
     tab === "active" ? activeJobs : tab === "completed" ? completedJobs : failedJobs;
 
-  const rows = visible.filter((j) => !deleted.includes(j.id));
+  const rows = visible.filter((j) => !removed.includes(j.id));
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 3000);
+  };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
@@ -112,14 +138,13 @@ export function Jobs() {
             >
               {t.label}
               <span
-                className={`rounded-full px-2 py-0.5 font-mono text-xs ${
-                  t.id === "failed" ? "text-danger" : "text-muted"
+                className={`rounded-full border px-2 py-0.5 font-mono text-xs ${
+                  t.id === "failed" ? "border-danger text-danger" : "border-line text-muted"
                 }`}
                 aria-label={`${count} ${t.label.toLowerCase} jobs`}
               >
                 {count}
               </span>
-              {selected ? <span className="h-1.5 w-1.5 rounded-full bg-accent" aria-hidden="true" /> : null}
             </button>
           );
         })}
@@ -139,21 +164,31 @@ export function Jobs() {
       ) : (
         <ol className="flex flex-col gap-3">
           {rows.map((j) => (
-            <JobRow key={j.id} job={j} onDelete={setPendingDelete} />
+            <JobRow key={j.id} job={j} onAction={setPending} />
           ))}
         </ol>
       )}
 
       <ConfirmDialog
-        open={pendingDelete !== null}
-        title="Delete this job record?"
-        body={pendingDelete ? `${pendingDelete.id} (${pendingDelete.kind} — ${pendingDelete.sermon}) will be removed from this mock list. This cannot be undone.` : ""}
-        confirmLabel="Delete"
-        onClose={() => setPendingDelete(null)}
+        open={pending !== null}
+        title={pending?.action === "cancel" ? "Cancel this job?" : "Delete this job record?"}
+        body={
+          pending
+            ? pending.action === "cancel"
+              ? `${pending.job.id} (${pending.job.kind} — ${pending.job.sermon}) will be stopped. This cannot be undone.`
+              : `${pending.job.id} (${pending.job.kind} — ${pending.job.sermon}) will be removed from this mock list. This cannot be undone.`
+            : ""
+        }
+        confirmLabel={pending?.action === "cancel" ? "Cancel job" : "Delete"}
+        onClose={() => setPending(null)}
         onConfirm={() => {
-          if (pendingDelete) setDeleted((d) => [...d, pendingDelete.id]);
+          if (pending) {
+            setRemoved((d) => [...d, pending.job.id]);
+            showToast(pending.action === "cancel" ? `Job ${pending.job.id} cancelled (mock).` : `Job ${pending.job.id} deleted (mock).`);
+          }
         }}
       />
+      <Toast message={toast} />
     </div>
   );
 }
