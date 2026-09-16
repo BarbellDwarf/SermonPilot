@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { activeJobs, completedJobs, failedJobs, type Job } from "../mock/data";
-import { Button, Card, Chip, ConfirmDialog, EmptyState, Toast } from "../components/ui";
+import { Button, Card, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast, useBriefLoading } from "../components/ui";
 
 type Tab = "active" | "completed" | "failed";
 
@@ -96,6 +96,7 @@ export function Jobs() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [removed, setRemoved] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
+  const loading = useBriefLoading();
 
   const visible =
     tab === "active" ? activeJobs : tab === "completed" ? completedJobs : failedJobs;
@@ -116,12 +117,9 @@ export function Jobs() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Jobs</h1>
-        <p className="text-sm text-muted">Every run of the pipeline, with per-job logs.</p>
-      </div>
+      <PageHeader title="Jobs" sub="Every run of the pipeline, with per-job logs." />
 
-      <div role="tablist" aria-label="Job states" onKeyDown={onKeyDown} className="flex gap-1 rounded-lg border border-line bg-surface p-1">
+      <div role="tablist" aria-label="Job states" onKeyDown={onKeyDown} className="flex gap-1 overflow-x-auto rounded-lg border border-line bg-surface p-1">
         {tabs.map((t) => {
           const selected = tab === t.id;
           const count = t.id === "active" ? activeJobs.length : t.id === "completed" ? completedJobs.length : failedJobs.length;
@@ -132,7 +130,7 @@ export function Jobs() {
               role="tab"
               aria-selected={selected}
               onClick={() => setTab(t.id)}
-              className={`flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold transition-colors ${
+              className={`flex min-h-[44px] flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-md px-3 text-sm font-semibold transition-colors ${
                 selected ? "bg-raised text-mist" : "text-muted hover:bg-raised hover:text-mist"
               }`}
             >
@@ -150,7 +148,9 @@ export function Jobs() {
         })}
       </div>
 
-      {rows.length === 0 ? (
+      {loading ? (
+        <SkeletonList rows={3} />
+      ) : rows.length === 0 ? (
         <EmptyState
           title={tab === "failed" ? "No failed jobs" : tab === "active" ? "No active jobs" : "Nothing completed yet"}
           body={

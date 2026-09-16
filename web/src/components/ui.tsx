@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 
@@ -43,6 +43,139 @@ export function Chip({ tone = "neutral", children }: { tone?: keyof typeof chipT
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`rounded-lg border border-line bg-surface p-4 ${className}`}>{children}</div>;
+}
+
+export function PageHeader({
+  title,
+  sub,
+  actions,
+}: {
+  title: string;
+  sub: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="min-w-0">
+        <h1 className="text-2xl font-bold tracking-tight [overflow-wrap:anywhere]">{title}</h1>
+        <p className="mt-0.5 text-sm text-muted">{sub}</p>
+      </div>
+      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+    </div>
+  );
+}
+
+export function SectionCard({
+  n,
+  title,
+  sub,
+  children,
+}: {
+  n?: number;
+  title: string;
+  sub?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section aria-label={title} className="rounded-lg border border-line bg-surface p-4">
+      <div className="flex items-start gap-3">
+        {n !== undefined ? (
+          <span
+            aria-hidden="true"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-raised font-mono text-sm font-bold text-accent"
+          >
+            {n}
+          </span>
+        ) : null}
+        <div className="min-w-0">
+          <h2 className="text-lg font-semibold">{title}</h2>
+          {sub ? <p className="mt-0.5 text-sm text-muted">{sub}</p> : null}
+        </div>
+      </div>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+export const inputCls =
+  "min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 text-sm text-mist placeholder:text-muted";
+export const labelCls = "text-xs font-medium text-muted";
+
+export function Field({ label, htmlFor, children, hint }: { label: string; htmlFor: string; children: ReactNode; hint?: string }) {
+  return (
+    <div className="min-w-0">
+      <label htmlFor={htmlFor} className={labelCls}>
+        {label}
+      </label>
+      <div className="mt-1">{children}</div>
+      {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
+    </div>
+  );
+}
+
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  hint?: string;
+}) {
+  return (
+    <label className="flex min-h-[44px] cursor-pointer items-start gap-3 rounded-md border border-line p-3">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={(e) => {
+          e.preventDefault();
+          onChange(!checked);
+        }}
+        className={`mt-0.5 flex h-6 w-11 shrink-0 items-center rounded-full border border-line p-0.5 transition-colors ${
+          checked ? "justify-end bg-accent" : "justify-start bg-ink"
+        }`}
+      >
+        <span className="h-4 w-4 rounded-full bg-white" aria-hidden="true" />
+      </button>
+      <span className="min-w-0 text-sm">
+        <span className="font-semibold">{label}</span>
+        {hint ? <span className="block text-muted">{hint}</span> : null}
+      </span>
+    </label>
+  );
+}
+
+export function Skeleton({ className = "" }: { className?: string }) {
+  return (
+    <div aria-hidden="true" className={`skeleton-shimmer rounded-md bg-raised ${className}`} />
+  );
+}
+
+export function SkeletonList({ rows = 3 }: { rows?: number }) {
+  return (
+    <div aria-hidden="true" aria-label="Loading" className="flex flex-col gap-3">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="rounded-lg border border-line bg-surface p-4">
+          <Skeleton className="h-4 w-2/5" />
+          <Skeleton className="mt-2 h-4 w-4/5" />
+          <Skeleton className="mt-2 h-3 w-1/3" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function useBriefLoading(delayMs = 650): boolean {
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const t = window.setTimeout(() => setLoading(false), delayMs);
+    return () => window.clearTimeout(t);
+  }, [delayMs]);
+  return loading;
 }
 
 export function EmptyState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
