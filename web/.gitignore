@@ -4,10 +4,13 @@ validation/*
 !validation/phase4b/
 !validation/llm-settings/
 !validation/sa-settings/
+!validation/settings-coverage/
 validation/llm-settings/*
 !validation/llm-settings/*.png
 validation/sa-settings/*
 !validation/sa-settings/*.png
+validation/settings-coverage/*
+!validation/settings-coverage/*.png
 validation/phase4b/*
 !validation/phase4b/r2-live-1680x1050-home.png
 !validation/phase4b/r2-live-1680x1050-detail.png

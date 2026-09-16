@@ -1,6 +1,12 @@
 import { useState } from "react";
+import { AudioSettingsSection } from "../components/AudioSettings";
+import { ConfigBackupSection } from "../components/ConfigBackup";
+import { GeneralSettingsSection } from "../components/GeneralSettings";
 import { LlmConnectionsSection } from "../components/LlmConnections";
+import { PromptTemplatesSection } from "../components/PromptTemplates";
 import { SermonAudioAccountsSection } from "../components/SermonAudioAccounts";
+import { TranscriptionSettingsSection } from "../components/TranscriptionSettings";
+import { ValidationSettingsSection } from "../components/ValidationSettings";
 import {
   Button,
   Chip,
@@ -258,6 +264,12 @@ export function Settings() {
       <AccountSection show={show} />
       <UsersSection show={show} />
       <ProcessingSection show={show} />
+      <GeneralSettingsSection show={show} />
+      <AudioSettingsSection show={show} />
+      <TranscriptionSettingsSection show={show} />
+      <ValidationSettingsSection show={show} />
+      <PromptTemplatesSection show={show} />
+      <ConfigBackupSection show={show} />
       <SermonAudioAccountsSection show={show} />
       <LlmConnectionsSection show={show} />
       <SystemSection show={show} />

@@ -73,8 +73,34 @@ with Retry, live library in the light theme.
 - Phase 2: real routing + backend wiring (New Sermon form, Library data, live job status).
 - Phase 3: auth, settings persistence, upload progress, polish.
 
+## Settings coverage (legacy Streamlit -> web console)
+
+`ui/ui_pages/settings.py` (8 tabs) maps to `src/pages/Settings.tsx` sections as:
+
+- General -> General (processing options + output settings). SermonAudio API
+  key / broadcaster ID from that tab live under SermonAudio Accounts instead.
+- LLM -> LLM Providers (`LlmConnections.tsx`, pre-existing).
+- Embeddings -> INTENTIONALLY OMITTED. Removed by decision; do not rebuild.
+- Audio -> Audio Processing (`AudioSettings.tsx`).
+- Transcription -> Transcription (`TranscriptionSettings.tsx`).
+- Validation -> Validation (`ValidationSettings.tsx`).
+- Advanced (YAML Backup & Restore) -> Config Backup & Restore
+  (`ConfigBackup.tsx`, masked view + mock download/upload-apply + mock
+  history). The SQL Config Manager sub-tab has no web equivalent and is not
+  ported; the mock history list stands in for it.
+- Templates -> Prompt Templates (`PromptTemplates.tsx`).
+
+All new sections are mock state only (per-section save + dirty-state + toast,
+confirms on destructive reset/apply). Captures:
+`web/validation/settings-coverage/desktop-1..3.png`.
+
 ## Roadmap: resumable/interruptible uploads (logged Sep 16, River)
 Multiparty (chunked) uploads for the web console so large sermon files can be PAUSED and RESUMED across interruptions (browser restart, network drop, machine reboot). Server-side session keeps received chunk offsets; client resumes by querying state. Applies to Browser Upload path in New Sermon; Server Path ingest already handles huge files today. NOT started — design when the write-path phase lands.
 
 ## Roadmap: per-user cloud storage mounts (logged Sep 16, River)
 Connect cloud storage (Google Drive, Dropbox, OneDrive, and S3-class all at v1 — including Backblaze B2) through the UI to a USER ACCOUNT: OAuth connect flow, files save to the user's mounted drive alongside SermonAudio upload. Builds on the existing host-side rclone Drive ingest design (W1-W5, v1.8.0) — that one is Tower-host-level (single mount, detect-and-notify); this is per-user in-app mounts at the accounts (P5) phase. NOT started.
+
+## Roadmap: scripture overlay + audio disclaimer (logged Sep 16, River)
+1. SCRIPTURE OVERLAY (automated): when the speaker reads Scripture, fade to a text card showing the exact passage being read (verse lookup via a Bible API — midvash-class or offline public-domain text), paged for long passages, then fade back to the speaker. Builds on existing transcript timestamps + logo-card overlay windows (xfade machinery in auto_edit). Needs: reading-segment detection (LLM + timestamps), verse matching (fuzzy match transcript text -> reference), text-card renderer, review-gate UI for proposed overlays.
+2. AUDIO DISCLAIMER INTRO (optional per-sermon): optional pre-roll text card ('audio issues during recording...') rendered like the ending card — form option in New Sermon, persisted per sermon, rendered at render time.
+NOT started — design at the write-path/render phase.
