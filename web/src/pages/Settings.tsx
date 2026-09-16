@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LlmConnectionsSection } from "../components/LlmConnections";
 import {
   Button,
   Chip,
@@ -220,33 +221,18 @@ function SecretField({ id, label, value, onChange }: { id: string; label: string
   );
 }
 
-function IntegrationsSection({ show }: { show: (m: string) => void }) {
+function SermonAudioSection({ show }: { show: (m: string) => void }) {
   const [saKey, setSaKey] = useState("");
-  const [llmKey, setLlmKey] = useState("");
-  const [llmModel, setLlmModel] = useState("mock-model-a");
   const [saved, setSaved] = useState(false);
-  const dirty = saKey !== "" || llmKey !== "" || llmModel !== "mock-model-a";
   return (
-    <SectionCard title="Integrations" sub="Keys are typed blind and stored masked. Nothing here calls the network.">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <SecretField id="set-sakey" label="SermonAudio API key" value={saKey} onChange={setSaKey} />
-        <SecretField id="set-llmkey" label="LLM provider key" value={llmKey} onChange={setLlmKey} />
-        <Field label="LLM model" htmlFor="set-llmmodel">
-          <select id="set-llmmodel" value={llmModel} onChange={(e) => setLlmModel(e.target.value)} className={inputCls}>
-            {["mock-model-a", "mock-model-b", "mock-model-c"].map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </Field>
-      </div>
+    <SectionCard title="SermonAudio" sub="Upload target key. Typed blind and stored masked. Nothing here calls the network.">
+      <SecretField id="set-sakey" label="SermonAudio API key" value={saKey} onChange={setSaKey} />
       <SaveRow
-        dirty={dirty}
+        dirty={saKey !== ""}
         saved={saved}
         onSave={() => {
           setSaved(true);
-          show("Integration settings saved (mock). Keys stored masked.");
+          show("SermonAudio key saved (mock). Stored masked.");
         }}
       />
     </SectionCard>
@@ -311,7 +297,8 @@ export function Settings() {
       <AccountSection show={show} />
       <UsersSection show={show} />
       <ProcessingSection show={show} />
-      <IntegrationsSection show={show} />
+      <SermonAudioSection show={show} />
+      <LlmConnectionsSection show={show} />
       <SystemSection show={show} />
       <Toast message={toast} />
     </div>
