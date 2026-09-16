@@ -35,7 +35,7 @@ function JobRow({ job, onAction, readOnly, onNotify }: { job: Job; onAction: (a:
   };
 
   return (
-    <li>
+    <li className="min-w-0">
       <Card>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Chip tone={stateTone[job.state]}>{job.state}</Chip>
@@ -187,7 +187,7 @@ export function Jobs() {
           }
         />
       ) : (
-        <ol className="flex flex-col gap-3">
+        <ol className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           {rows.map((j) => (
             <JobRow key={j.id} job={j} onAction={setPending} readOnly={isLive} onNotify={showToast} />
           ))}

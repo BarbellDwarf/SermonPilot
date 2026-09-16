@@ -97,7 +97,7 @@ export function Library() {
           body="Try a different search term, or clear the search to see everything."
         />
       ) : (
-        <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {rows.map((s) => (
             <SermonCard key={s.id} sermon={s} />
           ))}
