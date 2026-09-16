@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { librarySermons, type LibrarySermon, type LibrarySermonStatus } from "../mock/data";
-import { Chip, EmptyState, PageHeader, SkeletonList, useBriefLoading } from "../components/ui";
+import { type LibrarySermon, type LibrarySermonStatus } from "../mock/data";
+import { Chip, EmptyState, PageHeader, SkeletonList } from "../components/ui";
+import { QueryError, useLibrarySermons, type LibrarySort } from "../api/hooks";
+import { isLive } from "../api/client";
 
 export const sermonStatusTone: Record<LibrarySermonStatus, string> = {
   draft: "neutral",
@@ -15,19 +17,11 @@ export const sermonStatusLabel: Record<LibrarySermonStatus, string> = {
   processed: "Processed",
 };
 
-type SortKey = "date" | "title" | "duration";
-
-const sortOptions: { id: SortKey; label: string }[] = [
+const sortOptions: { id: LibrarySort; label: string }[] = [
   { id: "date", label: "Date (newest)" },
   { id: "title", label: "Title (A–Z)" },
   { id: "duration", label: "Duration (longest)" },
 ];
-
-function toSeconds(d: string): number {
-  const parts = d.split(":").map(Number);
-  if (parts.some((n) => !Number.isFinite(n))) return 0;
-  return parts.reduce((acc, n) => acc * 60 + n, 0);
-}
 
 function SermonCard({ sermon }: { sermon: LibrarySermon }) {
   return (
@@ -55,27 +49,12 @@ function SermonCard({ sermon }: { sermon: LibrarySermon }) {
 
 export function Library() {
   const [query, setQuery] = useState("");
-  const [sort, setSort] = useState<SortKey>("date");
-  const loading = useBriefLoading();
-
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const filtered = q
-      ? librarySermons.filter((s) =>
-          [s.title, s.speaker, s.series].some((f) => f.toLowerCase().includes(q)),
-        )
-      : [...librarySermons];
-    filtered.sort((a, b) => {
-      if (sort === "title") return a.title.localeCompare(b.title);
-      if (sort === "duration") return toSeconds(b.duration) - toSeconds(a.duration);
-      return b.date.localeCompare(a.date);
-    });
-    return filtered;
-  }, [query, sort]);
+  const [sort, setSort] = useState<LibrarySort>("date");
+  const { items: rows, isLoading: loading, error, retry } = useLibrarySermons(query, sort);
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Library" sub="Mock teachings with status, search, and sort." />
+      <PageHeader title="Library" sub={isLive ? "Teachings from the live database, with status, search, and sort." : "Mock teachings with status, search, and sort."} />
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <label htmlFor="library-search" className="sr-only">
@@ -95,7 +74,7 @@ export function Library() {
         <select
           id="library-sort"
           value={sort}
-          onChange={(e) => setSort(e.target.value as SortKey)}
+          onChange={(e) => setSort(e.target.value as LibrarySort)}
           className="min-h-[44px] rounded-md border border-line bg-surface px-3 text-sm text-mist"
         >
           {sortOptions.map((o) => (
@@ -108,6 +87,8 @@ export function Library() {
 
       {loading ? (
         <SkeletonList rows={4} />
+      ) : error ? (
+        <QueryError message={error} onRetry={retry} />
       ) : rows.length === 0 ? (
         <EmptyState
           title="No teachings match"

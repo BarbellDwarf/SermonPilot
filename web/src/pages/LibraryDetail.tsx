@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { editPlans, librarySermons } from "../mock/data";
 import { ReviewPanel } from "../components/ReviewPanel";
 import { sermonStatusLabel, sermonStatusTone } from "./Library";
-import { Button, Card, Chip, ConfirmDialog, EmptyState, PageHeader, Toast } from "../components/ui";
+import { Button, Card, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast } from "../components/ui";
+import { QueryError, useSermonDetail, useSermonPlan } from "../api/hooks";
+import { isLive } from "../api/client";
 
 export function LibraryDetail() {
   const { id } = useParams();
@@ -12,13 +13,35 @@ export function LibraryDetail() {
   const [deleted, setDeleted] = useState(false);
   const [pushing, setPushing] = useState(false);
 
-  const sermon = librarySermons.find((s) => s.id === id);
-  const plan = id ? editPlans[id] : undefined;
+  const { data: detail, isLoading, error, retry } = useSermonDetail(id);
+  const { plan, isLoading: planLoading, error: planError, retry: retryPlan } = useSermonPlan(id);
 
   const showToast = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(null), 3000);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-4">
+        <PageHeader title="Teaching" sub="Loading…" />
+        <SkeletonList rows={3} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Link to="/library" className="inline-flex min-h-[44px] w-fit items-center rounded-md px-2 text-sm font-medium text-accent hover:underline">
+          ← Library
+        </Link>
+        <QueryError message={error} onRetry={retry} />
+      </div>
+    );
+  }
+
+  const sermon = detail?.sermon;
 
   if (!sermon) {
     return (
@@ -117,10 +140,17 @@ export function LibraryDetail() {
               </div>
             ))}
           </dl>
+          {detail?.description ? (
+            <p className="mt-3 text-sm text-muted [overflow-wrap:anywhere]">{detail.description}</p>
+          ) : null}
         </Card>
       </section>
 
-      {plan ? (
+      {planLoading ? (
+        <SkeletonList rows={2} />
+      ) : planError ? (
+        <QueryError message={planError} onRetry={retryPlan} />
+      ) : plan ? (
         <ReviewPanel plan={plan} sermonTitle={sermon.title} onToast={showToast} />
       ) : (
         <section aria-labelledby="review-none-h">
@@ -134,10 +164,39 @@ export function LibraryDetail() {
 
       <section aria-labelledby="files-h">
         <h2 id="files-h" className="mb-2 text-lg font-semibold">Files & transcript</h2>
-        <EmptyState
-          title="Nothing attached yet"
-          body="Rendered audio, source media, and the transcript will be listed here in a later phase."
-        />
+        {isLive && detail ? (
+          <Card>
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+              <div className="min-w-0">
+                <dt className="text-xs font-medium uppercase tracking-wide text-muted">Transcript</dt>
+                <dd className="mt-0.5">
+                  {detail.transcriptAvailable
+                    ? `Available (${detail.transcriptLength} characters)`
+                    : "Not transcribed yet"}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-xs font-medium uppercase tracking-wide text-muted">Attached files</dt>
+                <dd className="mt-0.5">{detail.files.length === 0 ? "None" : `${detail.files.length} file(s)`}</dd>
+              </div>
+            </dl>
+            {detail.files.length > 0 ? (
+              <ul className="mt-3 flex flex-col gap-1 font-mono text-xs text-muted">
+                {detail.files.map((f) => (
+                  <li key={`${f.file_type}:${f.file_path}`} className="[overflow-wrap:anywhere]">
+                    {f.file_type} · {f.file_path}
+                    {f.file_size != null ? ` · ${f.file_size} bytes` : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </Card>
+        ) : (
+          <EmptyState
+            title="Nothing attached yet"
+            body="Rendered audio, source media, and the transcript will be listed here in a later phase."
+          />
+        )}
       </section>
 
       <ConfirmDialog

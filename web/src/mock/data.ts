@@ -19,7 +19,7 @@ export interface Sermon {
   updated: string;
 }
 
-export type JobState = "queued" | "running" | "done" | "failed";
+export type JobState = "queued" | "running" | "done" | "failed" | "cancelled";
 
 export interface Job {
   id: string;
