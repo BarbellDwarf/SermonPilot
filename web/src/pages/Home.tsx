@@ -1,5 +1,5 @@
+import { Link } from "react-router-dom";
 import { activeJobs, recentSermons, services, type SermonStatus } from "../mock/data";
-import type { Section } from "../components/Shell";
 import { Button, Card, Chip, EmptyState, Meter } from "../components/ui";
 
 const sermonTone: Record<SermonStatus, string> = {
@@ -9,7 +9,7 @@ const sermonTone: Record<SermonStatus, string> = {
   failed: "error",
 };
 
-export function Home({ onNavigate }: { onNavigate: (s: Section) => void }) {
+export function Home() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -17,9 +17,9 @@ export function Home({ onNavigate }: { onNavigate: (s: Section) => void }) {
           <h1 className="text-2xl font-bold tracking-tight">Home</h1>
           <p className="text-sm text-muted">Pipeline health, active work, and recent teachings.</p>
         </div>
-        <Button variant="primary" onClick={() => onNavigate("new")}>
-          Start new sermon
-        </Button>
+        <Link to="/new">
+          <Button variant="primary">Start new sermon</Button>
+        </Link>
       </div>
 
       <section aria-labelledby="status-h">
@@ -45,19 +45,22 @@ export function Home({ onNavigate }: { onNavigate: (s: Section) => void }) {
       <section aria-labelledby="active-h">
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 id="active-h" className="text-lg font-semibold">Active jobs</h2>
-          <button
-            type="button"
-            onClick={() => onNavigate("jobs")}
+          <Link
+            to="/jobs"
             className="inline-flex min-h-[44px] items-center rounded-md px-2 text-sm font-medium text-accent hover:underline"
           >
             View all
-          </button>
+          </Link>
         </div>
         {activeJobs.length === 0 ? (
           <EmptyState
             title="No jobs running"
             body="Everything is idle. Start a new sermon and it will show up here."
-            action={<Button variant="primary" onClick={() => onNavigate("new")}>Start new sermon</Button>}
+            action={
+              <Link to="/new">
+                <Button variant="primary">Start new sermon</Button>
+              </Link>
+            }
           />
         ) : (
           <ol className="flex flex-col gap-2">
@@ -82,27 +85,29 @@ export function Home({ onNavigate }: { onNavigate: (s: Section) => void }) {
         <EmptyState
           title="Queue is clear"
           body="Nothing is waiting. When jobs pile up, the next three appear here."
-          action={<Button onClick={() => onNavigate("jobs")}>Open Jobs</Button>}
+          action={
+            <Link to="/jobs">
+              <Button>Open Jobs</Button>
+            </Link>
+          }
         />
       </section>
 
       <section aria-labelledby="recent-h">
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 id="recent-h" className="text-lg font-semibold">Recent sermons</h2>
-          <button
-            type="button"
-            onClick={() => onNavigate("library")}
+          <Link
+            to="/library"
             className="inline-flex min-h-[44px] items-center rounded-md px-2 text-sm font-medium text-accent hover:underline"
           >
             Open library
-          </button>
+          </Link>
         </div>
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {recentSermons.map((s) => (
             <li key={s.id}>
-              <button
-                type="button"
-                onClick={() => onNavigate("library")}
+              <Link
+                to={`/library/${s.id}`}
                 aria-label={`${s.title} by ${s.speaker}, status ${s.status}`}
                 className="block w-full rounded-lg border border-line bg-surface p-4 text-left transition-colors hover:border-muted"
               >
@@ -110,9 +115,9 @@ export function Home({ onNavigate }: { onNavigate: (s: Section) => void }) {
                   <Chip tone={sermonTone[s.status]}>{s.status}</Chip>
                   <span className="font-mono text-xs text-muted">{s.duration}</span>
                 </div>
-                <p className="mt-2 truncate text-base font-semibold">{s.title}</p>
+                <p className="mt-2 text-base font-semibold [overflow-wrap:anywhere]">{s.title}</p>
                 <p className="truncate text-sm text-muted">{s.speaker} · {s.updated}</p>
-              </button>
+              </Link>
             </li>
           ))}
         </ul>

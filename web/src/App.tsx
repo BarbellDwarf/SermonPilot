@@ -1,25 +1,33 @@
 import { useEffect, useState } from "react";
-import { Shell, type Section } from "./components/Shell";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { Shell } from "./components/Shell";
 import { Home } from "./pages/Home";
 import { Jobs } from "./pages/Jobs";
-import { Placeholder } from "./pages/Placeholder";
+import { Library } from "./pages/Library";
+import { LibraryDetail } from "./pages/LibraryDetail";
+import { NewSermon } from "./pages/NewSermon";
+import { Settings } from "./pages/Settings";
 
 export function App() {
-  const [section, setSection] = useState<Section>("home");
   const [dark, setDark] = useState(true);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
     document.documentElement.classList.toggle("light", !dark);
-  }, [dark ]);
+  }, [dark]);
 
   return (
-    <Shell section={section} onNavigate={setSection} dark={dark} onToggleTheme={() => setDark((d) => !d)}>
-      {section === "home" ? <Home onNavigate={setSection} /> : null}
-      {section === "jobs" ? <Jobs /> : null}
-      {section === "new" || section === "library" || section === "settings" ? (
-        <Placeholder section={section} onNavigate={setSection} />
-      ) : null}
-    </Shell>
+    <BrowserRouter>
+      <Shell dark={dark} onToggleTheme={() => setDark((d) => !d)}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/new" element={<NewSermon />} />
+          <Route path="/library" element={<Library />} />
+          <Route path="/library/:id" element={<LibraryDetail />} />
+          <Route path="/jobs" element={<Jobs />} />
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </Shell>
+    </BrowserRouter>
   );
 }
