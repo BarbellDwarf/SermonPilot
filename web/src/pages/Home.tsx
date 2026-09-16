@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { type SermonStatus } from "../mock/data";
-import { Button, Card, Chip, EmptyState, Meter, PageHeader, SkeletonList } from "../components/ui";
+import { Card, Chip, EmptyState, Meter, PageHeader, SkeletonList, buttonClass } from "../components/ui";
 import { QueryError, useHomeData } from "../api/hooks";
 
 const sermonTone: Record<SermonStatus, string> = {
@@ -12,15 +12,15 @@ const sermonTone: Record<SermonStatus, string> = {
 
 export function Home() {
   const { data, isLoading: loading, error, retry } = useHomeData();
-  const { services, activeJobs, recentSermons } = data;
+  const { services, activeJobs, recentSermons, upNext } = data;
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Home"
         sub="Pipeline health, active work, and recent teachings."
         actions={
-          <Link to="/new">
-            <Button variant="primary">Start new sermon</Button>
+          <Link to="/new" className={buttonClass("primary")}>
+            Start new sermon
           </Link>
         }
       />
@@ -62,8 +62,8 @@ export function Home() {
             title="No jobs running"
             body="Everything is idle. Start a new sermon and it will show up here."
             action={
-              <Link to="/new">
-                <Button variant="primary">Start new sermon</Button>
+              <Link to="/new" className={buttonClass("primary")}>
+                Start new sermon
               </Link>
             }
           />
@@ -89,15 +89,31 @@ export function Home() {
 
       <section aria-labelledby="queue-h">
         <h2 id="queue-h" className="mb-2 text-lg font-semibold">Up next</h2>
-        <EmptyState
-          title="Queue is clear"
-          body="Nothing is waiting. When jobs pile up, the next three appear here."
-          action={
-            <Link to="/jobs">
-              <Button>Open Jobs</Button>
-            </Link>
-          }
-        />
+        {upNext.length === 0 ? (
+          <EmptyState
+            title="Queue is clear"
+            body="Nothing is waiting. When jobs pile up, the next three appear here."
+            action={
+              <Link to="/jobs" className={buttonClass()}>
+                Open Jobs
+              </Link>
+            }
+          />
+        ) : (
+          <ol className="flex flex-col gap-2">
+            {upNext.map((j) => (
+              <li key={j.id}>
+                <Card className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <Chip tone="neutral">{j.state}</Chip>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{j.kind}</p>
+                    <p className="truncate font-mono text-xs text-muted">{j.id} · {j.sermon} · since {j.created}</p>
+                  </div>
+                </Card>
+              </li>
+            ))}
+          </ol>
+        )}
       </section>
 
       <section aria-labelledby="recent-h">

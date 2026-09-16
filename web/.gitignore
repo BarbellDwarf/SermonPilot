@@ -1,2 +1,9 @@
 node_modules/
 dist/
+validation/*
+!validation/phase4b/
+validation/phase4b/*
+!validation/phase4b/r2-live-1680x1050-home.png
+!validation/phase4b/r2-live-1680x1050-detail.png
+!validation/phase4b/r2-live-1680x1050-jobs-failed.png
+!validation/phase4b/r2-live-1680x1050-library-light.png
