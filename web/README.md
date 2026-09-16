@@ -72,3 +72,9 @@ with Retry, live library in the light theme.
 - Phase 1 (this): scaffold, tokens, shell (sidebar + mobile drawer), Home + Jobs screens, placeholders for New Sermon / Library / Settings. All mock data in `src/mock/data.ts`.
 - Phase 2: real routing + backend wiring (New Sermon form, Library data, live job status).
 - Phase 3: auth, settings persistence, upload progress, polish.
+
+## Roadmap: resumable/interruptible uploads (logged Sep 16, the operator)
+Multiparty (chunked) uploads for the web console so large sermon files can be PAUSED and RESUMED across interruptions (browser restart, network drop, machine reboot). Server-side session keeps received chunk offsets; client resumes by querying state. Applies to Browser Upload path in New Sermon; Server Path ingest already handles huge files today. NOT started — design when the write-path phase lands.
+
+## Roadmap: per-user cloud storage mounts (logged Sep 16, the operator)
+Connect cloud storage (Google Drive, Dropbox, OneDrive, and S3-class all at v1 — including Backblaze B2) through the UI to a USER ACCOUNT: OAuth connect flow, files save to the user's mounted drive alongside SermonAudio upload. Builds on the existing host-side rclone Drive ingest design (W1-W5, v1.8.0) — that one is Tower-host-level (single mount, detect-and-notify); this is per-user in-app mounts at the accounts (P5) phase. NOT started.
