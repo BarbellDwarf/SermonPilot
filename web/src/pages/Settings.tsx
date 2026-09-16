@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { LlmConnectionsSection } from "../components/LlmConnections";
+import { SermonAudioAccountsSection } from "../components/SermonAudioAccounts";
 import {
   Button,
   Chip,
@@ -199,46 +200,6 @@ function ProcessingSection({ show }: { show: (m: string) => void }) {
   );
 }
 
-function SecretField({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (v: string) => void }) {
-  const [showKey, setShowKey] = useState(false);
-  return (
-    <Field label={label} htmlFor={id} hint="Stored masked. Only the last 4 characters ever display.">
-      <div className="flex gap-2">
-        <input
-          id={id}
-          type={showKey ? "text" : "password"}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="••••••••"
-          autoComplete="new-password"
-          className={`${inputCls} font-mono`}
-        />
-        <Button onClick={() => setShowKey((s) => !s)} aria-pressed={showKey} aria-label={showKey ? `Hide ${label}` : `Show ${label}`}>
-          {showKey ? "Hide" : "Show"}
-        </Button>
-      </div>
-    </Field>
-  );
-}
-
-function SermonAudioSection({ show }: { show: (m: string) => void }) {
-  const [saKey, setSaKey] = useState("");
-  const [saved, setSaved] = useState(false);
-  return (
-    <SectionCard title="SermonAudio" sub="Upload target key. Typed blind and stored masked. Nothing here calls the network.">
-      <SecretField id="set-sakey" label="SermonAudio API key" value={saKey} onChange={setSaKey} />
-      <SaveRow
-        dirty={saKey !== ""}
-        saved={saved}
-        onSave={() => {
-          setSaved(true);
-          show("SermonAudio key saved (mock). Stored masked.");
-        }}
-      />
-    </SectionCard>
-  );
-}
-
 function SystemSection({ show }: { show: (m: string) => void }) {
   const [logLevel, setLogLevel] = useState("info");
   const [savedLevel, setSavedLevel] = useState("info");
@@ -297,7 +258,7 @@ export function Settings() {
       <AccountSection show={show} />
       <UsersSection show={show} />
       <ProcessingSection show={show} />
-      <SermonAudioSection show={show} />
+      <SermonAudioAccountsSection show={show} />
       <LlmConnectionsSection show={show} />
       <SystemSection show={show} />
       <Toast message={toast} />
