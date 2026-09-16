@@ -28,7 +28,7 @@ export default {
         xl: "var(--radius-xl)",
       },
       maxWidth: {
-        shell: "70rem",
+        shell: "112.5rem",
       },
     },
   },

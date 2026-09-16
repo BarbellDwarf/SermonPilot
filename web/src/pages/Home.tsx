@@ -29,7 +29,7 @@ export function Home() {
 
       <section aria-labelledby="status-h">
         <h2 id="status-h" className="mb-2 text-lg font-semibold">System status</h2>
-        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {services.map((s) => (
             <li key={s.id}>
               <Card className="flex items-center gap-4">
@@ -126,7 +126,7 @@ export function Home() {
             Open library
           </Link>
         </div>
-        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {loading ? (
             <li className="col-span-full">
               <SkeletonList rows={2} />

@@ -61,7 +61,7 @@ export function Shell({ dark, onToggleTheme, children }: ShellProps) {
         Skip to content
       </a>
       <header className="sticky top-0 z-30 border-b border-line bg-ink/95 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-shell items-center gap-2 px-4">
+        <div className="mx-auto flex h-16 max-w-shell items-center gap-2 px-4 lg:px-8">
           <button
             type="button"
             className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted hover:bg-raised hover:text-mist md:hidden"
@@ -104,7 +104,7 @@ export function Shell({ dark, onToggleTheme, children }: ShellProps) {
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-shell items-stretch gap-6 px-4 py-6">
+      <div className="mx-auto flex max-w-shell items-stretch gap-6 px-4 py-6 lg:px-8">
         <nav aria-label="Sections" className="sticky top-24 hidden h-fit w-52 shrink-0 flex-col gap-1 md:flex">
           {items.map((i) => link(i.to, i.end, i.label, i.path))}
         </nav>

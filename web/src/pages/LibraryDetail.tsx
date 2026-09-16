@@ -141,7 +141,7 @@ export function LibraryDetail() {
             ))}
           </dl>
           {detail?.description ? (
-            <p className="mt-3 text-sm text-muted [overflow-wrap:anywhere]">{detail.description}</p>
+            <p className="mt-3 max-w-prose text-sm text-muted [overflow-wrap:anywhere]">{detail.description}</p>
           ) : null}
         </Card>
       </section>

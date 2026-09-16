@@ -114,7 +114,7 @@ export function ReviewPanel({ plan: initial, sermonTitle, onToast }: ReviewPanel
           <span className="font-mono text-xs text-muted">confidence {plan.confidence}%</span>
           <Chip tone={plan.qa === "Pass" ? "ok" : "warn"}>QA: {plan.qa}</Chip>
         </div>
-        <p className="mt-2 text-sm text-muted">{plan.evidence}</p>
+        <p className="mt-2 max-w-prose text-sm text-muted">{plan.evidence}</p>
         {history.length > 0 ? (
           <p className="mt-1 font-mono text-xs text-muted">{history.join(" · ")}</p>
         ) : null}
@@ -230,7 +230,7 @@ export function ReviewPanel({ plan: initial, sermonTitle, onToast }: ReviewPanel
 
       <Card>
         <p className="text-sm font-semibold">Restore original</p>
-        <p className="mt-1 text-sm text-muted">
+        <p className="mt-1 max-w-prose text-sm text-muted">
           Discards every applied cut for this teaching and keeps the unedited source. This cannot be undone.
         </p>
         <div className="mt-3">
