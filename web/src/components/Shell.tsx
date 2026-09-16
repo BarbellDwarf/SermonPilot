@@ -1,13 +1,14 @@
+import { NavLink } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 
 export type Section = "home" | "new" | "library" | "jobs" | "settings";
 
-const items: { id: Section; label: string; path: string }[] = [
-  { id: "home", label: "Home", path: "M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z" },
-  { id: "new", label: "New Sermon", path: "M12 5v14M5 12h14" },
-  { id: "library", label: "Library", path: "M4 5h7v14H4zM13 5h7v14h-7z" },
-  { id: "jobs", label: "Jobs", path: "M4 6h16M4 12h16M4 18h16" },
-  { id: "settings", label: "Settings", path: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 12h2M18 12h2M12 4v2M12 18v2" },
+const items: { to: string; end?: boolean; label: string; path: string }[] = [
+  { to: "/", end: true, label: "Home", path: "M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z" },
+  { to: "/new", label: "New Sermon", path: "M12 5v14M5 12h14" },
+  { to: "/library", label: "Library", path: "M4 5h7v14H4zM13 5h7v14h-7z" },
+  { to: "/jobs", label: "Jobs", path: "M4 6h16M4 12h16M4 18h16" },
+  { to: "/settings", label: "Settings", path: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 12h2M18 12h2M12 4v2M12 18v2" },
 ];
 
 function Icon({ path }: { path: string }) {
@@ -19,14 +20,12 @@ function Icon({ path }: { path: string }) {
 }
 
 interface ShellProps {
-  section: Section;
-  onNavigate: (s: Section) => void;
   dark: boolean;
   onToggleTheme: () => void;
   children: ReactNode;
 }
 
-export function Shell({ section, onNavigate, dark, onToggleTheme, children }: ShellProps) {
+export function Shell({ dark, onToggleTheme, children }: ShellProps) {
   const [drawer, setDrawer] = useState(false);
 
   useEffect(() => {
@@ -36,30 +35,24 @@ export function Shell({ section, onNavigate, dark, onToggleTheme, children }: Sh
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [drawer ]);
+  }, [drawer]);
 
-  const go = (s: Section) => {
-    onNavigate(s);
-    setDrawer(false);
-  };
-
-  const link = (id: Section, label: string, path: string) => {
-    const active = section === id;
-    return (
-      <button
-        key={id}
-        type="button"
-        onClick={() => go(id)}
-        aria-current={active ? "page" : undefined}
-        className={`flex min-h-[44px] w-full items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors ${
-          active ? "bg-raised text-mist" : "text-muted hover:bg-raised hover:text-mist"
-        }`}
-      >
-        <Icon path={path} />
-        {label}
-      </button>
-    );
-  };
+  const link = (to: string, end: boolean | undefined, label: string, path: string) => (
+    <NavLink
+      key={to}
+      to={to}
+      end={end}
+      onClick={() => setDrawer(false)}
+      className={({ isActive }) =>
+        `flex min-h-[44px] w-full items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors ${
+          isActive ? "bg-raised text-mist" : "text-muted hover:bg-raised hover:text-mist"
+        }`
+      }
+    >
+      <Icon path={path} />
+      {label}
+    </NavLink>
+  );
 
   return (
     <div className="min-h-screen bg-ink text-mist">
@@ -110,7 +103,7 @@ export function Shell({ section, onNavigate, dark, onToggleTheme, children }: Sh
 
       <div className="mx-auto flex max-w-shell items-stretch gap-6 px-4 py-6">
         <nav aria-label="Sections" className="sticky top-24 hidden h-fit w-52 shrink-0 flex-col gap-1 md:flex">
-          {items.map((i) => link(i.id, i.label, i.path))}
+          {items.map((i) => link(i.to, i.end, i.label, i.path))}
         </nav>
         <main id="main" className="min-w-0 flex-1">
           {children}
@@ -134,7 +127,7 @@ export function Shell({ section, onNavigate, dark, onToggleTheme, children }: Sh
                 </svg>
               </button>
             </div>
-            {items.map((i) => link(i.id, i.label, i.path))}
+            {items.map((i) => link(i.to, i.end, i.label, i.path))}
           </nav>
         </div>
       ) : null}
