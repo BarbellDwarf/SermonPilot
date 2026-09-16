@@ -2,6 +2,9 @@ node_modules/
 dist/
 validation/*
 !validation/phase4b/
+!validation/llm-settings/
+validation/llm-settings/*
+!validation/llm-settings/*.png
 validation/phase4b/*
 !validation/phase4b/r2-live-1680x1050-home.png
 !validation/phase4b/r2-live-1680x1050-detail.png
