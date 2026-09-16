@@ -272,3 +272,22 @@ def test_spa_fallback_serves_index(client: TestClient) -> None:
         response = client.get(path)
         assert response.status_code == 200, path
         assert "text/html" in response.headers["content-type"], path
+
+
+def test_app_boots_via_asgi_transport(fixture_db: str) -> None:
+    import asyncio
+
+    import httpx
+
+    from server.api.app import app
+
+    async def go() -> httpx.Response:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as ac:
+            return await ac.get("/api/health")
+
+    response = asyncio.run(go())
+    assert response.status_code == 200
+    assert response.json()["ok"] is True

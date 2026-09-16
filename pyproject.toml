@@ -37,7 +37,7 @@ dependencies = [
     "voyageai>=0.2.0",
     # Web API bridge (read-only FastAPI + SPA static serving)
     "fastapi>=0.115.0",
-    "uvicorn>=0.30.0",
+    "uvicorn[standard]>=0.30.0",
     "httpx>=0.27.0",
     # UI and analytics
     "streamlit>=1.36.0",
