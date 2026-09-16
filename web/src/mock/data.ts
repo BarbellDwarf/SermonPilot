@@ -69,7 +69,7 @@ export const recentSermons: Sermon[] = [
   { id: "s-04", title: "Sample Teaching 4", speaker: "Speaker A", duration: "44:37", status: "failed", updated: "Yesterday 15:03" },
 ];
 
-export type LibrarySermonStatus = "draft" | "rendered" | "processed";
+export type LibrarySermonStatus = "draft" | "rendered" | "processed" | "failed";
 
 export interface LibrarySermon {
   id: string;

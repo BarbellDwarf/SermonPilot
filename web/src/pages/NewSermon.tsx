@@ -161,6 +161,7 @@ export function NewSermon() {
                 pickMockFile();
               }}
               onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return;
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   pickMockFile();
@@ -177,7 +178,13 @@ export function NewSermon() {
                 {fileName ?? "Drag a file here or choose one"}
               </p>
               <p className="text-xs text-muted">Files stay local in this mock. Nothing is uploaded.</p>
-              <Button variant="primary" onClick={pickMockFile}>
+              <Button
+                variant="primary"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  pickMockFile();
+                }}
+              >
                 {fileName ? "Replace file" : "Choose file"}
               </Button>
             </div>

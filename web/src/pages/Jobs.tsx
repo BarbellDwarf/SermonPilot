@@ -22,7 +22,7 @@ const stateTone: Record<Job["state"], string> = {
 
 type PendingAction = { job: Job; action: "cancel" | "delete" };
 
-function JobRow({ job, onAction, readOnly }: { job: Job; onAction: (a: PendingAction) => void; readOnly: boolean }) {
+function JobRow({ job, onAction, readOnly, onNotify }: { job: Job; onAction: (a: PendingAction) => void; readOnly: boolean; onNotify: (msg: string) => void }) {
   const [open, setOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const fullTitle = `${job.kind} — ${job.sermon}`;
@@ -60,7 +60,13 @@ function JobRow({ job, onAction, readOnly }: { job: Job; onAction: (a: PendingAc
             >
               {open ? "Hide log" : "View log"}
             </button>
-            {readOnly ? null : (
+            {readOnly ? (
+              job.state === "failed" ? (
+                <Button onClick={() => onNotify("Retry is unavailable in the read-only bridge.")}>
+                  Retry
+                </Button>
+              ) : null
+            ) : (
               <>
                 {job.state === "running" ? (
                   <Button variant="danger" onClick={() => onAction({ job, action: "cancel" })}>
@@ -183,7 +189,7 @@ export function Jobs() {
       ) : (
         <ol className="flex flex-col gap-3">
           {rows.map((j) => (
-            <JobRow key={j.id} job={j} onAction={setPending} readOnly={isLive} />
+            <JobRow key={j.id} job={j} onAction={setPending} readOnly={isLive} onNotify={showToast} />
           ))}
         </ol>
       )}

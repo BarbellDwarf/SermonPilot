@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
+import { isLive } from "../api/client";
 
 export type Section = "home" | "new" | "library" | "jobs" | "settings";
 
@@ -77,7 +78,9 @@ export function Shell({ dark, onToggleTheme, children }: ShellProps) {
               SP
             </span>
             <span className="text-base font-bold tracking-tight">SermonPilot</span>
-            <span className="hidden rounded border border-line px-1.5 py-0.5 font-mono text-xs text-muted sm:inline">mock</span>
+            <span className="hidden rounded border border-line px-1.5 py-0.5 font-mono text-xs text-muted sm:inline" title={isLive ? "Live data from the API bridge" : "Mock data, no backend"}>
+              {isLive ? "live" : "mock"}
+            </span>
           </div>
           <div className="ml-auto">
             <button

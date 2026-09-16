@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ReviewPanel } from "../components/ReviewPanel";
 import { sermonStatusLabel, sermonStatusTone } from "./Library";
-import { Button, Card, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast } from "../components/ui";
+import { Button, Card, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast, buttonClass } from "../components/ui";
 import { QueryError, useSermonDetail, useSermonPlan } from "../api/hooks";
 import { isLive } from "../api/client";
 
@@ -50,8 +50,8 @@ export function LibraryDetail() {
           title="Teaching not found"
           body="This mock library has only a handful of sample teachings. The link may be stale."
           action={
-            <Link to="/library">
-              <Button variant="primary">Back to Library</Button>
+            <Link to="/library" className={buttonClass("primary")}>
+              Back to Library
             </Link>
           }
         />
@@ -66,8 +66,8 @@ export function LibraryDetail() {
           title="Teaching deleted"
           body={`“${sermon.title}” was removed from this mock list. Nothing was uploaded or lost.`}
           action={
-            <Link to="/library">
-              <Button variant="primary">Back to Library</Button>
+            <Link to="/library" className={buttonClass("primary")}>
+              Back to Library
             </Link>
           }
         />

@@ -9,12 +9,14 @@ export const sermonStatusTone: Record<LibrarySermonStatus, string> = {
   draft: "neutral",
   rendered: "warn",
   processed: "ok",
+  failed: "error",
 };
 
 export const sermonStatusLabel: Record<LibrarySermonStatus, string> = {
   draft: "Draft",
   rendered: "Rendered — not uploaded",
   processed: "Processed",
+  failed: "Failed",
 };
 
 const sortOptions: { id: LibrarySort; label: string }[] = [

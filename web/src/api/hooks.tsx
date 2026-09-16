@@ -66,7 +66,14 @@ export function toEditPlan(p: ApiEditPlan): EditPlan {
 }
 
 export function toLibrarySermon(s: ApiSermonListItem): LibrarySermon {
-  const status = s.status === "draft" ? "draft" : s.status === "processed" ? "processed" : "rendered";
+  const status =
+    s.status === "draft"
+      ? "draft"
+      : s.status === "processed"
+        ? "processed"
+        : s.status === "error"
+          ? "failed"
+          : "rendered";
   return {
     id: s.id,
     title: s.title || "(untitled)",
@@ -93,11 +100,21 @@ export function toJob(j: ApiJob, logs: string[] = []): Job {
     kind: j.title || j.type,
     sermon: j.description || j.type,
     state: JOB_STATE_MAP[j.status] ?? "queued",
-    created: j.created_at ?? "—",
-    finished: j.completed_at,
+    created: fmtStamp(j.created_at),
+    finished: j.completed_at ? fmtStamp(j.completed_at) : null,
     duration: j.duration,
     log: logs,
   };
+}
+
+function fmtStamp(value: string | null): string {
+  if (!value || value === "—") return "—";
+  const parsed = new Date(value.replace(" ", "T"));
+  if (Number.isNaN(parsed.getTime())) return value;
+  const date = parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return date;
+  const time = parsed.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+  return `${date}, ${time}`;
 }
 
 export function useLibrarySermons(query: string, sort: LibrarySort) {
@@ -262,6 +279,7 @@ export interface HomeData {
   services: ServiceStatus[];
   activeJobs: Job[];
   recentSermons: Sermon[];
+  upNext: Job[];
 }
 
 const SERMON_STATUS_MAP: Record<string, SermonStatus> = {
@@ -278,7 +296,7 @@ function toRecentSermon(s: ApiSermonListItem): Sermon {
     speaker: s.speaker || "Unknown speaker",
     duration: s.duration,
     status: SERMON_STATUS_MAP[s.status] ?? "processing",
-    updated: s.date,
+    updated: fmtStamp(s.date),
   };
 }
 
@@ -311,7 +329,12 @@ export function useHomeData() {
     staleTime: 15_000,
   });
   const mock = useMemo(
-    () => ({ services, activeJobs, recentSermons }),
+    () => ({
+      services,
+      activeJobs,
+      recentSermons,
+      upNext: activeJobs.filter((j) => j.state === "queued").slice(0, 3),
+    }),
     [],
   );
 
@@ -332,6 +355,7 @@ export function useHomeData() {
     services: servicesLive,
     activeJobs: allJobs.filter((j) => j.state === "queued" || j.state === "running"),
     recentSermons: (sermonsQuery.data?.items ?? []).slice(0, 4).map(toRecentSermon),
+    upNext: allJobs.filter((j) => j.state === "queued").slice(0, 3),
   };
   const isLoading = statusQuery.isPending || jobsQuery.isPending || sermonsQuery.isPending;
   const isError = statusQuery.isError || jobsQuery.isError || sermonsQuery.isError;

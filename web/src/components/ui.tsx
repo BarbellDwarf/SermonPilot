@@ -13,11 +13,15 @@ const variants: Record<ButtonVariant, string> = {
   ghost: "bg-transparent text-muted border border-transparent hover:text-mist hover:bg-raised",
 };
 
+export function buttonClass(variant: ButtonVariant = "secondary", extra = ""): string {
+  return `inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-colors ${variants[variant]} ${extra}`;
+}
+
 export function Button({ variant = "secondary", className = "", type = "button", ...rest }: ButtonProps) {
   return (
     <button
       type={type}
-      className={`inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${variants[variant]} ${className}`}
+      className={`${buttonClass(variant)} disabled:cursor-not-allowed disabled:opacity-45 ${className}`}
       {...rest}
     />
   );

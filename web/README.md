@@ -4,17 +4,58 @@ Mock-first rebuild of the SermonPilot UI. The Streamlit app stays live; everythi
 
 ## Stack
 
-React 18 + Vite 5 + TypeScript (strict) + Tailwind CSS 3 + shadcn-style local primitives (`src/components/ui.tsx`). No backend, no network calls in this phase. State-based routing, placeholder content only.
+React 18 + Vite 5 + TypeScript (strict) + Tailwind CSS 3 + shadcn-style local primitives (`src/components/ui.tsx`) + TanStack Query. React Router routes; mock data in `src/mock/data.ts`, live data via the read-only FastAPI bridge (`server/api/`).
 
-## Commands
+## Modes
+
+The app builds twice from the same source. The mode is baked in at build time via
+`VITE_API_MODE` (`mock` default, `live` optional) and `VITE_API_BASE`:
 
 ```bash
 cd web
-npm install
-npm run dev      # local preview
-npm run build    # tsc --noEmit + vite build
-npm run preview  # serve the build
+npm run build                                            # mock bundle into dist/
+VITE_API_MODE=live VITE_API_BASE=http://127.0.0.1:8504 npm run build   # live bundle
 ```
+
+- **Mock mode** (`npx vite preview --port 4173`): all data from `src/mock/data.ts`,
+  brief artificial loading, local-only actions with `(mock)` toasts and confirms.
+- **Live mode** (FastAPI bridge serves the live bundle + `/api/*` on port 8504):
+  read-only TanStack Query hooks (`src/api/hooks.tsx`, 5–15 s staleTime, 5 s jobs
+  poll). Mutating actions stay hidden; the failed-job Retry explains the read-only
+  bridge via toast. The header badge reads `live` or `mock` accordingly.
+
+## Validation
+
+Phase 4b harness (headless Chrome over CDP, viewports 1680x1050 and 390x844):
+
+```bash
+# fixture DB with fictional rows only (Sample Teaching 1..5, one failed job,
+# one applied_local plan)
+.venv/bin/python /tmp/opencode/phase4b_fixture.py  # writes /tmp/opencode/phase4b_fixture.db
+SERMONPILOT_DB=/tmp/opencode/phase4b_fixture.db PORT=8504 \
+  .venv/bin/python -m uvicorn server.api.app:app --host 127.0.0.1 --port 8504
+```
+
+What was checked per page (`/`, `/library`, `/library/:id`, `/jobs`, `/new`,
+`/settings`, both modes, both widths):
+
+- Zero horizontal overflow (`scrollingElement.scrollWidth <= innerWidth` at 390px).
+- Tap targets: every button/link ≥ 44px (radios/switches measured by their
+  full-row label, which is the real hit area); skip-link exempt.
+- Keyboard: every interactive element `.focus()`-reachable, no positive
+  `tabindex`, visible `:focus-visible` ring from the accent token.
+- Contrast: every text token vs its backgrounds from computed CSS vars, dark and
+  light themes (AA 4.5+; this pass darkened light-theme `--warn` to `#8a5a05`).
+- Empty states: library no-match, jobs tabs, home queue, missing plan, missing
+  transcript/files all render directive copy with a next action.
+- Interactions: live search/sort filter, job tabs + failed Retry toast, review
+  form parses `mm:ss.s` and seconds with live duration + blocking errors, mock
+  approve transitions plan state, toasts appear, confirms block, drawer opens at
+  390px, deep link `/library/:id` loads directly in live mode.
+
+Full captures land in `web/validation/phase4b/` (gitignored); four representative
+shots are committed: live home, live detail (applied_local plan), live failed job
+with Retry, live library in the light theme.
 
 ## Design tokens
 
