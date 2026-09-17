@@ -89,24 +89,152 @@ export interface ApiStatus {
   checked_at: string;
 }
 
-async function get<T>(path: string, params?: Record<string, string | number>): Promise<T> {
+export interface AuthUser {
+  id: string;
+  username: string;
+  display_name: string;
+  role: string;
+  is_active: boolean;
+}
+
+export interface LoginResult {
+  token: string;
+  user: AuthUser;
+}
+
+export const TOKEN_KEY = "sp_token";
+
+export function getToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setToken(token: string): void {
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+  }
+}
+
+export function clearToken(): void {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+  }
+}
+
+export class AuthError extends Error {
+  needsBootstrap: boolean;
+  constructor(message: string, needsBootstrap: boolean) {
+    super(message);
+    this.needsBootstrap = needsBootstrap;
+  }
+}
+
+function authHeaders(extra?: HeadersInit): Record<string, string> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (extra) {
+    for (const [k, v] of new Headers(extra).entries()) headers[k] = v;
+  }
+  if (isLive) {
+    const token = getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+async function parseNeedsBootstrap(res: Response): Promise<boolean> {
+  try {
+    const body = (await res.clone().json()) as {
+      detail?: string | { needs_bootstrap?: boolean };
+    };
+    if (body && typeof body.detail === "object") return body.detail.needs_bootstrap === true;
+  } catch {
+  }
+  return false;
+}
+
+export async function authFetch(path: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: authHeaders(init?.headers),
+  });
+  if (res.status === 401 && isLive) {
+    const needsBootstrap = await parseNeedsBootstrap(res);
+    clearToken();
+    throw new AuthError("authentication required", needsBootstrap);
+  }
+  return res;
+}
+
+async function authed<T>(path: string, params?: Record<string, string | number>): Promise<T> {
   const qs = params
     ? `?${new URLSearchParams(
         Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])),
       ).toString()}`
     : "";
-  const res = await fetch(`${BASE}${path}${qs}`, { headers: { Accept: "application/json" } });
+  const res = await authFetch(`${path}${qs}`, { headers: { Accept: "application/json" } });
   if (!res.ok) {
     throw new Error(`GET ${path} failed with ${res.status}`);
   }
   return (await res.json()) as T;
 }
 
+const MOCK_USER: AuthUser = {
+  id: "mock-admin",
+  username: "admin",
+  display_name: "Admin",
+  role: "admin",
+  is_active: true,
+};
+
+export const auth = {
+  me: async (): Promise<AuthUser> => {
+    if (!isLive) return MOCK_USER;
+    const res = await authFetch("/api/auth/me");
+    if (!res.ok) throw new Error(`GET /api/auth/me failed with ${res.status}`);
+    return (await res.json()) as AuthUser;
+  },
+  login: async (username: string, password: string): Promise<LoginResult> => {
+    if (!isLive) return { token: "mock-token", user: MOCK_USER };
+    const res = await fetch(`${BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    if (res.status === 401) throw new AuthError("Invalid username or password.", false);
+    if (!res.ok) throw new Error(`Login failed with ${res.status}`);
+    const data = (await res.json()) as LoginResult;
+    setToken(data.token);
+    return data;
+  },
+  bootstrap: async (): Promise<AuthUser> => {
+    const res = await fetch(`${BASE}/api/auth/bootstrap`, {
+      method: "POST",
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) throw new Error(`Bootstrap failed with ${res.status}`);
+    return (await res.json()) as AuthUser;
+  },
+  logout: async (): Promise<void> => {
+    if (isLive) {
+      try {
+        await authFetch("/api/auth/logout", { method: "POST" });
+      } catch {
+      }
+    }
+    clearToken();
+  },
+};
+
 export const api = {
-  sermons: (params?: { search?: string; sort?: string }) => get<ApiSermonList>("/api/sermons", params),
-  sermon: (id: string) => get<ApiSermonDetail>(`/api/sermons/${encodeURIComponent(id)}`),
-  plan: (id: string) => get<ApiSermonPlan>(`/api/sermons/${encodeURIComponent(id)}/plan`),
-  jobs: (params?: { status?: string; limit?: number }) => get<ApiJobList>("/api/jobs", params),
-  job: (id: string) => get<ApiJobDetail>(`/api/jobs/${encodeURIComponent(id)}`),
-  status: () => get<ApiStatus>("/api/status"),
+  sermons: (params?: { search?: string; sort?: string }) => authed<ApiSermonList>("/api/sermons", params),
+  sermon: (id: string) => authed<ApiSermonDetail>(`/api/sermons/${encodeURIComponent(id)}`),
+  plan: (id: string) => authed<ApiSermonPlan>(`/api/sermons/${encodeURIComponent(id)}/plan`),
+  jobs: (params?: { status?: string; limit?: number }) => authed<ApiJobList>("/api/jobs", params),
+  job: (id: string) => authed<ApiJobDetail>(`/api/jobs/${encodeURIComponent(id)}`),
+  status: () => authed<ApiStatus>("/api/status"),
 };
