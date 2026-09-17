@@ -325,3 +325,32 @@ export const writeApi = {
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/upload`, "POST"),
   cancelJob: (id: string) => send<{ cancelled: boolean; job_id: string }>(`/api/jobs/${encodeURIComponent(id)}/cancel`, "POST"),
 };
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  display_name: string;
+  role: string;
+  is_active: boolean;
+  email?: string | null;
+}
+
+export const adminApi = {
+  listUsers: () => send<{ users: AdminUser[] }>("/api/admin/users", "GET"),
+  createUser: (body: { username: string; display_name: string; password: string; role: string }) =>
+    send<AdminUser>("/api/admin/users", "POST", body),
+  patchUser: (id: string, body: { is_active?: boolean; role?: string; new_password?: string }) =>
+    send<AdminUser>(`/api/admin/users/${encodeURIComponent(id)}`, "PATCH", body),
+};
+
+export interface MeFile {
+  name: string;
+  type: string;
+  size: number | null;
+}
+
+export const filesApi = {
+  list: () => send<{ items: MeFile[]; root: string }>("/api/me/files", "GET"),
+  downloadUrl: (path: string) =>
+    `${BASE}/api/me/files/download?path=${encodeURIComponent(path)}`,
+};

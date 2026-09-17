@@ -20,7 +20,12 @@ from server.api.accounts import migrate
 from server.api.routers.jobs import router as jobs_router
 from server.api.routers.sermons import router as sermons_router
 from server.api.routers.status import router as status_router
-from server.api.routers.userdata import admin_backup_router, me_router, router as userdata_router
+from server.api.routers.userdata import (
+    admin_backup_router,
+    files_router,
+    me_router,
+    router as userdata_router,
+)
 from server.api.routers.writes import router as writes_router
 
 DEV_ORIGINS = [
@@ -90,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(me_router)
     app.include_router(admin_backup_router)
     app.include_router(writes_router)
+    app.include_router(files_router)
 
     dist = Path(__file__).resolve().parent.parent.parent / "web" / "dist"
     if dist.is_dir():
