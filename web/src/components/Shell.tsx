@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
-import { isLive } from "../api/client";
+import { isLive, type AuthUser } from "../api/client";
+import { Chip } from "./ui";
 
 export type Section = "home" | "new" | "library" | "jobs" | "settings";
 
@@ -23,10 +24,12 @@ function Icon({ path }: { path: string }) {
 interface ShellProps {
   dark: boolean;
   onToggleTheme: () => void;
+  user?: AuthUser | null;
+  onLogout?: () => void;
   children: ReactNode;
 }
 
-export function Shell({ dark, onToggleTheme, children }: ShellProps) {
+export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellProps) {
   const [drawer, setDrawer] = useState(false);
 
   useEffect(() => {
@@ -82,7 +85,22 @@ export function Shell({ dark, onToggleTheme, children }: ShellProps) {
               {isLive ? "live" : "mock"}
             </span>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            {user ? (
+              <div className="flex min-w-0 items-center gap-2" aria-label="User menu">
+                <span className="hidden max-w-32 truncate text-sm font-medium min-[420px]:inline">
+                  {user.display_name}
+                </span>
+                <Chip tone={user.role === "admin" ? "accent" : "neutral"}>{user.role}</Chip>
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="inline-flex min-h-[44px] items-center rounded-md px-3 text-sm font-medium text-muted hover:bg-raised hover:text-mist"
+                >
+                  Logout
+                </button>
+              </div>
+            ) : null}
             <button
               type="button"
               onClick={onToggleTheme}
