@@ -94,6 +94,12 @@ function nextId(): string {
 }
 
 interface EditorDraft {
+  connKind: "api" | "subscription";
+  subProvider: "claude" | "chatgpt";
+  subCode: string;
+  subState: "idle" | "code" | "waiting" | "connected";
+  subToken: string;
+  reuseFrom: string;
   name: string;
   preset: string;
   endpoint: string;
@@ -106,6 +112,12 @@ interface EditorDraft {
 }
 
 const EMPTY_DRAFT: EditorDraft = {
+  connKind: "api",
+  subProvider: "claude",
+  subCode: "",
+  subState: "idle",
+  subToken: "",
+  reuseFrom: "",
   name: "",
   preset: "openai",
   endpoint: "https://api.openai.com/v1",
@@ -122,6 +134,7 @@ type EditorErrors = Partial<Record<"name" | "endpoint" | "model" | "numCtx" | "m
 function validateDraft(d: EditorDraft): EditorErrors {
   const e: EditorErrors = {};
   if (!d.name.trim()) e.name = "Name is required.";
+  if (d.connKind === "subscription") return e;
   if (d.endpoint && !/^https?:\/\/.{3,}/.test(d.endpoint.trim()) && !d.endpoint.includes("{resource}")) e.endpoint = "Base URL must start with http(s)://.";
   if (!d.model.trim()) e.model = "Model id is required.";
   if (d.numCtx.trim() && !/^\d+$/.test(d.numCtx.trim())) e.numCtx = "Context window must be a whole number.";
@@ -136,6 +149,12 @@ function validateDraft(d: EditorDraft): EditorErrors {
 
 function draftFromConnection(c: LlmConnection): EditorDraft {
   return {
+    connKind: "api",
+    subProvider: "claude",
+    subCode: "",
+    subState: "idle",
+    subToken: "",
+    reuseFrom: "",
     name: c.name,
     preset: c.preset,
     endpoint: c.endpoint,
@@ -192,17 +211,6 @@ const INITIAL_CONNECTIONS: LlmConnection[] = [
     status: "ok",
   },
 ];
-
-type SubState = "idle" | "code" | "waiting" | "connected";
-
-interface SubConnection {
-  key: "claude" | "chatgpt";
-  title: string;
-  detail: string;
-  state: SubState;
-  code: string;
-  token: string;
-}
 
 function ConnectionCard({
   conn,
@@ -295,13 +303,11 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
   const [errors, setErrors] = useState<EditorErrors>({});
   const [pendingDelete, setPendingDelete] = useState<LlmConnection | null>(null);
   const [routing, setRouting] = useState({ metadata: "conn-1", validation: "conn-3", assist: "conn-1", fallback: "conn-2" });
-  const [subs, setSubs] = useState<SubConnection[]>([
-    { key: "claude", title: "Claude Pro / Max", detail: "OAuth device login. Uses your subscription, no API key.", state: "idle", code: "", token: "" },
-    { key: "chatgpt", title: "ChatGPT Plus / Pro", detail: "OAuth device login. Uses your subscription, no API key.", state: "idle", code: "", token: "" },
-  ]);
   const editorRef = useRef<HTMLDivElement>(null);
   const uid = useId();
   const timers = useRef<number[]>([]);
+
+  const subLabel = (k: "claude" | "chatgpt") => (k === "claude" ? "Claude Pro / Max" : "ChatGPT Plus / Pro");
 
   const openEditor = (d: EditorDraft, id: string | null) => {
     setDraft(d);
@@ -330,6 +336,49 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
     const e = validateDraft(draft);
     setErrors(e);
     if (Object.keys(e).length > 0) return;
+    if (draft.connKind === "subscription") {
+      const label = subLabel(draft.subProvider);
+      if (editingId) {
+        setConnections((cs) =>
+          cs.map((c) =>
+            c.id === editingId
+              ? {
+                  ...c,
+                  name: draft.name.trim(),
+                  preset: "subscription",
+                  provider: label,
+                  model: "subscription",
+                  endpoint: "(subscription login)",
+                  apiKey: draft.subToken || c.apiKey,
+                  role: draft.role,
+                }
+              : c,
+          ),
+        );
+        show(`Connection saved (mock): ${draft.name.trim()}.`);
+      } else {
+        const c: LlmConnection = {
+          id: nextId(),
+          name: draft.name.trim(),
+          preset: "subscription",
+          provider: label,
+          model: "subscription",
+          endpoint: "(subscription login)",
+          apiKey: draft.subToken,
+          numCtx: "",
+          maxTokens: "",
+          temperature: "",
+          role: draft.role,
+          status: draft.subToken ? "ok" : "unknown",
+        };
+        setConnections((cs) => [...cs, c]);
+        show(`Connection added (mock): ${c.name}.`);
+      }
+      setEditorOpen(false);
+      setEditingId(null);
+      setDraft(EMPTY_DRAFT);
+      return;
+    }
     const preset = PRESETS.find((x) => x.id === draft.preset);
     if (editingId) {
       setConnections((cs) =>
@@ -392,25 +441,40 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
     timers.current.push(t);
   };
 
-  const startOAuth = (key: "claude" | "chatgpt") => {
+  const startOAuth = () => {
     const code = `${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-    setSubs((ss) => ss.map((s) => (s.key === key ? { ...s, state: "code", code } : s)));
+    setDraft((d) => ({ ...d, subCode: code, subState: "code", subToken: "" }));
     const t1 = window.setTimeout(() => {
-      setSubs((ss) => ss.map((s) => (s.key === key && s.state === "code" ? { ...s, state: "waiting" } : s)));
+      setDraft((d) => (d.subState === "code" && d.subCode === code ? { ...d, subState: "waiting" } : d));
       const t2 = window.setTimeout(() => {
-        setSubs((ss) =>
-          ss.map((s) => (s.key === key ? { ...s, state: "connected", token: `oauth-••••${code.slice(-4)}` } : s)),
-        );
-        show(`Subscription connected (mock): ${key === "claude" ? "Claude" : "ChatGPT"}.`);
+        setDraft((d) => (d.subCode === code ? { ...d, subState: "connected", subToken: `oauth-••••${code.slice(-4)}` } : d));
+        show(`Subscription connected (mock): ${draft.subProvider === "claude" ? "Claude" : "ChatGPT"}.`);
       }, 2500);
       timers.current.push(t2);
     }, 1200);
     timers.current.push(t1);
   };
 
-  const disconnectSub = (key: "claude" | "chatgpt") => {
-    setSubs((ss) => ss.map((s) => (s.key === key ? { ...s, state: "idle", code: "", token: "" } : s)));
+  const disconnectSub = () => {
+    setDraft((d) => ({ ...d, subState: "idle", subCode: "", subToken: "" }));
     show("Subscription disconnected (mock).");
+  };
+
+  const reuseExisting = (id: string) => {
+    const src = connections.find((c) => c.id === id);
+    setDraft((d) => ({ ...d, reuseFrom: id }));
+    if (!src) return;
+    setDraft((d) => ({
+      ...d,
+      reuseFrom: id,
+      preset: src.preset === "subscription" ? d.preset : src.preset,
+      endpoint: src.preset === "subscription" ? d.endpoint : src.endpoint,
+      model: src.preset === "subscription" ? d.model : src.model,
+      numCtx: src.numCtx || d.numCtx,
+      maxTokens: src.maxTokens || d.maxTokens,
+      temperature: src.temperature || d.temperature,
+    }));
+    show(`Reusing ${src.name} (mock): details copied, no retyping needed.`);
   };
 
   const activePreset = PRESETS.find((x) => x.id === draft.preset);
@@ -458,6 +522,17 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
         <div ref={editorRef} className="mt-4 rounded-md border border-line bg-ink p-4" role="form" aria-label="Connection editor">
           <h3 className="text-sm font-semibold">{editingId ? "Edit connection" : "New connection"}</h3>
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Connection type" htmlFor={`${uid}-kind`} hint="API covers keys and local endpoints. Subscription uses your Claude Pro or ChatGPT Plus login.">
+              <select
+                id={`${uid}-kind`}
+                value={draft.connKind}
+                onChange={(e) => setDraft({ ...draft, connKind: e.target.value as "api" | "subscription" })}
+                className={inputCls}
+              >
+                <option value="api">API / local endpoint</option>
+                <option value="subscription">Subscription (Claude Pro / ChatGPT Plus)</option>
+              </select>
+            </Field>
             <Field label="Name" htmlFor={`${uid}-name`}>
               <input
                 id={`${uid}-name`}
@@ -470,21 +545,37 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
               />
               {errors.name ? <p className="mt-1 text-xs text-danger" role="alert">{errors.name}</p> : null}
             </Field>
-            <Field label="Type preset" htmlFor={`${uid}-preset`} hint={activePreset ? `${activePreset.setupNote} ${activePreset.docsHint}` : undefined}>
-              <select
-                id={`${uid}-preset`}
-                value={draft.preset}
-                onChange={(e) => applyPreset(e.target.value)}
-                className={inputCls}
-              >
-                {PRESETS.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label={activePreset?.needsHostOnly ? "Host" : "Base URL"} htmlFor={`${uid}-endpoint`}>
+            {draft.connKind === "subscription" ? (
+              <Field label="Subscription account" htmlFor={`${uid}-sub`} hint="OAuth device login. Uses your subscription, no API key.">
+                <select
+                  id={`${uid}-sub`}
+                  value={draft.subProvider}
+                  onChange={(e) => setDraft({ ...draft, subProvider: e.target.value as "claude" | "chatgpt", subState: "idle", subCode: "", subToken: "" })}
+                  className={inputCls}
+                >
+                  <option value="claude">Claude Pro / Max</option>
+                  <option value="chatgpt">ChatGPT Plus / Pro</option>
+                </select>
+              </Field>
+            ) : (
+              <Field label="Type preset" htmlFor={`${uid}-preset`} hint={activePreset ? `${activePreset.setupNote} ${activePreset.docsHint}` : undefined}>
+                <select
+                  id={`${uid}-preset`}
+                  value={draft.preset}
+                  onChange={(e) => applyPreset(e.target.value)}
+                  className={inputCls}
+                >
+                  {PRESETS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+            {draft.connKind === "api" ? (
+              <>
+              <Field label={activePreset?.needsHostOnly ? "Host" : "Base URL"} htmlFor={`${uid}-endpoint`}>
               <input
                 id={`${uid}-endpoint`}
                 value={draft.endpoint}
@@ -520,6 +611,8 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
               />
               {errors.model ? <p className="mt-1 text-xs text-danger" role="alert">{errors.model}</p> : null}
             </Field>
+              </> 
+            ) : null}
             <Field label="Role" htmlFor={`${uid}-role`} hint="Primary generates, fallback catches failures, validator checks drafts.">
               <select
                 id={`${uid}-role`}
@@ -534,6 +627,8 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
                 ))}
               </select>
             </Field>
+            {draft.connKind === "api" ? (
+              <>
             <Field label="Context window (num_ctx)" htmlFor={`${uid}-ctx`}>
               <input
                 id={`${uid}-ctx`}
@@ -570,6 +665,67 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
               />
               {errors.temperature ? <p className="mt-1 text-xs text-danger" role="alert">{errors.temperature}</p> : null}
             </Field>
+              </>
+            ) : null}
+            {(draft.role === "Fallback" || draft.role === "Validator") && draft.connKind === "api" ? (
+              <Field label="Reuse existing connection" htmlFor={`${uid}-reuse`} hint="Pick from existing connections to reuse details without retyping.">
+                <select
+                  id={`${uid}-reuse`}
+                  value={draft.reuseFrom}
+                  onChange={(e) => reuseExisting(e.target.value)}
+                  className={inputCls}
+                >
+                  <option value="">Type details manually…</option>
+                  {connections.filter((c) => c.preset !== "subscription").map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.provider}, {c.model || "no model"})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
+            {draft.connKind === "subscription" ? (
+              <div className="sm:col-span-2 rounded-md border border-line bg-ink p-3" role="status" aria-live="polite" aria-label="Subscription login">
+                <p className="text-xs text-muted">
+                  {subLabel(draft.subProvider)} uses an OAuth-style device login and may have usage limits vs API keys.
+                </p>
+                {draft.subState === "idle" ? (
+                  <div className="mt-2">
+                    <Button variant="primary" onClick={startOAuth} aria-label={`Connect with ${subLabel(draft.subProvider)} account`}>
+                      Connect with {draft.subProvider === "claude" ? "Claude" : "ChatGPT"} account
+                    </Button>
+                  </div>
+                ) : null}
+                {draft.subState === "code" || draft.subState === "waiting" ? (
+                  <div className="mt-2">
+                    <p className="text-xs text-muted">Step 2 of 3: enter this device code on the provider site, then approve.</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <code className="rounded bg-raised px-3 py-2 font-mono text-sm tracking-widest">{draft.subCode}</code>
+                      <Button
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(draft.subCode).catch(() => undefined);
+                          show("Device code copied (mock).");
+                        }}
+                        aria-label="Copy device code"
+                      >
+                        Copy code
+                      </Button>
+                    </div>
+                    <p className="mt-2 text-xs text-muted">
+                      {draft.subState === "code" ? "Request sent (mock)…" : "Waiting for authorization… (mock, completes on its own)"}
+                    </p>
+                  </div>
+                ) : null}
+                {draft.subState === "connected" ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <code className="font-mono text-xs text-muted">{draft.subToken} (mock placeholder)</code>
+                    <Button variant="danger" onClick={disconnectSub} aria-label="Disconnect subscription login">
+                      Disconnect
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
@@ -595,7 +751,7 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
 
       <div className="mt-4 rounded-md border border-line p-3" aria-label="Routing">
         <h3 className="text-sm font-semibold">Routing</h3>
-        <p className="mt-0.5 text-xs text-muted">Map each pipeline role to a connection. Fallback stays visible and catches primary failures.</p>
+        <p className="mt-0.5 text-xs text-muted">Pick from existing connections for each pipeline role. Selecting one reuses it without retyping details. Fallback catches primary failures.</p>
         <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {(
             [
@@ -624,65 +780,6 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
             </Field>
           ))}
         </div>
-      </div>
-
-      <div className="mt-4" aria-label="Subscription connections">
-        <h3 className="text-sm font-semibold">Subscription connections</h3>
-        <p className="mt-0.5 text-xs text-muted">
-          Subscription access uses an OAuth-style login and may have usage limits vs API keys.
-        </p>
-        <ul className="mt-2 flex flex-col gap-2">
-          {subs.map((s) => (
-            <li key={s.key} className="rounded-md border border-line p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="min-w-0 flex-1 text-sm font-semibold">{s.title}</p>
-                <Chip tone={s.state === "connected" ? "ok" : s.state === "idle" ? "neutral" : "info"}>
-                  {s.state === "connected" ? "connected" : s.state === "idle" ? "not connected" : s.state === "code" ? "code issued" : "waiting…"}
-                </Chip>
-              </div>
-              <p className="mt-1 text-xs text-muted">{s.detail}</p>
-              {s.state === "idle" ? (
-                <div className="mt-2">
-                  <Button
-                    variant="primary"
-                    onClick={() => startOAuth(s.key)}
-                    aria-label={`Connect with ${s.key === "claude" ? "Claude" : "ChatGPT"} account`}
-                  >
-                    Connect with {s.key === "claude" ? "Claude" : "ChatGPT"} account
-                  </Button>
-                </div>
-              ) : null}
-              {s.state === "code" || s.state === "waiting" ? (
-                <div className="mt-2 rounded border border-line bg-ink p-3" role="status" aria-live="polite">
-                  <p className="text-xs text-muted">Step 2 of 3: enter this device code on the provider site, then approve.</p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <code className="rounded bg-raised px-3 py-2 font-mono text-sm tracking-widest">{s.code}</code>
-                    <Button
-                      onClick={() => {
-                        void navigator.clipboard?.writeText(s.code).catch(() => undefined);
-                        show("Device code copied (mock).");
-                      }}
-                      aria-label="Copy device code"
-                    >
-                      Copy code
-                    </Button>
-                  </div>
-                  <p className="mt-2 text-xs text-muted">
-                    {s.state === "code" ? "Request sent (mock)…" : "Waiting for authorization… (mock, completes on its own)"}
-                  </p>
-                </div>
-              ) : null}
-              {s.state === "connected" ? (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <code className="font-mono text-xs text-muted">{s.token} (mock placeholder)</code>
-                  <Button variant="danger" onClick={() => disconnectSub(s.key)} aria-label={`Disconnect ${s.title}`}>
-                    Disconnect
-                  </Button>
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
       </div>
 
       <ConfirmDialog
