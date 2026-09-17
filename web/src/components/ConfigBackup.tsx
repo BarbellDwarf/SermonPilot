@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { backupApi, isLive, type UserBackup } from "../api/client";
 import { Button, Chip, ConfirmDialog, Field, SectionCard, inputCls } from "./ui";
 
 const MASKED_BACKUP = `{
@@ -31,6 +32,7 @@ const INITIAL_HISTORY: HistoryEntry[] = [
 ];
 
 export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
+  const [backup, setBackup] = useState<UserBackup | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>(INITIAL_HISTORY);
   const [restoreText, setRestoreText] = useState("");
   const [restoreError, setRestoreError] = useState<string | null>(null);
@@ -41,6 +43,30 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
 
   const maskedInUpload =
     restoreText.includes("'***'") || restoreText.includes('"***"') || /(^|\s)\*\*\*(\s|$)/m.test(restoreText);
+
+  const applyLive = (text: string) => {
+    try {
+      const parsed = JSON.parse(text) as { settings?: Record<string, unknown> };
+      void backupApi
+        .restore({ settings: parsed.settings ?? {} })
+        .then((r) => {
+          setHistory((hs) => [
+            { id: `bkp-${Date.now() % 100000}`, when: "just now", note: `Restored ${r.restored} setting group(s)` },
+            ...hs,
+          ]);
+          setRestoreText("");
+          show("Backup applied.");
+          setPendingApply(false);
+        })
+        .catch((e) => {
+          setRestoreError((e as Error).message);
+          setPendingApply(false);
+        });
+    } catch {
+      setRestoreError("Backup data must be the JSON downloaded from this page.");
+      setPendingApply(false);
+    }
+  };
 
   const requestApply = () => {
     const text = restoreText.trim();
@@ -55,7 +81,11 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
       return;
     }
     if (!text.startsWith("{")) {
-      setRestoreError("Backup data must be the JSON downloaded from this page (mock check).");
+      setRestoreError("Backup data must be the JSON downloaded from this page.");
+      return;
+    }
+    if (isLive) {
+      applyLive(text);
       return;
     }
     setRestoreError(null);
@@ -73,7 +103,26 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
     });
   };
 
-  const downloadMock = () => {
+  const download = () => {
+    if (isLive) {
+      void backupApi
+        .download()
+        .then((data) => {
+          setBackup(data);
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "sermonpilot-backup.json";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+          show("Backup downloaded: secrets masked.");
+        })
+        .catch((e) => show(`Could not download backup: ${(e as Error).message}`));
+      return;
+    }
     const blob = new Blob([MASKED_BACKUP], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -96,18 +145,19 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
           Current data <span className="font-normal text-muted">(masked preview)</span>
         </summary>
         <pre className="mt-2 max-h-64 overflow-auto rounded bg-ink p-3 font-mono text-xs text-mist">
-          {MASKED_BACKUP}
+          {backup ? JSON.stringify(backup, null, 2) : MASKED_BACKUP}
         </pre>
         <div className="mt-2 flex flex-wrap gap-2">
-          <Button onClick={downloadMock} aria-label="Download full data backup">
+          <Button onClick={download} aria-label="Download full data backup">
             Download backup
           </Button>
           <Button
             onClick={() => {
-              void navigator.clipboard?.writeText(MASKED_BACKUP).catch(() => undefined);
+              const text = backup ? JSON.stringify(backup, null, 2) : MASKED_BACKUP;
+              void navigator.clipboard?.writeText(text).catch(() => undefined);
               setCopied(true);
               window.setTimeout(() => setCopied(false), 2000);
-              show("Masked backup copied (mock).");
+              show(`Backup copied${isLive ? "" : " (mock)"}.`);
             }}
             aria-label="Copy masked backup"
           >

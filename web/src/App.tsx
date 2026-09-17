@@ -28,7 +28,7 @@ export function App() {
               <Route path="/library" element={<Library />} />
               <Route path="/library/:id" element={<LibraryDetail />} />
               <Route path="/jobs" element={<Jobs />} />
-              <Route path="/settings" element={<Settings />} />
+              <Route path="/settings" element={<Settings user={user} />} />
             </Routes>
           </Shell>
         )}

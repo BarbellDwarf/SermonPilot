@@ -1,27 +1,34 @@
-"""Per-user connection persistence (LLM + SermonAudio) under /api/me/connections.
+"""Per-user settings persistence under /api/me/*.
 
-P5c: each section stores one JSON blob in user_settings (key
-'connections.llm' / 'connections.sermonaudio'). API keys are stored
-base64-obfuscated and never returned; responses expose has_key + masked_key
-only. user_settings is keyed by (user_id, key), so per-user isolation is
-enforced by construction.
+P5c/P5d: connections (LLM + SermonAudio) and arbitrary settings keys store
+JSON blobs in user_settings (keyed by user_id, so isolation is by
+construction). API keys are base64-obfuscated at rest and never returned;
+responses expose has_key + masked_key only. Backup downloads re-mask every
+stored key; restores reject masked values.
 """
 
 from __future__ import annotations
 
 import base64
 import secrets
+import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from server.api.accounts import get_setting, set_setting, writable_conn
+from server.api.accounts import (
+    get_db_path,
+    get_setting,
+    set_setting,
+    writable_conn,
+)
 from server.api.routers.auth import require_user
 
 router = APIRouter(prefix="/api/me/connections", tags=["connections"])
 
 _LLM_KEY = "connections.llm"
 _SA_KEY = "connections.sermonaudio"
+_MASK = "********"
 
 
 def _obfuscate(key: str) -> str:
@@ -196,3 +203,130 @@ def delete_connection(kind: str, conn_id: str, user=Depends(require_user)):
     if data.get("default_id") == conn_id:
         data["default_id"] = None
     _put(user, key, data)
+
+
+me_router = APIRouter(prefix="/api/me", tags=["me"])
+
+
+class ProfileBody(BaseModel):
+    display_name: str | None = None
+    email: str | None = None
+
+
+class RestoreBody(BaseModel):
+    settings: dict[str, object]
+
+
+def _all_setting_keys(conn: sqlite3.Connection, user_id: str) -> list[str]:
+    return [
+        r["key"]
+        for r in conn.execute(
+            "SELECT key FROM user_settings WHERE user_id = ? ORDER BY key", (user_id,)
+        ).fetchall()
+    ]
+
+
+def _mask_blob(value: object) -> object:
+    if isinstance(value, dict):
+        if "_apiKeyEnc" in value:
+            out = {k: v for k, v in value.items() if k != "_apiKeyEnc"}
+            out["masked_key"] = _MASK
+            return out
+        return {k: _mask_blob(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_mask_blob(v) for v in value]
+    return value
+
+
+def _blob_contains_mask(value: object) -> bool:
+    if isinstance(value, dict):
+        return any(_blob_contains_mask(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_blob_contains_mask(v) for v in value)
+    return value == _MASK
+
+
+@me_router.get("/backup")
+def backup_user(user=Depends(require_user)):
+    with writable_conn() as conn:
+        keys = _all_setting_keys(conn, user["id"])
+        settings = {k: _mask_blob(get_setting(conn, user["id"], k)) for k in keys}
+        row = conn.execute(
+            "SELECT id, username, display_name, role FROM users WHERE id = ?",
+            (user["id"],),
+        ).fetchone()
+    return {
+        "app": "sermonpilot",
+        "backup_kind": "user-settings",
+        "account": dict(row) if row else None,
+        "settings": settings,
+    }
+
+
+@me_router.post("/restore")
+def restore_user(body: dict, user=Depends(require_user)):
+    settings = body.get("settings")
+    if not isinstance(settings, dict):
+        raise HTTPException(status_code=422, detail="settings must be an object")
+    if _blob_contains_mask(settings):
+        raise HTTPException(status_code=400, detail="backup contains masked secrets")
+    with writable_conn() as conn:
+        for key, value in settings.items():
+            set_setting(conn, user["id"], key, value)
+    return {"restored": len(settings)}
+
+
+@me_router.patch("")
+def update_profile(body: ProfileBody, user=Depends(require_user)):
+    with writable_conn() as conn:
+        if body.display_name is not None:
+            name = body.display_name.strip()
+            if not name:
+                raise HTTPException(status_code=422, detail="display_name cannot be empty")
+            conn.execute(
+                "UPDATE users SET display_name = ? WHERE id = ?", (name, user["id"])
+            )
+        if body.email is not None:
+            conn.execute("UPDATE users SET email = ? WHERE id = ?", (body.email, user["id"]))
+        row = conn.execute(
+            "SELECT id, username, display_name, role, is_active, email FROM users WHERE id = ?",
+            (user["id"],),
+        ).fetchone()
+    return dict(row)
+
+
+admin_backup_router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+
+@admin_backup_router.get("/backup")
+def backup_full_db(user=Depends(require_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="admin role required")
+    conn = sqlite3.connect(get_db_path())
+    conn.row_factory = sqlite3.Row
+    try:
+        tables = sorted(
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+                " AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+        )
+        counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
+        settings = {}
+        for r in conn.execute(
+            "SELECT user_id, key, value FROM user_settings ORDER BY user_id, key"
+        ).fetchall():
+            bucket = settings.setdefault(r["user_id"], {})
+            try:
+                bucket[r["key"]] = _mask_blob(__import__("json").loads(r["value"]))
+            except Exception:
+                bucket[r["key"]] = _MASK
+    finally:
+        conn.close()
+    return {
+        "app": "sermonpilot",
+        "backup_kind": "full-database",
+        "tables": counts,
+        "user_settings": settings,
+    }

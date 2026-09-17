@@ -89,17 +89,19 @@ class UserPatchBody(BaseModel):
 
 
 class SettingsBody(BaseModel):
-    key: str
+    key: str | None = None
     value: object
 
 
 def _public_user(row) -> dict:
+    email = row["email"] if "email" in row.keys() else None
     return {
         "id": row["id"],
         "username": row["username"],
         "display_name": row["display_name"],
         "role": row["role"],
         "is_active": bool(row["is_active"]),
+        "email": email,
     }
 
 

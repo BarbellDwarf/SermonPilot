@@ -1,33 +1,14 @@
 from __future__ import annotations
 
 import datetime
-import os
-import secrets
 import sqlite3
 import sys
 from pathlib import Path
-
-import pytest
-from fastapi.testclient import TestClient
 
 _UI_DIR = Path(__file__).resolve().parents[2] / "ui"
 if str(_UI_DIR) not in sys.path:
     sys.path.insert(0, str(_UI_DIR))
 
-from server.api.app import create_app  # noqa: E402
-
-
-@pytest.fixture
-def client(tmp_path, monkeypatch):
-    db_path = tmp_path / "accounts.db"
-    monkeypatch.setenv("SERMONPILOT_DB", str(db_path))
-    # minimal sermons schema so the read router can open the DB; auth runs FIRST
-    from ui.database import SermonDatabase
-    SermonDatabase(db_path=str(db_path)).init_database()
-    monkeypatch.setenv("SERMONPILOT_ADMIN_USER", "test-admin")
-    monkeypatch.setenv("SERMONPILOT_ADMIN_PASSWORD", secrets.token_urlsafe(24))
-    with TestClient(create_app()) as client:
-        yield client
 
 
 def test_first_boot_and_auth_boundary(client):
@@ -44,85 +25,6 @@ def test_first_boot_and_auth_boundary(client):
     response = client.get("/api/auth/me")
     assert response.status_code == 401
     assert response.json()["detail"]["needs_bootstrap"] is False
-
-
-JOBS_DDL = """
-    CREATE TABLE IF NOT EXISTS background_jobs (
-        id TEXT PRIMARY KEY,
-        type TEXT NOT NULL,
-        title TEXT NOT NULL,
-        description TEXT,
-        status TEXT NOT NULL,
-        progress REAL DEFAULT 0,
-        parameters TEXT,
-        result TEXT,
-        logs TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        started_at TIMESTAMP,
-        completed_at TIMESTAMP,
-        can_cancel BOOLEAN DEFAULT 1,
-        can_retry BOOLEAN DEFAULT 1,
-        priority INTEGER DEFAULT 5,
-        user_id TEXT
-    )
-"""
-
-
-@pytest.fixture
-def scoped_setup(client):
-    from server.api.accounts import migrate
-
-    migrate()
-    admin_pw = os.environ["SERMONPILOT_ADMIN_PASSWORD"]
-    client.post("/api/auth/bootstrap")
-    admin_token = client.post(
-        "/api/auth/login", json={"username": "test-admin", "password": admin_pw}
-    ).json()["token"]
-    admin_headers = {"Authorization": f"Bearer {admin_token}"}
-    admin_id = client.get("/api/auth/me", headers=admin_headers).json()["id"]
-
-    def make_user(username: str) -> dict:
-        body = {
-            "username": username,
-            "display_name": username,
-            "password": "pw-" + username,
-            "role": "user",
-        }
-        user = client.post("/api/admin/users", json=body, headers=admin_headers).json()
-        token = client.post(
-            "/api/auth/login", json={"username": username, "password": "pw-" + username}
-        ).json()["token"]
-        return {"id": user["id"], "headers": {"Authorization": f"Bearer {token}"}}
-
-    user_a = make_user("user-a")
-    user_b = make_user("user-b")
-    import sqlite3
-
-    from server.api.accounts import get_db_path
-
-    sermon_insert = (
-        "INSERT INTO sermons (id, title, speaker, recorded_date, status, user_id)"
-        " VALUES (?, ?, ?, ?, ?, ?)"
-    )
-    job_insert = (
-        "INSERT INTO background_jobs (id, type, title, status, user_id) VALUES (?, ?, ?, ?, ?)"
-    )
-    conn = sqlite3.connect(get_db_path())
-    conn.execute(JOBS_DDL)
-    conn.execute(
-        sermon_insert, ("s-a", "Owned A", "Speaker A", "2026-09-01", "processed", user_a["id"])
-    )
-    conn.execute(
-        sermon_insert, ("s-b", "Owned B", "Speaker B", "2026-09-02", "processed", user_b["id"])
-    )
-    conn.execute(
-        sermon_insert, ("s-null", "Legacy", "Speaker C", "2026-09-03", "processed", None)
-    )
-    for jid, owner in (("j-a", user_a["id"]), ("j-b", user_b["id"]), ("j-null", None)):
-        conn.execute(job_insert, (jid, "full_pipeline", jid, "completed", owner))
-    conn.commit()
-    conn.close()
-    return {"admin_headers": admin_headers, "admin_id": admin_id, "a": user_a, "b": user_b}
 
 
 def _ids(body: dict) -> list[str]:
