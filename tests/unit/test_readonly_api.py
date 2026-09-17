@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
+import secrets
 import sqlite3
 
 import pytest
@@ -118,8 +120,20 @@ def fixture_db(tmp_path, monkeypatch) -> str:
 
 
 @pytest.fixture
-def client(fixture_db) -> TestClient:
-    return TestClient(create_app())
+def auth_token(fixture_db) -> str:
+    os.environ.setdefault("SERMONPILOT_ADMIN_USER", "fixture-admin")
+    os.environ["SERMONPILOT_ADMIN_PASSWORD"] = secrets.token_urlsafe(24)
+    with TestClient(create_app()) as c:
+        assert c.post("/api/auth/bootstrap").status_code == 201
+        r = c.post("/api/auth/login", json={"username": "fixture-admin", "password": os.environ["SERMONPILOT_ADMIN_PASSWORD"]})
+        assert r.status_code == 200
+        return r.json()["token"]
+
+
+@pytest.fixture
+def client(fixture_db, auth_token) -> TestClient:
+    c = TestClient(create_app(), headers={"Authorization": f"Bearer {auth_token}"})
+    return c
 
 
 def test_read_only_get_routes(client: TestClient) -> None:
