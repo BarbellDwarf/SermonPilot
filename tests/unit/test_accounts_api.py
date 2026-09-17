@@ -232,6 +232,74 @@ def test_add_job_records_user_id(client, scoped_setup, tmp_path, monkeypatch):
     assert job is not None and job.user_id == "u-xyz"
 
 
+def test_connections_crud_roundtrip_and_isolation(client, scoped_setup):
+    s = scoped_setup
+    body = {"name": "Conn", "provider": "Ollama", "apiKey": "sk-secret-99aa"}
+    r = client.post("/api/me/connections/llm", json=body, headers=s["a"]["headers"])
+    assert r.status_code == 201
+    saved = r.json()
+    assert saved["has_key"] is True
+    assert "99aa" in saved["masked_key"]
+    assert "sk-secret-99aa" not in r.text
+    conn_id = saved["id"]
+
+    listed = client.get("/api/me/connections/llm", headers=s["a"]["headers"]).json()["items"]
+    assert [c["id"] for c in listed] == [conn_id]
+    assert "sk-secret-99aa" not in client.get(
+        "/api/me/connections/llm", headers=s["a"]["headers"]
+    ).text
+
+    r = client.put(
+        f"/api/me/connections/llm/{conn_id}",
+        json={"name": "Conn2", "apiKey": "sk-rotated-77bb"},
+        headers=s["a"]["headers"],
+    )
+    assert r.status_code == 200
+    assert r.json()["masked_key"].endswith("77bb")
+    assert "sk-rotated-77bb" not in r.text
+
+    r = client.post("/api/me/connections/llm", json=body, headers=s["b"]["headers"])
+    assert r.status_code == 201
+    assert client.get("/api/me/connections/llm", headers=s["b"]["headers"]).json()["total"] == 1
+    foreign = client.put(
+        f"/api/me/connections/llm/{conn_id}", json={"name": "steal"}, headers=s["b"]["headers"]
+    )
+    assert foreign.status_code == 404
+    assert client.delete(f"/api/me/connections/llm/{conn_id}",
+        headers=s["b"]["headers"]).status_code == 404
+    assert client.get("/api/me/connections/llm", headers=s["a"]["headers"]).json()["total"] == 1
+
+    assert client.delete(f"/api/me/connections/llm/{conn_id}",
+        headers=s["a"]["headers"]).status_code == 204
+    assert client.get("/api/me/connections/llm", headers=s["a"]["headers"]).json()["total"] == 0
+
+
+def test_sa_connections_and_role_gating(client, scoped_setup):
+    s = scoped_setup
+    no_auth = client.post("/api/me/connections/llm", json={"name": "x"})
+    assert no_auth.status_code == 401
+    r = client.post(
+        "/api/me/connections/sermonaudio",
+        json={"name": "SA", "broadcasterId": "b-1", "apiKey": "sa-key-1234"},
+        headers=s["a"]["headers"],
+    )
+    assert r.status_code == 201
+    assert r.json()["masked_key"].endswith("1234")
+    default = client.put("/api/me/connections/sermonaudio/default", json={"id": r.json()["id"]},
+        headers=s["a"]["headers"])
+    assert default.status_code == 200
+    assert client.get("/api/me/connections/sermonaudio",
+        headers=s["a"]["headers"]).json()["default_id"] == r.json()["id"]
+    assert client.get("/api/me/connections/sermonaudio",
+        headers=s["b"]["headers"]).json()["default_id"] is None
+    admin_forbidden = client.post(
+        "/api/me/connections/llm",
+        json={"name": "x"},
+        headers=s["admin_headers"],
+    )
+    assert admin_forbidden.status_code == 201
+
+
 def test_backfill_reassigns_null_to_admin(client, scoped_setup):
     s = scoped_setup
     from server.api import backfill

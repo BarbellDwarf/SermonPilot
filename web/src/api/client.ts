@@ -238,3 +238,58 @@ export const api = {
   job: (id: string) => authed<ApiJobDetail>(`/api/jobs/${encodeURIComponent(id)}`),
   status: () => authed<ApiStatus>("/api/status"),
 };
+
+export interface ApiConnection {
+  id: string;
+  name: string;
+  preset?: string;
+  provider?: string;
+  model?: string;
+  endpoint?: string;
+  numCtx?: string;
+  maxTokens?: string;
+  temperature?: string;
+  role?: string;
+  broadcasterId?: string;
+  notes?: string;
+  has_key: boolean;
+  masked_key: string;
+}
+
+export interface ApiConnectionList {
+  items: ApiConnection[];
+  total: number;
+  default_id: string | null;
+}
+
+async function send<T>(path: string, method: string, body?: unknown): Promise<T> {
+  const res = await authFetch(path, {
+    method,
+    headers: body === undefined ? { Accept: "application/json" } : { "Content-Type": "application/json", Accept: "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (res.status === 204) return undefined as T;
+  if (!res.ok) {
+    let detail = `${method} ${path} failed with ${res.status}`;
+    try {
+      const parsed = (await res.json()) as { detail?: unknown };
+      if (typeof parsed.detail === "string") detail = parsed.detail;
+    } catch {
+    }
+    throw new Error(detail);
+  }
+  return (await res.json()) as T;
+}
+
+export const connectionsApi = {
+  list: (kind: "llm" | "sermonaudio") =>
+    send<ApiConnectionList>(`/api/me/connections/${kind}`, "GET"),
+  create: (kind: "llm" | "sermonaudio", body: Record<string, unknown>) =>
+    send<ApiConnection>(`/api/me/connections/${kind}`, "POST", body),
+  update: (kind: "llm" | "sermonaudio", id: string, body: Record<string, unknown>) =>
+    send<ApiConnection>(`/api/me/connections/${kind}/${encodeURIComponent(id)}`, "PUT", body),
+  remove: (kind: "llm" | "sermonaudio", id: string) =>
+    send<void>(`/api/me/connections/${kind}/${encodeURIComponent(id)}`, "DELETE"),
+  setDefault: (id: string | null) =>
+    send<{ default_id: string | null }>("/api/me/connections/sermonaudio/default", "PUT", { id }),
+};
