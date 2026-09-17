@@ -8,12 +8,15 @@ app and the processing pipeline are untouched.
 from __future__ import annotations
 
 import os
+import sqlite3
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
+from server.api.routers.auth import router as auth_router
+from server.api.accounts import migrate
 from server.api.routers.jobs import router as jobs_router
 from server.api.routers.sermons import router as sermons_router
 from server.api.routers.status import router as status_router
@@ -32,10 +35,53 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=DEV_ORIGINS,
         allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
-        allow_methods=["GET", "HEAD", "OPTIONS"],
+        allow_methods=["GET", "HEAD", "POST", "PUT", "PATCH", "OPTIONS"],
         allow_headers=["*"],
     )
+    @app.on_event("startup")
+    def _migrate_accounts() -> None:
+        try:
+            migrate()
+        except Exception:  # pragma: no cover - read-only deployments keep working
+            pass
+
+    app.include_router(auth_router)
     app.include_router(status_router)
+
+    from server.api.routers.auth import PUBLIC_PATHS
+
+    @app.middleware("http")
+    async def auth_gate(request, call_next):
+        path = request.url.path
+        if path.startswith("/api") and not any(
+            path == p or path.startswith(p + "/") for p in PUBLIC_PATHS
+        ):
+            token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+            from server.api.accounts import get_session_user, count_users, writable_conn
+            if not token:
+                return _auth_denied(path)
+            try:
+                with writable_conn() as conn:
+                    user = get_session_user(conn, token)
+            except sqlite3.OperationalError:
+                return _auth_denied(path)  # accounts tables absent -> unbootstrapped
+            if user is None:
+                return _auth_denied(path)
+            request.state.user = dict(user)
+        return await call_next(request)
+
+    def _auth_denied(path: str):
+        from fastapi.responses import JSONResponse
+        from server.api.accounts import count_users, writable_conn
+        try:
+            with writable_conn() as conn:
+                bootstrapped = count_users(conn) > 0
+        except sqlite3.OperationalError:
+            bootstrapped = False
+        return JSONResponse(
+            status_code=401,
+            content={"detail": {"needs_bootstrap": not bootstrapped, "message": "authentication required"}},
+        )
     app.include_router(sermons_router)
     app.include_router(jobs_router)
 
