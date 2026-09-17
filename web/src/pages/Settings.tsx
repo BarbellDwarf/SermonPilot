@@ -330,35 +330,51 @@ export function Settings() {
           );
         })}
       </div>
-      <div role="tabpanel" id="panel-general" aria-labelledby="tab-general" hidden={active !== "general"} className="flex flex-col gap-4">
+      {active === "general" && (
+        <div role="tabpanel" id="panel-general" aria-labelledby="tab-general" className="flex flex-col gap-4">
         <GeneralSettingsSection show={show} />
         <ProcessingSection show={show} />
         <AppearanceSection show={show} />
         <AccountSection show={show} />
         <UsersSection show={show} />
         <SystemSection show={show} />
-      </div>
-      <div role="tabpanel" id="panel-llm" aria-labelledby="tab-llm" hidden={active !== "llm"} className="flex flex-col gap-4">
+        </div>
+      )}
+      {active === "llm" && (
+        <div role="tabpanel" id="panel-llm" aria-labelledby="tab-llm" className="flex flex-col gap-4">
         <LlmConnectionsSection show={show} />
-      </div>
-      <div role="tabpanel" id="panel-sermonaudio" aria-labelledby="tab-sermonaudio" hidden={active !== "sermonaudio"} className="flex flex-col gap-4">
+        </div>
+      )}
+      {active === "sermonaudio" && (
+        <div role="tabpanel" id="panel-sermonaudio" aria-labelledby="tab-sermonaudio" className="flex flex-col gap-4">
         <SermonAudioAccountsSection show={show} />
-      </div>
-      <div role="tabpanel" id="panel-audio" aria-labelledby="tab-audio" hidden={active !== "audio"} className="flex flex-col gap-4">
+        </div>
+      )}
+      {active === "audio" && (
+        <div role="tabpanel" id="panel-audio" aria-labelledby="tab-audio" className="flex flex-col gap-4">
         <AudioSettingsSection show={show} />
-      </div>
-      <div role="tabpanel" id="panel-transcription" aria-labelledby="tab-transcription" hidden={active !== "transcription"} className="flex flex-col gap-4">
+        </div>
+      )}
+      {active === "transcription" && (
+        <div role="tabpanel" id="panel-transcription" aria-labelledby="tab-transcription" className="flex flex-col gap-4">
         <TranscriptionSettingsSection show={show} />
-      </div>
-      <div role="tabpanel" id="panel-validation" aria-labelledby="tab-validation" hidden={active !== "validation"} className="flex flex-col gap-4">
+        </div>
+      )}
+      {active === "validation" && (
+        <div role="tabpanel" id="panel-validation" aria-labelledby="tab-validation" className="flex flex-col gap-4">
         <ValidationSettingsSection show={show} />
-      </div>
-      <div role="tabpanel" id="panel-prompts" aria-labelledby="tab-prompts" hidden={active !== "prompts"} className="flex flex-col gap-4">
+        </div>
+      )}
+      {active === "prompts" && (
+        <div role="tabpanel" id="panel-prompts" aria-labelledby="tab-prompts" className="flex flex-col gap-4">
         <PromptTemplatesSection show={show} />
-      </div>
-      <div role="tabpanel" id="panel-backup" aria-labelledby="tab-backup" hidden={active !== "backup"} className="flex flex-col gap-4">
+        </div>
+      )}
+      {active === "backup" && (
+        <div role="tabpanel" id="panel-backup" aria-labelledby="tab-backup" className="flex flex-col gap-4">
         <ConfigBackupSection show={show} />
-      </div>
+        </div>
+      )}
       <Toast message={toast} />
     </div>
   );
