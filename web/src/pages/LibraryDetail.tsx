@@ -4,7 +4,7 @@ import { ReviewPanel } from "../components/ReviewPanel";
 import { sermonStatusLabel, sermonStatusTone } from "./Library";
 import { Button, Card, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast, buttonClass } from "../components/ui";
 import { QueryError, useSermonDetail, useSermonPlan } from "../api/hooks";
-import { isLive } from "../api/client";
+import { isLive, writeApi } from "../api/client";
 
 export function LibraryDetail() {
   const { id } = useParams();
@@ -76,6 +76,22 @@ export function LibraryDetail() {
   }
 
   const push = () => {
+    if (!id) return;
+    if (isLive) {
+      setPushing(true);
+      void writeApi
+        .uploadNow(id)
+        .then(() => {
+          setPushing(false);
+          showToast("Upload queued.");
+        })
+        .catch((e) => {
+          setPushing(false);
+          const msg = (e as Error).message;
+          showToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`);
+        });
+      return;
+    }
     setPushing(true);
     window.setTimeout(() => {
       setPushing(false);
@@ -151,7 +167,7 @@ export function LibraryDetail() {
       ) : planError ? (
         <QueryError message={planError} onRetry={retryPlan} />
       ) : plan ? (
-        <ReviewPanel plan={plan} sermonTitle={sermon.title} onToast={showToast} />
+        <ReviewPanel plan={plan} sermonId={id ?? sermon.id} sermonTitle={sermon.title} onToast={showToast} />
       ) : (
         <section aria-labelledby="review-none-h">
           <h2 id="review-none-h" className="mb-2 text-lg font-semibold">Review auto-edit plan</h2>

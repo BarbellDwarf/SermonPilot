@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import secrets
+
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel
 
 from server.api import mapping
 from server.api.db import get_repository
@@ -16,6 +19,48 @@ from server.api.scoping import request_user, scope_rows, visible
 router = APIRouter(prefix="/api/sermons", tags=["sermons"])
 
 _SORT_KEYS = {"date", "title", "duration"}
+
+
+class SermonCreateBody(BaseModel):
+    title: str
+    speaker: str = ""
+    recorded_date: str = ""
+    series_title: str = ""
+    description: str = ""
+
+
+@router.post("", status_code=201)
+def create_draft_sermon(request: Request, body: SermonCreateBody) -> dict:
+    user = request_user(request)
+    if user is None:
+        raise HTTPException(status_code=401, detail="authentication required")
+    sermon_id = f"s-{secrets.token_hex(8)}"
+    from ui.database import SermonDatabase, SermonRepository
+    from server.api.accounts import get_db_path
+
+    repo = SermonRepository(SermonDatabase(db_path=get_db_path()))
+    ok = repo.save_sermon(
+        {
+            "id": sermon_id,
+            "title": body.title.strip() or "Untitled",
+            "speaker": body.speaker.strip(),
+            "recorded_date": body.recorded_date.strip(),
+            "series_title": body.series_title.strip(),
+            "description": body.description.strip(),
+            "status": "draft",
+            "user_id": user.get("id"),
+        }
+    )
+    if not ok:
+        raise HTTPException(status_code=500, detail="could not save sermon")
+    return {
+        "id": sermon_id,
+        "title": body.title.strip(),
+        "speaker": body.speaker.strip(),
+        "recorded_date": body.recorded_date.strip(),
+        "series_title": body.series_title.strip(),
+        "status": "draft",
+    }
 
 
 def _row_to_list_item(row: dict) -> SermonListItem:

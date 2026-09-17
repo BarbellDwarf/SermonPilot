@@ -155,9 +155,13 @@ def scoped_setup(client):
 def client(tmp_path, monkeypatch):
     db_path = tmp_path / "accounts.db"
     monkeypatch.setenv("SERMONPILOT_DB", str(db_path))
+    monkeypatch.setenv("DATABASE_URL", str(db_path))
     from ui.database import SermonDatabase
 
     SermonDatabase(db_path=str(db_path)).init_database()
+    # Reset process-wide singletons so job queue + repository bind to THIS db
+    monkeypatch.setattr("ui.database._db", None)
+    monkeypatch.setattr("ui.job_queue._job_queue", None)
     monkeypatch.setenv("SERMONPILOT_ADMIN_USER", "test-admin")
     monkeypatch.setenv("SERMONPILOT_ADMIN_PASSWORD", secrets.token_urlsafe(24))
     from fastapi.testclient import TestClient

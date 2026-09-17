@@ -1405,6 +1405,41 @@ def _execute_auto_edit_dispatch(job: Job) -> JobResult:
     return execute_auto_edit_job(job)
 
 
+def execute_sermon_publish_job(job: Job) -> JobResult:
+    """Upload a draft sermon to SermonAudio via publish_dry_run_sermon."""
+    try:
+        if job.cancelled or job.status == JobStatus.CANCELLED:
+            raise JobCancelledError("Job cancelled by user")
+        sermon_id = job.parameters.get("sermon_id")
+        if not sermon_id:
+            return JobResult(
+                success=False,
+                message="Missing sermon_id for publish",
+                error="Missing sermon_id in job parameters",
+            )
+        job.update_progress(10, f"Publishing {sermon_id} to SermonAudio...")
+        from sermon_updater import publish_dry_run_sermon
+
+        result = publish_dry_run_sermon(str(sermon_id))
+        if result.get("success"):
+            _stamp_sermon_owner(result.get("sermon_id") or sermon_id, _job_user_id(job))
+            job.update_progress(100, f"Published as {result.get('sermon_id')}")
+            return JobResult(
+                success=True,
+                message=f"Published to SermonAudio as {result.get('sermon_id')}",
+                data={"sermon_id": result.get("sermon_id")},
+            )
+        return JobResult(
+            success=False,
+            message="Publish failed",
+            error=result.get("error") or "unknown error",
+        )
+    except JobCancelledError:
+        raise
+    except Exception as e:
+        return JobResult(success=False, message="Publish failed", error=str(e))
+
+
 # Job executor registry
 _EXECUTORS: dict[JobType, Callable[[Job], JobResult]] = {
     JobType.VALIDATION: execute_validation_job,
@@ -1414,6 +1449,7 @@ _EXECUTORS: dict[JobType, Callable[[Job], JobResult]] = {
     JobType.METADATA_UPDATE: execute_metadata_update_job,
     JobType.AUTO_EDIT: _execute_auto_edit_dispatch,
     JobType.AUTO_EDIT_APPLY: execute_library_auto_edit_apply_job,
+    JobType.SERMON_PUBLISH: execute_sermon_publish_job,
 }
 
 

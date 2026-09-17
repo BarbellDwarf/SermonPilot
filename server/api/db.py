@@ -59,7 +59,7 @@ def query_jobs(
     """Read background_jobs rows directly; [] when the table is absent."""
     query = (
         "SELECT id, type, title, description, status, progress, parameters,"
-        " result, logs, created_at, started_at, completed_at"
+        " result, logs, created_at, started_at, completed_at, user_id"
         " FROM background_jobs"
     )
     params: list[Any] = []
@@ -81,7 +81,7 @@ def query_job(job_id: str) -> dict[str, Any] | None:
         with ReadOnlySermonDatabase().get_connection() as conn:
             row = conn.execute(
                 "SELECT id, type, title, description, status, progress, parameters,"
-                " result, logs, created_at, started_at, completed_at"
+                " result, logs, created_at, started_at, completed_at, user_id"
                 " FROM background_jobs WHERE id = ?",
                 (job_id,),
             ).fetchone()
