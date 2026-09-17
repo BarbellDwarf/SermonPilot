@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { isLive, writeApi } from "../api/client";
 import type { EditPlan, PlanStatus } from "../mock/data";
 import { formatCut, parseCut } from "../utils/time";
 import { Button, Card, Chip, ConfirmDialog } from "./ui";
@@ -40,11 +41,12 @@ function SnippetCard({ label, atSec, note }: { label: string; atSec: number; not
 
 interface ReviewPanelProps {
   plan: EditPlan;
+  sermonId: string;
   sermonTitle: string;
   onToast: (msg: string) => void;
 }
 
-export function ReviewPanel({ plan: initial, sermonTitle, onToast }: ReviewPanelProps) {
+export function ReviewPanel({ plan: initial, sermonId, sermonTitle, onToast }: ReviewPanelProps) {
   const [plan, setPlan] = useState(initial);
   const [startText, setStartText] = useState(formatCut(initial.startSec));
   const [endText, setEndText] = useState(formatCut(initial.endSec));
@@ -81,6 +83,30 @@ export function ReviewPanel({ plan: initial, sermonTitle, onToast }: ReviewPanel
 
   const approve = () => {
     if (errors.length > 0 || applying) return;
+    if (isLive) {
+      setApplying(true);
+      void writeApi
+        .applyPlan(sermonId, {
+          start: start ?? plan.startSec,
+          end: end ?? plan.endSec,
+          audio_offset: offset ?? plan.offsetSec,
+          render_only: target === "render",
+        })
+        .then(() => {
+          setApplying(false);
+          onToast(
+            target === "render"
+              ? "Plan approved, render queued."
+              : "Plan approved, render + upload queued.",
+          );
+        })
+        .catch((e) => {
+          setApplying(false);
+          const msg = (e as Error).message;
+          onToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`);
+        });
+      return;
+    }
     setApplying(true);
     window.setTimeout(() => {
       setApplying(false);

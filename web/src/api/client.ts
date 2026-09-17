@@ -317,3 +317,11 @@ export const backupApi = {
   restore: (backup: { settings: Record<string, unknown> }) =>
     send<{ restored: number }>("/api/me/restore", "POST", backup),
 };
+
+export const writeApi = {
+  applyPlan: (id: string, body: { start: number; end: number; audio_offset: number; render_only: boolean; re_detect?: boolean }) =>
+    send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/plan/apply`, "POST", body),
+  uploadNow: (id: string) =>
+    send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/upload`, "POST"),
+  cancelJob: (id: string) => send<{ cancelled: boolean; job_id: string }>(`/api/jobs/${encodeURIComponent(id)}/cancel`, "POST"),
+};

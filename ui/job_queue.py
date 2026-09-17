@@ -98,6 +98,7 @@ class JobType(Enum):
     METADATA_UPDATE = "metadata_update"
     AUTO_EDIT = "auto_edit"
     AUTO_EDIT_APPLY = "auto_edit_apply"
+    SERMON_PUBLISH = "sermon_publish"
 
 
 class JobStatus(Enum):
@@ -448,7 +449,12 @@ class JobQueue:
         return jobs
 
     def cancel_job(self, job_id: str) -> bool:
-        """Cancel a job"""
+        """Cancel a job
+
+        Cancels in-memory when the job lives in this instance; otherwise
+        falls back to a direct DB status flip so a cancel works from any
+        process (e.g. the API bridge) against rows created elsewhere.
+        """
         cancelled = False
         with self._queue_lock:
             job = self._jobs.get(job_id)
@@ -463,6 +469,24 @@ class JobQueue:
 
         if cancelled:
             self._save_job_to_db(job)
+            return cancelled
+
+        # Cross-process fallback: flip the DB row directly when this
+        # instance has never seen the job.
+        if self.db is not None:
+            try:
+                with self.db.get_connection() as conn:
+                    cursor = conn.execute(
+                        "UPDATE background_jobs SET status = 'cancelled',"
+                        " completed_at = datetime('now')"
+                        " WHERE id = ? AND status IN ('queued', 'running') AND can_cancel = 1",
+                        (job_id,),
+                    )
+                    conn.commit()
+                    cancelled = cursor.rowcount > 0
+            except Exception as e:
+                logger.error(f"DB cancel fallback failed for {job_id}: {e}")
+                cancelled = False
         return cancelled
 
     def retry_job(self, job_id: str) -> bool:
