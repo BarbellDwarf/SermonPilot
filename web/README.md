@@ -94,6 +94,38 @@ All new sections are mock state only (per-section save + dirty-state + toast,
 confirms on destructive reset/apply). Captures:
 `web/validation/settings-coverage/desktop-1..3.png`.
 
+## Ownership model (per-user data scoping, P5b)
+
+`sermons.user_id` / `background_jobs.user_id` (nullable TEXT, indexed).
+`NULL` = unowned/legacy = admin-visible only. `role=user` callers see only
+rows stamped with their id across list/search/sort/detail/plan/jobs
+endpoints; foreign single-row fetches return 404, never 403. `role=admin`
+sees everything.
+
+Columns are added by a PRAGMA-checked `_ensure_columns` helper in
+`server/api/accounts.py:migrate()` (the `CREATE TABLE IF NOT EXISTS` shape
+never alters existing tables) and mirrored in `SermonDatabase.init_database`
++ `JobQueue._init_database` so Streamlit-managed databases gain them too.
+
+One-time backfill (reassigns unowned rows to the first admin; safe to re-run;
+historical sermons become admin-owned):
+
+```bash
+SERMONPILOT_DB=/data/sermon_processor.db .venv/bin/python -m server.api.backfill
+```
+
+Attribution: `JobQueue.add_job(..., user_id=...)` persists the owner without
+clobbering on later status saves; `SermonRepository.save_sermon()` stamps
+`user_id` from the payload only onto unowned rows; the sermon-processing and
+apply executors (`ui/job_executors.py`) fill unowned sermon rows from the
+job's `user_id` and never overwrite. The Streamlit path passes no `user_id`,
+so its rows stay `NULL` (admin-visible). Job creation currently lives behind
+UI code, so API-side creation wraps at the API layer when the write-path
+increment lands.
+
+New Sermon is not wired yet (read-only era): creation arrives with the
+write-path increment, at which point `user_id` is stamped from the session.
+
 ## Roadmap: resumable/interruptible uploads (logged Sep 16, the operator)
 Multiparty (chunked) uploads for the web console so large sermon files can be PAUSED and RESUMED across interruptions (browser restart, network drop, machine reboot). Server-side session keeps received chunk offsets; client resumes by querying state. Applies to Browser Upload path in New Sermon; Server Path ingest already handles huge files today. NOT started — design when the write-path phase lands.
 

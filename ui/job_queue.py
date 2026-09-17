@@ -68,6 +68,25 @@ def _strip_secrets(value: Any) -> Any:
     return value
 
 
+def _ensure_user_id_column(conn) -> bool:
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(background_jobs)").fetchall()}
+    except Exception:
+        return False
+    if "user_id" not in cols:
+        try:
+            conn.execute("ALTER TABLE background_jobs ADD COLUMN user_id TEXT")
+        except Exception:
+            return False
+    try:
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_background_jobs_user_id ON background_jobs(user_id)"
+        )
+    except Exception:
+        pass
+    return True
+
+
 class JobType(Enum):
     """Available job types"""
     VALIDATION = "validation"
@@ -128,6 +147,7 @@ class Job:
     can_retry: bool = True
     priority: int = 5  # 1-10, higher is more priority
     cancelled: bool = False
+    user_id: str | None = None
 
     def __post_init__(self):
         if self.logs is None:
@@ -253,6 +273,7 @@ class JobQueue:
                         priority INTEGER DEFAULT 5
                     )
                 """)
+                _ensure_user_id_column(conn)
                 conn.commit()
         except Exception as e:
             logger.error(f"Failed to initialize job database: {e}")
@@ -377,7 +398,7 @@ class JobQueue:
 
     def add_job(self, job_type: JobType, title: str, description: str,
                 parameters: dict[str, Any] | None = None,
-                priority: int = 5) -> str:
+                priority: int = 5, user_id: str | None = None) -> str:
         """Add a new job to the queue"""
         job_id = str(uuid.uuid4())
 
@@ -390,7 +411,8 @@ class JobQueue:
             progress=0.0,
             created_at=datetime.now(),
             parameters=parameters or {},
-            priority=priority
+            priority=priority,
+            user_id=user_id,
         )
 
         # Persist before publishing to the queue so workers only ever see a
@@ -615,23 +637,53 @@ class JobQueue:
                 parameters_json = (
                     json.dumps(_strip_secrets(job.parameters)) if job.parameters else None
                 )
-                conn.execute("""
-                    INSERT OR REPLACE INTO background_jobs (
-                        id, type, title, description, status, progress,
-                        parameters, result, logs, created_at, started_at,
-                        completed_at, can_cancel, can_retry, priority
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    job.id, job.type.value, job.title, job.description,
-                    job.status.value, job.progress,
-                    parameters_json,
-                    json.dumps(_result_for_persistence(job.result)) if job.result else None,
-                    json.dumps(job.logs) if job.logs else None,
-                    job.created_at.isoformat() if job.created_at else None,
-                    job.started_at.isoformat() if job.started_at else None,
-                    job.completed_at.isoformat() if job.completed_at else None,
-                    job.can_cancel, job.can_retry, job.priority
-                ))
+                has_owner = _ensure_user_id_column(conn)
+                user_id = job.user_id
+                if has_owner and user_id is None:
+                    try:
+                        existing = conn.execute(
+                            "SELECT user_id FROM background_jobs WHERE id = ?", (job.id,)
+                        ).fetchone()
+                        if existing is not None:
+                            user_id = existing["user_id"]
+                    except Exception:
+                        pass
+                if has_owner:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO background_jobs (
+                            id, type, title, description, status, progress,
+                            parameters, result, logs, created_at, started_at,
+                            completed_at, can_cancel, can_retry, priority, user_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        job.id, job.type.value, job.title, job.description,
+                        job.status.value, job.progress,
+                        parameters_json,
+                        json.dumps(_result_for_persistence(job.result)) if job.result else None,
+                        json.dumps(job.logs) if job.logs else None,
+                        job.created_at.isoformat() if job.created_at else None,
+                        job.started_at.isoformat() if job.started_at else None,
+                        job.completed_at.isoformat() if job.completed_at else None,
+                        job.can_cancel, job.can_retry, job.priority, user_id
+                    ))
+                else:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO background_jobs (
+                            id, type, title, description, status, progress,
+                            parameters, result, logs, created_at, started_at,
+                            completed_at, can_cancel, can_retry, priority
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        job.id, job.type.value, job.title, job.description,
+                        job.status.value, job.progress,
+                        parameters_json,
+                        json.dumps(_result_for_persistence(job.result)) if job.result else None,
+                        json.dumps(job.logs) if job.logs else None,
+                        job.created_at.isoformat() if job.created_at else None,
+                        job.started_at.isoformat() if job.started_at else None,
+                        job.completed_at.isoformat() if job.completed_at else None,
+                        job.can_cancel, job.can_retry, job.priority
+                    ))
                 conn.commit()
         except Exception as e:
             logger.error(f"Failed to save job {job.id} to database: {e}")
@@ -640,7 +692,12 @@ class JobQueue:
     def _job_from_row(self, row) -> Job | None:
         """Convert a background_jobs row into a Job, None when unparsable."""
         try:
+            try:
+                owner = row["user_id"] if "user_id" in row.keys() else None
+            except Exception:
+                owner = None
             job_data = {
+                "user_id": owner,
                 'id': row['id'],
                 'type': JobType(row['type']),
                 'title': row['title'],
