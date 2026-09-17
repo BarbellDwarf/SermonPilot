@@ -13,7 +13,6 @@ interface AudioState {
   method: string;
   customRepo: string;
   customFile: string;
-  useAudacity: boolean;
   noiseReduction: boolean;
   amplify: boolean;
   normalize: boolean;
@@ -25,7 +24,6 @@ const DEFAULTS: AudioState = {
   method: "deepfilternet",
   customRepo: "",
   customFile: "",
-  useAudacity: false,
   noiseReduction: true,
   amplify: true,
   normalize: true,
@@ -113,12 +111,6 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
 
       <h3 className="mt-4 text-sm font-semibold">Processing options</h3>
       <div className="mt-2 grid grid-cols-1 gap-2">
-        <Toggle
-          checked={cur.useAudacity}
-          onChange={(v) => set("useAudacity", v)}
-          label="Use Audacity Integration"
-          hint="Use Audacity with mod-script-pipe if available."
-        />
         <Toggle
           checked={cur.noiseReduction}
           onChange={(v) => set("noiseReduction", v)}

@@ -21,8 +21,85 @@ const LOCAL_MODELS = [
   "large-v3",
   "large-v3-turbo",
 ];
-const DEVICES = ["auto", "cpu", "cuda"];
+const DEVICES = [
+  { id: "auto", label: "Auto (auto-detect)" },
+  { id: "cpu", label: "cpu" },
+  { id: "cuda", label: "cuda" },
+];
 const COMPUTE_TYPES = ["float16", "float32", "int8_float16", "int8"];
+
+const MANAGEABLE_MODELS = [
+  { id: "tiny", size: "75 MB" },
+  { id: "base", size: "142 MB" },
+  { id: "small", size: "244 MB" },
+  { id: "medium", size: "769 MB" },
+  { id: "large-v3-turbo", size: "809 MB" },
+  { id: "large-v3", size: "2.9 GB" },
+];
+
+function ModelManager({ show }: { show: (m: string) => void }) {
+  const [downloaded, setDownloaded] = useState<string[]>(["tiny", "base"]);
+  const [progress, setProgress] = useState<Record<string, number>>({});
+  const downloading = Object.keys(progress).length > 0 ? Object.keys(progress)[0] : null;
+
+  const startDownload = (id: string) => {
+    if (downloaded.includes(id) || progress[id] !== undefined) return;
+    setProgress({ [id]: 0 });
+    const t = window.setInterval(() => {
+      setProgress((p) => {
+        const cur = (p[id] ?? 0) + 20;
+        if (cur >= 100) {
+          window.clearInterval(t);
+          window.setTimeout(() => {
+            setProgress({});
+            setDownloaded((d) => (d.includes(id) ? d : [...d, id]));
+            show(`Model downloaded (mock): ${id}.`);
+          }, 250);
+          return { [id]: 100 };
+        }
+        return { [id]: cur };
+      });
+    }, 300);
+  };
+
+  return (
+    <div className="mt-3 rounded-md border border-line p-3" aria-label="Manage models">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Manage models</h3>
+        <p className="text-xs text-muted">Mock downloads. Nothing leaves the browser.</p>
+      </div>
+      <ul className="mt-2 flex flex-col gap-2">
+        {MANAGEABLE_MODELS.map((m) => {
+          const done = downloaded.includes(m.id);
+          const pct = progress[m.id];
+          const busy = downloading !== null && downloading !== m.id;
+          return (
+            <li key={m.id} className="flex flex-wrap items-center gap-2 rounded-md border border-line p-3">
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-mono text-sm font-semibold">{m.id}</p>
+                <p className="font-mono text-xs text-muted">{m.size}{done ? " · downloaded" : ""}</p>
+                {pct !== undefined ? (
+                  <div className="mt-2 h-2 overflow-hidden rounded bg-raised" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`Downloading ${m.id}`}>
+                    <div className="h-full rounded bg-accent" style={{ width: `${pct}%` }} />
+                  </div>
+                ) : null}
+              </div>
+              {done ? (
+                <span className="text-xs text-muted" role="status">Ready</span>
+              ) : pct !== undefined ? (
+                <span className="font-mono text-xs text-muted" role="status">{pct}%</span>
+              ) : (
+                <Button onClick={() => startDownload(m.id)} disabled={busy} aria-label={`Download model ${m.id}`}>
+                  Download
+                </Button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
 
 interface TranscriptionState {
   backend: string;
@@ -103,7 +180,7 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
               ))}
             </select>
           </Field>
-          <Field label="Device" htmlFor="tr-device" hint="Compute device.">
+          <Field label="Device" htmlFor="tr-device" hint="Auto detects cuda when available, otherwise cpu.">
             <select
               id="tr-device"
               value={cur.device}
@@ -111,8 +188,8 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
               className={`${inputCls} font-mono`}
             >
               {DEVICES.map((d) => (
-                <option key={d} value={d}>
-                  {d}
+                <option key={d.id} value={d.id}>
+                  {d.label}
                 </option>
               ))}
             </select>
@@ -142,6 +219,8 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
           </Field>
         </div>
       ) : null}
+
+      {cur.backend === "faster_whisper_local" ? <ModelManager show={show} /> : null}
 
       {cur.backend === "whisper_openai" ? (
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">

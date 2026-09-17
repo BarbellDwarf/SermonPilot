@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AudioSettingsSection } from "../components/AudioSettings";
 import { ConfigBackupSection } from "../components/ConfigBackup";
 import { GeneralSettingsSection } from "../components/GeneralSettings";
@@ -19,6 +19,19 @@ import {
 } from "../components/ui";
 
 const ENV_NOTE = "Environment variables only seed defaults — saved user settings always win.";
+
+const TABS = [
+  { id: "general", label: "General" },
+  { id: "llm", label: "LLM Providers" },
+  { id: "sermonaudio", label: "SermonAudio Accounts" },
+  { id: "audio", label: "Audio" },
+  { id: "transcription", label: "Transcription" },
+  { id: "validation", label: "Validation" },
+  { id: "prompts", label: "Prompt Templates" },
+  { id: "backup", label: "Backup & Restore" },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
 
 function useSectionToast() {
   const [toast, setToast] = useState<string | null>(null);
@@ -256,23 +269,96 @@ function SystemSection({ show }: { show: (m: string) => void }) {
 
 export function Settings() {
   const { toast, show } = useSectionToast();
+  const [active, setActive] = useState<TabId>("general");
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  const focusTab = (id: TabId) => {
+    setActive(id);
+    tabRefs.current[id]?.focus();
+  };
+
+  const onTabKeyDown = (e: React.KeyboardEvent, id: TabId) => {
+    const ids = TABS.map((t) => t.id);
+    const i = ids.indexOf(id);
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      focusTab(ids[(i + 1) % ids.length] as TabId);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      focusTab(ids[(i - 1 + ids.length) % ids.length] as TabId);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      focusTab(ids[0] as TabId);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      focusTab(ids[ids.length - 1] as TabId);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader title="Settings" sub="Mock forms. Each section saves on its own." />
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-xs text-muted">{ENV_NOTE}</p>
-      <AppearanceSection show={show} />
-      <AccountSection show={show} />
-      <UsersSection show={show} />
-      <ProcessingSection show={show} />
-      <GeneralSettingsSection show={show} />
-      <AudioSettingsSection show={show} />
-      <TranscriptionSettingsSection show={show} />
-      <ValidationSettingsSection show={show} />
-      <PromptTemplatesSection show={show} />
-      <ConfigBackupSection show={show} />
-      <SermonAudioAccountsSection show={show} />
-      <LlmConnectionsSection show={show} />
-      <SystemSection show={show} />
+      <div
+        role="tablist"
+        aria-label="Settings sections"
+        className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1"
+      >
+        {TABS.map((t) => {
+          const selected = active === t.id;
+          return (
+            <button
+              key={t.id}
+              ref={(el) => {
+                tabRefs.current[t.id] = el;
+              }}
+              role="tab"
+              id={`tab-${t.id}`}
+              aria-selected={selected}
+              aria-controls={`panel-${t.id}`}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => setActive(t.id)}
+              onKeyDown={(e) => onTabKeyDown(e, t.id)}
+              className={`min-h-[44px] shrink-0 rounded-md border px-4 text-sm font-semibold transition-colors ${
+                selected
+                  ? "border-accent bg-raised text-mist"
+                  : "border-line bg-surface text-muted hover:border-muted hover:text-mist"
+              }`}
+            >
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+      <div role="tabpanel" id="panel-general" aria-labelledby="tab-general" hidden={active !== "general"} className="flex flex-col gap-4">
+        <GeneralSettingsSection show={show} />
+        <ProcessingSection show={show} />
+        <AppearanceSection show={show} />
+        <AccountSection show={show} />
+        <UsersSection show={show} />
+        <SystemSection show={show} />
+      </div>
+      <div role="tabpanel" id="panel-llm" aria-labelledby="tab-llm" hidden={active !== "llm"} className="flex flex-col gap-4">
+        <LlmConnectionsSection show={show} />
+      </div>
+      <div role="tabpanel" id="panel-sermonaudio" aria-labelledby="tab-sermonaudio" hidden={active !== "sermonaudio"} className="flex flex-col gap-4">
+        <SermonAudioAccountsSection show={show} />
+      </div>
+      <div role="tabpanel" id="panel-audio" aria-labelledby="tab-audio" hidden={active !== "audio"} className="flex flex-col gap-4">
+        <AudioSettingsSection show={show} />
+      </div>
+      <div role="tabpanel" id="panel-transcription" aria-labelledby="tab-transcription" hidden={active !== "transcription"} className="flex flex-col gap-4">
+        <TranscriptionSettingsSection show={show} />
+      </div>
+      <div role="tabpanel" id="panel-validation" aria-labelledby="tab-validation" hidden={active !== "validation"} className="flex flex-col gap-4">
+        <ValidationSettingsSection show={show} />
+      </div>
+      <div role="tabpanel" id="panel-prompts" aria-labelledby="tab-prompts" hidden={active !== "prompts"} className="flex flex-col gap-4">
+        <PromptTemplatesSection show={show} />
+      </div>
+      <div role="tabpanel" id="panel-backup" aria-labelledby="tab-backup" hidden={active !== "backup"} className="flex flex-col gap-4">
+        <ConfigBackupSection show={show} />
+      </div>
       <Toast message={toast} />
     </div>
   );
