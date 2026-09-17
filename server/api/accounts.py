@@ -62,10 +62,25 @@ def writable_conn() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    tables = {
+        row[0]
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    }
+    for table in ("sermons", "background_jobs"):
+        if table not in tables:
+            continue
+        cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if "user_id" not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN user_id TEXT")
+        conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_user_id ON {table}(user_id)")
+
+
 def migrate() -> None:
     with writable_conn() as conn:
         for ddl in ALL_DDL:
             conn.execute(ddl)
+        _ensure_columns(conn)
 
 
 def hash_password(password: str, salt: bytes | None = None) -> str:

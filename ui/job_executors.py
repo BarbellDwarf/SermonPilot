@@ -34,6 +34,34 @@ def _trim_result_payload(result: dict) -> dict:
     return {k: v for k, v in result.items() if k not in _RESULT_TRIM_FIELDS}
 
 
+def _job_user_id(job: Job) -> str | None:
+    params = job.parameters or {}
+    return params.get("user_id") or getattr(job, "user_id", None)
+
+
+def _stamp_sermon_owner(sermon_id: str | None, user_id: str | None) -> None:
+    if not sermon_id or not user_id:
+        return
+    try:
+        from ui.database import SermonRepository
+
+        repo = SermonRepository()
+        with repo.db.get_connection() as conn:
+            try:
+                cols = {row[1] for row in conn.execute("PRAGMA table_info(sermons)").fetchall()}
+            except Exception:
+                return
+            if "user_id" not in cols:
+                return
+            conn.execute(
+                "UPDATE sermons SET user_id = ? WHERE id = ? AND user_id IS NULL",
+                (user_id, sermon_id),
+            )
+            conn.commit()
+    except Exception as e:
+        logger.warning("Failed to stamp sermon owner %s: %s", sermon_id, e)
+
+
 def _raise_if_job_cancelled(job: Job) -> None:
     """cancel_check hook for process_new_sermon: raise when the job is cancelled."""
     if job.cancelled or job.status == JobStatus.CANCELLED:
@@ -485,6 +513,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
 
         if result.get('success'):
             sermon_id = result.get('sermon_id')
+            _stamp_sermon_owner(sermon_id, _job_user_id(job))
             plan_status = result.get('edit_plan_status')
             if plan_status == 'pending_review':
                 job.add_log("Auto-edit cut awaits manual review")
@@ -639,6 +668,7 @@ def execute_auto_edit_job(job: Job) -> JobResult:
 
         if result.get('success'):
             sermon_id = result.get('sermon_id')
+            _stamp_sermon_owner(sermon_id, _job_user_id(job))
             plan_status = result.get('edit_plan_status')
             if plan_status == 'pending_review':
                 job.add_log("Auto-edit cut awaits manual review")
@@ -1091,6 +1121,7 @@ def execute_auto_edit_apply_job(job: Job) -> JobResult:
                 raise JobCancelledError("Job cancelled by user")
 
             if result.get('success') and result.get('edit_plan_status') == 'auto_applied':
+                _stamp_sermon_owner(result.get('sermon_id') or sermon_id, _job_user_id(job))
                 media_id = (
                     result.get('final_upload_path')
                     or result.get('output_dir')
@@ -1297,6 +1328,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
                 "applied_local",
             ):
                 rendered_id = result.get("sermon_id") or ""
+                _stamp_sermon_owner(result.get("sermon_id") or sermon_id, _job_user_id(job))
                 job.add_log(f"Edit rendered locally, not uploaded ({rendered_id})")
                 return JobResult(
                     success=True,
@@ -1319,6 +1351,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
             )
 
         if result.get("success"):
+            _stamp_sermon_owner(result.get("sermon_id") or sermon_id, _job_user_id(job))
             applied_status = result.get("edit_plan_status") or "auto_applied"
             if applied_status == "auto_applied" and bool(result.get("auto_edit_applied")):
                 job.add_log(f"Edit applied and uploaded ({result.get('sermon_id')})")

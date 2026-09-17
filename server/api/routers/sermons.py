@@ -1,10 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from server.api import mapping
 from server.api.db import get_repository
-from server.api.schemas import EditPlanOut, SermonDetailOut, SermonListItem, SermonListOut, SermonPlanOut
+from server.api.schemas import (
+    EditPlanOut,
+    SermonDetailOut,
+    SermonListItem,
+    SermonListOut,
+    SermonPlanOut,
+)
+from server.api.scoping import request_user, scope_rows, visible
 
 router = APIRouter(prefix="/api/sermons", tags=["sermons"])
 
@@ -46,11 +53,12 @@ def _row_to_plan(sermon_id: str, row: dict, revisions_total: int) -> EditPlanOut
 
 @router.get("", response_model=SermonListOut)
 def list_sermons(
+    request: Request,
     search: str = Query(default=""),
     sort: str = Query(default="date"),
 ) -> SermonListOut:
     repo = get_repository()
-    rows = repo.get_all_sermons()
+    rows = scope_rows(repo.get_all_sermons(), request_user(request), "sermons")
     needle = search.strip().lower()
     if needle:
         rows = [
@@ -74,10 +82,10 @@ def list_sermons(
 
 
 @router.get("/{sermon_id}", response_model=SermonDetailOut)
-def get_sermon(sermon_id: str) -> SermonDetailOut:
+def get_sermon(request: Request, sermon_id: str) -> SermonDetailOut:
     repo = get_repository()
     sermon = repo.get_sermon(sermon_id)
-    if sermon is None:
+    if sermon is None or not visible(sermon.get("user_id"), request_user(request)):
         raise HTTPException(status_code=404, detail="sermon not found")
     files = repo.get_sermon_files(sermon_id)
     content = sermon.get("content") or {}
@@ -113,9 +121,10 @@ def get_sermon(sermon_id: str) -> SermonDetailOut:
 
 
 @router.get("/{sermon_id}/plan", response_model=SermonPlanOut)
-def get_sermon_plan(sermon_id: str) -> SermonPlanOut:
+def get_sermon_plan(request: Request, sermon_id: str) -> SermonPlanOut:
     repo = get_repository()
-    if repo.get_sermon(sermon_id) is None:
+    sermon = repo.get_sermon(sermon_id)
+    if sermon is None or not visible(sermon.get("user_id"), request_user(request)):
         raise HTTPException(status_code=404, detail="sermon not found")
     history_rows = repo.get_edit_plan_history(sermon_id)
     history = [
