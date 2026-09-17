@@ -136,3 +136,10 @@ Connect cloud storage (Google Drive, Dropbox, OneDrive, and S3-class all at v1 �
 1. SCRIPTURE OVERLAY (automated): when the speaker reads Scripture, fade to a text card showing the exact passage being read (verse lookup via a Bible API — midvash-class or offline public-domain text), paged for long passages, then fade back to the speaker. Builds on existing transcript timestamps + logo-card overlay windows (xfade machinery in auto_edit). Needs: reading-segment detection (LLM + timestamps), verse matching (fuzzy match transcript text -> reference), text-card renderer, review-gate UI for proposed overlays.
 2. AUDIO DISCLAIMER INTRO (optional per-sermon): optional pre-roll text card ('audio issues during recording...') rendered like the ending card — form option in New Sermon, persisted per sermon, rendered at render time.
 NOT started — design at the write-path/render phase.
+
+## P5f Files API scoping decision (Sep 17, the operator-approved default)
+/api/me/files lists/downloads ONLY from the user's own configured output directory
+(settings.general.output_dir, default processed_sermons). Path-traversal blocked
+(resolve + prefix check, 400 on escape). Admin user management UI is admin-only
+(role from /api/auth/me). Future hardening: per-sermon file scoping when per-user
+output dirs fully land; until then the output dir IS the user boundary.

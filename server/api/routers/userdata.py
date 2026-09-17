@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import secrets
 import sqlite3
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -330,3 +331,48 @@ def backup_full_db(user=Depends(require_user)):
         "tables": counts,
         "user_settings": settings,
     }
+
+
+files_router = APIRouter(prefix="/api/me/files", tags=["files"])
+
+
+def _user_output_dir(user: dict) -> Path:
+    with writable_conn() as conn:
+        general = get_setting(conn, user["id"], "settings.general")
+    configured = ""
+    if isinstance(general, dict):
+        configured = str(general.get("output_dir") or "")
+    if not configured:
+        configured = "processed_sermons"
+    path = Path(configured)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parents[2] / path
+    return path.resolve()
+
+
+@files_router.get("")
+def list_user_files(user=Depends(require_user)):
+    root = _user_output_dir(user)
+    items = []
+    if root.is_dir():
+        for entry in sorted(root.iterdir(), key=lambda p: p.name.lower()):
+            if entry.name.startswith("."):
+                continue
+            if entry.is_dir():
+                items.append({"name": entry.name, "type": "directory", "size": None})
+            elif entry.is_file():
+                items.append({"name": entry.name, "type": "file", "size": entry.stat().st_size})
+    return {"items": items, "root": str(root)}
+
+
+@files_router.get("/download")
+def download_file(path: str, user=Depends(require_user)):
+    root = _user_output_dir(user).resolve()
+    candidate = (root / path).resolve()
+    if not str(candidate).startswith(str(root)):
+        raise HTTPException(status_code=400, detail="path escapes the output directory")
+    if not candidate.is_file():
+        raise HTTPException(status_code=404, detail="file not found")
+    from fastapi.responses import FileResponse
+
+    return FileResponse(str(candidate), filename=candidate.name)

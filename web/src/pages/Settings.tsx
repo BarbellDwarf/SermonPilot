@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { isLive, meApi } from "../api/client";
+import { useRef, useState, useEffect } from "react";
+import { adminApi, isLive, meApi, type AdminUser } from "../api/client";
 import { useUserSettings } from "../api/useUserSettings";
 import { AudioSettingsSection } from "../components/AudioSettings";
 import { ConfigBackupSection } from "../components/ConfigBackup";
@@ -16,7 +16,6 @@ import {
   PageHeader,
   SectionCard,
   Toast,
-  Toggle,
   inputCls,
 } from "../components/ui";
 
@@ -140,58 +139,116 @@ function AccountSection({ show, user }: { show: (m: string) => void; user: { dis
 }
 
 const mockUsers = [
-  { id: "u-1", name: "Sample Admin", role: "Admin" },
-  { id: "u-2", name: "Sample Editor", role: "Editor" },
-  { id: "u-3", name: "Sample Viewer", role: "Viewer" },
+  { id: "mock-admin", name: "Admin", role: "admin" },
+  { id: "mock-user", name: "User", role: "user" },
 ];
 
 function UsersSection({ show }: { show: (m: string) => void }) {
-  const [disabled, setDisabled] = useState<string[]>([]);
-  const [multi, setMulti] = useState(true);
-  const [savedKey, setSavedKey] = useState("");
-  const [savedMulti, setSavedMulti] = useState(true);
-  const [everSaved, setEverSaved] = useState(false);
-  const isDirty = disabled.join() !== savedKey || multi !== savedMulti;
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [loaded, setLoaded] = useState(!isLive);
+  const [error, setError] = useState<string | null>(null);
+  const [newName, setNewName] = useState("");
+  const [newUser, setNewUser] = useState("");
+  const [newPass, setNewPass] = useState("");
+  const [newRole, setNewRole] = useState("user");
+
+  const load = () => {
+    if (!isLive) return;
+    void adminApi
+      .listUsers()
+      .then((r) => {
+        setUsers(r.users);
+        setError(null);
+      })
+      .catch((e) => setError((e as Error).message))
+      .finally(() => setLoaded(true));
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const create = () => {
+    if (!newUser.trim() || !newPass) return;
+    void adminApi
+      .createUser({ username: newUser.trim(), display_name: newName.trim() || newUser.trim(), password: newPass, role: newRole })
+      .then(() => {
+        setNewName("");
+        setNewUser("");
+        setNewPass("");
+        setNewRole("user");
+        show("User created.");
+        load();
+      })
+      .catch((e) => show(`Could not create user: ${(e as Error).message}`));
+  };
+
+  const patch = (id: string, body: { is_active?: boolean; new_password?: string }) => {
+    void adminApi
+      .patchUser(id, body)
+      .then(() => {
+        show(body.new_password ? "Password reset." : body.is_active === false ? "User deactivated." : "User enabled.");
+        load();
+      })
+      .catch((e) => show(`Could not update user: ${(e as Error).message}`));
+  };
+
   return (
-    <SectionCard title="Users" sub="Admins manage access. Disabling a row blocks sign-in without deleting history.">
+    <SectionCard title="Users" sub={isLive ? "Admins manage access. Deactivating blocks sign-in without deleting history." : "Admins manage access. Disabling a row blocks sign-in without deleting history. (mock)"}>
+      {error ? <p className="text-xs text-danger" role="alert">{error}</p> : null}
       <ul className="flex flex-col gap-2">
-        {mockUsers.map((u) => {
-          const off = disabled.includes(u.id);
-          return (
-            <li key={u.id} className="flex flex-wrap items-center gap-2 rounded-md border border-line p-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">{u.name}</p>
-                <p className="font-mono text-xs text-muted">{u.role}</p>
-              </div>
-              <Chip tone={off ? "neutral" : "ok"}>{off ? "disabled" : "enabled"}</Chip>
-              <Button
-                onClick={() => setDisabled((d) => (off ? d.filter((x) => x !== u.id) : [...d, u.id]))}
-                aria-pressed={off}
-              >
-                {off ? "Enable" : "Disable"}
-              </Button>
-            </li>
-          );
-        })}
+        {users.map((u) => (
+          <li key={u.id} className="flex flex-wrap items-center gap-2 rounded-md border border-line p-3">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">{u.display_name}</p>
+              <p className="font-mono text-xs text-muted">{u.username} · {u.role}</p>
+            </div>
+            <Chip tone={u.is_active ? "ok" : "neutral"}>{u.is_active ? "enabled" : "disabled"}</Chip>
+            <Button onClick={() => patch(u.id, { is_active: !u.is_active })} aria-pressed={!u.is_active}>
+              {u.is_active ? "Deactivate" : "Enable"}
+            </Button>
+          </li>
+        ))}
+        {isLive && loaded && users.length === 0 ? <li className="text-xs text-muted">No users found.</li> : null}
+        {!isLive ? (
+          <>
+            {mockUsers.map((u) => (
+              <li key={u.id} className="flex flex-wrap items-center gap-2 rounded-md border border-line p-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{u.name}</p>
+                  <p className="font-mono text-xs text-muted">{u.role}</p>
+                </div>
+                <Chip tone="ok">enabled</Chip>
+              </li>
+            ))}
+          </>
+        ) : null}
       </ul>
-      <div className="mt-3">
-        <Toggle
-          checked={multi}
-          onChange={setMulti}
-          label="Multi-user sign-in"
-          hint="Off means a single shared operator account. On means each person signs in separately."
-        />
-      </div>
-      <SaveRow
-        dirty={isDirty}
-        saved={!isDirty && everSaved}
-        onSave={() => {
-          setSavedKey(disabled.join());
-          setSavedMulti(multi);
-          setEverSaved(true);
-          show("User settings saved (mock).");
-        }}
-      />
+      {isLive ? (
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Field label="Username" htmlFor="adm-user">
+            <input id="adm-user" value={newUser} onChange={(e) => setNewUser(e.target.value)} className={inputCls} autoComplete="off" />
+          </Field>
+          <Field label="Display name" htmlFor="adm-name">
+            <input id="adm-name" value={newName} onChange={(e) => setNewName(e.target.value)} className={inputCls} autoComplete="off" />
+          </Field>
+          <Field label="Password" htmlFor="adm-pass">
+            <input id="adm-pass" type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} className={inputCls} autoComplete="new-password" />
+          </Field>
+          <Field label="Role" htmlFor="adm-role">
+            <select id="adm-role" value={newRole} onChange={(e) => setNewRole(e.target.value)} className={inputCls}>
+              <option value="user">user</option>
+              <option value="admin">admin</option>
+            </select>
+          </Field>
+          <div className="sm:col-span-2">
+            <Button variant="primary" onClick={create} disabled={!newUser.trim() || !newPass}>
+              Create user
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </SectionCard>
   );
 }
