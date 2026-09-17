@@ -1,4 +1,5 @@
 import { useId, useRef, useState } from "react";
+import { connectionsApi, isLive, type ApiConnection } from "../api/client";
 import { Button, Chip, ConfirmDialog, Field, SectionCard, inputCls } from "./ui";
 
 export type LlmRole = "Primary" | "Fallback" | "Validator" | "Unused";
@@ -292,8 +293,26 @@ function ConnectionCard({
   );
 }
 
+function fromApi(c: ApiConnection): LlmConnection {
+  return {
+    id: c.id,
+    name: c.name,
+    preset: c.preset || "custom",
+    provider: c.provider || "",
+    model: c.model || "",
+    endpoint: c.endpoint || "",
+    apiKey: c.masked_key || "not set",
+    numCtx: c.numCtx || "",
+    maxTokens: c.maxTokens || "",
+    temperature: c.temperature || "",
+    role: (c.role as LlmRole) || "Unused",
+    status: "unknown",
+  };
+}
+
 export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
   const [connections, setConnections] = useState<LlmConnection[]>(INITIAL_CONNECTIONS);
+  const [loaded, setLoaded] = useState(!isLive);
   const [visibleKeys, setVisibleKeys] = useState<string[]>([]);
   const [testing, setTesting] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, string>>({});
@@ -306,6 +325,14 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
   const editorRef = useRef<HTMLDivElement>(null);
   const uid = useId();
   const timers = useRef<number[]>([]);
+
+  if (isLive && !loaded) {
+    setLoaded(true);
+    connectionsApi
+      .list("llm")
+      .then((r) => setConnections(r.items.map(fromApi)))
+      .catch((e) => show(`Could not load connections: ${(e as Error).message}`));
+  }
 
   const subLabel = (k: "claude" | "chatgpt") => (k === "claude" ? "Claude Pro / Max" : "ChatGPT Plus / Pro");
 
@@ -380,48 +407,33 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
       return;
     }
     const preset = PRESETS.find((x) => x.id === draft.preset);
-    if (editingId) {
-      setConnections((cs) =>
-        cs.map((c) =>
-          c.id === editingId
-            ? {
-                ...c,
-                name: draft.name.trim(),
-                preset: draft.preset,
-                provider: preset?.provider ?? c.provider,
-                model: draft.model.trim(),
-                endpoint: draft.endpoint.trim(),
-                apiKey: draft.apiKey ? `mock-••••-${draft.apiKey.slice(-4)}` : c.apiKey,
-                numCtx: draft.numCtx.trim(),
-                maxTokens: draft.maxTokens.trim(),
-                temperature: draft.temperature.trim(),
-                role: draft.role,
-              }
-            : c,
-        ),
-      );
-      show(`Connection saved (mock): ${draft.name.trim()}.`);
-    } else {
-      const c: LlmConnection = {
-        id: nextId(),
-        name: draft.name.trim(),
-        preset: draft.preset,
-        provider: preset?.provider ?? "Custom",
-        model: draft.model.trim(),
-        endpoint: draft.endpoint.trim(),
-        apiKey: draft.apiKey ? `mock-••••-${draft.apiKey.slice(-4)}` : "",
-        numCtx: draft.numCtx.trim(),
-        maxTokens: draft.maxTokens.trim(),
-        temperature: draft.temperature.trim(),
-        role: draft.role,
-        status: "unknown",
-      };
-      setConnections((cs) => [...cs, c]);
-      show(`Connection added (mock): ${c.name}.`);
-    }
-    setEditorOpen(false);
-    setEditingId(null);
-    setDraft(EMPTY_DRAFT);
+    const payload = {
+      name: draft.name.trim(),
+      preset: draft.preset,
+      provider: preset?.provider ?? "Custom",
+      model: draft.model.trim(),
+      endpoint: draft.endpoint.trim(),
+      apiKey: draft.apiKey,
+      numCtx: draft.numCtx.trim(),
+      maxTokens: draft.maxTokens.trim(),
+      temperature: draft.temperature.trim(),
+      role: draft.role,
+    };
+    const call = editingId
+      ? connectionsApi.update("llm", editingId, payload)
+      : connectionsApi.create("llm", payload);
+    void call
+      .then((saved) => {
+        const mapped = fromApi(saved);
+        setConnections((cs) =>
+          editingId ? cs.map((c) => (c.id === editingId ? mapped : c)) : [...cs, mapped],
+        );
+        show(`${editingId ? "Connection saved" : "Connection added"}: ${mapped.name}.`);
+        setEditorOpen(false);
+        setEditingId(null);
+        setDraft(EMPTY_DRAFT);
+      })
+      .catch((e) => setErrors({ name: (e as Error).message }));
   };
 
   const testConnection = (id: string) => {
@@ -480,13 +492,14 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
   const activePreset = PRESETS.find((x) => x.id === draft.preset);
 
   return (
-    <SectionCard
+      <SectionCard
       title="LLM Providers"
-      sub="Connections manager (mock). Shape mirrors the app config llm block: primary / fallback / validator with provider, model, base URL, key, ollama host, num_ctx, max_tokens."
+      sub={isLive ? "Connections manager (live). Keys are stored per user and only the last 4 characters ever display." : "Connections manager (mock). Shape mirrors the app config llm block: primary / fallback / validator with provider, model, base URL, key, ollama host, num_ctx, max_tokens."}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted">
-          {connections.length} connection{connections.length === 1 ? "" : "s"} configured. Nothing here calls the network.
+          {connections.length} connection{connections.length === 1 ? "" : "s"} configured.
+          {isLive ? "" : " Nothing here calls the network."}
         </p>
         <Button
           variant="primary"
@@ -789,8 +802,18 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
         confirmLabel="Delete"
         onConfirm={() => {
           if (pendingDelete) {
-            setConnections((cs) => cs.filter((c) => c.id !== pendingDelete.id));
-            show(`Connection deleted (mock): ${pendingDelete.name}.`);
+            if (isLive) {
+              void connectionsApi
+                .remove("llm", pendingDelete.id)
+                .then(() => {
+                  setConnections((cs) => cs.filter((c) => c.id !== pendingDelete.id));
+                  show(`Connection deleted: ${pendingDelete.name}.`);
+                })
+                .catch((e) => show(`Could not delete: ${(e as Error).message}`));
+            } else {
+              setConnections((cs) => cs.filter((c) => c.id !== pendingDelete.id));
+              show(`Connection deleted (mock): ${pendingDelete.name}.`);
+            }
           }
           setPendingDelete(null);
         }}

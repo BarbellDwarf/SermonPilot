@@ -1,4 +1,5 @@
 import { useId, useRef, useState } from "react";
+import { connectionsApi, isLive, type ApiConnection } from "../api/client";
 import { Button, Chip, ConfirmDialog, Field, SectionCard, inputCls } from "./ui";
 
 export type SaStatus = "ok" | "warn" | "error" | "unknown";
@@ -175,10 +176,22 @@ function AccountCard({
   );
 }
 
+function fromApi(c: ApiConnection): SermonAudioAccount {
+  return {
+    id: c.id,
+    name: c.name,
+    broadcasterId: c.broadcasterId || "",
+    apiKey: c.masked_key || "not set",
+    notes: c.notes || "",
+    status: "unknown",
+  };
+}
+
 export function SermonAudioAccountsSection({ show }: { show: (m: string) => void }) {
   const [accounts, setAccounts] = useState<SermonAudioAccount[]>(INITIAL_ACCOUNTS);
   const [defaultId, setDefaultId] = useState("sa-1");
   const [saved, setSaved] = useState({ accounts: INITIAL_ACCOUNTS, defaultId: "sa-1" });
+  const [liveLoaded, setLiveLoaded] = useState(!isLive);
   const [visibleKeys, setVisibleKeys] = useState<string[]>([]);
   const [testing, setTesting] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, string>>({});
@@ -191,8 +204,19 @@ export function SermonAudioAccountsSection({ show }: { show: (m: string) => void
   const editorRef = useRef<HTMLDivElement>(null);
   const uid = useId();
 
-  const dirty = JSON.stringify({ accounts, defaultId }) !== JSON.stringify(saved);
+  const dirty = isLive ? false : JSON.stringify({ accounts, defaultId }) !== JSON.stringify(saved);
   const defaultAccount = accounts.find((a) => a.id === defaultId);
+
+  if (isLive && !liveLoaded) {
+    setLiveLoaded(true);
+    connectionsApi
+      .list("sermonaudio")
+      .then((r) => {
+        setAccounts(r.items.map(fromApi));
+        setDefaultId(r.default_id ?? "");
+      })
+      .catch((e) => show(`Could not load accounts: ${(e as Error).message}`));
+  }
 
   const openEditor = (d: EditorDraft, id: string | null) => {
     setDraft(d);
@@ -211,6 +235,30 @@ export function SermonAudioAccountsSection({ show }: { show: (m: string) => void
     const e = validateDraft({ ...draft, apiKey: editingId ? draft.apiKey || "kept" : draft.apiKey });
     setErrors(e);
     if (Object.keys(e).length > 0) return;
+    if (isLive) {
+      const payload = {
+        name: draft.name.trim(),
+        broadcasterId: draft.broadcasterId.trim(),
+        notes: draft.notes.trim(),
+        apiKey: draft.apiKey,
+      };
+      const call = editingId
+        ? connectionsApi.update("sermonaudio", editingId, payload)
+        : connectionsApi.create("sermonaudio", payload);
+      void call
+        .then((row) => {
+          const mapped = fromApi(row);
+          setAccounts((as) =>
+            editingId ? as.map((a) => (a.id === editingId ? mapped : a)) : [...as, mapped],
+          );
+          show(`${editingId ? "Account saved" : "Account added"}: ${mapped.name}.`);
+          setEditorOpen(false);
+          setEditingId(null);
+          setDraft(EMPTY_DRAFT);
+        })
+        .catch((err) => setErrors({ name: (err as Error).message }));
+      return;
+    }
     if (editingId) {
       setAccounts((as) =>
         as.map((a) =>
@@ -288,6 +336,16 @@ export function SermonAudioAccountsSection({ show }: { show: (m: string) => void
             onToggleKey={() => setVisibleKeys((v) => (v.includes(a.id) ? v.filter((x) => x !== a.id) : [...v, a.id]))}
             onTest={() => testAccount(a.id)}
             onSetDefault={() => {
+              if (isLive) {
+                void connectionsApi
+                  .setDefault(a.id)
+                  .then(() => {
+                    setDefaultId(a.id);
+                    show(`Default account: ${a.name}.`);
+                  })
+                  .catch((e) => show(`Could not set default: ${(e as Error).message}`));
+                return;
+              }
               setDefaultId(a.id);
               show(`Default account (mock): ${a.name}.`);
             }}
@@ -390,22 +448,28 @@ export function SermonAudioAccountsSection({ show }: { show: (m: string) => void
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button
-          variant="primary"
-          disabled={!dirty}
-          onClick={() => {
-            setSaved({ accounts, defaultId });
-            show(`SermonAudio accounts saved (mock): ${accounts.length} account${accounts.length === 1 ? "" : "s"}.`);
-          }}
-        >
-          Save
-        </Button>
-        {!dirty ? (
-          <span className="text-xs text-muted">No unsaved changes.</span>
+        {isLive ? (
+          <span className="text-xs text-muted">Changes save to your account immediately.</span>
         ) : (
-          <span className="text-xs text-warn" role="status">
-            Unsaved changes.
-          </span>
+          <>
+            <Button
+              variant="primary"
+              disabled={!dirty}
+              onClick={() => {
+                setSaved({ accounts, defaultId });
+                show(`SermonAudio accounts saved (mock): ${accounts.length} account${accounts.length === 1 ? "" : "s"}.`);
+              }}
+            >
+              Save
+            </Button>
+            {!dirty ? (
+              <span className="text-xs text-muted">No unsaved changes.</span>
+            ) : (
+              <span className="text-xs text-warn" role="status">
+                Unsaved changes.
+              </span>
+            )}
+          </>
         )}
       </div>
 
@@ -416,12 +480,23 @@ export function SermonAudioAccountsSection({ show }: { show: (m: string) => void
         confirmLabel="Delete"
         onConfirm={() => {
           if (pendingDelete) {
-            setAccounts((as) => as.filter((a) => a.id !== pendingDelete.id));
-            if (pendingDelete.id === defaultId) {
-              const next = accounts.filter((a) => a.id !== pendingDelete.id)[0];
-              setDefaultId(next ? next.id : "");
+            if (isLive) {
+              void connectionsApi
+                .remove("sermonaudio", pendingDelete.id)
+                .then(() => {
+                  setAccounts((as) => as.filter((a) => a.id !== pendingDelete.id));
+                  if (pendingDelete.id === defaultId) setDefaultId("");
+                  show(`Account deleted: ${pendingDelete.name}.`);
+                })
+                .catch((e) => show(`Could not delete: ${(e as Error).message}`));
+            } else {
+              setAccounts((as) => as.filter((a) => a.id !== pendingDelete.id));
+              if (pendingDelete.id === defaultId) {
+                const next = accounts.filter((a) => a.id !== pendingDelete.id)[0];
+                setDefaultId(next ? next.id : "");
+              }
+              show(`Account deleted (mock): ${pendingDelete.name}.`);
             }
-            show(`Account deleted (mock): ${pendingDelete.name}.`);
           }
           setPendingDelete(null);
         }}
