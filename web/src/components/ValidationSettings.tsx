@@ -1,4 +1,6 @@
 import { useId, useState } from "react";
+import { isLive } from "../api/client";
+import { useUserSettings } from "../api/useUserSettings";
 import { Button, Field, SectionCard, Toggle, inputCls } from "./ui";
 
 interface ValidationState {
@@ -31,12 +33,11 @@ function intError(v: string, min: number, max: number): string | null {
 }
 
 export function ValidationSettingsSection({ show }: { show: (m: string) => void }) {
-  const [cur, setCur] = useState<ValidationState>(DEFAULTS);
-  const [saved, setSaved] = useState<ValidationState>(DEFAULTS);
-  const [everSaved, setEverSaved] = useState(false);
+  const [saved, setSaved] = useUserSettings<ValidationState>("settings.validation", DEFAULTS);
+  const [cur, setCur] = useState<ValidationState>(saved);
   const [newCriterion, setNewCriterion] = useState("");
   const uid = useId();
-  const dirty = JSON.stringify(cur) !== JSON.stringify(saved);
+  const dirty = isLive && JSON.stringify(cur) !== JSON.stringify(saved);
 
   const descErr = intError(cur.descMinLength, 10, 200);
   const hashErr = intError(cur.hashMinLength, 5, 50);
@@ -198,14 +199,14 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
           disabled={!dirty || !valid}
           onClick={() => {
             setSaved(cur);
-            setEverSaved(true);
-            show("Validation settings saved (mock).");
+            setCur(cur);
+            show(isLive ? "Validation settings saved." : "Validation settings saved (mock).");
           }}
         >
           Save
         </Button>
         {!dirty ? (
-          <span className="text-xs text-muted">{everSaved ? "Saved." : "No unsaved changes."}</span>
+          <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>
         ) : (
           <span className="text-xs text-warn" role="status">
             Unsaved changes.

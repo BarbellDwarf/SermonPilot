@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { isLive } from "../api/client";
+import { useUserSettings } from "../api/useUserSettings";
 import { Button, ConfirmDialog, Field, SectionCard, Toggle, inputCls } from "./ui";
 
 interface TemplateDraft {
@@ -46,11 +48,10 @@ function defaults(): Record<TaskKey, TemplateDraft> {
 }
 
 export function PromptTemplatesSection({ show }: { show: (m: string) => void }) {
-  const [cur, setCur] = useState<Record<TaskKey, TemplateDraft>>(defaults);
-  const [saved, setSaved] = useState<Record<TaskKey, TemplateDraft>>(defaults);
-  const [everSaved, setEverSaved] = useState(false);
+  const [saved, setSaved] = useUserSettings<Record<TaskKey, TemplateDraft>>("settings.prompts", defaults());
+  const [cur, setCur] = useState<Record<TaskKey, TemplateDraft>>(saved);
   const [pendingReset, setPendingReset] = useState<TaskKey | null>(null);
-  const dirty = JSON.stringify(cur) !== JSON.stringify(saved);
+  const dirty = isLive && JSON.stringify(cur) !== JSON.stringify(saved);
   const setTask = (k: TaskKey, patch: Partial<TemplateDraft>) =>
     setCur((c) => ({ ...c, [k]: { ...c[k], ...patch } }));
 
@@ -121,14 +122,14 @@ export function PromptTemplatesSection({ show }: { show: (m: string) => void }) 
           disabled={!dirty}
           onClick={() => {
             setSaved(cur);
-            setEverSaved(true);
-            show("Prompt templates saved (mock).");
+            setCur(cur);
+            show(isLive ? "Prompt templates saved." : "Prompt templates saved (mock).");
           }}
         >
           Save
         </Button>
         {!dirty ? (
-          <span className="text-xs text-muted">{everSaved ? "Saved." : "No unsaved changes."}</span>
+          <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>
         ) : (
           <span className="text-xs text-warn" role="status">
             Unsaved changes.

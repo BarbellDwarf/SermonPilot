@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { isLive } from "../api/client";
+import { useUserSettings } from "../api/useUserSettings";
 import { Button, Field, SectionCard, inputCls } from "./ui";
 
 const BACKENDS = [
@@ -126,15 +128,14 @@ const DEFAULTS: TranscriptionState = {
 };
 
 export function TranscriptionSettingsSection({ show }: { show: (m: string) => void }) {
-  const [cur, setCur] = useState<TranscriptionState>(DEFAULTS);
-  const [saved, setSaved] = useState<TranscriptionState>(DEFAULTS);
-  const [everSaved, setEverSaved] = useState(false);
+  const [saved, setSaved] = useUserSettings<TranscriptionState>("settings.transcription", DEFAULTS);
+  const [cur, setCur] = useState<TranscriptionState>(saved);
   const [openaiKey, setOpenaiKey] = useState("");
   const [savedOpenaiKey, setSavedOpenaiKey] = useState("");
   const [openrouterKey, setOpenrouterKey] = useState("");
   const [savedOpenrouterKey, setSavedOpenrouterKey] = useState("");
   const dirty =
-    JSON.stringify(cur) !== JSON.stringify(saved) ||
+    (isLive && JSON.stringify(cur) !== JSON.stringify(saved)) ||
     openaiKey !== savedOpenaiKey ||
     openrouterKey !== savedOpenrouterKey;
   const set = <K extends keyof TranscriptionState>(k: K, v: TranscriptionState[K]) =>
@@ -311,17 +312,18 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
           variant="primary"
           disabled={!dirty || !valid}
           onClick={() => {
-            setSaved(cur);
+            const next = { ...cur, openaiKey, openrouterKey };
+            setSaved(next);
             setSavedOpenaiKey(openaiKey);
             setSavedOpenrouterKey(openrouterKey);
-            setEverSaved(true);
-            show("Transcription settings saved (mock).");
+            setCur(cur);
+            show(isLive ? "Transcription settings saved." : "Transcription settings saved (mock).");
           }}
         >
           Save
         </Button>
         {!dirty ? (
-          <span className="text-xs text-muted">{everSaved ? "Saved." : "No unsaved changes."}</span>
+          <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>
         ) : (
           <span className="text-xs text-warn" role="status">
             Unsaved changes.

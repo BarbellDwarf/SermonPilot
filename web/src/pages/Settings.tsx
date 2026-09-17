@@ -1,4 +1,6 @@
 import { useRef, useState } from "react";
+import { isLive, meApi } from "../api/client";
+import { useUserSettings } from "../api/useUserSettings";
 import { AudioSettingsSection } from "../components/AudioSettings";
 import { ConfigBackupSection } from "../components/ConfigBackup";
 import { GeneralSettingsSection } from "../components/GeneralSettings";
@@ -60,9 +62,9 @@ function SaveRow({ dirty, saved, onSave }: { dirty: boolean; saved: boolean; onS
 }
 
 function AppearanceSection({ show }: { show: (m: string) => void }) {
-  const [theme, setTheme] = useState("dark");
-  const [savedTheme, setSavedTheme] = useState("dark");
-  const isDirty = theme !== savedTheme;
+  const [savedTheme, setSavedTheme] = useUserSettings<string>("settings.theme", "dark");
+  const [theme, setTheme] = useState(savedTheme);
+  const isDirty = isLive ? theme !== savedTheme : theme !== savedTheme;
   return (
     <SectionCard title="Appearance" sub="Theme applies instantly in this mock and persists on save.">
       <fieldset>
@@ -81,16 +83,17 @@ function AppearanceSection({ show }: { show: (m: string) => void }) {
         saved={!isDirty}
         onSave={() => {
           setSavedTheme(theme);
-          show(`Appearance saved (mock): theme ${theme}.`);
+          setTheme(theme);
+          show(`Appearance saved: theme ${theme}${isLive ? "" : " (mock)"}.`);
         }}
       />
     </SectionCard>
   );
 }
 
-function AccountSection({ show }: { show: (m: string) => void }) {
-  const [name, setName] = useState("Sample Operator");
-  const [savedName, setSavedName] = useState("Sample Operator");
+function AccountSection({ show, user }: { show: (m: string) => void; user: { display_name: string } }) {
+  const [savedName, setSavedName] = useState(user.display_name);
+  const [name, setName] = useState(user.display_name);
   const [sent, setSent] = useState(false);
   const dirty = name !== savedName;
   return (
@@ -118,6 +121,16 @@ function AccountSection({ show }: { show: (m: string) => void }) {
         dirty={dirty}
         saved={!dirty}
         onSave={() => {
+          if (isLive) {
+            void meApi
+              .patch({ display_name: name })
+              .then(() => {
+                setSavedName(name);
+                show("Account saved.");
+              })
+              .catch((e) => show(`Could not save: ${(e as Error).message}`));
+            return;
+          }
           setSavedName(name);
           show("Account saved (mock).");
         }}
@@ -184,14 +197,12 @@ function UsersSection({ show }: { show: (m: string) => void }) {
 }
 
 function ProcessingSection({ show }: { show: (m: string) => void }) {
-  const [audioBitrate, setAudioBitrate] = useState("128k");
-  const [videoBitrate, setVideoBitrate] = useState("2500k");
-  const [offset, setOffset] = useState("0.0");
-  const [saved, setSaved] = useState<{ a: string; v: string; o: string } | null>(null);
-  const base = { a: "128k", v: "2500k", o: "0.0" };
+  const [saved, setSaved] = useUserSettings<{ a: string; v: string; o: string }>("settings.processing", { a: "128k", v: "2500k", o: "0.0" });
+  const [audioBitrate, setAudioBitrate] = useState(saved.a);
+  const [videoBitrate, setVideoBitrate] = useState(saved.v);
+  const [offset, setOffset] = useState(saved.o);
   const cur = { a: audioBitrate, v: videoBitrate, o: offset };
-  const ref = saved ?? base;
-  const isDirty = cur.a !== ref.a || cur.v !== ref.v || cur.o !== ref.o;
+  const isDirty = isLive && (cur.a !== saved.a || cur.v !== saved.v || cur.o !== saved.o);
   const offsetOk = /^-?\d+(\.\d+)?$/.test(offset.trim());
   return (
     <SectionCard title="Processing defaults" sub="Keeper bitrates and the default audio offset for new runs.">
@@ -212,7 +223,7 @@ function ProcessingSection({ show }: { show: (m: string) => void }) {
         saved={saved !== null && !isDirty}
         onSave={() => {
           setSaved(cur);
-          show("Processing defaults saved (mock).");
+          show(`Processing defaults saved${isLive ? "" : " (mock)"}.`);
         }}
       />
     </SectionCard>
@@ -220,9 +231,9 @@ function ProcessingSection({ show }: { show: (m: string) => void }) {
 }
 
 function SystemSection({ show }: { show: (m: string) => void }) {
-  const [logLevel, setLogLevel] = useState("info");
-  const [savedLevel, setSavedLevel] = useState("info");
-  const dirty = logLevel !== savedLevel;
+  const [savedLevel, setSavedLevel] = useUserSettings<string>("settings.logLevel", "info");
+  const [logLevel, setLogLevel] = useState(savedLevel);
+  const dirty = isLive ? logLevel !== savedLevel : logLevel !== savedLevel;
   const bars = [
     { label: "Processed media", pct: 62 },
     { label: "Source uploads", pct: 24 },
@@ -260,14 +271,14 @@ function SystemSection({ show }: { show: (m: string) => void }) {
         saved={!dirty}
         onSave={() => {
           setSavedLevel(logLevel);
-          show(`System saved (mock): log level ${logLevel}.`);
+          show(`System saved: log level ${logLevel}${isLive ? "" : " (mock)"}.`);
         }}
       />
     </SectionCard>
   );
 }
 
-export function Settings() {
+export function Settings({ user }: { user: { display_name: string } }) {
   const { toast, show } = useSectionToast();
   const [active, setActive] = useState<TabId>("general");
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -297,7 +308,7 @@ export function Settings() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Settings" sub="Mock forms. Each section saves on its own." />
+      <PageHeader title="Settings" sub={isLive ? "Each section saves to your account on save." : "Mock forms. Each section saves on its own."} />
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-xs text-muted">{ENV_NOTE}</p>
       <div
         role="tablist"
@@ -335,7 +346,7 @@ export function Settings() {
         <GeneralSettingsSection show={show} />
         <ProcessingSection show={show} />
         <AppearanceSection show={show} />
-        <AccountSection show={show} />
+        <AccountSection show={show} user={user} />
         <UsersSection show={show} />
         <SystemSection show={show} />
         </div>

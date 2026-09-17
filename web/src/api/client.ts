@@ -293,3 +293,27 @@ export const connectionsApi = {
   setDefault: (id: string | null) =>
     send<{ default_id: string | null }>("/api/me/connections/sermonaudio/default", "PUT", { id }),
 };
+
+export const settingsApi = {
+  get: (key: string) => send<{ key: string; value: unknown }>(`/api/me/settings/${encodeURIComponent(key)}`, "GET"),
+  put: (key: string, value: unknown) =>
+    send<{ key: string; value: unknown }>(`/api/me/settings/${encodeURIComponent(key)}`, "PUT", { value }),
+};
+
+export const meApi = {
+  patch: (body: { display_name?: string; email?: string }) =>
+    send<AuthUser>("/api/me", "PATCH", body),
+};
+
+export interface UserBackup {
+  app: string;
+  backup_kind: string;
+  account: { id: string; username: string; display_name: string; role: string } | null;
+  settings: Record<string, unknown>;
+}
+
+export const backupApi = {
+  download: () => send<UserBackup>("/api/me/backup", "GET"),
+  restore: (backup: { settings: Record<string, unknown> }) =>
+    send<{ restored: number }>("/api/me/restore", "POST", backup),
+};

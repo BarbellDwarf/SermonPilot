@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { isLive } from "../api/client";
+import { useUserSettings } from "../api/useUserSettings";
 import { Button, Field, SectionCard, Toggle, inputCls } from "./ui";
 
 const METHODS = [
@@ -39,10 +41,9 @@ function numError(v: string, min: number, max: number): string | null {
 }
 
 export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
-  const [cur, setCur] = useState<AudioState>(DEFAULTS);
-  const [saved, setSaved] = useState<AudioState>(DEFAULTS);
-  const [everSaved, setEverSaved] = useState(false);
-  const dirty = JSON.stringify(cur) !== JSON.stringify(saved);
+  const [saved, setSaved] = useUserSettings<AudioState>("settings.audio", DEFAULTS);
+  const [cur, setCur] = useState<AudioState>(saved);
+  const dirty = isLive && JSON.stringify(cur) !== JSON.stringify(saved);
   const set = <K extends keyof AudioState>(k: K, v: AudioState[K]) =>
     setCur((c) => ({ ...c, [k]: v }));
 
@@ -196,14 +197,14 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
           disabled={!dirty || !valid}
           onClick={() => {
             setSaved(cur);
-            setEverSaved(true);
-            show("Audio settings saved (mock).");
+            setCur(cur);
+            show(isLive ? "Audio settings saved." : "Audio settings saved (mock).");
           }}
         >
           Save
         </Button>
         {!dirty ? (
-          <span className="text-xs text-muted">{everSaved ? "Saved." : "No unsaved changes."}</span>
+          <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>
         ) : (
           <span className="text-xs text-warn" role="status">
             Unsaved changes.
