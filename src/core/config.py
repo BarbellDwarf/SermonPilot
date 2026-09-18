@@ -78,7 +78,6 @@ ENV_CONFIG_MAP: dict[str, list[list[str]]] = {
     'VERBOSE': [['verbose']],
     'DRY_RUN': [['dry_run']],
     'HASHTAG_VERIFICATION': [['hashtag_verification']],
-    'QA_NORMALIZATION_ENABLED': [['qa_normalization', 'enabled']],
     'EMBEDDING_PROVIDER': [['embeddings', 'primary', 'provider']],
     'EMBEDDING_MODEL': [['embeddings', 'primary', 'model']],
 }

@@ -3627,7 +3627,7 @@ def publish_dry_run_sermon(dry_run_id: str, publish: bool = True) -> dict[str, A
                     )
                 conn.execute("DELETE FROM sermon_search WHERE sermon_id = ?", (dry_run_id,))
                 for table in (
-                    'qa_segments', 'sermon_content', 'processing_info', 'sermon_files',
+                    'sermon_content', 'processing_info', 'sermon_files',
                     'upload_info', 'processing_status', 'validation_results',
                     'manual_review', 'llm_api_usage',
                 ):
@@ -4309,7 +4309,6 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
 
     # Audio processing (if needed)
     output_audio = None
-    qa_processing_info = None
     if needs_audio:
         if not verbose:
             print("   Downloading audio...")
@@ -4367,19 +4366,14 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                     **AUDIO_PARAMS
                 )
 
-                # Handle new return format (success, qa_info) vs old format (success only)
+                # Handle new return format (success, info) vs old format (success only)
                 if isinstance(result, tuple):
-                    processing_success, qa_processing_info = result
+                    processing_success = result[0]
                 else:
                     processing_success = result
 
                 if not processing_success:
                     logger.warning("Audio processing issues; continuing with original audio")
-                elif qa_processing_info:
-                    logger.info(
-                        f"Q&A processing: "
-                        f"{qa_processing_info.get('total_segments', 0)} segments detected"
-                    )
 
             except Exception as e:
                 logger.error("Audio processing failed: %s", e)
@@ -4592,7 +4586,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
     logger.info("Sermon %s processing complete", sermon_id)
 
     # Save complete sermon record to database for UI access
-    if database_available and (qa_processing_info or summary or hashtags or transcript):
+    if database_available and (summary or hashtags or transcript):
         try:
             repo = SermonRepository()
 
@@ -4622,16 +4616,8 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                     'enhancement_method': AUDIO_PARAMS.get('enhancement_method', 'unknown'),
                     'noise_reduction_applied': AUDIO_PARAMS.get('noise_reduction', False),
                     'normalization_applied': AUDIO_PARAMS.get('normalize', False),
-                    'qa_normalization_applied': qa_processing_info is not None,
-                    'qa_segments_count': (
-                        qa_processing_info.get('total_segments', 0) if qa_processing_info else 0
-                    ),
-                    'qa_segments': (
-                        qa_processing_info.get('qa_segments', []) if qa_processing_info else []
-                    ),
                     'processing_duration': None,  # Could be tracked with timing
                     'quality_score': None,  # Could be calculated from processing metrics
-                    'processing_logs': qa_processing_info if qa_processing_info else {}
                 },
                 'content': {
                     'transcript_text': transcript,
@@ -4654,11 +4640,6 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
             success = repo.save_sermon(sermon_data)
             if success:
                 logger.debug("Sermon data saved to database successfully")
-                if qa_processing_info and qa_processing_info.get('total_segments', 0) > 0:
-                    logger.info(
-                        f"Saved Q&A processing info: "
-                        f"{qa_processing_info['total_segments']} segments"
-                    )
             else:
                 logger.warning("Failed to save sermon data to database")
 
