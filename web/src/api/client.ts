@@ -326,6 +326,29 @@ export const writeApi = {
   cancelJob: (id: string) => send<{ cancelled: boolean; job_id: string }>(`/api/jobs/${encodeURIComponent(id)}/cancel`, "POST"),
 };
 
+export interface SermonUploadResult {
+  id: string;
+  job_id: string;
+  status: string;
+  filename: string;
+}
+
+export const uploadApi = {
+  upload: async (form: FormData): Promise<SermonUploadResult> => {
+    const res = await authFetch("/api/sermons/upload", { method: "POST", body: form });
+    if (!res.ok) {
+      let detail = `Upload failed with ${res.status}`;
+      try {
+        const parsed = (await res.json()) as { detail?: unknown };
+        if (typeof parsed.detail === "string") detail = parsed.detail;
+      } catch {
+      }
+      throw new Error(detail);
+    }
+    return (await res.json()) as SermonUploadResult;
+  },
+};
+
 export interface AdminUser {
   id: string;
   username: string;
