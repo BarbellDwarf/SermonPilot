@@ -67,6 +67,13 @@ class SermonPlanOut(BaseModel):
     history: list[EditPlanOut] = []
 
 
+class TranscriptOut(BaseModel):
+    id: str
+    transcript: str
+    truncated: bool = False
+    total_length: int = 0
+
+
 class JobListItem(BaseModel):
     id: str
     type: str

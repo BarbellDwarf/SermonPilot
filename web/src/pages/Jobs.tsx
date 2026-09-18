@@ -2,7 +2,7 @@ import { useState } from "react";
 import { type Job } from "../mock/data";
 import { Button, Card, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast } from "../components/ui";
 import { QueryError, useJobDetail, useJobsData } from "../api/hooks";
-import { isLive } from "../api/client";
+import { isLive, writeApi } from "../api/client";
 
 type Tab = "active" | "completed" | "failed";
 
@@ -60,7 +60,23 @@ function JobRow({ job, onAction, readOnly, onNotify }: { job: Job; onAction: (a:
             >
               {open ? "Hide log" : "View log"}
             </button>
-            {readOnly ? (
+            {isLive ? (
+              <>
+                {job.state === "queued" || job.state === "running" || job.state === "failed" ? (
+                  <Button
+                    variant={job.state === "running" ? "danger" : undefined}
+                    onClick={() => onAction({ job, action: "cancel" })}
+                  >
+                    Cancel
+                  </Button>
+                ) : null}
+                {job.state === "failed" ? (
+                  <Button onClick={() => onNotify("Retry is unavailable in the read-only bridge.")}>
+                    Retry
+                  </Button>
+                ) : null}
+              </>
+            ) : readOnly ? (
               job.state === "failed" ? (
                 <Button onClick={() => onNotify("Retry is unavailable in the read-only bridge.")}>
                   Retry
@@ -216,8 +232,20 @@ export function Jobs() {
         onClose={() => setPending(null)}
         onConfirm={() => {
           if (pending) {
-            setRemoved((d) => [...d, pending.job.id]);
-            showToast(pending.action === "cancel" ? `Job ${pending.job.id} cancelled (mock).` : `Job ${pending.job.id} deleted (mock).`);
+            if (isLive && pending.action === "cancel") {
+              const id = pending.job.id;
+              setPending(null);
+              void writeApi
+                .cancelJob(id)
+                .then((res) => {
+                  showToast(res.cancelled ? `Job ${id} cancelled.` : `Job ${id} could not be cancelled.`);
+                  retry();
+                })
+                .catch((e) => showToast(`Could not cancel: ${(e as Error).message}`));
+            } else {
+              setRemoved((d) => [...d, pending.job.id]);
+              showToast(pending.action === "cancel" ? `Job ${pending.job.id} cancelled (mock).` : `Job ${pending.job.id} deleted (mock).`);
+            }
           }
         }}
       />

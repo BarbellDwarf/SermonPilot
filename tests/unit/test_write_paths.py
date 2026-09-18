@@ -149,3 +149,96 @@ def test_cancel_isolated_queue_fresh_instance(tmp_path, monkeypatch):
     row = conn.execute("SELECT status FROM background_jobs WHERE id = ?", (jid,)).fetchone()
     conn.close()
     assert row == ("cancelled",)
+
+
+def test_sermons_pagination_limit_offset(client, scoped_setup):
+    s = scoped_setup
+    full = client.get("/api/sermons", headers=s["admin_headers"]).json()
+    assert full["total"] == 3
+    assert len(full["items"]) == 3
+
+    page = client.get(
+        "/api/sermons", params={"limit": 2}, headers=s["admin_headers"]
+    ).json()
+    assert page["total"] == 3
+    assert len(page["items"]) == 2
+    assert [item["id"] for item in page["items"]] == [
+        item["id"] for item in full["items"][:2]
+    ]
+
+    rest = client.get(
+        "/api/sermons", params={"limit": 2, "offset": 2}, headers=s["admin_headers"]
+    ).json()
+    assert rest["total"] == 3
+    assert [item["id"] for item in rest["items"]] == [full["items"][2]["id"]]
+
+    bad = client.get(
+        "/api/sermons", params={"limit": 0}, headers=s["admin_headers"]
+    )
+    assert bad.status_code == 422
+
+
+def test_delete_sermon_owner_admin_and_foreign(client, scoped_setup):
+    s = scoped_setup
+    assert client.delete("/api/sermons/s-a").status_code == 401
+    assert (
+        client.delete("/api/sermons/s-a", headers=s["b"]["headers"]).status_code == 404
+    )
+    assert (
+        client.delete("/api/sermons/nope", headers=s["admin_headers"]).status_code
+        == 404
+    )
+    r = client.delete("/api/sermons/s-a", headers=s["a"]["headers"])
+    assert r.status_code == 200, r.text
+    assert r.json() == {"deleted": True, "id": "s-a"}
+    assert (
+        client.get("/api/sermons/s-a", headers=s["a"]["headers"]).status_code == 404
+    )
+    conn = sqlite3.connect(get_db_path())
+    row = conn.execute("SELECT id FROM sermons WHERE id = 's-a'").fetchone()
+    conn.close()
+    assert row is None
+    legacy = client.delete("/api/sermons/s-null", headers=s["a"]["headers"])
+    assert legacy.status_code == 404
+    admin = client.delete("/api/sermons/s-null", headers=s["admin_headers"])
+    assert admin.status_code == 200, admin.text
+
+
+def test_sermon_transcript_and_truncation(client, scoped_setup):
+    s = scoped_setup
+    conn = sqlite3.connect(get_db_path())
+    conn.execute(
+        "INSERT INTO sermon_content (sermon_id, transcript_text) VALUES (?, ?)",
+        ("s-a", "word " * 100),
+    )
+    long_text = "x" * 50100
+    conn.execute(
+        "INSERT INTO sermon_content (sermon_id, transcript_text) VALUES (?, ?)",
+        ("s-b", long_text),
+    )
+    conn.commit()
+    conn.close()
+
+    assert client.get("/api/sermons/s-a/transcript").status_code == 401
+    assert (
+        client.get("/api/sermons/s-a/transcript", headers=s["b"]["headers"]).status_code
+        == 404
+    )
+    short = client.get(
+        "/api/sermons/s-a/transcript", headers=s["a"]["headers"]
+    ).json()
+    assert short["id"] == "s-a"
+    assert short["truncated"] is False
+    assert short["total_length"] == 500
+    assert short["transcript"] == "word " * 100
+
+    cut = client.get("/api/sermons/s-b/transcript", headers=s["admin_headers"]).json()
+    assert cut["truncated"] is True
+    assert cut["total_length"] == 50100
+    assert len(cut["transcript"]) > 50000
+    assert "truncated at 50000 of 50100" in cut["transcript"]
+
+    missing = client.get(
+        "/api/sermons/nope/transcript", headers=s["admin_headers"]
+    )
+    assert missing.status_code == 404

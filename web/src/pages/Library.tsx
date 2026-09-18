@@ -53,7 +53,8 @@ export function Library() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<LibrarySort>("date");
   const [status, setStatus] = useState<"all" | LibrarySermonStatus>("all");
-  const { items: rows, isLoading: loading, error, retry } = useLibrarySermons(query, sort);
+  const { items: rows, isLoading: loading, error, retry, total, hasMore, isLoadingMore, loadMore } =
+    useLibrarySermons(query, sort);
   const visible = status === "all" ? rows : rows.filter((s) => s.status === status);
 
   const exportCsv = () => {
@@ -139,7 +140,7 @@ export function Library() {
           Export CSV
         </button>
         <span className="ml-auto font-mono text-xs text-muted" role="status" aria-live="polite">
-          {visible.length} of {rows.length}
+          {visible.length} of {isLive ? total : rows.length} loaded
         </span>
       </div>
 
@@ -153,11 +154,23 @@ export function Library() {
           body="Try a different search term, or clear the search to see everything."
         />
       ) : (
-        <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {visible.map((s) => (
-            <SermonCard key={s.id} sermon={s} />
-          ))}
-        </ol>
+        <>
+          <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {visible.map((s) => (
+              <SermonCard key={s.id} sermon={s} />
+            ))}
+          </ol>
+          {hasMore ? (
+            <button
+              type="button"
+              onClick={loadMore}
+              disabled={isLoadingMore}
+              className="inline-flex min-h-[44px] items-center justify-center rounded-md border border-line px-4 text-sm font-medium text-mist transition-colors hover:border-muted disabled:opacity-45"
+            >
+              {isLoadingMore ? "Loading…" : `Load more (${rows.length} of ${total})`}
+            </button>
+          ) : null}
+        </>
       )}
     </div>
   );
