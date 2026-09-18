@@ -377,3 +377,14 @@ export const filesApi = {
   downloadUrl: (path: string) =>
     `${BASE}/api/me/files/download?path=${encodeURIComponent(path)}`,
 };
+
+export const metaApi = {
+  retirement: async (): Promise<{ streamlit_ready: boolean }> => {
+    if (!isLive) return { streamlit_ready: false };
+    const res = await fetch(`${BASE}/api/meta/retirement`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!res.ok) throw new Error(`GET /api/meta/retirement failed with ${res.status}`);
+    return (await res.json()) as { streamlit_ready: boolean };
+  },
+};

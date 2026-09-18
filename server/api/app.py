@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse
 from server.api.routers.auth import router as auth_router
 from server.api.accounts import migrate
 from server.api.routers.jobs import router as jobs_router
+from server.api.routers.meta import router as meta_router
 from server.api.routers.sermons import router as sermons_router
 from server.api.routers.status import router as status_router
 from server.api.routers.userdata import (
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
         )
     app.include_router(sermons_router)
     app.include_router(jobs_router)
+    app.include_router(meta_router)
     app.include_router(userdata_router)
     app.include_router(me_router)
     app.include_router(admin_backup_router)

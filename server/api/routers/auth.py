@@ -35,7 +35,7 @@ from server.api.accounts import (
 router = APIRouter(prefix="/api")
 
 # Routes exempt from auth (matched as path prefixes on the request scope).
-PUBLIC_PATHS = ("/api/health", "/api/auth/login", "/api/auth/bootstrap")
+PUBLIC_PATHS = ("/api/health", "/api/auth/login", "/api/auth/bootstrap", "/api/meta")
 
 
 def _public(path: str) -> bool:

@@ -143,3 +143,25 @@ NOT started — design at the write-path/render phase.
 (resolve + prefix check, 400 on escape). Admin user management UI is admin-only
 (role from /api/auth/me). Future hardening: per-sermon file scoping when per-user
 output dirs fully land; until then the output dir IS the user boundary.
+
+## Front-door cutover (P6c, prepared — NOT switched)
+
+sermon.moraclan.us currently proxies to Streamlit :8501 via nginx (CT 111).
+Cutover is a two-step manual operation:
+
+1. River flips `web_console_ready: true` in the LIVE server config
+   (`SA_UPDATER_CONFIG` file or `config.yaml`). The console reports it at
+   `GET /api/meta/retirement` → `{"streamlit_ready": true}` (public, no auth),
+   and Settings → System shows the state in a read-only admin-only banner.
+2. Operator edits the nginx vhost `sermon.moraclan.us.conf`: move the upstream
+   from `127.0.0.1:8501` (Streamlit) to `127.0.0.1:8504` (FastAPI bridge, which
+   serves the console bundle + `/api/*`), then `nginx -t && nginx -s reload`.
+   Keep these directives on the location block:
+   - websocket headers (`proxy_http_version 1.1`, `Upgrade` + `Connection`
+     maps) — the console polls over HTTP but future live tails use WS;
+   - `proxy_buffering off` — streaming downloads (`/api/me/files/download`)
+     and large multipart uploads must not spool;
+   - `client_max_body_size 30G` — matches `SERMONPILOT_UPLOAD_GB` default 30.
+
+Rollback: flip `web_console_ready` back to false and restore the 8501 upstream.
+Nothing in this repo switches traffic on its own.

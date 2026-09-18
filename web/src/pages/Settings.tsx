@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { adminApi, isLive, meApi, type AdminUser } from "../api/client";
+import { adminApi, isLive, meApi, metaApi, type AdminUser } from "../api/client";
 import { useUserSettings } from "../api/useUserSettings";
 import { AudioSettingsSection } from "../components/AudioSettings";
 import { ConfigBackupSection } from "../components/ConfigBackup";
@@ -287,17 +287,51 @@ function ProcessingSection({ show }: { show: (m: string) => void }) {
   );
 }
 
-function SystemSection({ show }: { show: (m: string) => void }) {
+function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: boolean }) {
   const [savedLevel, setSavedLevel] = useUserSettings<string>("settings.logLevel", "info");
   const [logLevel, setLogLevel] = useState(savedLevel);
+  const [retired, setRetired] = useState<boolean | null>(isLive ? null : false);
   const dirty = isLive ? logLevel !== savedLevel : logLevel !== savedLevel;
   const bars = [
     { label: "Processed media", pct: 62 },
     { label: "Source uploads", pct: 24 },
     { label: "Database", pct: 8 },
   ];
+
+  useEffect(() => {
+    if (!isLive || !isAdmin) return;
+    let cancelled = false;
+    void metaApi
+      .retirement()
+      .then((r) => {
+        if (!cancelled) setRetired(r.streamlit_ready);
+      })
+      .catch(() => {
+        if (!cancelled) setRetired(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
+
   return (
     <SectionCard title="System" sub="Mock usage and log verbosity.">
+      {isAdmin ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mb-3 rounded-md border border-line bg-ink px-4 py-3 text-xs text-muted"
+        >
+          <p className="font-semibold text-mist">
+            Front-door cutover:{" "}
+            {retired === null ? "state unknown (bridge unreachable)" : retired ? "console is live — Streamlit may retire" : "Streamlit still serves sermon.moraclan.us"}
+          </p>
+          <p className="mt-1 font-mono">
+            web_console_ready flips in live config → operator moves nginx vhost
+            sermon.moraclan.us.conf upstream 8501 → 8504 (see web/README.md).
+          </p>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-2" aria-label="Storage usage">
         {bars.map((b) => (
           <div key={b.label}>
@@ -335,7 +369,7 @@ function SystemSection({ show }: { show: (m: string) => void }) {
   );
 }
 
-export function Settings({ user }: { user: { display_name: string } }) {
+export function Settings({ user }: { user: { display_name: string; role?: string } }) {
   const { toast, show } = useSectionToast();
   const [active, setActive] = useState<TabId>("general");
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -405,7 +439,7 @@ export function Settings({ user }: { user: { display_name: string } }) {
         <AppearanceSection show={show} />
         <AccountSection show={show} user={user} />
         <UsersSection show={show} />
-        <SystemSection show={show} />
+        <SystemSection show={show} isAdmin={user.role === "admin"} />
         </div>
       )}
       {active === "llm" && (
