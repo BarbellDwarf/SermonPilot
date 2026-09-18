@@ -131,6 +131,9 @@ export function Jobs() {
     window.setTimeout(() => setToast(null), 3000);
   };
 
+  const finished = data.completed.length + data.failed.length;
+  const successRate = finished === 0 ? null : Math.round((data.completed.length / finished) * 100);
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
     const idx = tabs.findIndex((t) => t.id === tab);
@@ -170,6 +173,11 @@ export function Jobs() {
           );
         })}
       </div>
+
+      <p className="text-xs text-muted" role="status" aria-live="polite">
+        {data.active.length} active · {data.completed.length} completed · {data.failed.length} failed
+        {successRate !== null ? ` · ${successRate}% success` : ""}
+      </p>
 
       {loading ? (
         <SkeletonList rows={3} />

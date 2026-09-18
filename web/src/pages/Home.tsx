@@ -13,6 +13,14 @@ const sermonTone: Record<SermonStatus, string> = {
 export function Home() {
   const { data, isLoading: loading, error, retry } = useHomeData();
   const { services, activeJobs, recentSermons, upNext } = data;
+  const okCount = services.filter((s) => s.state === "ok").length;
+  const queuedCount = activeJobs.filter((j) => j.state === "queued").length;
+  const stats: [string, string][] = [
+    ["Teachings", String(recentSermons.length)],
+    ["Active jobs", String(activeJobs.length)],
+    ["Queued", String(queuedCount)],
+    ["Services ok", `${okCount}/${services.length}`],
+  ];
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -26,6 +34,17 @@ export function Home() {
       />
 
       {error ? <QueryError message={error} onRetry={retry} /> : null}
+
+      <section aria-label="At a glance">
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {stats.map(([term, value]) => (
+            <Card key={term} className="px-4 py-3">
+              <dt className="text-xs font-medium uppercase tracking-wide text-muted">{term}</dt>
+              <dd className="mt-0.5 font-mono text-xl font-semibold">{value}</dd>
+            </Card>
+          ))}
+        </dl>
+      </section>
 
       <section aria-labelledby="status-h">
         <h2 id="status-h" className="mb-2 text-lg font-semibold">System status</h2>
