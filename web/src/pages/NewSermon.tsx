@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Button,
@@ -11,19 +11,51 @@ import {
   Toggle,
   inputCls,
 } from "../components/ui";
-import { isLive, uploadApi } from "../api/client";
+import {
+  brandingApi,
+  isLive,
+  serverPathApi,
+  uploadApi,
+  type BrandingItem,
+  type ServerPathStat,
+} from "../api/client";
 
 type UploadTab = "browser" | "server";
-type ApprovalMode = "manual" | "auto_render" | "auto_upload";
+type AutoEditMode = "interactive" | "auto";
 
-const speakers = ["Speaker A", "Speaker B", "Speaker C"];
-const eventTypes = ["Sunday Service", "Midweek Gathering", "Conference", "Funeral", "Wedding", "Other"];
-const supportedFormats = ["MP3", "WAV", "M4A", "MP4", "MOV"];
-const endingCards = [
-  { id: "card-a", label: "Card A", sub: "Dark title card" },
-  { id: "card-b", label: "Card B", sub: "Light title card" },
-  { id: "card-c", label: "Card C", sub: "Verse card" },
+// Static full SermonAudio eventType enum (mirrors ui.sermon_metadata.DEFAULT_EVENT_TYPES).
+const eventTypes = [
+  "Audiobook",
+  "Bible Study",
+  "Camp Meeting",
+  "Chapel Service",
+  "Children",
+  "Classic Audio",
+  "Conference",
+  "Current Events",
+  "Debate",
+  "Devotional",
+  "Funeral Service",
+  "Midweek Service",
+  "Miscellaneous",
+  "Open-Air Ministry",
+  "Podcast",
+  "Prayer Meeting",
+  "Question & Answer",
+  "Radio Broadcast",
+  "Sermon Clip",
+  "Special Meeting",
+  "Sunday - AM",
+  "Sunday - PM",
+  "Sunday School",
+  "Sunday Service",
+  "Teaching",
+  "Testimony",
+  "TV Broadcast",
+  "Wedding",
+  "Youth",
 ];
+const supportedFormats = ["MP3", "WAV", "M4A", "MP4", "MOV"];
 
 const initialMeta = { title: "", speaker: "", date: "", series: "", eventType: "", scripture: "" };
 
@@ -32,12 +64,18 @@ export function NewSermon() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [serverPath, setServerPath] = useState("");
+  const [pathStat, setPathStat] = useState<ServerPathStat | null>(null);
+  const [statPending, setStatPending] = useState(false);
   const [meta, setMeta] = useState(initialMeta);
   const [enhance, setEnhance] = useState(true);
   const [transcribe, setTranscribe] = useState(true);
   const [aiMeta, setAiMeta] = useState(true);
-  const [approval, setApproval] = useState<ApprovalMode>("manual");
-  const [endingCard, setEndingCard] = useState<string>("none");
+  const [dryRun, setDryRun] = useState(false);
+  const [autoEdit, setAutoEdit] = useState(false);
+  const [autoEditMode, setAutoEditMode] = useState<AutoEditMode>("interactive");
+  const [logoPath, setLogoPath] = useState<string>("none");
+  const [brandingFiles, setBrandingFiles] = useState<BrandingItem[]>([]);
+  const [uploadingCard, setUploadingCard] = useState(false);
   const [fadeBlack, setFadeBlack] = useState(true);
   const [confirmReset, setConfirmReset] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -45,11 +83,45 @@ export function NewSermon() {
   const [fileObj, setFileObj] = useState<File | null>(null);
   const [queuedJob, setQueuedJob] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const cardInput = useRef<HTMLInputElement>(null);
 
   const set = (k: keyof typeof initialMeta) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setMeta((m) => ({ ...m, [k]: e.target.value }));
 
-  const serverValid = serverPath.trim().startsWith("/") && serverPath.trim().length > 3;
+  // Live server-path stat: debounce the input, then ask the server to stat() it.
+  useEffect(() => {
+    if (!isLive || uploadTab !== "server") return;
+    const trimmed = serverPath.trim();
+    if (!trimmed.startsWith("/") || trimmed.length <= 3) {
+      setPathStat(null);
+      return;
+    }
+    setStatPending(true);
+    const timer = window.setTimeout(() => {
+      void serverPathApi
+        .stat(trimmed)
+        .then((info) => setPathStat(info))
+        .catch(() => setPathStat(null))
+        .finally(() => setStatPending(false));
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [serverPath, uploadTab]);
+
+  // Live ending-card options: the user's own branding uploads.
+  useEffect(() => {
+    if (!isLive) return;
+    void brandingApi
+      .list()
+      .then((r) => setBrandingFiles(r.items))
+      .catch(() => setBrandingFiles([]));
+  }, []);
+
+  const pathLooksValid = serverPath.trim().startsWith("/") && serverPath.trim().length > 3;
+  const serverValid = isLive
+    ? pathStat
+      ? pathStat.exists && pathStat.is_file !== false
+      : pathLooksValid
+    : pathLooksValid;
   const browserHasSource = isLive ? fileObj !== null : fileName !== null;
   const hasSource = uploadTab === "browser" ? browserHasSource : serverValid;
 
@@ -57,13 +129,17 @@ export function NewSermon() {
     const list: string[] = [];
     if (!hasSource) list.push(uploadTab === "browser" ? "source file" : "valid server path");
     if (!meta.title.trim()) list.push("title");
-    if (!meta.speaker) list.push("speaker");
+    if (!meta.speaker.trim()) list.push("speaker");
     if (!meta.date) list.push("date");
     return list;
   }, [hasSource, uploadTab, meta.title, meta.speaker, meta.date]);
 
   const valid = missing.length === 0;
-  const helper = valid ? "Ready to queue. This mock run appears under Jobs." : `Missing: ${missing.join(", ")}.`;
+  const helper = valid
+    ? isLive
+      ? "Ready to queue. The pipeline run appears under Jobs."
+      : "Ready to queue. This mock run appears under Jobs."
+    : `Missing: ${missing.join(", ")}.`;
 
   const pickMockFile = () => setFileName("sample-sermon-upload.mp3");
 
@@ -77,30 +153,78 @@ export function NewSermon() {
     setFileObj(null);
     setQueuedJob(null);
     setServerPath("");
+    setPathStat(null);
     setMeta(initialMeta);
     setEnhance(true);
     setTranscribe(true);
     setAiMeta(true);
-    setApproval("manual");
-    setEndingCard("none");
+    setDryRun(false);
+    setAutoEdit(false);
+    setAutoEditMode("interactive");
+    setLogoPath("none");
     setFadeBlack(true);
   };
 
+  const clearFormKeepJob = (jobId: string) => {
+    setFileName(null);
+    setFileObj(null);
+    setQueuedJob(jobId);
+    setServerPath("");
+    setPathStat(null);
+    setMeta(initialMeta);
+    setEnhance(true);
+    setTranscribe(true);
+    setAiMeta(true);
+    setDryRun(false);
+    setAutoEdit(false);
+    setAutoEditMode("interactive");
+    setLogoPath("none");
+    setFadeBlack(true);
+  };
+
+  const commonPayload = () => ({
+    title: meta.title.trim(),
+    speaker: meta.speaker.trim(),
+    recorded_date: meta.date,
+    event_type: meta.eventType || "Sunday Service",
+    series_title: meta.series.trim(),
+    bible_text: meta.scripture.trim(),
+    scripture: meta.scripture.trim(),
+    skip_audio: !enhance,
+    skip_transcription: !transcribe,
+    skip_ai_generation: !aiMeta,
+    dry_run: dryRun,
+    auto_edit_enabled: autoEdit,
+    auto_edit_mode: autoEdit ? autoEditMode : null,
+    logo_path: logoPath === "none" ? "" : logoPath,
+    fade_to_black: fadeBlack,
+  });
+
   const start = () => {
     if (!valid || starting) return;
-    if (isLive && uploadTab === "browser" && fileObj) {
+    if (!isLive) {
       setStarting(true);
+      window.setTimeout(() => {
+        setStarting(false);
+        setToast("Processing queued (mock). Track it under Jobs.");
+        window.setTimeout(() => setToast(null), 3000);
+      }, 1200);
+      return;
+    }
+    setStarting(true);
+    if (uploadTab === "browser" && fileObj) {
       const form = new FormData();
       form.append("file", fileObj);
-      form.append("title", meta.title.trim());
-      form.append("speaker", meta.speaker);
-      form.append("recorded_date", meta.date);
-      form.append("event_type", meta.eventType || "Sunday Service");
+      const payload = commonPayload();
+      for (const [k, v] of Object.entries(payload)) {
+        if (v === null || v === undefined) continue;
+        form.append(k, typeof v === "boolean" ? String(v) : String(v));
+      }
       void uploadApi
         .upload(form)
         .then((r) => {
           setStarting(false);
-          setQueuedJob(r.job_id);
+          clearFormKeepJob(r.job_id);
           showToast(`Upload queued as job ${r.job_id}.`);
         })
         .catch((e) => {
@@ -109,12 +233,36 @@ export function NewSermon() {
         });
       return;
     }
-    setStarting(true);
-    window.setTimeout(() => {
-      setStarting(false);
-      setToast("Processing queued (mock). Track it under Jobs.");
-      window.setTimeout(() => setToast(null), 3000);
-    }, 1200);
+    void serverPathApi
+      .create({ container_path: serverPath.trim(), ...commonPayload() })
+      .then((r) => {
+        setStarting(false);
+        clearFormKeepJob(r.job_id);
+        showToast(`Server file queued as job ${r.job_id}.`);
+      })
+      .catch((e) => {
+        setStarting(false);
+        showToast(`Could not queue: ${(e as Error).message}`);
+      });
+  };
+
+  const uploadCard = (f: File | undefined) => {
+    if (!f || uploadingCard) return;
+    setUploadingCard(true);
+    void brandingApi
+      .upload(f)
+      .then((r) => {
+        setUploadingCard(false);
+        setBrandingFiles((items) =>
+          items.some((i) => i.path === r.path) ? items : [...items, { name: r.filename, path: r.path }],
+        );
+        setLogoPath(r.path);
+        showToast(`Ending card saved (${r.filename}).`);
+      })
+      .catch((e) => {
+        setUploadingCard(false);
+        showToast(`Could not save card: ${(e as Error).message}`);
+      });
   };
 
   const onTabsKey = (e: React.KeyboardEvent) => {
@@ -125,6 +273,26 @@ export function NewSermon() {
     });
   };
 
+  const serverChips = isLive ? (
+    <>
+      <Chip tone={pathStat?.exists ? "ok" : "neutral"}>
+        {statPending ? "checking…" : pathStat ? (pathStat.exists ? "exists" : "not found") : "no check yet"}
+      </Chip>
+      <Chip tone={pathStat?.exists ? "info" : "neutral"}>
+        {pathStat?.exists ? pathStat.size_human : "size —"}
+      </Chip>
+      <Chip tone={pathStat?.exists ? "info" : "neutral"}>
+        {pathStat?.exists && pathStat.ext ? `${pathStat.ext} · ${pathStat.kind}` : "type —"}
+      </Chip>
+    </>
+  ) : (
+    <>
+      <Chip tone={serverValid ? "ok" : "neutral"}>{serverValid ? "exists" : "no check yet"}</Chip>
+      <Chip tone={serverValid ? "info" : "neutral"}>{serverValid ? "42.1 MB" : "size —"}</Chip>
+      <Chip tone={serverValid ? "info" : "neutral"}>{serverValid ? "mp3 · audio" : "type —"}</Chip>
+    </>
+  );
+
   const summaryBits = [
     uploadTab === "browser"
       ? (isLive ? (fileObj?.name ?? "no file") : (fileName ?? "no file"))
@@ -132,11 +300,13 @@ export function NewSermon() {
         ? serverPath.trim()
         : "no path",
     meta.title.trim() || "untitled",
-    meta.speaker || "no speaker",
+    meta.speaker.trim() || "no speaker",
     meta.date || "no date",
     enhance ? "enhance" : "no enhance",
     transcribe ? "transcribe" : "no transcribe",
     aiMeta ? "ai meta" : "no ai meta",
+    dryRun ? "dry run" : "live run",
+    autoEdit ? `edit:${autoEditMode}` : "no edit",
   ];
 
   return (
@@ -285,10 +455,13 @@ export function NewSermon() {
               />
             </Field>
             <div className="flex flex-wrap gap-2" aria-live="polite" aria-label="Path validation">
-              <Chip tone={serverValid ? "ok" : "neutral"}>{serverValid ? "exists" : "no check yet"}</Chip>
-              <Chip tone={serverValid ? "info" : "neutral"}>{serverValid ? "42.1 MB" : "size —"}</Chip>
-              <Chip tone={serverValid ? "info" : "neutral"}>{serverValid ? "mp3 · audio" : "type —"}</Chip>
+              {serverChips}
             </div>
+            {isLive ? (
+              <p className="text-xs text-muted">
+                The server checks the path exists, then queues the real pipeline against it. Nothing is copied.
+              </p>
+            ) : null}
           </div>
         )}
       </SectionCard>
@@ -299,14 +472,7 @@ export function NewSermon() {
             <input id="ns-title" value={meta.title} onChange={set("title")} placeholder="Sample teaching title" className={inputCls} />
           </Field>
           <Field label="Speaker (required)" htmlFor="ns-speaker">
-            <select id="ns-speaker" value={meta.speaker} onChange={set("speaker")} className={inputCls}>
-              <option value="">Choose a speaker…</option>
-              {speakers.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
+            <input id="ns-speaker" value={meta.speaker} onChange={set("speaker")} placeholder="Speaker name" autoComplete="off" className={inputCls} />
           </Field>
           <Field label="Date (required)" htmlFor="ns-date">
             <input id="ns-date" type="date" value={meta.date} onChange={set("date")} className={inputCls} />
@@ -331,84 +497,118 @@ export function NewSermon() {
       </SectionCard>
 
       <SectionCard n={3} title="Processing options" sub="Toggle pipeline stages and the edit approval path.">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Toggle checked={enhance} onChange={setEnhance} label="Enhance audio" hint="Noise cleanup before transcription." />
           <Toggle checked={transcribe} onChange={setTranscribe} label="Transcribe" hint="Speech-to-text for captions and search." />
           <Toggle checked={aiMeta} onChange={setAiMeta} label="AI metadata" hint="Draft title, summary, and tags." />
+          <Toggle checked={dryRun} onChange={setDryRun} label="Dry run" hint="Process locally, skip the SermonAudio upload." />
         </div>
 
-        <fieldset className="mt-4">
-          <legend className="text-sm font-semibold">Edit approval mode</legend>
-          <div className="mt-2 grid grid-cols-1 gap-2">
-            {(
-              [
-                { id: "manual", label: "Manual review", sub: "Nothing renders until the plan is approved." },
-                { id: "auto_render", label: "Auto render", sub: "Renders locally, waits before any upload." },
-                { id: "auto_upload", label: "Auto upload", sub: "Renders and pushes without a review stop." },
-              ] as { id: ApprovalMode; label: string; sub: string }[]
-            ).map((o) => (
-              <label key={o.id} className="flex min-h-[44px] cursor-pointer items-start gap-2 rounded-md border border-line p-3">
-                <input
-                  type="radio"
-                  name="approval-mode"
-                  value={o.id}
-                  checked={approval === o.id}
-                  onChange={() => setApproval(o.id)}
-                  className="mt-1"
-                />
-                <span className="text-sm">
-                  <span className="font-semibold">{o.label}.</span> <span className="text-muted">{o.sub}</span>
-                </span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
+        <div className="mt-4">
+          <Toggle
+            checked={autoEdit}
+            onChange={setAutoEdit}
+            label="Edit Sermon"
+            hint="Auto-detect cut points, trim, and fade the video before upload. Video inputs only."
+          />
+        </div>
 
-        <fieldset className="mt-4">
-          <legend className="text-sm font-semibold">Ending card image</legend>
-          <p className="mt-1 text-xs text-muted">
-            Fade to black plays under the ending card; with no card it simply fades the picture itself.
-          </p>
-          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Ending card">
-            <button
-              type="button"
-              role="radio"
-              aria-checked={endingCard === "none"}
-              onClick={() => setEndingCard("none")}
-              className={`flex min-h-[5.5rem] flex-col items-center justify-center gap-1 rounded-md border p-3 text-sm transition-colors ${
-                endingCard === "none" ? "border-accent bg-raised" : "border-line bg-ink hover:border-muted"
-              }`}
-            >
-              <span className="font-semibold">No card</span>
-              <span className="text-xs text-muted">fade only</span>
-            </button>
-            {endingCards.map((c) => {
-              const selected = endingCard === c.id;
-              return (
+        {autoEdit ? (
+          <>
+            <fieldset className="mt-4">
+              <legend className="text-sm font-semibold">Approval mode</legend>
+              <div className="mt-2 grid grid-cols-1 gap-2">
+                {(
+                  [
+                    { id: "interactive", label: "Interactive", sub: "Stops at pending review for approval before encode and upload." },
+                    { id: "auto", label: "Auto", sub: "Applies automatically when confident; uncertain plans still stop for review." },
+                  ] as { id: AutoEditMode; label: string; sub: string }[]
+                ).map((o) => (
+                  <label key={o.id} className="flex min-h-[44px] cursor-pointer items-start gap-2 rounded-md border border-line p-3">
+                    <input
+                      type="radio"
+                      name="approval-mode"
+                      value={o.id}
+                      checked={autoEditMode === o.id}
+                      onChange={() => setAutoEditMode(o.id)}
+                      className="mt-1"
+                    />
+                    <span className="text-sm">
+                      <span className="font-semibold">{o.label}.</span> <span className="text-muted">{o.sub}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <fieldset className="mt-4">
+              <legend className="text-sm font-semibold">Ending card image</legend>
+              <p className="mt-1 text-xs text-muted">
+                Fade to black plays under the ending card; with no card it simply fades the picture itself.
+                {isLive ? " Uploads land in your private branding folder." : ""}
+              </p>
+              <input
+                ref={cardInput}
+                type="file"
+                accept=".png,.jpg,.jpeg,.webp"
+                className="sr-only"
+                aria-label="Upload an ending card image"
+                onChange={(e) => {
+                  uploadCard(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Ending card">
                 <button
-                  key={c.id}
                   type="button"
                   role="radio"
-                  aria-checked={selected}
-                  aria-label={`${c.label}, ${c.sub}`}
-                  onClick={() => setEndingCard(c.id)}
-                  className={`flex min-h-[5.5rem] flex-col items-center justify-center gap-1 rounded-md border p-3 transition-colors ${
-                    selected ? "border-accent bg-raised" : "border-line bg-ink hover:border-muted"
+                  aria-checked={logoPath === "none"}
+                  onClick={() => setLogoPath("none")}
+                  className={`flex min-h-[5.5rem] flex-col items-center justify-center gap-1 rounded-md border p-3 text-sm transition-colors ${
+                    logoPath === "none" ? "border-accent bg-raised" : "border-line bg-ink hover:border-muted"
                   }`}
                 >
-                  <span aria-hidden="true" className="flex h-10 w-16 items-center justify-center rounded bg-raised font-mono text-xs text-muted">
-                    {c.label}
-                  </span>
-                  <span className="text-xs text-muted">{c.sub}</span>
+                  <span className="font-semibold">No card</span>
+                  <span className="text-xs text-muted">fade only</span>
                 </button>
-              );
-            })}
-          </div>
-        </fieldset>
+                {(isLive ? brandingFiles : []).map((c) => {
+                  const selected = logoPath === c.path;
+                  return (
+                    <button
+                      key={c.path}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      aria-label={`Ending card ${c.name}`}
+                      onClick={() => setLogoPath(c.path)}
+                      className={`flex min-h-[5.5rem] flex-col items-center justify-center gap-1 rounded-md border p-3 transition-colors ${
+                        selected ? "border-accent bg-raised" : "border-line bg-ink hover:border-muted"
+                      }`}
+                    >
+                      <span aria-hidden="true" className="flex h-10 w-16 items-center justify-center overflow-hidden rounded bg-raised font-mono text-xs text-muted">
+                        {c.name}
+                      </span>
+                      <span className="max-w-full truncate text-xs text-muted">{c.name}</span>
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => (isLive ? cardInput.current?.click() : showToast("Card upload is live-only."))}
+                  disabled={uploadingCard}
+                  className="flex min-h-[5.5rem] flex-col items-center justify-center gap-1 rounded-md border border-dashed border-line p-3 text-sm text-muted transition-colors hover:border-muted hover:text-mist"
+                >
+                  <span className="font-semibold">{uploadingCard ? "Uploading…" : "Upload new…"}</span>
+                  <span className="text-xs">png · jpg · webp</span>
+                </button>
+              </div>
+            </fieldset>
 
-        <div className="mt-3">
-          <Toggle checked={fadeBlack} onChange={setFadeBlack} label="Fade to black" hint="Short fade into the ending hold." />
-        </div>
+            <div className="mt-3">
+              <Toggle checked={fadeBlack} onChange={setFadeBlack} label="Fade to black" hint="Short fade into the ending hold." />
+            </div>
+          </>
+        ) : null}
       </SectionCard>
 
       <div className="flex flex-col gap-2">
