@@ -364,13 +364,18 @@ def apply_edit(
 
     if logo_path is not None and logo_hold > 0:
         cmd += ["-loop", "1", "-t", _fmt(logo_hold), "-i", str(logo_path)]
+        ffprobe = shutil.which("ffprobe")
+        src_fps = _ffprobe_frame_rate(ffprobe, source) if ffprobe else None
+        fps_expr = src_fps or "30"
+        tb_expr = f"1/{fps_expr.split('/')[0]}"
         total = out_len + logo_hold - XFADE_SECONDS
         filters.append(
             f"[0:v]setpts=PTS-STARTPTS,{fade_in_filter},"
-            f"fade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},settb=1/25[cv]"
+            f"fade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},"
+            f"fps={fps_expr},settb={tb_expr}[cv]"
         )
         filters.append("[1:v][cv]scale2ref=w=iw:h=ih[lg0][cvr]")
-        filters.append("[lg0]fps=25,settb=1/25[lg]")
+        filters.append(f"[lg0]fps={fps_expr},settb={tb_expr}[lg]")
         filters.append(
             f"[cvr][lg]xfade=transition=fade:duration={XFADE_SECONDS:.3f}"
             f":offset={_fmt(out_len - XFADE_SECONDS)}[xv]"
@@ -513,7 +518,7 @@ def render_review_snippets(
             end=plan.end,
             fade_in=plan.fade_in,
             logo_hold=plan.logo_hold,
-            fade_to_black=True,
+            fade_to_black=plan.fade_to_black,
         )
         try:
             snippets.append(
@@ -624,6 +629,47 @@ def _ffprobe_duration(ffprobe: str, path: Path) -> float | None:
     try:
         return float(proc.stdout.strip())
     except ValueError:
+        return None
+
+
+def _ffprobe_frame_rate(ffprobe: str, path: Path) -> str | None:
+    """Return the video stream frame rate as 'num' or 'num/den', or None on failure."""
+    try:
+        proc = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "quiet",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=r_frame_rate,avg_frame_rate",
+                "-of",
+                "json",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            return None
+        streams = (json.loads(proc.stdout) or {}).get("streams") or []
+        if not streams:
+            return None
+        raw = streams[0].get("r_frame_rate") or streams[0].get("avg_frame_rate") or ""
+        if not raw or raw in ("0/0", "N/A"):
+            return None
+        num, _, den = str(raw).partition("/")
+        if not num.isdigit() or not int(num):
+            return None
+        den = den.strip()
+        if den in ("", "1"):
+            return num
+        if not den.isdigit() or not int(den):
+            return None
+        return f"{num}/{den}"
+    except Exception:
         return None
 
 

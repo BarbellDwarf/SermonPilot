@@ -1,5 +1,16 @@
 ARG GPU_BACKEND=cpu
 
+FROM node:22-bookworm-slim AS web-builder
+
+WORKDIR /web
+
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+
+COPY web/ ./
+ARG VITE_API_MODE=live
+RUN npm run build
+
 FROM ubuntu:22.04 AS base-cpu
 
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04 AS base-cuda
@@ -54,6 +65,8 @@ RUN if [ "$GPU_BACKEND" = "cuda" ]; then \
 
 COPY --chown=sermonapp:sermonapp . /app/
 
+COPY --from=web-builder --chown=sermonapp:sermonapp /web/dist /app/web/dist
+
 RUN mkdir -p /app/processed_sermons \
              /app/analytics_cache \
              /app/analytics_vector_db \
@@ -65,6 +78,6 @@ RUN mkdir -p /app/processed_sermons \
 
 USER sermonapp
 
-EXPOSE 8501
+EXPOSE 8501 8504
 
 CMD ["/app/docker/start_production.sh"]

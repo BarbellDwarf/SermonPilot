@@ -170,6 +170,15 @@ class SermonDatabase:
             except Exception:
                 pass
 
+            try:
+                conn.execute("ALTER TABLE sermons ADD COLUMN user_id TEXT")
+            except Exception:
+                pass
+            try:
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_sermons_user_id ON sermons(user_id)")
+            except Exception:
+                pass
+
             # File paths table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS sermon_files (
@@ -1121,6 +1130,20 @@ class SermonRepository:
                     sermon_data.get('status', 'processed'),
                     utcnow()
                 ))
+
+                if sermon_data.get('user_id') is not None:
+                    try:
+                        cols = {
+                            row[1]
+                            for row in conn.execute("PRAGMA table_info(sermons)").fetchall()
+                        }
+                    except Exception:
+                        cols = set()
+                    if 'user_id' in cols:
+                        conn.execute(
+                            "UPDATE sermons SET user_id = ? WHERE id = ? AND user_id IS NULL",
+                            (sermon_data.get('user_id'), sermon_data.get('id')),
+                        )
 
                 # Save file paths
                 file_paths = sermon_data.get('file_paths', {})

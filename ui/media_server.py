@@ -19,8 +19,17 @@ _CONTENT_TYPES = {
 
 
 class MediaServer:
-    def __init__(self, root: str | Path) -> None:
+    def __init__(
+        self,
+        root: str | Path,
+        host: str = "127.0.0.1",
+        public_host: str | None = None,
+        port: int = 0,
+    ) -> None:
         self.root = Path(root).resolve()
+        self.host = host
+        self.public_host = public_host
+        self.requested_port = port
         self._tokens: dict[str, str] = {}
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -54,12 +63,13 @@ class MediaServer:
 
     def start(self) -> tuple[str, int]:
         if self._server is None:
-            server = _MediaHTTPServer(("127.0.0.1", 0), self)
+            server = _MediaHTTPServer((self.host, self.requested_port), self)
             self._server = server
             self._thread = threading.Thread(target=server.serve_forever, daemon=True)
             self._thread.start()
         port = self._server.server_address[1]
-        self.base_url = f"http://127.0.0.1:{port}"
+        host = self.public_host or self.host
+        self.base_url = f"http://{host}:{port}"
         self.port = port
         return self.base_url, port
 
@@ -158,10 +168,15 @@ class _MediaHandler(BaseHTTPRequestHandler):
 _server: MediaServer | None = None
 
 
-def start_media_server(root: str | Path) -> tuple[str, int]:
+def start_media_server(
+    root: str | Path,
+    host: str = "127.0.0.1",
+    public_host: str | None = None,
+    port: int = 0,
+) -> tuple[str, int]:
     global _server
     if _server is None:
-        _server = MediaServer(root)
+        _server = MediaServer(root, host=host, public_host=public_host, port=port)
     return _server.start()
 
 
