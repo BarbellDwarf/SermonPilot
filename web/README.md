@@ -204,3 +204,8 @@ Cutover is a two-step manual operation:
 
 Rollback: flip `web_console_ready` back to false and restore the 8501 upstream.
 Nothing in this repo switches traffic on its own.
+
+## v1.8.0 kickoff (Sep 18) — starts after v1.7.0 ships
+Scope: CA2-CA5 cleanup + CA6-CA12 reviews/removals + W1-W5 Drive ingest + Streamlit retirement (the operator: 'get rid of streamlit interface, that will be for 1.8.0 with the other changes').
+Sequencing (per #252): CA10 PI-scrub -> CA11 analytics-removal -> CA2/3/4/5 -> CA6-9 -> W1 (host-side, parallel) -> W2-5. CA1 audit done (264 open, findings posted).
+Coding lane: opencode on ub-1 (muse-spark default; union-alpha = fallback, NOT ZDR per the operator Sep 17).
