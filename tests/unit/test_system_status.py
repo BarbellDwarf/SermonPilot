@@ -63,3 +63,38 @@ def test_primary_path_unchanged() -> None:
         }
     ).check_llm_provider("primary")
     assert configured["status"] == "ok"
+
+
+def test_status_endpoint_empty_llm_block_is_warning_not_error(
+    client, scoped_setup
+) -> None:
+    body = client.get("/api/status", headers=scoped_setup["admin_headers"]).json()
+    for key in ("llm_primary", "llm_fallback", "sermonaudio_api"):
+        entry = body["status"][key]
+        assert entry["status"] == "warning", f"{key} reported {entry['status']}"
+        assert "unconfigured in API context" in entry["message"]
+
+
+def test_status_endpoint_keeps_genuine_errors(client, scoped_setup, monkeypatch) -> None:
+    from ui import system_status
+
+    def fake_status(self):
+        return {
+            "llm_primary": {
+                "status": "error",
+                "message": "Primary Ollama server not running",
+                "details": "Cannot connect to Ollama",
+            },
+            "sermonaudio_api": {
+                "status": "error",
+                "message": "Authentication failed",
+                "details": "Invalid API key",
+            },
+        }
+
+    monkeypatch.setattr(
+        system_status.SystemStatusManager, "get_comprehensive_status", fake_status
+    )
+    body = client.get("/api/status", headers=scoped_setup["admin_headers"]).json()
+    assert body["status"]["llm_primary"]["status"] == "error"
+    assert body["status"]["sermonaudio_api"]["status"] == "error"
