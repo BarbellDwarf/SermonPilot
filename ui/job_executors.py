@@ -20,7 +20,22 @@ project_root = ui_dir.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "src"))
 
-from job_queue import Job, JobCancelledError, JobResult, JobStatus, JobType  # noqa: E402
+try:  # noqa: E402 - prefer package path so ui.* and top-level resolve to ONE module
+    from ui.job_queue import Job, JobCancelledError, JobResult, JobStatus, JobType
+except ImportError:  # Streamlit entrypoint runs from /app (top-level imports)
+    from job_queue import Job, JobCancelledError, JobResult, JobStatus, JobType  # noqa: E402
+
+# Belt-and-braces: coerce str/foreign-enum job types via value lookup so a dual-module
+# import of job_queue (top-level vs ui.) can never produce a missing-executor lookup.
+from ui.job_queue import JobType as _CanonicalJobType
+
+def _canon(job_type):
+    if isinstance(job_type, _CanonicalJobType):
+        return job_type
+    try:
+        return _CanonicalJobType(getattr(job_type, "value", job_type))
+    except ValueError:
+        return job_type
 
 logger = logging.getLogger(__name__)
 
@@ -1455,7 +1470,7 @@ _EXECUTORS: dict[JobType, Callable[[Job], JobResult]] = {
 
 def get_executor(job_type: JobType) -> Callable[[Job], JobResult] | None:
     """Get the executor function for a specific job type"""
-    return _EXECUTORS.get(job_type)
+    return _EXECUTORS.get(_canon(job_type))
 
 
 def register_executor(job_type: JobType, executor: Callable[[Job], JobResult]):
