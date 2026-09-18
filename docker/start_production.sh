@@ -39,7 +39,7 @@ streamlit run streamlit_app.py \
     --server.port=8501 \
     --server.address=0.0.0.0 \
     --server.headless=true \
-    --server.maxUploadSize=2000 \
+    --server.maxUploadSize=${STREAMLIT_SERVER_MAX_UPLOAD_SIZE:-30720} \
     --browser.gatherUsageStats=false &
 STREAMLIT_PID=$!
 

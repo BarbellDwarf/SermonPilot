@@ -3,6 +3,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 
 from ui.pages import jobs
 
@@ -204,7 +205,7 @@ def show_sermon_import():
                 st.rerun()
 
         st.markdown("#### How It Works")
-        with st.expander("Import Process Details"):
+        with managed_expander("Import Process Details"):
             st.markdown("""
             **The import process will:**
 

@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 
 
 class AudioPreview:
@@ -51,7 +52,7 @@ class AudioPreview:
                 controls['action'] = 'reset'
 
         # Preview settings
-        with st.expander("Preview Settings"):
+        with managed_expander("Preview Settings"):
             controls['preview_volume'] = st.slider(
                 "Preview Volume",
                 0.0, 1.0, 0.7,

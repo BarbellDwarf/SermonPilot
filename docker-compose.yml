@@ -18,8 +18,10 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - XAI_API_KEY=${XAI_API_KEY}
       - DEBUG=${DEBUG:-false}
+      - STREAMLIT_SERVER_MAX_UPLOAD_SIZE=${STREAMLIT_SERVER_MAX_UPLOAD_SIZE:-30720}
     volumes:
       - sermon_data:/data
+      - ./raw_ingest:/data/raw_ingest
       - sermon_models:/models
       - sermon_api_cache:/app/api_cache
       - sermon_output:/app/processed_sermons
@@ -31,7 +33,7 @@ services:
     networks:
       - sermon_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8501/"]
+      test: ["NONE"]
       interval: 30s
       timeout: 10s
       retries: 3
