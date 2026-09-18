@@ -12,6 +12,7 @@ import json
 from typing import Any
 
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 
 from src.sermon_paths import read_metadata
 from ui.pages import jobs
@@ -290,7 +291,7 @@ def show_failed_descriptions():
 
             priority = "High" if score < 0.4 else "Medium" if score < 0.6 else "Low"
 
-            with st.expander(
+            with managed_expander(
                 f"{priority} — {_sermon_display_id(sermon_id, titles)} "
                 f"(Score: {score:.2f}/1.0)"
             ):
@@ -1027,7 +1028,7 @@ def show_manual_review():
         for i, review in enumerate(reviews):
             review_status = review.get('status') or 'pending'
             review_id = review.get('id', i)
-            with st.expander(
+            with managed_expander(
                 f"Sermon {review.get('sermon_id', 'Unknown')} — {review_status.title()}"
             ):
                 col1, col2 = st.columns([3, 1])

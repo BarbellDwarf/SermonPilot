@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --font-xs: 0.75rem;
+  --font-sm: 0.8125rem;
+  --font-base: 0.9375rem;
+  --font-lg: 1.0625rem;
+  --font-xl: 1.375rem;
+  --font-2xl: 1.875rem;
+}
+
+.dark {
+  --bg: #0e1216;
+  --surface: #151b21;
+  --raised: #1e262f;
+  --border: #2b3540;
+  --text: #e9edef;
+  --muted: #9aa7b4;
+  --accent: #8b7cf6;
+  --accent-ink: #12101f;
+  --ok: #3ecf8e;
+  --warn: #e8b23e;
+  --danger: #f0616d;
+  --danger-ink: #2a0e11;
+  --info: #5eb2f0;
+  color-scheme: dark;
+}
+
+.light {
+  --bg: #edf1f4;
+  --surface: #ffffff;
+  --raised: #f4f6f8;
+  --border: #d7dfe6;
+  --text: #141a20;
+  --muted: #5a6a77;
+  --accent: #5746d8;
+  --accent-ink: #ffffff;
+  --ok: #177a4c;
+  --warn: #8a5a05;
+  --danger: #c22f3d;
+  --danger-ink: #ffffff;
+  --info: #1d6fb8;
+  color-scheme: light;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-size: var(--font-base);
+  line-height: 1.5;
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.meter-track {
+  background-color: var(--border);
+  opacity: 0.55;
+}
+
+.meter-fill-ok {
+  background-color: var(--ok);
+}
+
+.meter-fill-warn {
+  background-color: var(--warn);
+}
+
+.meter-fill-error {
+  background-color: var(--danger);
+}
+
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  min-height: 0.75rem;
+}
+
+.skeleton-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, var(--border) 50%, transparent 80%);
+  animation: skeleton-shimmer 1.1s linear infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}

@@ -224,6 +224,14 @@ class SystemStatusManager:
         try:
             llm_config = self.config.get('llm', {}).get(provider_type, {})
 
+            if llm_config.get('enabled') is False:
+                return {
+                    'status': 'ok',
+                    'message': f'{provider_type.title()} LLM disabled',
+                    'details': f'{provider_type} LLM provider is disabled in config',
+                    'timestamp': datetime.now()
+                }
+
             if not llm_config.get('provider'):
                 return {
                     'status': 'error',

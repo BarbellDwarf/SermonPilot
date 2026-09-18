@@ -52,7 +52,8 @@ analytics_cache/
 analytics_vector_db/
 
 # Documentation and plans
-docs/
+docs/*
+!docs/AUTO_EDIT.md
 copilot-plans/
 test-log.md
 testing-environment-requirements.md
@@ -88,3 +89,7 @@ AGENTS.md
 .claude/
 .playwright-mcp/
 opencode.json
+
+# Web console build: never ship node_modules; always ship the SPA
+# sources, the built dist, the manifest files, and the API server.
+web/node_modules/

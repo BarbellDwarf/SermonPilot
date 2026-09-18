@@ -14,8 +14,11 @@ Features:
 """
 
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 
 # Import job queue components at module level
 try:
@@ -40,6 +43,158 @@ except ImportError as e:
         VALIDATION = "validation"
 
 _FLASH_KEY = "_jobs_page_flash"
+
+_LEGACY_SCOPE_PARAMS = ('sermon_ids', 'actions')
+_LEGACY_OPTION_PARAMS = (
+    'enhance_audio', 'generate_description', 'skip_audio',
+    'skip_transcription', 'whisper_model', 'dry_run',
+)
+_SECRET_PARAM_SUFFIXES = ('_key', '_token', '_secret', '_password', '_passwd')
+_SECRET_PARAM_NAMES = frozenset({'password', 'passwd', 'token', 'secret', 'auth', 'authorization'})
+_BULKY_PARAM_KEYS = frozenset({'form_data', 'config'})
+
+
+def _format_clock(value: Any) -> str:
+    try:
+        total = int(round(float(value)))
+    except (TypeError, ValueError):
+        return "unknown"
+    if total < 0:
+        total = 0
+    hours, remainder = divmod(total, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
+
+
+def _format_apply_offset(value: Any) -> str:
+    try:
+        offset = float(value)
+    except (TypeError, ValueError):
+        return "none"
+    if abs(offset) < 0.0005:
+        return "none"
+    return f"{offset:+.1f}s"
+
+
+def _is_secret_param_key(key: str) -> bool:
+    lowered = key.lower()
+    return lowered in _SECRET_PARAM_NAMES or lowered.endswith(_SECRET_PARAM_SUFFIXES)
+
+
+def _short_param_value(key: str, value: Any) -> str | None:
+    if value is None or isinstance(value, dict):
+        return None
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int | float):
+        return str(value)
+    if isinstance(value, list):
+        if not value:
+            return None
+        if (
+            len(value) <= 5
+            and all(isinstance(item, str | int | float | bool) for item in value)
+            and sum(len(str(item)) for item in value) <= 80
+        ):
+            return ", ".join(str(item) for item in value)
+        return f"{len(value)} items"
+    text = str(value)
+    if "/" in text or "\\" in text:
+        if key in ('source', 'audio_file'):
+            return Path(text).name or text
+        if len(text) > 60:
+            return None
+    if len(text) > 80:
+        return text[:77] + "..."
+    return text
+
+
+def format_job_parameter_groups(
+    parameters: dict[str, Any] | None, job_type: Any = None,
+) -> list[tuple[str, list[str]]]:
+    if not parameters or not isinstance(parameters, dict):
+        return []
+    type_name = getattr(job_type, 'value', job_type)
+    type_name = str(type_name) if type_name is not None else ""
+    groups: list[tuple[str, list[str]]] = []
+    known_keys = (
+        set(_LEGACY_SCOPE_PARAMS)
+        | set(_LEGACY_OPTION_PARAMS)
+        | set(_BULKY_PARAM_KEYS)
+        | {
+            'start', 'final_start', 'end', 'final_end', 'audio_offset',
+            'render_only', 'source', 'audio_file', 'sermon_id', 'plan_id',
+        }
+    )
+    start = parameters.get('start', parameters.get('final_start'))
+    end = parameters.get('end', parameters.get('final_end'))
+    render_flag = parameters.get('render_only')
+    if render_flag is None and type_name == "auto_edit_apply":
+        form_data = parameters.get('form_data')
+        if isinstance(form_data, dict) and 'dry_run' in form_data:
+            render_flag = form_data.get('dry_run')
+    range_lines: list[str] = []
+    if isinstance(start, int | float) and not isinstance(start, bool):
+        range_lines.append(f"Start: {_format_clock(start)}")
+    if isinstance(end, int | float) and not isinstance(end, bool):
+        range_lines.append(f"End: {_format_clock(end)}")
+    if range_lines:
+        groups.append(("Edit range", range_lines))
+    audio_lines: list[str] = []
+    if 'audio_offset' in parameters:
+        audio_lines.append(f"Audio offset: {_format_apply_offset(parameters.get('audio_offset'))}")
+    if render_flag is not None and ('render_only' in parameters or type_name == "auto_edit_apply"):
+        audio_lines.append(f"Mode: {'Render only' if render_flag else 'Render + upload'}")
+    for source_key in ('source', 'audio_file'):
+        source_value = parameters.get(source_key)
+        if isinstance(source_value, str) and source_value:
+            audio_lines.append(f"Source: {Path(source_value).name or source_value}")
+            break
+    if audio_lines:
+        groups.append(("Audio & output", audio_lines))
+    scope_lines: list[str] = []
+    for param in _LEGACY_SCOPE_PARAMS:
+        if param not in parameters:
+            continue
+        value = parameters[param]
+        if param == 'sermon_ids' and isinstance(value, list):
+            scope_lines.append(f"Sermons: {len(value)}")
+        elif param == 'actions':
+            if isinstance(value, dict):
+                enabled = [key for key, flag in value.items() if flag]
+                scope_lines.append(f"Actions: {', '.join(str(key) for key in enabled) or 'none'}")
+            elif isinstance(value, list):
+                scope_lines.append(f"Actions: {', '.join(str(item) for item in value)}")
+            else:
+                scope_lines.append(f"Actions: {value}")
+        else:
+            display = _short_param_value(param, value)
+            if display is not None:
+                scope_lines.append(f"{param.replace('_', ' ').title()}: {display}")
+    if scope_lines:
+        groups.append(("Scope", scope_lines))
+    option_lines: list[str] = []
+    for param in _LEGACY_OPTION_PARAMS:
+        if param not in parameters:
+            continue
+        option_lines.append(f"{param.replace('_', ' ').title()}: {parameters[param]}")
+    if option_lines:
+        groups.append(("Options", option_lines))
+    generic_lines: list[str] = []
+    for key, value in parameters.items():
+        if not isinstance(key, str):
+            continue
+        if key in known_keys or _is_secret_param_key(key):
+            continue
+        display = _short_param_value(key, value)
+        if display is None:
+            continue
+        generic_lines.append(f"{key.replace('_', ' ').title()}: {display}")
+    if generic_lines:
+        groups.append(("Details", generic_lines))
+    return groups
 
 
 def _set_flash(message: str, kind: str = "success") -> None:
@@ -362,25 +517,19 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
 
         # Enhanced expandable details for compact view
         if job.logs or job.result or job.parameters:
-            with st.expander(f"Details - {job.id[:8]}", expanded=False):
+            with managed_expander(f"Details - {job.id[:8]}", expanded=False):
                 detail_col1, detail_col2 = st.columns(2)
 
                 with detail_col1:
-                    if job.parameters:
+                    param_groups = format_job_parameter_groups(
+                        job.parameters, getattr(job, "type", None)
+                    )
+                    if param_groups:
                         st.markdown("**Key Parameters:**")
-                        relevant_params = [
-                            'sermon_ids', 'actions', 'enhance_audio', 'generate_description',
-                            'skip_audio', 'skip_transcription', 'whisper_model', 'dry_run',
-                        ]
-                        for param in relevant_params:
-                            if param in job.parameters:
-                                value = job.parameters[param]
-                                if param == 'sermon_ids' and isinstance(value, list):
-                                    st.text(f"Sermons: {len(value)}")
-                                elif param == 'actions' and isinstance(value, list):
-                                    st.text(f"Actions: {', '.join(value)}")
-                                else:
-                                    st.text(f"{param.replace('_', ' ').title()}: {value}")
+                        for group_title, group_lines in param_groups:
+                            st.caption(group_title)
+                            for line in group_lines:
+                                st.text(line)
 
                 with detail_col2:
                     if job.result and not job.result.success:

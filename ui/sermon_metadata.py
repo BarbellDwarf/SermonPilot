@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 
 # Add src directory to Python path for imports
 ui_dir = Path(__file__).parent
@@ -27,17 +28,58 @@ logger = logging.getLogger(__name__)
 # Default empty fallback when API is unavailable
 DEFAULT_PASTORS = []
 
+# Authoritative SermonAudio eventType enum. There is no public GET endpoint
+# for this list; the values are documented from API validation errors.
+# get_broadcaster_event_types() only sees types the church has already used,
+# so this enum seeds the picker and every refresh merges with it.
 DEFAULT_EVENT_TYPES = [
-    "Sunday Service",
+    "Audiobook",
+    "Bible Study",
+    "Camp Meeting",
+    "Chapel Service",
+    "Children",
+    "Classic Audio",
+    "Conference",
+    "Current Events",
+    "Debate",
+    "Devotional",
+    "Funeral Service",
+    "Midweek Service",
+    "Miscellaneous",
+    "Open-Air Ministry",
+    "Podcast",
+    "Prayer Meeting",
+    "Question & Answer",
+    "Radio Broadcast",
+    "Sermon Clip",
+    "Special Meeting",
     "Sunday - AM",
     "Sunday - PM",
-    "Wednesday Service",
-    "Bible Study",
-    "Prayer Meeting",
-    "Special Event",
-    "Conference",
-    "Other"
+    "Sunday School",
+    "Sunday Service",
+    "Teaching",
+    "Testimony",
+    "TV Broadcast",
+    "Wedding",
+    "Youth",
 ]
+
+
+def merge_event_types(cached: list | None) -> list[str]:
+    """Merge broadcaster-cached types with the authoritative enum.
+
+    Enum order first, then any broadcaster-specific extras sorted. Never
+    shrinks: a refresh that finds 4 used types still returns the full enum.
+    """
+    seen: set[str] = set()
+    merged: list[str] = []
+    for value in DEFAULT_EVENT_TYPES:
+        if value not in seen:
+            seen.add(value)
+            merged.append(value)
+    extras = sorted({str(v) for v in (cached or []) if str(v) not in seen})
+    merged.extend(extras)
+    return merged
 
 DEFAULT_SERIES = [
     "Book of John",
@@ -110,8 +152,8 @@ def get_cached_metadata() -> dict[str, list[str]]:
         infos = {key: db.get_cached_metadata_info(key) for key in _METADATA_KEYS}
 
         pastors = infos['pastors']['data'] if infos['pastors'] else DEFAULT_PASTORS.copy()
-        event_types = (
-            infos['event_types']['data'] if infos['event_types'] else DEFAULT_EVENT_TYPES.copy()
+        event_types = merge_event_types(
+            infos['event_types']['data'] if infos['event_types'] else None
         )
         series = _normalize_series(
             infos['series']['data'] if infos['series'] else DEFAULT_SERIES.copy()
@@ -209,6 +251,8 @@ def fetch_and_cache_metadata(
         progress_callback(0.8, 'Fetching series...')
     series = sermon_updater.get_broadcaster_series(limit=limit)
     logger.info(f"Fetched {len(series)} series")
+
+    event_types = merge_event_types(event_types)
 
     if progress_callback:
         progress_callback(1.0, 'Saving to cache...')
@@ -378,7 +422,7 @@ def show_metadata_refresh_section():
     Show a collapsible section for refreshing metadata from API.
     Call this in UI pages that use the metadata dropdowns.
     """
-    with st.expander("Refresh Metadata from SermonAudio"):
+    with managed_expander("Refresh Metadata from SermonAudio"):
         feedback = st.session_state.pop('metadata_refresh_feedback', None)
         if feedback:
             st.success(feedback)
@@ -454,14 +498,25 @@ def create_pastor_selectbox(
 
 
 def create_event_type_selectbox(
-    label: str = "Event Type", key: str = "event_type", **kwargs
+    label: str = "Event Type",
+    key: str = "event_type",
+    value: str | None = None,
+    **kwargs,
 ) -> str | None:
     """
-    Create a selectbox for event type selection with option to add new type.
+    Create a selectbox for event type selection.
+
+    The picker offers only actual options from get_event_types() (plus the
+    "[Select Event Type]" placeholder). There is no free-text path: the
+    SermonAudio API rejects unknown values with 422, so anything not in the
+    allowed list cannot be submitted.
 
     Args:
         label: Label for the selectbox
         key: Unique key for the widget
+        value: Currently stored value, preselected when it is a valid option.
+            A stale value outside the allowed list falls back to the
+            placeholder with a caption so the user picks a valid option.
         **kwargs: Additional arguments passed to selectbox
 
     Returns:
@@ -469,25 +524,24 @@ def create_event_type_selectbox(
     """
     event_types = get_event_types()
 
-    # Add option for custom event type
-    options = ["[Select Event Type]"] + event_types + ["[Add New Event Type]"]
+    options = ["[Select Event Type]", *event_types]
 
-    selected = st.selectbox(label, options, key=f"{key}_select", **kwargs)
+    index = 0
+    if value and value != "[Select Event Type]":
+        try:
+            index = options.index(value)
+        except ValueError:
+            index = 0
+            st.caption(
+                f"Stored event type {value!r} is not a valid option; "
+                "select one from the list."
+            )
 
-    if selected == "[Add New Event Type]":
-        # Show text input for custom event type
-        custom_event = st.text_input(
-            "Enter event type:",
-            key=f"{key}_custom",
-            placeholder="Special Service"
-        )
-        if custom_event:
-            _persist_entity("event_types", custom_event)
-        return custom_event if custom_event else None
-    elif selected == "[Select Event Type]":
+    selected = st.selectbox(label, options, index=index, key=f"{key}_select", **kwargs)
+
+    if selected == "[Select Event Type]":
         return None
-    else:
-        return selected
+    return selected
 
 
 def create_series_selectbox(
