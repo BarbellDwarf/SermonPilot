@@ -52,7 +52,23 @@ function SermonCard({ sermon }: { sermon: LibrarySermon }) {
 export function Library() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<LibrarySort>("date");
+  const [status, setStatus] = useState<"all" | LibrarySermonStatus>("all");
   const { items: rows, isLoading: loading, error, retry } = useLibrarySermons(query, sort);
+  const visible = status === "all" ? rows : rows.filter((s) => s.status === status);
+
+  const exportCsv = () => {
+    const head = "id,title,speaker,date,duration,series,status";
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    const body = visible
+      .map((s) => [s.id, s.title, s.speaker, s.date, s.duration, s.series, s.status].map(esc).join(","))
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([[head, body].join("\n")], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "library.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -87,18 +103,58 @@ export function Library() {
         </select>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <label htmlFor="library-status" className="sr-only">
+          Filter by status
+        </label>
+        <select
+          id="library-status"
+          value={status}
+          onChange={(e) => setStatus(e.target.value as "all" | LibrarySermonStatus)}
+          className="min-h-[44px] rounded-md border border-line bg-surface px-3 text-sm text-mist"
+        >
+          <option value="all">All statuses</option>
+          {(Object.keys(sermonStatusLabel) as LibrarySermonStatus[]).map((s) => (
+            <option key={s} value={s}>
+              {sermonStatusLabel[s]}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => {
+            setQuery("");
+            setStatus("all");
+          }}
+          className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-sm font-medium text-muted transition-colors hover:border-muted hover:text-mist"
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={visible.length === 0}
+          className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-sm font-medium text-muted transition-colors hover:border-muted hover:text-mist disabled:opacity-45"
+        >
+          Export CSV
+        </button>
+        <span className="ml-auto font-mono text-xs text-muted" role="status" aria-live="polite">
+          {visible.length} of {rows.length}
+        </span>
+      </div>
+
       {loading ? (
         <SkeletonList rows={4} />
       ) : error ? (
         <QueryError message={error} onRetry={retry} />
-      ) : rows.length === 0 ? (
+      ) : visible.length === 0 ? (
         <EmptyState
           title="No teachings match"
           body="Try a different search term, or clear the search to see everything."
         />
       ) : (
         <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {rows.map((s) => (
+          {visible.map((s) => (
             <SermonCard key={s.id} sermon={s} />
           ))}
         </ol>
