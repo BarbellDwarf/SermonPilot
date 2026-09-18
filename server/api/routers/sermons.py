@@ -42,8 +42,8 @@ def create_draft_sermon(request: Request, body: SermonCreateBody) -> dict:
     if user is None:
         raise HTTPException(status_code=401, detail="authentication required")
     sermon_id = f"s-{secrets.token_hex(8)}"
-    from ui.database import SermonDatabase, SermonRepository
     from server.api.accounts import get_db_path
+    from ui.database import SermonDatabase, SermonRepository
 
     repo = SermonRepository(SermonDatabase(db_path=get_db_path()))
     ok = repo.save_sermon(

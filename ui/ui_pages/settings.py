@@ -9,8 +9,9 @@ import sys
 from pathlib import Path
 
 import streamlit as st
-from ui.ui_state import managed_expander, managed_popover
 import yaml
+
+from ui.ui_state import managed_expander
 
 OPENAI_PRESETS = {
     "OpenAI": {

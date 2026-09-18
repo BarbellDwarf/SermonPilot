@@ -1170,7 +1170,7 @@ class SermonRepository:
                     for file_type, file_path in file_paths.items():
                         if not file_path:
                             continue
-                        if not isinstance(file_path, (str, Path)):
+                        if not isinstance(file_path, str | Path):
                             continue
                         file_size = 0
                         try:

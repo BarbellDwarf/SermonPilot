@@ -15,7 +15,7 @@ needs_ffmpeg = pytest.mark.skipif(not (FFMPEG and FFPROBE), reason="ffmpeg/ffpro
 
 
 def test_validate_rejects_offset_beyond_limit():
-    bounds = dict(start=0, end=100, audio_offset=0.0)
+    bounds = {"start": 0, "end": 100, "audio_offset": 0.0}
     assert validate_plan(
         EditPlan(**{**bounds, "audio_offset": 6.0}), min_sermon_seconds=0.0
     )

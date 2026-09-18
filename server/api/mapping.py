@@ -52,7 +52,7 @@ def job_duration(created: Any, completed: Any) -> str:
 def parse_json(value: Any, default: Any) -> Any:
     if value is None or value == "":
         return default
-    if isinstance(value, (dict, list)):
+    if isinstance(value, dict | list):
         return value
     try:
         return json.loads(value)

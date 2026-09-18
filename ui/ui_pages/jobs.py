@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import Any
 
 import streamlit as st
-from ui.ui_state import managed_expander, managed_popover
+
+from ui.ui_state import managed_expander
 
 # Import job queue components at module level
 try:

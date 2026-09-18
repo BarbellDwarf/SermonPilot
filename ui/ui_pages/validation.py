@@ -12,10 +12,10 @@ import json
 from typing import Any
 
 import streamlit as st
-from ui.ui_state import managed_expander, managed_popover
 
 from src.sermon_paths import read_metadata
 from ui.pages import jobs
+from ui.ui_state import managed_expander
 
 
 def _parse_validated_at(value: Any) -> dt.datetime | None:

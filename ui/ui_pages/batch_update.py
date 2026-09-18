@@ -12,9 +12,9 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
-from ui.ui_state import managed_expander, managed_popover
 
 from ui.pages import jobs
+from ui.ui_state import managed_expander
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))

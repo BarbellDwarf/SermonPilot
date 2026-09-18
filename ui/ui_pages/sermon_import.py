@@ -3,9 +3,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 import streamlit as st
-from ui.ui_state import managed_expander, managed_popover
 
 from ui.pages import jobs
+from ui.ui_state import managed_expander
 
 
 def _render_flash() -> None:

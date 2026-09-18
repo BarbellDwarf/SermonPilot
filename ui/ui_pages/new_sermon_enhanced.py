@@ -9,7 +9,8 @@ import time as _time
 from pathlib import Path
 
 import streamlit as st
-from ui.ui_state import managed_expander, managed_popover
+
+from ui.ui_state import managed_expander
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -63,7 +64,7 @@ def show_new_sermon_enhanced():
 
 @st.fragment
 def _show_form_fragment():
-    with managed_expander("2. Sermon Metadata", expanded=st.session_state.pop('expand_metadata', False)):
+    with managed_expander("2. Sermon Metadata", expanded=st.session_state.pop('expand_metadata', False)):  # noqa: E501
         _show_metadata_section()
     with managed_expander("3. Processing Options", expanded=False):
         _show_processing_section()
@@ -157,7 +158,7 @@ def _show_upload_section():
                 show_preview = st.checkbox(
                     "Show preview",
                     key="new_sermon_show_preview",
-                    help="Mounts the media player only on demand; off by default so field edits never re-transfer the file.",
+                    help="Mounts the media player only on demand; off by default so field edits never re-transfer the file.",  # noqa: E501
                 )
                 if show_preview:
                     with managed_expander("Preview", expanded=True):
