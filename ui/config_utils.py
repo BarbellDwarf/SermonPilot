@@ -184,6 +184,9 @@ INFRA_ONLY_ENV_VARS: dict[str, str] = {
     "DATABASE_URL": "SQLite location consumed directly by ui.database",
     "APP_PASSWORD": "UI authentication consumed directly by ui.auth",
     "ENVIRONMENT": "container runtime label with no in-app consumer",
+    "STREAMLIT_SERVER_MAX_UPLOAD_SIZE": (
+        "Streamlit runtime upload limit, read by the Streamlit server rather than app config"
+    ),
 }
 
 BUILTIN_PROMPT_TEMPLATES: dict[str, Any] = {
