@@ -3,8 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import { ReviewPanel } from "../components/ReviewPanel";
 import { sermonStatusLabel, sermonStatusTone } from "./Library";
 import { Button, Card, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast, buttonClass } from "../components/ui";
-import { QueryError, useSermonDetail, useSermonPlan } from "../api/hooks";
-import { isLive, writeApi } from "../api/client";
+import { QueryError, useSermonDetail, useSermonPlan, useUserFiles } from "../api/hooks";
+import { authFetch, isLive, writeApi } from "../api/client";
 
 export function LibraryDetail() {
   const { id } = useParams();
@@ -15,10 +15,42 @@ export function LibraryDetail() {
 
   const { data: detail, isLoading, error, retry } = useSermonDetail(id);
   const { plan, isLoading: planLoading, error: planError, retry: retryPlan } = useSermonPlan(id);
+  const userFiles = useUserFiles(isLive && !!detail && (detail?.files.length ?? 0) > 0);
+  const [downloading, setDownloading] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(null), 3000);
+  };
+
+  const relOf = (filePath: string): string | null => {
+    const root = userFiles.root?.replace(/\/+$/, "");
+    if (!root) return null;
+    if (filePath === root) return "";
+    if (filePath.startsWith(`${root}/`)) return filePath.slice(root.length + 1);
+    return null;
+  };
+
+  const downloadOne = (rel: string, name: string) => {
+    setDownloading(rel);
+    void authFetch(`/api/me/files/download?path=${encodeURIComponent(rel)}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`download failed with ${res.status}`);
+        return res.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        a.click();
+        URL.revokeObjectURL(url);
+        setDownloading(null);
+      })
+      .catch((e) => {
+        setDownloading(null);
+        showToast(`Could not download: ${(e as Error).message}`);
+      });
   };
 
   if (isLoading) {
@@ -197,13 +229,29 @@ export function LibraryDetail() {
               </div>
             </dl>
             {detail.files.length > 0 ? (
-              <ul className="mt-3 flex flex-col gap-1 font-mono text-xs text-muted">
-                {detail.files.map((f) => (
-                  <li key={`${f.file_type}:${f.file_path}`} className="[overflow-wrap:anywhere]">
-                    {f.file_type} · {f.file_path}
-                    {f.file_size != null ? ` · ${f.file_size} bytes` : ""}
-                  </li>
-                ))}
+              <ul className="mt-3 flex flex-col gap-2 font-mono text-xs text-muted">
+                {detail.files.map((f) => {
+                  const rel = relOf(f.file_path);
+                  const name = f.file_path.split("/").pop() || f.file_path;
+                  return (
+                    <li key={`${f.file_type}:${f.file_path}`} className="flex flex-wrap items-center gap-2 [overflow-wrap:anywhere]">
+                      <span className="min-w-0 flex-1">
+                        {f.file_type} · {rel || f.file_path}
+                        {f.file_size != null ? ` · ${f.file_size} bytes` : ""}
+                      </span>
+                      {rel ? (
+                        <button
+                          type="button"
+                          onClick={() => downloadOne(rel, name)}
+                          disabled={downloading === rel}
+                          className="inline-flex min-h-[44px] shrink-0 items-center rounded-md border border-line px-3 font-sans text-xs font-medium text-mist transition-colors hover:border-muted disabled:opacity-45"
+                        >
+                          {downloading === rel ? "Fetching…" : "Download"}
+                        </button>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             ) : null}
           </Card>

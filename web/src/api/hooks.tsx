@@ -18,7 +18,7 @@ import {
   type ServiceStatus,
 } from "../mock/data";
 import { Button, Card, useBriefLoading } from "../components/ui";
-import { api, isLive, type ApiEditPlan, type ApiJob, type ApiSermonListItem } from "./client";
+import { api, filesApi, isLive, type ApiEditPlan, type ApiJob, type ApiSermonListItem } from "./client";
 
 export type LibrarySort = "date" | "title" | "duration";
 
@@ -272,6 +272,23 @@ export function useJobsData() {
     isLoading: live.isPending,
     error: live.isError ? "Jobs could not be loaded. Check the API bridge and try again." : null,
     retry: () => void live.refetch(),
+  };
+}
+
+export function useUserFiles(enabled: boolean) {
+  const live = useQuery({
+    queryKey: ["user-files"],
+    queryFn: filesApi.list,
+    enabled: isLive && enabled,
+    staleTime: 15_000,
+  });
+
+  if (!isLive) {
+    return { root: null as string | null, items: [] as { name: string }[] };
+  }
+  return {
+    root: live.data?.root ?? null,
+    items: live.data?.items ?? [],
   };
 }
 
