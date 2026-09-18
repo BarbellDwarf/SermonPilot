@@ -10,16 +10,17 @@ using a ChromaDB vector store (`ui/rag_system.py`).
 
 ## Enabling Analytics
 
-Analytics is controlled by the `web_ui` settings (Settings page in the web
-UI, or a file layer):
+Analytics is always available: the page renders whenever the Streamlit UI runs,
+with no configuration gate. The one Analytics-specific setting is the ChromaDB
+store used by the chat (`rag_system.vector_db_path`, default
+`analytics_vector_db`; relative paths resolve against the project root):
 
 ```yaml
-web_ui:
-  analytics_enabled: true              # Show the Analytics page
-  analytics_refresh_interval: 300      # Cache refresh interval in seconds (default 300)
+rag_system:
+  vector_db_path: "analytics_vector_db"
 ```
 
-Analytics is enabled by default. The data comes from two places:
+The data comes from two places:
 
 - The local `sermons` table (processing dates, speakers, event types, titles)
 - The SermonAudio API (downloads, video downloads, comment counts, and
@@ -103,8 +104,7 @@ providers and fallback behavior.
 
 ## Troubleshooting
 
-**Analytics data not loading:** verify `web_ui.analytics_enabled` is on in
-the Settings page, then use the "Refresh Data" button on the Processing
+**Analytics data not loading:** use the "Refresh Data" button on the Processing
 Metrics tab to clear the cached data.
 
 **SermonAudio engagement metrics missing or zero:** the API does not provide

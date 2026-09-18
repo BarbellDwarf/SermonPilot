@@ -31,7 +31,7 @@ Transcription → LLM Summary/Hashtags → Upload Back → Analytics & Insights
   `${VAR:-default}` environment substitution.
 - `audio_enhancement_method` is a flat top-level key (values:
   `deepfilternet`, `clear-studio`, `clear-natural`, `custom`, `none`).
-  Related keys: `clear_model_variant`, `clear_custom_repo`,
+  Related keys: `clear_custom_repo`,
   `clear_custom_file`, `audio_noise_reduction`, `audio_normalize`,
   `audio_gain_db`, `audio_target_level_db`.
 - `transcription.backend` selects the transcription backend.
