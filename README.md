@@ -8,6 +8,7 @@ Automated sermon processing tool that enhances audio (Clear/DeepFilterNet), tran
 - **Transcription**: Local Whisper/faster-whisper, OpenAI API, or OpenRouter
 - **AI Metadata**: Title, description, and hashtag generation via Ollama, OpenAI, Anthropic, xAI, Google, Groq, or OpenRouter
 - **SermonAudio Integration**: Create, update, and upload sermons directly to SermonAudio API
+- **Auto-Edit**: LLM-driven cut detection trims dead time around the sermon start and Q&A, with a keeper transcode for raw multi-GB ingests. See [docs/AUTO_EDIT.md](docs/AUTO_EDIT.md)
 - **Streamlit Web UI**: Dashboard, library, batch processing, validation, analytics, AI chat
 - **Directory Structure**: `processed_sermons/{speaker}/{series}/{title} - {series} - {speaker}/`
 
@@ -158,6 +159,12 @@ python sermon_updater.py sermon-update --sermon-id 1234567890123
 ```bash
 python sermon_updater.py list --since-days 30
 ```
+
+## Auto-Edit
+
+Drop the raw recording in and SermonPilot finds the sermon start and the Q&A boundary, cuts the dead time, adds a logo card, and uploads the edited video. Large raw files are shrunk first by the keeper transcode (NVENC, VAAPI, or libx264 at CRF 20), so there is no manual kdenlive pass for routine uploads. Interactive mode stops at a review panel in the Library where you can nudge timestamps, approve, reject with notes (which re-runs detection using your instructions), regenerate a proposal, restore the original, or re-edit from full quality.
+
+Needs `ffmpeg`. Cut detection runs on the configured LLM chain (Ollama by default), no extra environment variables needed. Full setup, config tables, CLI flags, and the review workflow: [docs/AUTO_EDIT.md](docs/AUTO_EDIT.md).
 
 ## Audio Enhancement
 

@@ -28,6 +28,7 @@ RUN python3.11 -m venv /app/venv
 
 ENV PATH="/app/venv/bin:$PATH"
 ENV PYTHONPATH="/app:/app/src:/app/ui"
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 RUN useradd -m -u 1000 sermonapp && \
     mkdir -p /app /data /models /logs /home/sermonapp/.cache && \
@@ -65,8 +66,5 @@ RUN mkdir -p /app/processed_sermons \
 USER sermonapp
 
 EXPOSE 8501
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8501/ || exit 1
 
 CMD ["/app/docker/start_production.sh"]

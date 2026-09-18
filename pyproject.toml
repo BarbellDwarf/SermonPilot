@@ -42,6 +42,8 @@ dependencies = [
     "sentence-transformers>=2.2.0",
     "pandas>=2.1.3",
     "psutil>=5.9.0",
+    # A/V sync detection (face-tracked mouth motion)
+    "opencv-python-headless>=4.10.0,<5",
 ]
 
 [project.optional-dependencies]

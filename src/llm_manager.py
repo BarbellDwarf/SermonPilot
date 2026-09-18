@@ -191,6 +191,7 @@ class OpenAIProvider(LLMProvider):
         self.base_url = config.get('base_url')
         self.temperature = float(config.get('temperature', 0.7))
         self.max_tokens = int(config.get('max_tokens', 2048))
+        self.extra_headers = config.get('extra_headers') or None
 
         if not self.api_key:
             raise ValueError(
@@ -201,6 +202,8 @@ class OpenAIProvider(LLMProvider):
         client_kwargs = {'api_key': self.api_key}
         if self.base_url:
             client_kwargs['base_url'] = self.base_url
+        if self.extra_headers:
+            client_kwargs['default_headers'] = self.extra_headers
 
         self.client = openai.OpenAI(**client_kwargs)
 
@@ -318,6 +321,7 @@ class LLMManager:
         self.primary_provider = None
         self.fallback_providers: list[LLMProvider] = []
         self.validator_provider = None
+        self.operation_providers: dict[str, LLMProvider] = {}
 
         self._initialize_providers()
 
@@ -375,6 +379,44 @@ class LLMManager:
                 )
                 logger.warning(warning_msg)
 
+        for operation_name, operation_config in llm_config.get('operations', {}).items():
+            if not isinstance(operation_config, dict):
+                continue
+            override_provider = operation_config.get('provider')
+            if not override_provider or 'model' not in operation_config:
+                continue
+            provider_config = {
+                key: self._resolve_env_placeholders(value)
+                for key, value in operation_config.items()
+                if key != 'provider'
+            }
+            try:
+                self.operation_providers[operation_name] = self._create_provider(
+                    override_provider, provider_config.get(override_provider, provider_config)
+                )
+                logger.info(
+                    f"Operation '{operation_name}' pinned to provider "
+                    f"{self._get_provider_name(self.operation_providers[operation_name])}"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to initialize operation provider for {operation_name}: {e}")
+
+    @staticmethod
+    def _resolve_env_placeholders(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: LLMManager._resolve_env_placeholders(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [LLMManager._resolve_env_placeholders(item) for item in value]
+        if isinstance(value, str):
+            if value.startswith('${') and value.endswith('}'):
+                return os.getenv(value[2:-1], value) or value
+            if value.startswith('$'):
+                return os.getenv(value[1:], value) or value
+        return value
+
     def _create_provider(self, provider_type: str, provider_config: dict[str, Any]) -> LLMProvider:
         """Create a provider instance based on type and config."""
         if provider_type == 'ollama':
@@ -411,6 +453,43 @@ class LLMManager:
             Exception: If both primary and fallback providers fail
         """
         start_time = time.time()
+
+        operation_provider = self.operation_providers.get(operation) if operation else None
+        if operation_provider:
+            try:
+                response = operation_provider.chat(messages)
+                duration_ms = int((time.time() - start_time) * 1000)
+
+                self._log_api_usage(
+                    provider=self._get_provider_name(operation_provider),
+                    model=self._get_provider_model(operation_provider),
+                    messages=messages,
+                    response=response,
+                    duration_ms=duration_ms,
+                    operation=operation,
+                    sermon_id=sermon_id,
+                    status="success"
+                )
+
+                logger.info(
+                    f"Operation provider succeeded for {operation}: "
+                    f"{type(operation_provider).__name__}"
+                )
+                return response
+            except Exception as e:
+                logger.warning(f"Operation provider for {operation} failed: {e}")
+                duration_ms = int((time.time() - start_time) * 1000)
+                self._log_api_usage(
+                    provider=self._get_provider_name(operation_provider),
+                    model=self._get_provider_model(operation_provider),
+                    messages=messages,
+                    response="",
+                    duration_ms=duration_ms,
+                    operation=operation,
+                    sermon_id=sermon_id,
+                    status="error",
+                    error_message=str(e)
+                )
 
         if self.primary_provider:
             try:

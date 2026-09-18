@@ -9,6 +9,7 @@ import datetime
 
 import pandas as pd
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 
 # Import the new analytics chat interface
 try:
@@ -442,7 +443,7 @@ def show_performance_metrics():
     recommendations = perf_data['recommendations']
 
     for rec in recommendations:
-        with st.expander(f"{rec['title']} ({rec['priority']} Priority)"):
+        with managed_expander(f"{rec['title']} ({rec['priority']} Priority)"):
             st.write(rec['description'])
             st.write(f"**Impact:** {rec['impact']}")
             st.write(f"**Effort:** {rec['effort']}")
@@ -1312,7 +1313,7 @@ def show_sermonaudio_data_view():
                 st.write(sample_speakers)
 
             # Raw data view
-            with st.expander("View Raw Data"):
+            with managed_expander("View Raw Data"):
                 st.dataframe(df, width='stretch', hide_index=True)
 
         else:
