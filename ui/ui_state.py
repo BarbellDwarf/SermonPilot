@@ -26,7 +26,7 @@ def _caller_key(prefix: str, label: str) -> str:
     location = ""
     if frame is not None:
         location = f"{frame.f_code.co_filename}:{frame.f_lineno}"
-    digest = hashlib.sha1(f"{location}|{label}".encode()).hexdigest()[:12]
+    digest = hashlib.sha1(f"{location}|{label}".encode(), usedforsecurity=False).hexdigest()[:12]
     return f"ui_{prefix}_{digest}"
 
 
