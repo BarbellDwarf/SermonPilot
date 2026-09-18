@@ -30,7 +30,7 @@ jobs:
         # full requirements set (torch, whisper, chromadb, ...) stays out of CI.
         run: |
           python -m pip install --upgrade pip
-          pip install ruff pytest requests python-dotenv PyYAML streamlit
+          pip install ruff pytest requests python-dotenv PyYAML streamlit fastapi httpx
           pip install -e . --no-deps
 
       - name: Lint with ruff
