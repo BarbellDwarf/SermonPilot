@@ -359,6 +359,76 @@ export const uploadApi = {
   },
 };
 
+export interface ServerPathStat {
+  exists: boolean;
+  is_file?: boolean;
+  size: number | null;
+  size_human: string;
+  ext: string;
+  kind: string;
+  name: string;
+}
+
+export interface ServerPathResult {
+  id: string;
+  job_id: string;
+  status: string;
+  filename: string;
+  size: number;
+  size_human: string;
+  ext: string;
+  kind: string;
+}
+
+export interface ServerPathPayload {
+  container_path: string;
+  title: string;
+  speaker: string;
+  recorded_date: string;
+  event_type: string;
+  series_title?: string;
+  bible_text?: string;
+  scripture?: string;
+  skip_audio?: boolean;
+  skip_transcription?: boolean;
+  skip_ai_generation?: boolean;
+  dry_run?: boolean;
+  auto_edit_enabled?: boolean;
+  auto_edit_mode?: string | null;
+  logo_path?: string;
+  fade_to_black?: boolean;
+}
+
+export const serverPathApi = {
+  stat: (path: string) =>
+    authed<ServerPathStat>("/api/sermons/server-path/stat", { path }),
+  create: (body: ServerPathPayload) =>
+    send<ServerPathResult>("/api/sermons/server-path", "POST", body),
+};
+
+export interface BrandingItem {
+  name: string;
+  path: string;
+}
+
+export const brandingApi = {
+  list: () => send<{ items: BrandingItem[] }>("/api/branding", "GET"),
+  upload: async (file: File): Promise<{ path: string; filename: string }> => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await authFetch("/api/branding", { method: "POST", body: form });
+    if (!res.ok) {
+      let detail = `Branding upload failed with ${res.status}`;
+      try {
+        const parsed = (await res.json()) as { detail?: unknown };
+        if (typeof parsed.detail === "string") detail = parsed.detail;
+      } catch {
+      }
+      throw new Error(detail);
+    }
+    return (await res.json()) as { path: string; filename: string };
+  },
+};
 export interface AdminUser {
   id: string;
   username: string;

@@ -144,6 +144,45 @@ NOT started — design at the write-path/render phase.
 (role from /api/auth/me). Future hardening: per-sermon file scoping when per-user
 output dirs fully land; until then the output dir IS the user boundary.
 
+## Release readiness (v1.7.0 console scope, P7)
+
+Live in the console now:
+
+- New Sermon end to end: Browser Upload (`POST /api/sermons/upload`, chunked
+  stream to `$SERMONPILOT_RAW_INGEST/<user_id>/`) and Server Path
+  (`POST /api/sermons/server-path`, server `stat()`s the absolute
+  container path, 415 on bad extension, 422 on missing fields) both create a
+  draft sermon row and queue a real `sermon_processing` job with user
+  attribution. Live exists/size/type chips come from
+  `GET /api/sermons/server-path/stat`.
+- Metadata form: title / speaker / date required, event-type picker carries
+  the static full SermonAudio enum (29 values), series + scripture
+  (`bible_text`) flow into both create/upload payloads and the job
+  `form_data`.
+- Processing options: enhance (`skip_audio`), transcribe
+  (`skip_transcription`), AI metadata (`skip_ai_generation`), and dry-run
+  toggles, plus the auto-edit section (Edit Sermon checkbox, approval mode
+  `interactive`/`auto`, ending-card picker with in-page upload via
+  `POST /api/branding` to `/data/branding/<user_id>/` at 600 perms,
+  fade-to-black). Job params match the Streamlit names
+  (`auto_edit_enabled`, `auto_edit_mode`, `logo_path`, `fade_to_black`).
+- Start Processing posts per path type, surfaces the job id with a toast
+  and a Jobs link, and clears the form on success.
+- Library (search/sort/paginate/delete/transcript/files/plan review),
+  Jobs (poll/cancel/retry-toast), Home (stats/status), Settings
+  (connections/persistence/admin cutover banner) all live against `/api/*`.
+
+Deliberately parked (not v1.7.0):
+
+- Batch update, validation, and sermon-import pages (Streamlit-only).
+- Resumable/interruptible browser uploads (chunk-session design logged, not started).
+- Per-user cloud storage mounts (Drive/Dropbox/OneDrive/S3-class OAuth, accounts phase).
+- Scripture overlay cards + audio disclaimer intro card (render-phase work).
+
+Cutover stays a one-line nginx move: upstream `127.0.0.1:8501` (Streamlit)
+-> `127.0.0.1:8504` (FastAPI bridge serving bundle + `/api/*`), then
+`nginx -t && nginx -s reload` (see Front-door cutover above for headers).
+
 ## Front-door cutover (P6c, prepared — NOT switched)
 
 sermon.moraclan.us currently proxies to Streamlit :8501 via nginx (CT 111).
