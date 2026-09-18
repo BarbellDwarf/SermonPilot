@@ -1,11 +1,16 @@
 [theme]
 # Indigo accent so affirmative (type="primary") actions stop rendering
 # Streamlit's default danger-red; matches --card-grad-a in streamlit_app.py.
-base = "dark"
+# Theme base is intentionally unset: Streamlit 1.63+ follows the client's
+# color scheme, matching the prefers-color-scheme token blocks in
+# streamlit_app.py. Pinning a base here made the custom Library cards
+# unreadable whenever the client preferred the other scheme.
 primaryColor = "#4f46e5"
 
 [server]
-maxUploadSize = 2000
+# Default max upload size in MB. Override at launch with the environment
+# variable STREAMLIT_SERVER_MAX_UPLOAD_SIZE (Docker: set it in .env).
+maxUploadSize = 30720
 
 [client]
 toolbarMode = "viewer"

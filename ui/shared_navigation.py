@@ -99,7 +99,8 @@ def render_system_status():
         else:
             summary = "All systems OK"
 
-        with st.sidebar.expander(f"System Status — {summary}", expanded=False):
+        with st.sidebar.expander(f"System Status — {summary}", expanded=False,
+                                 key="sidebar_system_status"):
             for status_key, display_name in core_components:
                 if status_key in status_data:
                     status_info = status_data[status_key]
@@ -155,7 +156,8 @@ def render_detailed_status():
         status_manager = _get_cached_status_manager()
         status_data = status_manager.get_comprehensive_status()
 
-        with st.sidebar.expander("Full System Status", expanded=True):
+        with st.sidebar.expander("Full System Status", expanded=True,
+                                 key="sidebar_full_system_status"):
             for status_key, status_info in status_data.items():
                 label = get_status_label(status_info["status"])
                 label_cls = _status_class(label)

@@ -1,5 +1,16 @@
 ARG GPU_BACKEND=cpu
 
+FROM node:22-bookworm-slim AS web-builder
+
+WORKDIR /web
+
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+
+COPY web/ ./
+ARG VITE_API_MODE=live
+RUN npm run build
+
 FROM ubuntu:22.04 AS base-cpu
 
 FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04 AS base-cuda
@@ -34,6 +45,7 @@ RUN python3.11 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 ENV PYTHONPATH="/app:/app/src:/app/ui"
 ENV SERMONPILOT_VARIANT=${SERMONPILOT_VARIANT}
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 RUN useradd -m -u 1000 sermonapp && \
     mkdir -p /app /data /models /logs /home/sermonapp/.cache && \
@@ -66,6 +78,8 @@ RUN if [ "$GPU_BACKEND" = "cuda" ]; then \
 
 COPY --chown=sermonapp:sermonapp . /app/
 
+COPY --from=web-builder --chown=sermonapp:sermonapp /web/dist /app/web/dist
+
 RUN mkdir -p /app/processed_sermons \
              /app/analytics_cache \
              /app/analytics_vector_db \
@@ -77,9 +91,6 @@ RUN mkdir -p /app/processed_sermons \
 
 USER sermonapp
 
-EXPOSE 8501
-
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8501/ || exit 1
+EXPOSE 8501 8504
 
 CMD ["/app/docker/start_production.sh"]

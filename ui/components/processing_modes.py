@@ -2,6 +2,7 @@
 from typing import Any
 
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 
 
 class ProcessingModeSelector:
@@ -118,7 +119,7 @@ class ProcessingModeSelector:
         mode_info = self.modes[selected_mode]
 
         # Show mode description and use cases
-        with st.expander(f"About {mode_info['name']}", expanded=False):
+        with managed_expander(f"About {mode_info['name']}", expanded=False):
             st.write(mode_info['description'])
             if 'use_cases' in mode_info:
                 st.write("**Best for:**")
@@ -181,11 +182,11 @@ class ProcessingModeSelector:
         st.subheader(f"{mode_info['name']} Settings")
 
         # Show current settings
-        with st.expander("Current Settings", expanded=False):
+        with managed_expander("Current Settings", expanded=False):
             self._display_settings_table(settings)
 
         # Fine-tuning options
-        with st.expander("Fine-tune Settings", expanded=False):
+        with managed_expander("Fine-tune Settings", expanded=False):
             settings = self._render_fine_tuning_controls(settings)
 
         return settings
@@ -264,7 +265,7 @@ class ProcessingModeSelector:
                 )
 
         # Advanced options
-        with st.expander("Advanced Processing Options"):
+        with managed_expander("Advanced Processing Options"):
             settings.update(self._render_advanced_options())
 
         return settings
@@ -423,7 +424,7 @@ class ProcessingModeSelector:
             )
 
         # Processing summary
-        with st.expander("Processing Summary"):
+        with managed_expander("Processing Summary"):
             self._render_processing_summary(settings)
 
     def _calculate_processing_intensity(self, settings: dict[str, Any]) -> float:

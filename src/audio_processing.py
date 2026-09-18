@@ -167,10 +167,38 @@ class AudioProcessor:
             "(models will load on first use)"
         )
 
+    def release_gpu(self) -> None:
+        """Drop model references and return cached CUDA memory to the driver."""
+        import gc
+
+        self.df_model = None
+        self.df_state = None
+        self.qa_normalizer = None
+        gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+
     def _ensure_models_initialized(self):
         """Ensure models are initialized before use. Called lazily on first processing."""
         if self._models_initialized:
             return
+
+        # Return our own cached blocks to the driver before requesting more.
+        try:
+            import torch
+            if torch.cuda.is_available():
+                free, total = torch.cuda.mem_get_info()
+                logger.info(
+                    "VRAM before %s init: %.2f/%.2f GB free",
+                    self.enhancement_method, free / 1e9, total / 1e9,
+                )
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
         logger.info(f"Initializing {self.enhancement_method} model for audio processing...")
 

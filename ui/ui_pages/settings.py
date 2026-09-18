@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 import yaml
 
 OPENAI_PRESETS = {
@@ -1366,7 +1367,7 @@ def show_prompt_templates():
     }
 
     for key, label in template_names.items():
-        with st.expander(label, expanded=False):
+        with managed_expander(label, expanded=False):
             st.checkbox("Enabled", key=f"pt_{key}_enabled")
             st.text_area(
                 "System Prompt",
@@ -1439,7 +1440,7 @@ def show_yaml_backup_restore():
     if config:
         masked_config = _mask_secrets(config)
         config_yaml = yaml.dump(masked_config, default_flow_style=False, sort_keys=True)
-        with st.expander("Current Configuration", expanded=True):
+        with managed_expander("Current Configuration", expanded=True):
             st.code(config_yaml, language='yaml')
         st.download_button(
             "Download Config",

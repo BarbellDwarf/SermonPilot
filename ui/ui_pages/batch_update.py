@@ -12,6 +12,7 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+from ui.ui_state import managed_expander, managed_popover
 
 from ui.pages import jobs
 
@@ -110,7 +111,7 @@ def show_filter_and_select():
             key="batch_content_filter",
         )
 
-    with st.expander("Advanced Filters"):
+    with managed_expander("Advanced Filters"):
         col1, col2 = st.columns(2)
 
         with col1:
@@ -698,7 +699,7 @@ def show_batch_progress():
         st.text(f"Progress: {job.progress:.1f}%")
 
         if job.logs:
-            with st.expander("Recent Activity", expanded=False):
+            with managed_expander("Recent Activity", expanded=False):
                 for log in job.logs[-5:]:
                     st.text(log)
 

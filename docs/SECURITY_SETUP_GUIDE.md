@@ -76,10 +76,51 @@ See `.env.example` for the complete list of available environment variables. Key
 - `SERMONAUDIO_BROADCASTER_ID` - Your broadcaster ID
 
 #### LLM Providers (Configure at least one)
-- `OPENAI_API_KEY` - OpenAI GPT models
+- `OPENAI_API_KEY` - OpenAI GPT models (also backs `transcription.whisper_openai` and OpenAI embeddings)
 - `XAI_API_KEY` - xAI Grok models
 - `GROQ_API_KEY` - Groq fast inference
-- `OPENROUTER_API_KEY` - OpenRouter models
+- `OPENROUTER_API_KEY` - OpenRouter models (also backs `transcription.whisper_openrouter`)
+- `ANTHROPIC_API_KEY` - Anthropic Claude models
+- `GOOGLE_API_KEY` - Google Gemini models
+- `AUTO_EDIT_LLM_API_KEY` / `AUTO_EDIT_LLM_BASE_URL` - dedicated auto-edit endpoint (`llm.operations.auto_edit`)
+
+#### Model Pins (optional, override config without editing files)
+- `LLM_PROVIDER`, `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `XAI_MODEL`, `GOOGLE_MODEL`, `GROQ_MODEL`, `OPENROUTER_MODEL`
+- `OLLAMA_MODEL`, `WHISPER_MODEL`, `TRANSCRIPTION_BACKEND`
+- `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`
+
+#### Audio / Output / Behavior (optional overrides)
+- `AUDIO_ENHANCEMENT_METHOD`, `AUDIO_NOISE_REDUCTION`, `AUDIO_NORMALIZE`, `AUDIO_TARGET_LEVEL`, `AUDIO_GAIN_DB`
+- `OUTPUT_DIRECTORY`, `SAVE_TRANSCRIPT`, `SAVE_ORIGINAL_AUDIO`
+- `DRY_RUN`, `DEBUG`, `VERBOSE`, `HASHTAG_VERIFICATION`, `QA_NORMALIZATION_ENABLED`
+
+#### Config Plumbing
+- `SA_UPDATER_CONFIG` - explicit config file path (absolute preferred)
+- `DATABASE_URL` - SQLite database path / URL
+
+The full override table lives in code at `src/core/config.py`
+(`ConfigManager._override_from_env`); direct `os.getenv` readers are
+`src/transcription.py` (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`),
+`src/llm_manager.py` (provider `ENV_KEY`s plus `${VAR}` placeholder
+resolution), `sermon_updater.get_api_headers` (`SERMONAUDIO_API_KEY`),
+and `ui/ui_pages/new_sermon_enhanced.py`
+(`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_BASE_URL`).
+
+### API-Key Storage Contract
+
+- Keys may live in **environment variables** (preferred) or the **DB
+  `config_cache`** (UI-saved settings). They must **never** be literals
+  in `config.yaml`.
+- `config.yaml` / `config/config.example.yaml` hold `${VAR}` placeholders;
+  the loader substitutes them and env overrides win. The Settings UI
+  writes placeholders back to the file while keeping user-typed keys in
+  the DB, overlaid in memory with precedence
+  environment > DB cache > file.
+- Empty, whitespace-only, unresolved `${VAR}`, or obviously-invalid short
+  values (for example a stray few-character string in
+  `transcription.whisper_openai.api_key`) are treated as unset and are
+  never sent to an endpoint; cloud transcription raises a clear
+  "API key missing" error instead.
 
 #### Local LLM (Alternative to API providers)
 - `OLLAMA_HOST` - Ollama server URL (default: http://localhost:11434)
