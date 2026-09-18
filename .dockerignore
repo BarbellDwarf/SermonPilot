@@ -89,3 +89,7 @@ AGENTS.md
 .claude/
 .playwright-mcp/
 opencode.json
+
+# Web console build: never ship node_modules; always ship the SPA
+# sources, the built dist, the manifest files, and the API server.
+web/node_modules/

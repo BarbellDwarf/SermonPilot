@@ -1041,12 +1041,36 @@ def _load_library_config() -> dict[str, Any]:
         return {}
 
 
+def _effective_auto_edit_cfg(sermon: dict[str, Any], repo: Any) -> dict[str, Any]:
+    """Library config auto_edit defaults overlaid with the draft's stored ending-card prefs."""
+    auto_cfg = dict(_load_library_config().get("auto_edit") or {})
+    try:
+        full = _full_sermon_or_none(sermon, repo) or sermon
+        prefs = _read_edit_plan_metadata(full).get("auto_edit")
+    except Exception:
+        prefs = None
+    if isinstance(prefs, dict):
+        for key in ("logo_path", "logo_hold", "fade_to_black", "fade_out_tail_seconds"):
+            if key in prefs:
+                auto_cfg[key] = prefs[key]
+    return auto_cfg
+
+
 def _render_media_player(sermon: dict[str, Any]) -> None:
     try:
+        from urllib.parse import urlparse
+
         from ui.media_server import get_media_server
 
         server = get_media_server()
         if server is None or not server.base_url:
+            return
+        hostname = urlparse(server.base_url).hostname or ""
+        if hostname in {"127.0.0.1", "localhost"}:
+            st.caption(
+                "Media preview unavailable: the media server is only reachable on localhost. "
+                "Set MEDIA_SERVER_PUBLIC_HOST and publish its port to enable previews."
+            )
             return
         candidates: list[Path] = []
         try:
@@ -1118,14 +1142,19 @@ def _render_edit_snippets(sermon: dict[str, Any], plan: dict[str, Any], repo: An
     except Exception:
         st.caption("Review snippet module unavailable")
         return
-    auto_cfg = _load_library_config().get("auto_edit") or {}
+    auto_cfg = _effective_auto_edit_cfg(sermon, repo)
     logo_value = auto_cfg.get("logo_path")
     logo = Path(logo_value) if logo_value else None
     source = Path(media_path)
     snippet_dir = source.parent / "snippets"
     start = float(plan.get("proposed_start") or 0.0)
     end = float(plan.get("proposed_end") or 0.0)
-    signature = {"start": start, "end": end}
+    signature = {
+        "start": start,
+        "end": end,
+        "logo": str(auto_cfg.get("logo_path") or ""),
+        "fade_to_black": bool(auto_cfg.get("fade_to_black", True)),
+    }
     snippet_paths = _cached_edit_snippets(snippet_dir, signature)
     if snippet_paths is None:
         edit_plan = EditPlan(
@@ -1354,13 +1383,33 @@ def _preview_offset_snippets(sermon: dict[str, Any], plan: dict[str, Any], repo:
         return []
     source = Path(media_path)
     snippet_dir = source.parent / "snippets"
-    signature = {"start": float(start), "end": float(end)}
+    auto_cfg = _effective_auto_edit_cfg(sermon, repo)
+    logo_value = auto_cfg.get("logo_path")
+    signature = {
+        "start": float(start),
+        "end": float(end),
+        "logo": str(logo_value or ""),
+        "fade_to_black": bool(auto_cfg.get("fade_to_black", True)),
+    }
     try:
         bases = _cached_edit_snippets(snippet_dir, signature)
         if bases is None:
             snippet_dir.mkdir(parents=True, exist_ok=True)
-            edit_plan = EditPlan(start=float(start), end=float(end), needs_review=True)
-            bases = render_review_snippets(source, edit_plan, snippet_dir, None)
+            edit_plan = EditPlan(
+                start=float(start),
+                end=float(end),
+                fade_in=float(auto_cfg.get("fade_in", 1.0)),
+                logo_hold=float(auto_cfg.get("logo_hold", 3.0)),
+                fade_to_black=bool(auto_cfg.get("fade_to_black", True)),
+                needs_review=True,
+            )
+            bases = render_review_snippets(
+                source,
+                edit_plan,
+                snippet_dir,
+                Path(logo_value) if logo_value else None,
+                fade_out_tail_seconds=float(auto_cfg.get("fade_out_tail_seconds", 2.0)),
+            )
             (snippet_dir / "snippets.json").write_text(
                 json.dumps(signature), encoding="utf-8"
             )

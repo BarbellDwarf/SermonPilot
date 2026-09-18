@@ -20,7 +20,22 @@ project_root = ui_dir.parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / "src"))
 
-from job_queue import Job, JobCancelledError, JobResult, JobStatus, JobType  # noqa: E402
+try:  # noqa: E402 - prefer package path so ui.* and top-level resolve to ONE module
+    from ui.job_queue import Job, JobCancelledError, JobResult, JobStatus, JobType
+except ImportError:  # Streamlit entrypoint runs from /app (top-level imports)
+    from job_queue import Job, JobCancelledError, JobResult, JobStatus, JobType  # noqa: E402
+
+# Belt-and-braces: coerce str/foreign-enum job types via value lookup so a dual-module
+# import of job_queue (top-level vs ui.) can never produce a missing-executor lookup.
+from ui.job_queue import JobType as _CanonicalJobType
+
+def _canon(job_type):
+    if isinstance(job_type, _CanonicalJobType):
+        return job_type
+    try:
+        return _CanonicalJobType(getattr(job_type, "value", job_type))
+    except ValueError:
+        return job_type
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +47,34 @@ _RESULT_TRIM_FIELDS = ('transcript',)
 def _trim_result_payload(result: dict) -> dict:
     """Return a shallow copy of a processing result without bulky fields."""
     return {k: v for k, v in result.items() if k not in _RESULT_TRIM_FIELDS}
+
+
+def _job_user_id(job: Job) -> str | None:
+    params = job.parameters or {}
+    return params.get("user_id") or getattr(job, "user_id", None)
+
+
+def _stamp_sermon_owner(sermon_id: str | None, user_id: str | None) -> None:
+    if not sermon_id or not user_id:
+        return
+    try:
+        from ui.database import SermonRepository
+
+        repo = SermonRepository()
+        with repo.db.get_connection() as conn:
+            try:
+                cols = {row[1] for row in conn.execute("PRAGMA table_info(sermons)").fetchall()}
+            except Exception:
+                return
+            if "user_id" not in cols:
+                return
+            conn.execute(
+                "UPDATE sermons SET user_id = ? WHERE id = ? AND user_id IS NULL",
+                (user_id, sermon_id),
+            )
+            conn.commit()
+    except Exception as e:
+        logger.warning("Failed to stamp sermon owner %s: %s", sermon_id, e)
 
 
 def _raise_if_job_cancelled(job: Job) -> None:
@@ -485,6 +528,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
 
         if result.get('success'):
             sermon_id = result.get('sermon_id')
+            _stamp_sermon_owner(sermon_id, _job_user_id(job))
             plan_status = result.get('edit_plan_status')
             if plan_status == 'pending_review':
                 job.add_log("Auto-edit cut awaits manual review")
@@ -639,6 +683,7 @@ def execute_auto_edit_job(job: Job) -> JobResult:
 
         if result.get('success'):
             sermon_id = result.get('sermon_id')
+            _stamp_sermon_owner(sermon_id, _job_user_id(job))
             plan_status = result.get('edit_plan_status')
             if plan_status == 'pending_review':
                 job.add_log("Auto-edit cut awaits manual review")
@@ -1091,6 +1136,7 @@ def execute_auto_edit_apply_job(job: Job) -> JobResult:
                 raise JobCancelledError("Job cancelled by user")
 
             if result.get('success') and result.get('edit_plan_status') == 'auto_applied':
+                _stamp_sermon_owner(result.get('sermon_id') or sermon_id, _job_user_id(job))
                 media_id = (
                     result.get('final_upload_path')
                     or result.get('output_dir')
@@ -1297,6 +1343,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
                 "applied_local",
             ):
                 rendered_id = result.get("sermon_id") or ""
+                _stamp_sermon_owner(result.get("sermon_id") or sermon_id, _job_user_id(job))
                 job.add_log(f"Edit rendered locally, not uploaded ({rendered_id})")
                 return JobResult(
                     success=True,
@@ -1319,6 +1366,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
             )
 
         if result.get("success"):
+            _stamp_sermon_owner(result.get("sermon_id") or sermon_id, _job_user_id(job))
             applied_status = result.get("edit_plan_status") or "auto_applied"
             if applied_status == "auto_applied" and bool(result.get("auto_edit_applied")):
                 job.add_log(f"Edit applied and uploaded ({result.get('sermon_id')})")
@@ -1372,6 +1420,41 @@ def _execute_auto_edit_dispatch(job: Job) -> JobResult:
     return execute_auto_edit_job(job)
 
 
+def execute_sermon_publish_job(job: Job) -> JobResult:
+    """Upload a draft sermon to SermonAudio via publish_dry_run_sermon."""
+    try:
+        if job.cancelled or job.status == JobStatus.CANCELLED:
+            raise JobCancelledError("Job cancelled by user")
+        sermon_id = job.parameters.get("sermon_id")
+        if not sermon_id:
+            return JobResult(
+                success=False,
+                message="Missing sermon_id for publish",
+                error="Missing sermon_id in job parameters",
+            )
+        job.update_progress(10, f"Publishing {sermon_id} to SermonAudio...")
+        from sermon_updater import publish_dry_run_sermon
+
+        result = publish_dry_run_sermon(str(sermon_id))
+        if result.get("success"):
+            _stamp_sermon_owner(result.get("sermon_id") or sermon_id, _job_user_id(job))
+            job.update_progress(100, f"Published as {result.get('sermon_id')}")
+            return JobResult(
+                success=True,
+                message=f"Published to SermonAudio as {result.get('sermon_id')}",
+                data={"sermon_id": result.get("sermon_id")},
+            )
+        return JobResult(
+            success=False,
+            message="Publish failed",
+            error=result.get("error") or "unknown error",
+        )
+    except JobCancelledError:
+        raise
+    except Exception as e:
+        return JobResult(success=False, message="Publish failed", error=str(e))
+
+
 # Job executor registry
 _EXECUTORS: dict[JobType, Callable[[Job], JobResult]] = {
     JobType.VALIDATION: execute_validation_job,
@@ -1381,12 +1464,13 @@ _EXECUTORS: dict[JobType, Callable[[Job], JobResult]] = {
     JobType.METADATA_UPDATE: execute_metadata_update_job,
     JobType.AUTO_EDIT: _execute_auto_edit_dispatch,
     JobType.AUTO_EDIT_APPLY: execute_library_auto_edit_apply_job,
+    JobType.SERMON_PUBLISH: execute_sermon_publish_job,
 }
 
 
 def get_executor(job_type: JobType) -> Callable[[Job], JobResult] | None:
     """Get the executor function for a specific job type"""
-    return _EXECUTORS.get(job_type)
+    return _EXECUTORS.get(_canon(job_type))
 
 
 def register_executor(job_type: JobType, executor: Callable[[Job], JobResult]):
