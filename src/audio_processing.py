@@ -2,11 +2,9 @@
 
 Supports noise reduction, amplification, and normalization with AI models
 (DeepFilterNet, Resemble Enhance) and fallback to basic processing.
-Includes Q&A audio normalization for automatically adjusting audience question levels.
 """
 
 import logging
-import os
 import sys
 import time
 import types
@@ -21,18 +19,6 @@ import soundfile as sf
 import torch
 import torchaudio
 from pydub import AudioSegment
-
-# Import Q&A normalizer
-try:
-    from .qa_normalizer import QANormalizer
-    qa_normalizer_available = True
-except ImportError:
-    try:
-        from qa_normalizer import QANormalizer
-        qa_normalizer_available = True
-    except ImportError:
-        qa_normalizer_available = False
-        QANormalizer = None
 
 
 def peak_normalize(audio_data: np.ndarray, peak_db: float = -1.0) -> np.ndarray:
@@ -144,15 +130,6 @@ class AudioProcessor:
         self.clear_enhancer = None
         self._models_initialized = False
 
-        # Q&A normalization support
-        self.qa_normalizer = None
-        self.qa_processing_enabled = self.config.get('qa_normalization', {}).get('enabled', False)
-        if self.qa_processing_enabled and qa_normalizer_available:
-            logger.info("Q&A normalization enabled")
-        elif self.qa_processing_enabled and not qa_normalizer_available:
-            logger.warning("Q&A normalization requested but not available")
-            self.qa_processing_enabled = False
-
         # Validate enhancement method but don't initialize models yet
         valid_methods = {"deepfilternet", "clear-studio", "clear-natural", "custom", "none"}
         if self.enhancement_method not in valid_methods:
@@ -173,7 +150,6 @@ class AudioProcessor:
 
         self.df_model = None
         self.df_state = None
-        self.qa_normalizer = None
         gc.collect()
         try:
             import torch
@@ -1071,11 +1047,9 @@ class AudioProcessor:
                            gain_db: float = 0.0,
                            target_level_db: float = -22.0,
                            max_duration_minutes: int | None = None,
-                           apply_qa_normalization: bool = None,
 ) -> tuple[bool, dict[str, Any] | None]:
         """
-        Complete sermon audio processing pipeline with safeguards for large files
-        and Q&A normalization.
+        Complete sermon audio processing pipeline with safeguards for large files.
 
         Args:
             input_path: Input audio file path
@@ -1086,21 +1060,15 @@ class AudioProcessor:
             gain_db: Amplification gain in dB
             target_level_db: Target normalization level in dB
             max_duration_minutes: Maximum duration to process in minutes (None for no limit)
-            apply_qa_normalization: Whether to apply Q&A normalization (None = use config setting)
 
         Returns:
-            Tuple of (success_status, qa_processing_info)
+            Tuple of (success_status, processing_info)
         """
         # Ensure models are initialized before processing
         self._ensure_models_initialized()
 
-        # Initialize Q&A processing info
+        # Kept for backward-compatible return shape
         qa_processing_info = None
-
-        # Determine if Q&A normalization should be applied
-        should_apply_qa = apply_qa_normalization
-        if should_apply_qa is None:
-            should_apply_qa = self.qa_processing_enabled
 
         try:
             # Load audio
@@ -1121,43 +1089,6 @@ class AudioProcessor:
                 )
                 max_samples = int(max_duration_minutes * 60 * sample_rate)
                 audio_data = audio_data[:max_samples]
-
-            # Step 1: Q&A normalization (before other processing)
-            if should_apply_qa and qa_normalizer_available:
-                try:
-                    logger.info("Applying Q&A normalization")
-                    if self.qa_normalizer is None:
-                        self.qa_normalizer = QANormalizer(self.config)
-
-                    # Create temporary file for Q&A processing
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
-                        temp_path = temp_file.name
-
-                    # Save current audio for Q&A processing
-                    sf.write(temp_path, audio_data, sample_rate)
-
-                    # Apply Q&A normalization
-                    normalized_audio, _ = self.qa_normalizer.process_audio(temp_path)
-                    audio_data = normalized_audio
-
-                    # Get processing statistics
-                    qa_processing_info = self.qa_normalizer.get_processing_stats()
-                    qa_processing_info['qa_segments'] = self.qa_normalizer.get_segments()
-
-                    # Clean up temporary file
-                    os.unlink(temp_path)
-
-                    logger.info(
-                        f"Q&A normalization applied: "
-                        f"{len(qa_processing_info.get('qa_segments', []))} segments processed"
-                    )
-                except Exception as e:
-                    logger.warning(f"Q&A normalization failed: {e}")
-                    qa_processing_info = {'error': str(e), 'qa_segments': []}
-            elif should_apply_qa and not qa_normalizer_available:
-                logger.warning("Q&A normalization requested but not available")
-                qa_processing_info = {'error': 'Q&A normalizer not available', 'qa_segments': []}
 
             # Step 2: Apply noise reduction if requested
             if noise_reduction:
@@ -1204,11 +1135,11 @@ def process_sermon_audio(
         output_path: Output audio file
         enhancement_method: AI enhancement method to use ("deepfilternet", "clear", "none")
         verbose: Show detailed processing information
-        config: Configuration dictionary for Q&A normalization and other settings
+        config: Configuration dictionary for enhancement settings
         **kwargs: Additional arguments for processing
 
     Returns:
-        Tuple of (success_status, qa_processing_info)
+        Tuple of (success_status, processing_info)
     """
     # Use AI enhancement processing
     try:
