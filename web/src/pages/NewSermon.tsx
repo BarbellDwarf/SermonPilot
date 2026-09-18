@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Button,
   Chip,
@@ -10,6 +11,7 @@ import {
   Toggle,
   inputCls,
 } from "../components/ui";
+import { isLive, uploadApi } from "../api/client";
 
 type UploadTab = "browser" | "server";
 type ApprovalMode = "manual" | "auto_render" | "auto_upload";
@@ -40,12 +42,16 @@ export function NewSermon() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [starting, setStarting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [fileObj, setFileObj] = useState<File | null>(null);
+  const [queuedJob, setQueuedJob] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const set = (k: keyof typeof initialMeta) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setMeta((m) => ({ ...m, [k]: e.target.value }));
 
   const serverValid = serverPath.trim().startsWith("/") && serverPath.trim().length > 3;
-  const hasSource = uploadTab === "browser" ? fileName !== null : serverValid;
+  const browserHasSource = isLive ? fileObj !== null : fileName !== null;
+  const hasSource = uploadTab === "browser" ? browserHasSource : serverValid;
 
   const missing = useMemo(() => {
     const list: string[] = [];
@@ -61,8 +67,15 @@ export function NewSermon() {
 
   const pickMockFile = () => setFileName("sample-sermon-upload.mp3");
 
+  const showToast = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 4000);
+  };
+
   const resetAll = () => {
     setFileName(null);
+    setFileObj(null);
+    setQueuedJob(null);
     setServerPath("");
     setMeta(initialMeta);
     setEnhance(true);
@@ -75,6 +88,27 @@ export function NewSermon() {
 
   const start = () => {
     if (!valid || starting) return;
+    if (isLive && uploadTab === "browser" && fileObj) {
+      setStarting(true);
+      const form = new FormData();
+      form.append("file", fileObj);
+      form.append("title", meta.title.trim());
+      form.append("speaker", meta.speaker);
+      form.append("recorded_date", meta.date);
+      form.append("event_type", meta.eventType || "Sunday Service");
+      void uploadApi
+        .upload(form)
+        .then((r) => {
+          setStarting(false);
+          setQueuedJob(r.job_id);
+          showToast(`Upload queued as job ${r.job_id}.`);
+        })
+        .catch((e) => {
+          setStarting(false);
+          showToast(`Could not queue: ${(e as Error).message}`);
+        });
+      return;
+    }
     setStarting(true);
     window.setTimeout(() => {
       setStarting(false);
@@ -92,7 +126,11 @@ export function NewSermon() {
   };
 
   const summaryBits = [
-    uploadTab === "browser" ? fileName ?? "no file" : serverValid ? serverPath.trim() : "no path",
+    uploadTab === "browser"
+      ? (isLive ? (fileObj?.name ?? "no file") : (fileName ?? "no file"))
+      : serverValid
+        ? serverPath.trim()
+        : "no path",
     meta.title.trim() || "untitled",
     meta.speaker || "no speaker",
     meta.date || "no date",
@@ -105,7 +143,11 @@ export function NewSermon() {
     <div className="flex flex-col gap-4 pb-32">
       <PageHeader
         title="New Sermon"
-        sub="Upload, describe, then queue the pipeline. Mock only, nothing is sent."
+        sub={
+          isLive
+            ? "Upload, describe, then queue the pipeline on the server."
+            : "Upload, describe, then queue the pipeline. Mock only, nothing is sent."
+        }
         actions={
           <Button variant="ghost" onClick={() => setConfirmReset(true)}>
             Reset
@@ -146,10 +188,26 @@ export function NewSermon() {
 
         {uploadTab === "browser" ? (
           <div className="mt-3">
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".mkv,.mp4,.mov,.webm,.m4v,.mp3,.wav,.m4a,.flac,.ogg,.mpa"
+              className="sr-only"
+              aria-label="Choose a sermon file"
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                if (isLive) setFileObj(f);
+                else if (f) pickMockFile();
+              }}
+            />
             <div
               role="button"
               tabIndex={0}
-              aria-label="Drop a sermon file here, or press Enter to pick a mock file"
+              aria-label={
+                isLive
+                  ? "Drop a sermon file here, or press Enter to choose one"
+                  : "Drop a sermon file here, or press Enter to pick a mock file"
+              }
               onDragOver={(e) => {
                 e.preventDefault();
                 setDragOver(true);
@@ -158,14 +216,23 @@ export function NewSermon() {
               onDrop={(e) => {
                 e.preventDefault();
                 setDragOver(false);
-                pickMockFile();
+                const f = e.dataTransfer.files?.[0];
+                if (isLive) {
+                  if (f) setFileObj(f);
+                } else {
+                  pickMockFile();
+                }
               }}
               onKeyDown={(e) => {
                 if (e.target !== e.currentTarget) return;
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  pickMockFile();
+                  if (isLive) fileInput.current?.click();
+                  else pickMockFile();
                 }
+              }}
+              onClick={() => {
+                if (isLive) fileInput.current?.click();
               }}
               className={`flex min-h-[10rem] flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-6 text-center transition-colors ${
                 dragOver ? "border-accent bg-raised" : "border-line bg-ink"
@@ -175,17 +242,22 @@ export function NewSermon() {
                 <path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <p className="text-sm font-semibold">
-                {fileName ?? "Drag a file here or choose one"}
+                {isLive ? (fileObj ? `${fileObj.name} (${(fileObj.size / 1048576).toFixed(1)} MB)` : "Drag a file here or choose one") : (fileName ?? "Drag a file here or choose one")}
               </p>
-              <p className="text-xs text-muted">Files stay local in this mock. Nothing is uploaded.</p>
+              <p className="text-xs text-muted">
+                {isLive
+                  ? "Streams to the server ingest area, then queues the real pipeline."
+                  : "Files stay local in this mock. Nothing is uploaded."}
+              </p>
               <Button
                 variant="primary"
                 onClick={(e) => {
                   e.stopPropagation();
-                  pickMockFile();
+                  if (isLive) fileInput.current?.click();
+                  else pickMockFile();
                 }}
               >
-                {fileName ? "Replace file" : "Choose file"}
+                {(isLive ? fileObj : fileName) ? "Replace file" : "Choose file"}
               </Button>
             </div>
             <div className="mt-3 flex flex-wrap gap-2" aria-label="Supported formats">
@@ -346,6 +418,13 @@ export function NewSermon() {
         <p className="text-xs text-muted" role="status" aria-live="polite">
           {helper}
         </p>
+        {queuedJob ? (
+          <p className="text-sm">
+            <Link to="/jobs" className="font-medium text-accent hover:underline">
+              Track job {queuedJob} under Jobs →
+            </Link>
+          </p>
+        ) : null}
       </div>
 
       <div
