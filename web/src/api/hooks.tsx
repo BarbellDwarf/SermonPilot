@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   activeJobs,
@@ -117,14 +117,37 @@ function fmtStamp(value: string | null): string {
   return `${date}, ${time}`;
 }
 
+const LIBRARY_PAGE_SIZE = 50;
+
 export function useLibrarySermons(query: string, sort: LibrarySort) {
   const briefLoading = useBriefLoading();
+  const [pages, setPages] = useState(1);
   const live = useQuery({
-    queryKey: ["sermons", query, sort],
-    queryFn: () => api.sermons({ search: query, sort }),
+    queryKey: ["sermons", pages],
+    queryFn: () => api.sermons({ limit: LIBRARY_PAGE_SIZE * pages }),
     enabled: isLive,
     staleTime: 10_000,
   });
+  const loaded = useMemo(
+    () => (live.data?.items ?? []).map(toLibrarySermon),
+    [live.data],
+  );
+  const serverTotal = live.data?.total ?? loaded.length;
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const rows = q
+      ? loaded.filter((s) =>
+          [s.title, s.speaker, s.series].some((f) => f.toLowerCase().includes(q)),
+        )
+      : [...loaded];
+    rows.sort((a, b) => {
+      if (sort === "title") return a.title.localeCompare(b.title);
+      if (sort === "duration") return toSeconds(b.duration) - toSeconds(a.duration);
+      return b.date.localeCompare(a.date);
+    });
+    return rows;
+  }, [loaded, query, sort]);
+
   const mockItems = useMemo(() => {
     const q = query.trim().toLowerCase();
     const filtered = q
@@ -141,13 +164,26 @@ export function useLibrarySermons(query: string, sort: LibrarySort) {
   }, [query, sort]);
 
   if (!isLive) {
-    return { items: mockItems, isLoading: briefLoading, error: null as string | null, retry: () => {} };
+    return {
+      items: mockItems,
+      isLoading: briefLoading,
+      error: null as string | null,
+      retry: () => {},
+      total: mockItems.length,
+      hasMore: false,
+      isLoadingMore: false,
+      loadMore: () => {},
+    };
   }
   return {
-    items: (live.data?.items ?? []).map(toLibrarySermon),
+    items: filtered,
     isLoading: live.isPending,
     error: live.isError ? "The teachings list could not be loaded. Check the API bridge and try again." : null,
     retry: () => void live.refetch(),
+    total: serverTotal,
+    hasMore: loaded.length < serverTotal,
+    isLoadingMore: live.isFetching && !live.isPending,
+    loadMore: () => setPages((p) => p + 1),
   };
 }
 
@@ -191,6 +227,24 @@ export function useSermonDetail(id: string | undefined) {
     isLoading: live.isPending,
     error: live.isError ? "This teaching could not be loaded. Check the API bridge and try again." : null,
     retry: () => void live.refetch(),
+  };
+}
+
+export function useSermonTranscript(id: string | undefined, enabled: boolean) {
+  const live = useQuery({
+    queryKey: ["sermon-transcript", id],
+    queryFn: () => api.transcript(id ?? ""),
+    enabled: isLive && !!id && enabled,
+    staleTime: 60_000,
+  });
+
+  if (!isLive) {
+    return { data: null, isLoading: false, error: null as string | null };
+  }
+  return {
+    data: live.data ?? null,
+    isLoading: live.isPending,
+    error: live.isError ? "The transcript could not be loaded." : null,
   };
 }
 

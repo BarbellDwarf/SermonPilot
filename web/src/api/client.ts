@@ -36,6 +36,13 @@ export interface ApiSermonDetail extends ApiSermonListItem {
   transcript_length: number;
 }
 
+export interface ApiTranscript {
+  id: string;
+  transcript: string;
+  truncated: boolean;
+  total_length: number;
+}
+
 export interface ApiEditPlan {
   sermon_id: string;
   status: string;
@@ -231,8 +238,11 @@ export const auth = {
 };
 
 export const api = {
-  sermons: (params?: { search?: string; sort?: string }) => authed<ApiSermonList>("/api/sermons", params),
+  sermons: (params?: { search?: string; sort?: string; limit?: number; offset?: number }) =>
+    authed<ApiSermonList>("/api/sermons", params),
   sermon: (id: string) => authed<ApiSermonDetail>(`/api/sermons/${encodeURIComponent(id)}`),
+  transcript: (id: string) => authed<ApiTranscript>(`/api/sermons/${encodeURIComponent(id)}/transcript`),
+  deleteSermon: (id: string) => send<{ deleted: boolean; id: string }>(`/api/sermons/${encodeURIComponent(id)}`, "DELETE"),
   plan: (id: string) => authed<ApiSermonPlan>(`/api/sermons/${encodeURIComponent(id)}/plan`),
   jobs: (params?: { status?: string; limit?: number }) => authed<ApiJobList>("/api/jobs", params),
   job: (id: string) => authed<ApiJobDetail>(`/api/jobs/${encodeURIComponent(id)}`),

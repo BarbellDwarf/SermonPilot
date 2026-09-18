@@ -3,18 +3,22 @@ import { Link, useParams } from "react-router-dom";
 import { ReviewPanel } from "../components/ReviewPanel";
 import { sermonStatusLabel, sermonStatusTone } from "./Library";
 import { Button, Card, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast, buttonClass } from "../components/ui";
-import { QueryError, useSermonDetail, useSermonPlan, useUserFiles } from "../api/hooks";
-import { authFetch, isLive, writeApi } from "../api/client";
+import { QueryError, useSermonDetail, useSermonPlan, useSermonTranscript, useUserFiles } from "../api/hooks";
+import { api, authFetch, isLive, writeApi } from "../api/client";
 
 export function LibraryDetail() {
   const { id } = useParams();
   const [toast, setToast] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleted, setDeleted] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [pushing, setPushing] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const { data: detail, isLoading, error, retry } = useSermonDetail(id);
   const { plan, isLoading: planLoading, error: planError, retry: retryPlan } = useSermonPlan(id);
+  const transcript = useSermonTranscript(id, transcriptOpen);
   const userFiles = useUserFiles(isLive && !!detail && (detail?.files.length ?? 0) > 0);
   const [downloading, setDownloading] = useState<string | null>(null);
 
@@ -96,7 +100,11 @@ export function LibraryDetail() {
       <div className="flex flex-col gap-4">
         <EmptyState
           title="Teaching deleted"
-          body={`“${sermon.title}” was removed from this mock list. Nothing was uploaded or lost.`}
+          body={
+            isLive
+              ? `“${sermon.title}” was removed from the database. This cannot be undone.`
+              : `“${sermon.title}” was removed from this mock list. Nothing was uploaded or lost.`
+          }
           action={
             <Link to="/library" className={buttonClass("primary")}>
               Back to Library
@@ -106,6 +114,27 @@ export function LibraryDetail() {
       </div>
     );
   }
+
+  const remove = () => {
+    if (!id) return;
+    if (!isLive) {
+      setDeleted(true);
+      return;
+    }
+    setDeleting(true);
+    void api
+      .deleteSermon(id)
+      .then(() => {
+        setDeleting(false);
+        setConfirmDelete(false);
+        setDeleted(true);
+      })
+      .catch((e) => {
+        setDeleting(false);
+        setConfirmDelete(false);
+        showToast(`Could not delete: ${(e as Error).message}`);
+      });
+  };
 
   const push = () => {
     if (!id) return;
@@ -164,8 +193,8 @@ export function LibraryDetail() {
           </div>
         ) : null}
         <div className="flex flex-wrap gap-2">
-          <Button variant="danger" onClick={() => setConfirmDelete(true)}>
-            Delete
+          <Button variant="danger" onClick={() => setConfirmDelete(true)} disabled={deleting} aria-busy={deleting}>
+            {deleting ? "Deleting…" : "Delete"}
           </Button>
         </div>
       </section>
@@ -209,6 +238,61 @@ export function LibraryDetail() {
           />
         </section>
       )}
+
+      <section aria-labelledby="transcript-h">
+        <h2 id="transcript-h" className="mb-2 text-lg font-semibold">Transcript</h2>
+        <Card>
+          <button
+            type="button"
+            onClick={() => setTranscriptOpen((v) => !v)}
+            aria-expanded={transcriptOpen}
+            aria-controls="transcript-body"
+            className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-sm font-medium text-mist transition-colors hover:border-muted"
+          >
+            {transcriptOpen ? "Hide transcript" : "Show transcript"}
+          </button>
+          {transcriptOpen ? (
+            <div id="transcript-body" className="mt-3">
+              {!isLive ? (
+                <p className="text-sm text-muted">Transcripts are available in the live bridge.</p>
+              ) : transcript.isLoading ? (
+                <p className="font-mono text-xs text-muted">Loading transcript…</p>
+              ) : transcript.error ? (
+                <p className="font-mono text-xs text-danger">{transcript.error}</p>
+              ) : transcript.data && transcript.data.transcript ? (
+                <>
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-xs text-muted">
+                      {transcript.data.total_length} characters
+                      {transcript.data.truncated ? " (truncated)" : ""}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard
+                          ?.writeText(transcript.data?.transcript ?? "")
+                          .then(() => {
+                            setCopied(true);
+                            window.setTimeout(() => setCopied(false), 2000);
+                          })
+                          .catch(() => showToast("Copy failed."));
+                      }}
+                      className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted"
+                    >
+                      {copied ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md border border-line bg-ink p-3 font-mono text-xs text-mist [overflow-wrap:anywhere]">
+                    {transcript.data.transcript}
+                  </pre>
+                </>
+              ) : (
+                <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
+              )}
+            </div>
+          ) : null}
+        </Card>
+      </section>
 
       <section aria-labelledby="files-h">
         <h2 id="files-h" className="mb-2 text-lg font-semibold">Files & transcript</h2>
@@ -266,10 +350,14 @@ export function LibraryDetail() {
       <ConfirmDialog
         open={confirmDelete}
         title={`Delete “${sermon.title}”?`}
-        body={`“${sermon.title}” by ${sermon.speaker} will be removed from this mock list. This cannot be undone.`}
+        body={
+          isLive
+            ? `“${sermon.title}” by ${sermon.speaker} will be permanently removed from the database. This cannot be undone.`
+            : `“${sermon.title}” by ${sermon.speaker} will be removed from this mock list. This cannot be undone.`
+        }
         confirmLabel="Delete"
         onClose={() => setConfirmDelete(false)}
-        onConfirm={() => setDeleted(true)}
+        onConfirm={remove}
       />
       <Toast message={toast} />
     </div>

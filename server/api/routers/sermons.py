@@ -1,22 +1,29 @@
 from __future__ import annotations
 
+import logging
 import secrets
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from server.api import mapping
 from server.api.db import get_repository
+from server.api.routers.auth import require_user
 from server.api.schemas import (
     EditPlanOut,
     SermonDetailOut,
     SermonListItem,
     SermonListOut,
     SermonPlanOut,
+    TranscriptOut,
 )
 from server.api.scoping import request_user, scope_rows, visible
 
 router = APIRouter(prefix="/api/sermons", tags=["sermons"])
+
+logger = logging.getLogger(__name__)
+
+_TRANSCRIPT_LIMIT = 50_000
 
 _SORT_KEYS = {"date", "title", "duration"}
 
@@ -101,6 +108,8 @@ def list_sermons(
     request: Request,
     search: str = Query(default=""),
     sort: str = Query(default="date"),
+    limit: int | None = Query(default=None, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
 ) -> SermonListOut:
     repo = get_repository()
     rows = scope_rows(repo.get_all_sermons(), request_user(request), "sermons")
@@ -122,8 +131,13 @@ def list_sermons(
         rows.sort(key=lambda row: -(float(row.get("duration") or 0.0)))
     else:
         rows.sort(key=lambda row: str(row.get("recorded_date") or ""), reverse=True)
+    total = len(rows)
+    if limit is not None:
+        rows = rows[offset : offset + limit]
+    elif offset:
+        rows = rows[offset:]
     items = [_row_to_list_item(row) for row in rows]
-    return SermonListOut(items=items, total=len(items))
+    return SermonListOut(items=items, total=total)
 
 
 @router.get("/{sermon_id}", response_model=SermonDetailOut)
@@ -178,3 +192,84 @@ def get_sermon_plan(request: Request, sermon_id: str) -> SermonPlanOut:
     current = repo.get_current_edit_plan(sermon_id)
     plan = _row_to_plan(sermon_id, current, len(history_rows)) if current else None
     return SermonPlanOut(plan=plan, history=history)
+
+
+@router.get("/{sermon_id}/transcript", response_model=TranscriptOut)
+def get_sermon_transcript(request: Request, sermon_id: str) -> TranscriptOut:
+    repo = get_repository()
+    sermon = repo.get_sermon(sermon_id)
+    if sermon is None or not visible(sermon.get("user_id"), request_user(request)):
+        raise HTTPException(status_code=404, detail="sermon not found")
+    content = sermon.get("content") or {}
+    full = content.get("transcript_text") or ""
+    if len(full) > _TRANSCRIPT_LIMIT:
+        marker = f"\n…[truncated at {_TRANSCRIPT_LIMIT} of {len(full)} characters]"
+        return TranscriptOut(
+            id=str(sermon.get("id") or sermon_id),
+            transcript=full[:_TRANSCRIPT_LIMIT] + marker,
+            truncated=True,
+            total_length=len(full),
+        )
+    return TranscriptOut(
+        id=str(sermon.get("id") or sermon_id),
+        transcript=full,
+        truncated=False,
+        total_length=len(full),
+    )
+
+
+def _remove_sermon_dirs(sermon_id: str, file_paths: list[str]) -> None:
+    from pathlib import Path
+
+    try:
+        base = Path(__file__).resolve().parent.parent.parent
+        root = base / "processed_sermons"
+        try:
+            import yaml
+
+            cfg_path = base / "config.yaml"
+            if cfg_path.exists():
+                cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+                configured = str(cfg.get("output_directory") or "").strip()
+                if configured:
+                    candidate = Path(configured)
+                    root = candidate if candidate.is_absolute() else base / candidate
+        except Exception as exc:
+            logger.warning("Could not resolve output_directory for %s: %s", sermon_id, exc)
+        root = root.resolve()
+        seen: set[str] = set()
+        for raw in file_paths:
+            try:
+                parent = Path(raw).expanduser().resolve().parent
+            except (OSError, RuntimeError):
+                continue
+            if str(parent) in seen or parent == root or root not in parent.parents:
+                continue
+            seen.add(str(parent))
+            try:
+                import shutil
+
+                shutil.rmtree(parent)
+                logger.info("Removed sermon directory %s for %s", parent, sermon_id)
+            except OSError as exc:
+                logger.warning("Could not remove sermon directory %s: %s", parent, exc)
+    except Exception as exc:
+        logger.warning("Sermon directory cleanup failed for %s: %s", sermon_id, exc)
+
+
+@router.delete("/{sermon_id}")
+def delete_sermon(sermon_id: str, user=Depends(require_user)) -> dict:
+    from server.api.accounts import get_db_path
+    from ui.database import SermonDatabase, SermonRepository
+
+    repo = SermonRepository(SermonDatabase(db_path=get_db_path()))
+    sermon = repo.get_sermon(sermon_id)
+    if sermon is None or not visible(sermon.get("user_id"), user):
+        raise HTTPException(status_code=404, detail="sermon not found")
+    files = repo.get_sermon_files(sermon_id)
+    if not repo.delete_sermon(sermon_id):
+        raise HTTPException(status_code=500, detail="could not delete sermon")
+    _remove_sermon_dirs(
+        sermon_id, [str(item.get("file_path") or "") for item in files if item.get("file_path")]
+    )
+    return {"deleted": True, "id": sermon_id}
