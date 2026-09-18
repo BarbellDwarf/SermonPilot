@@ -5,9 +5,10 @@ import json
 import os
 import secrets
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 DEFAULT_DB_PATH = "/data/sermon_processor.db"
 

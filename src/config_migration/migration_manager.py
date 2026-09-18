@@ -147,7 +147,7 @@ class ConfigMigrationManager:
                     key_id = key_result[0]
 
                     # Convert value to string for storage
-                    if isinstance(value, (list, dict)):
+                    if isinstance(value, list | dict):
                         value_str = json.dumps(value)
                     else:
                         value_str = str(value)
@@ -192,7 +192,7 @@ class ConfigMigrationManager:
             return 'integer'
         elif isinstance(value, float):
             return 'float'
-        elif isinstance(value, (list, dict)):
+        elif isinstance(value, list | dict):
             return 'json'
         else:
             return 'string'

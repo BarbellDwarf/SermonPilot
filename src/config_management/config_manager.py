@@ -252,9 +252,9 @@ class SQLConfigManager:
             raise ValueError(f"Expected boolean value, got {type(value)}")
         elif data_type == 'integer' and not isinstance(value, int):
             raise ValueError(f"Expected integer value, got {type(value)}")
-        elif data_type == 'float' and not isinstance(value, (int, float)):
+        elif data_type == 'float' and not isinstance(value, int | float):
             raise ValueError(f"Expected numeric value, got {type(value)}")
-        elif data_type == 'json' and not isinstance(value, (list, dict)):
+        elif data_type == 'json' and not isinstance(value, list | dict):
             raise ValueError(f"Expected JSON object/array, got {type(value)}")
 
         if data_type == 'json':

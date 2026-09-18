@@ -354,7 +354,7 @@ def test_logo_crossfade_starts_after_content_tail(
     assert "xfade=transition=fade:duration=0.800:offset=22.100" in fc
     assert "fade=t=out:st=21.900:d=1.000" in fc
     assert "afade=t=out:st=21.900:d=1.000" in fc
-    assert float(22.100) > DUR
+    assert 22.100 > DUR
     assert cmd[cmd.index("-t", cmd.index("logo.png")) + 1] == "25.100"
 
 

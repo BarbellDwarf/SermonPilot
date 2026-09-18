@@ -15,8 +15,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from server.api.routers.auth import router as auth_router
 from server.api.accounts import migrate
+from server.api.routers.auth import router as auth_router
 from server.api.routers.jobs import router as jobs_router
 from server.api.routers.meta import router as meta_router
 from server.api.routers.sermons import router as sermons_router
@@ -25,6 +25,8 @@ from server.api.routers.userdata import (
     admin_backup_router,
     files_router,
     me_router,
+)
+from server.api.routers.userdata import (
     router as userdata_router,
 )
 from server.api.routers.writes import router as writes_router
@@ -65,7 +67,7 @@ def create_app() -> FastAPI:
             path == p or path.startswith(p + "/") for p in PUBLIC_PATHS
         ):
             token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-            from server.api.accounts import get_session_user, count_users, writable_conn
+            from server.api.accounts import get_session_user, writable_conn
             if not token:
                 return _auth_denied(path)
             try:
@@ -80,6 +82,7 @@ def create_app() -> FastAPI:
 
     def _auth_denied(path: str):
         from fastapi.responses import JSONResponse
+
         from server.api.accounts import count_users, writable_conn
         try:
             with writable_conn() as conn:
@@ -88,7 +91,7 @@ def create_app() -> FastAPI:
             bootstrapped = False
         return JSONResponse(
             status_code=401,
-            content={"detail": {"needs_bootstrap": not bootstrapped, "message": "authentication required"}},
+            content={"detail": {"needs_bootstrap": not bootstrapped, "message": "authentication required"}},  # noqa: E501
         )
     app.include_router(sermons_router)
     app.include_router(jobs_router)

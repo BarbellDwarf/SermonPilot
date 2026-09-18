@@ -2,7 +2,8 @@
 from typing import Any
 
 import streamlit as st
-from ui.ui_state import managed_expander, managed_popover
+
+from ui.ui_state import managed_expander
 
 
 class ProcessingModeSelector:
@@ -373,7 +374,7 @@ class ProcessingModeSelector:
                     if isinstance(value, bool):
                         status = "Enabled" if value else "Disabled"
                         st.write(f"• {display_key}: {status}")
-                    elif isinstance(value, (int, float)):
+                    elif isinstance(value, int | float):
                         if 'db' in key.lower():
                             st.write(f"• {display_key}: {value} dB")
                         else:
