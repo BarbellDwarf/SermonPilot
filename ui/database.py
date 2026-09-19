@@ -179,6 +179,10 @@ class SermonDatabase:
             except Exception:
                 pass
 
+            # CA5: qa_normalization was removed; drop its dormant table. The
+            # processing_info columns stay (additive-only policy), only writes stop.
+            conn.execute("DROP TABLE IF EXISTS qa_segments")
+
             # File paths table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS sermon_files (
@@ -205,23 +209,6 @@ class SermonDatabase:
                     quality_score REAL,
                     processing_logs TEXT,
                     processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (sermon_id) REFERENCES sermons(id) ON DELETE CASCADE
-                )
-            """)
-
-            # Q&A segments table
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS qa_segments (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    sermon_id TEXT,
-                    start_time REAL,
-                    end_time REAL,
-                    segment_type TEXT,
-                    confidence REAL,
-                    audio_level_db REAL,
-                    gain_applied REAL,
-                    speaker_id INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (sermon_id) REFERENCES sermons(id) ON DELETE CASCADE
                 )
             """)
@@ -373,11 +360,6 @@ class SermonDatabase:
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_llm_usage_sermon_id
                 ON llm_api_usage(sermon_id)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_qa_segments_sermon_id
-                ON qa_segments(sermon_id)
             """)
 
             conn.execute("""
@@ -1192,46 +1174,18 @@ class SermonRepository:
                     conn.execute("""
                         INSERT OR REPLACE INTO processing_info
                         (sermon_id, enhancement_method, noise_reduction_applied,
-                         normalization_applied, qa_normalization_applied, qa_segments_count,
+                         normalization_applied,
                          processing_duration, quality_score, processing_logs)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, (
                         sermon_data.get('id'),
                         processing_info.get('enhancement_method'),
                         processing_info.get('noise_reduction_applied'),
                         processing_info.get('normalization_applied'),
-                        processing_info.get('qa_normalization_applied'),
-                        processing_info.get('qa_segments_count', 0),
                         processing_info.get('processing_duration'),
                         processing_info.get('quality_score'),
                         json.dumps(processing_info.get('processing_logs', {}))
                     ))
-
-                # Save Q&A segments
-                qa_segments = processing_info.get('qa_segments', [])
-                if qa_segments:
-                    # Clear existing segments for this sermon
-                    conn.execute(
-                        "DELETE FROM qa_segments WHERE sermon_id = ?", (sermon_data.get('id'),)
-                    )
-
-                    # Insert new segments
-                    for segment in qa_segments:
-                        conn.execute("""
-                            INSERT INTO qa_segments
-                            (sermon_id, start_time, end_time, segment_type, confidence,
-                             audio_level_db, gain_applied, speaker_id)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            sermon_data.get('id'),
-                            segment.get('start_time'),
-                            segment.get('end_time'),
-                            segment.get('segment_type'),
-                            segment.get('confidence'),
-                            segment.get('audio_level_db'),
-                            segment.get('gain_applied'),
-                            segment.get('speaker_id')
-                        ))
 
                 # Save content for full-text search
                 content = sermon_data.get('content', {})
@@ -1321,14 +1275,6 @@ class SermonRepository:
                 )
                 sermon['processing_info'] = processing_info
 
-            # Get Q&A segments
-            segment_rows = conn.execute("""
-                SELECT * FROM qa_segments WHERE sermon_id = ? ORDER BY start_time
-            """, (sermon_id,)).fetchall()
-            qa_segments = [dict(row) for row in segment_rows]
-            if processing_info:
-                sermon['processing_info']['qa_segments'] = qa_segments
-
             # Get content
             content_row = conn.execute("""
                 SELECT * FROM sermon_content WHERE sermon_id = ?
@@ -1352,7 +1298,6 @@ class SermonRepository:
         try:
             with self.db.get_connection() as conn:
                 # Delete from all related tables
-                conn.execute("DELETE FROM qa_segments WHERE sermon_id = ?", (sermon_id,))
                 conn.execute("DELETE FROM sermon_content WHERE sermon_id = ?", (sermon_id,))
                 conn.execute("DELETE FROM processing_info WHERE sermon_id = ?", (sermon_id,))
                 conn.execute("DELETE FROM sermon_files WHERE sermon_id = ?", (sermon_id,))
@@ -1435,8 +1380,6 @@ class SermonRepository:
                        s.bible_text, s.duration, s.status, s.created_at, s.updated_at,
                        s.series_title, s.scripture_reference, s.church_name,
                        s.is_favorite, s.notes,
-                       pi.qa_segments_count,
-                       pi.qa_normalization_applied,
                        pi.enhancement_method,
                        ui.upload_status,
                        sc.description,
@@ -1468,9 +1411,6 @@ class SermonRepository:
                 if filters.get('date_to'):
                     query += " AND s.recorded_date <= ?"
                     params.append(filters['date_to'])
-
-                if filters.get('has_qa_segments'):
-                    query += " AND pi.qa_segments_count > 0"
 
                 if filters.get('is_favorite'):
                     query += " AND s.is_favorite = 1"
@@ -1548,9 +1488,8 @@ class SermonRepository:
 
             placeholders = ",".join(["?" for _ in sermon_ids])
             sermons = conn.execute(f"""
-                SELECT s.*, pi.qa_segments_count
+                SELECT s.*
                 FROM sermons s
-                LEFT JOIN processing_info pi ON s.id = pi.sermon_id
                 WHERE s.id IN ({placeholders})
             """, sermon_ids).fetchall()
 
@@ -1633,16 +1572,9 @@ class SermonRepository:
             # Basic counts
             total_sermons = conn.execute("SELECT COUNT(*) FROM sermons").fetchone()[0]
 
-            qa_sermons = conn.execute("""
-                SELECT COUNT(*) FROM processing_info WHERE qa_segments_count > 0
-            """).fetchone()[0]
-
-            total_qa_segments = conn.execute("SELECT COUNT(*) FROM qa_segments").fetchone()[0]
-
             # Average processing metrics
             avg_stats = conn.execute("""
                 SELECT
-                    AVG(qa_segments_count) as avg_qa_segments,
                     AVG(processing_duration) as avg_processing_time,
                     AVG(quality_score) as avg_quality_score
                 FROM processing_info
@@ -1656,10 +1588,7 @@ class SermonRepository:
 
             return {
                 'total_sermons': total_sermons,
-                'qa_sermons': qa_sermons,
-                'total_qa_segments': total_qa_segments,
                 'total_duration_hours': total_duration / 3600.0,
-                'avg_qa_segments_per_sermon': avg_stats['avg_qa_segments'] or 0,
                 'avg_processing_time': avg_stats['avg_processing_time'] or 0,
                 'avg_quality_score': avg_stats['avg_quality_score'] or 0
             }

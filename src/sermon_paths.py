@@ -8,7 +8,7 @@ Current structure:
     {Title} - {Series} - {Speaker} - {Date} - Original.mp3
     {Title} - {Series} - {Speaker} - {Date} - Processed.mp3
     transcript.txt, description.txt, hashtags.txt
-    metadata.json, api_data.json, processing_info.json, qa_segments.json
+    metadata.json, api_data.json, processing_info.json
 """
 
 import json
@@ -35,7 +35,6 @@ FILENAMES = {
     "metadata": "metadata.json",
     "api_data": "api_data.json",
     "processing_info": "processing_info.json",
-    "qa_segments": "qa_segments.json",
     "temp_video": "video_source.mp4",
     "enhanced_video": "video_enhanced.mp4",
 }

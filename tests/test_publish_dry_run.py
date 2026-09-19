@@ -37,7 +37,6 @@ class _FakeDb:
                 sermon_id TEXT, title TEXT, speaker TEXT, transcript_text TEXT,
                 description TEXT, hashtags TEXT
             );
-            CREATE TABLE qa_segments (sermon_id TEXT);
             CREATE TABLE processing_info (sermon_id TEXT);
             CREATE TABLE upload_info (sermon_id TEXT);
             CREATE TABLE processing_status (sermon_id TEXT);
