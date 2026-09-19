@@ -406,6 +406,48 @@ export const serverPathApi = {
     send<ServerPathResult>("/api/sermons/server-path", "POST", body),
 };
 
+export interface ApiCloudProvider {
+  id: string;
+  label: string;
+  auth: "oauth" | "keys";
+}
+
+export interface ApiCloudRemote {
+  name: string;
+  provider: string;
+  status: string;
+}
+
+export interface ApiCloudFile {
+  name: string;
+  path: string;
+  type: "directory" | "file";
+  size: number | null;
+}
+
+export const cloudApi = {
+  providers: () =>
+    send<{ items: ApiCloudProvider[]; rclone: boolean }>("/api/cloud/providers", "GET"),
+  authUrl: (provider: string, name: string) =>
+    send<{ url: string; name: string; provider: string }>(
+      `/api/cloud/auth-url?provider=${encodeURIComponent(provider)}&name=${encodeURIComponent(name)}`,
+      "GET",
+    ),
+  authorize: (body: { name: string; provider: string; token: string }) =>
+    send<ApiCloudRemote>("/api/cloud/authorize", "POST", body),
+  list: () => send<{ items: ApiCloudRemote[]; total: number }>("/api/cloud/remotes", "GET"),
+  create: (body: { name: string; provider: string; keys: Record<string, string> }) =>
+    send<ApiCloudRemote>("/api/cloud/remotes", "POST", body),
+  remove: (name: string) =>
+    send<void>(`/api/cloud/remotes/${encodeURIComponent(name)}`, "DELETE"),
+  browse: (name: string, path: string) =>
+    send<{ path: string; items: ApiCloudFile[] }>(
+      `/api/cloud/remotes/${encodeURIComponent(name)}/browse`,
+      "POST",
+      { path },
+    ),
+};
+
 export interface BrandingItem {
   name: string;
   path: string;
