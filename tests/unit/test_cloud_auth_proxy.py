@@ -63,6 +63,62 @@ def test_auth_url_uses_request_host_and_session_key(client, scoped_setup, monkey
     assert cloud._SESSIONS[key].port == 53682
 
 
+def test_auth_url_honors_forwarded_https_origin(client, scoped_setup, monkeypatch):
+    s = scoped_setup
+    _stub_rclone(monkeypatch, [[URL_LINE, TOKEN_LINE]])
+    headers = {
+        **s["a"]["headers"],
+        "X-Forwarded-Proto": "https",
+        "X-Forwarded-Host": "sermon.example.com",
+    }
+    r = client.get(
+        "/api/cloud/auth-url",
+        params={"provider": "drive", "name": "mydrive"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    key = cloud._session_key(s["a"]["id"], "mydrive")
+    assert r.json()["url"] == (
+        f"https://sermon.example.com/rclone-auth/{key}/auth?state=xpVTS69pf5uBqVw4Pf60VA"
+    )
+
+
+def test_auth_url_without_forwarded_headers_uses_request_base_url(
+    client, scoped_setup, monkeypatch
+):
+    s = scoped_setup
+    _stub_rclone(monkeypatch, [[URL_LINE, TOKEN_LINE]])
+    r = client.get(
+        "/api/cloud/auth-url",
+        params={"provider": "drive", "name": "mydrive"},
+        headers=s["a"]["headers"],
+    )
+    assert r.status_code == 200, r.text
+    key = cloud._session_key(s["a"]["id"], "mydrive")
+    assert r.json()["url"] == (
+        f"http://testserver/rclone-auth/{key}/auth?state=xpVTS69pf5uBqVw4Pf60VA"
+    )
+
+
+def test_auth_url_forwarded_host_beats_host_header(client, scoped_setup, monkeypatch):
+    s = scoped_setup
+    _stub_rclone(monkeypatch, [[URL_LINE, TOKEN_LINE]])
+    headers = {
+        **s["a"]["headers"],
+        "Host": "internal:8504",
+        "X-FORWARDED-PROTO": "https",
+        "X-FORWARDED-HOST": "public.example.com",
+    }
+    r = client.get(
+        "/api/cloud/auth-url",
+        params={"provider": "drive", "name": "mydrive"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    key = cloud._session_key(s["a"]["id"], "mydrive")
+    assert r.json()["url"].startswith(f"https://public.example.com/rclone-auth/{key}/")
+
+
 def test_proxy_forwards_request_to_session_port(client, monkeypatch):
     session = cloud._AuthorizeSession(_FakeProc([]))
     session.port = 53682
