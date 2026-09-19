@@ -985,6 +985,10 @@ async def authorize_paste(
             status_code=422, detail="authorization session has no callback listener"
         )
     params = {"code": code}
+    if pasted_state:
+        # rclone's listener validates the state param - Google's redirect carries it,
+        # so forward it exactly as Google would have.
+        params["state"] = pasted_state
     if scope:
         params["scope"] = scope
     query = urlencode(params)
