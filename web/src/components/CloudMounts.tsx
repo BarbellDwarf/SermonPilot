@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   cloudApi,
   isLive,
@@ -24,6 +24,12 @@ const MOCK_PROVIDERS: ApiCloudProvider[] = [
 let MOCK_REMOTES: ApiCloudRemote[] = [
   { name: "sermons-drive", provider: "drive", status: "configured" },
 ];
+
+const MOCK_OAUTH_APPS: Record<string, { has_credentials: boolean }> = {
+  drive: { has_credentials: true },
+  dropbox: { has_credentials: true },
+  onedrive: { has_credentials: true },
+};
 
 const MOCK_TREE: Record<string, ApiCloudFile[]> = {
   "": [
@@ -237,25 +243,39 @@ const EMPTY_KEYS: KeysForm = {
   key: "",
 };
 
-export function CloudMountsSection({ show }: { show: (m: string) => void }) {
+export function CloudMountsSection({
+  show,
+  isAdmin,
+}: {
+  show: (m: string) => void;
+  isAdmin?: boolean;
+}) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [connectId, setConnectId] = useState<string | null>(null);
   const [oauthName, setOauthName] = useState("");
-  const [authUrl, setAuthUrl] = useState("");
-  const [token, setToken] = useState("");
   const [starting, setStarting] = useState(false);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
   const [keys, setKeys] = useState<KeysForm>(EMPTY_KEYS);
   const [browseName, setBrowseName] = useState<string | null>(null);
   const [path, setPath] = useState("");
   const [pendingDelete, setPendingDelete] = useState<ApiCloudRemote | null>(null);
-  const tokenRef = useRef<HTMLInputElement>(null);
 
   const providersQuery = useQuery({
     queryKey: ["cloud", "providers"],
     queryFn: () =>
       isLive ? cloudApi.providers() : Promise.resolve({ items: MOCK_PROVIDERS, rclone: true }),
     staleTime: 60_000,
+  });
+  const oauthAppsQuery = useQuery({
+    queryKey: ["cloud", "oauth-apps"],
+    queryFn: () =>
+      isLive
+        ? cloudApi.oauthApps()
+        : Promise.resolve({ providers: MOCK_OAUTH_APPS }),
+    staleTime: 30_000,
   });
   const remotesQuery = useQuery({
     queryKey: ["cloud", "remotes"],
@@ -268,18 +288,16 @@ export function CloudMountsSection({ show }: { show: (m: string) => void }) {
 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["cloud"] });
 
-  const authorizeMutation = useMutation({
-    mutationFn: (body: { name: string; provider: string; token: string }): Promise<ApiCloudRemote> =>
-      isLive ? cloudApi.authorize(body) : Promise.resolve(mockAddRemote(body.name, body.provider)),
-    onSuccess: (remote) => {
-      show(`Connected ${remote.name}.`);
-      setConnectId(null);
-      setOauthName("");
-      setAuthUrl("");
-      setToken("");
+  const setOAuthAppMutation = useMutation({
+    mutationFn: (body: { provider: string; client_id: string; client_secret: string }) =>
+      isLive ? cloudApi.setOAuthApp(body) : Promise.resolve({ provider: body.provider, has_credentials: true }),
+    onSuccess: (_data, body) => {
+      show(`Saved OAuth client for ${body.provider}.`);
+      setClientId("");
+      setClientSecret("");
       invalidate();
     },
-    onError: (e) => show(`Could not connect: ${(e as Error).message}`),
+    onError: (e) => show(`Could not save OAuth client: ${(e as Error).message}`),
   });
 
   const createMutation = useMutation({
@@ -313,19 +331,27 @@ export function CloudMountsSection({ show }: { show: (m: string) => void }) {
   });
 
   useEffect(() => {
-    if (authUrl) tokenRef.current?.focus();
-  }, [authUrl]);
+    if (searchParams.get("cloud") !== "connected") return;
+    const name = searchParams.get("name");
+    invalidate();
+    show(name ? `Connected ${name}.` : "Cloud connection complete.");
+    const next = new URLSearchParams(searchParams);
+    next.delete("cloud");
+    next.delete("name");
+    setSearchParams(next, { replace: true });
+  }, []);
 
   const providers = providersQuery.data?.items ?? [];
   const remotes = remotesQuery.data?.items ?? [];
+  const oauthApps = oauthAppsQuery.data?.providers ?? {};
   const rcloneMissing = providersQuery.data ? providersQuery.data.rclone === false : false;
   const selected = providers.find((p) => p.id === connectId) ?? null;
 
   const selectProvider = (id: string) => {
     setConnectId((cur) => (cur === id ? null : id));
     setOauthName("");
-    setAuthUrl("");
-    setToken("");
+    setClientId("");
+    setClientSecret("");
     setKeys(EMPTY_KEYS);
   };
 
@@ -333,13 +359,17 @@ export function CloudMountsSection({ show }: { show: (m: string) => void }) {
     const name = oauthName.trim();
     if (!NAME_RE.test(name)) return;
     setStarting(true);
-    const request = isLive
-      ? cloudApi.authUrl(provider, name)
-      : Promise.resolve({ url: "https://example.invalid/oauth-demo", name, provider });
-    void request
+    if (!isLive) {
+      mockAddRemote(name, provider);
+      show(`Connected ${name}.`);
+      setStarting(false);
+      invalidate();
+      return;
+    }
+    void cloudApi
+      .oauthStart(provider, name)
       .then((r) => {
-        setAuthUrl(r.url);
-        window.open(r.url, "_blank", "noopener,noreferrer");
+        window.location.assign(r.url);
       })
       .catch((e) => show(`Could not start authorization: ${(e as Error).message}`))
       .finally(() => setStarting(false));
@@ -428,53 +458,63 @@ export function CloudMountsSection({ show }: { show: (m: string) => void }) {
           </p>
           {selected.auth === "oauth" ? (
             <div className="mt-2 flex flex-col gap-3">
-              <Field
-                label="Remote name"
-                htmlFor="cloud-oauth-name"
-                hint="1-64 chars: letters, digits, dot, dash, underscore."
-              >
-                <input
-                  id="cloud-oauth-name"
-                  value={oauthName}
-                  onChange={(e) => setOauthName(e.target.value)}
-                  className={`${inputCls} font-mono`}
-                  autoComplete="off"
-                  disabled={!!authUrl}
-                />
-              </Field>
-              {!authUrl ? (
-                <div>
-                  <Button
-                    variant="primary"
-                    onClick={() => startAuthorize(selected.id)}
-                    disabled={!NAME_RE.test(oauthName.trim()) || starting}
-                  >
-                    {starting ? "Opening…" : "Open authorization page"}
-                  </Button>
-                  <p className="mt-1 text-xs text-muted">
-                    Approve access in the new tab, then copy the token rclone shows and paste it below.
-                  </p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  <p className="text-xs text-muted" role="status">
-                    Authorization page opened.{" "}
-                    <a href={authUrl} target="_blank" rel="noopener noreferrer" className="text-accent underline">
-                      Reopen it
-                    </a>{" "}
-                    if the tab was blocked.
-                  </p>
+              {oauthApps[selected.id]?.has_credentials ? (
+                <>
                   <Field
-                    label="Paste authorization token"
-                    htmlFor="cloud-oauth-token"
-                    hint="Stored only in your server-side config. Never displayed again."
+                    label="Remote name"
+                    htmlFor="cloud-oauth-name"
+                    hint="1-64 chars: letters, digits, dot, dash, underscore."
                   >
                     <input
-                      id="cloud-oauth-token"
-                      ref={tokenRef}
+                      id="cloud-oauth-name"
+                      value={oauthName}
+                      onChange={(e) => setOauthName(e.target.value)}
+                      className={`${inputCls} font-mono`}
+                      autoComplete="off"
+                      disabled={starting}
+                    />
+                  </Field>
+                  <div>
+                    <Button
+                      variant="primary"
+                      onClick={() => startAuthorize(selected.id)}
+                      disabled={!NAME_RE.test(oauthName.trim()) || starting}
+                    >
+                      {starting ? "Redirecting…" : "Connect with OAuth"}
+                    </Button>
+                    <p className="mt-1 text-xs text-muted">
+                      You will be sent to {selected.label} to approve access, then returned here.
+                    </p>
+                  </div>
+                </>
+              ) : isAdmin ? (
+                <div className="flex flex-col gap-3">
+                  <p className="text-xs text-muted">
+                    Create an OAuth client in the {selected.label} console and paste its credentials
+                    here. Authorized redirect URI:{" "}
+                    <span className="break-all font-mono">
+                      {window.location.origin}/api/cloud/oauth/callback
+                    </span>
+                  </p>
+                  <Field label="Client ID" htmlFor="cloud-oauth-client-id">
+                    <input
+                      id="cloud-oauth-client-id"
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value)}
+                      className={`${inputCls} font-mono`}
+                      autoComplete="off"
+                    />
+                  </Field>
+                  <Field
+                    label="Client secret"
+                    htmlFor="cloud-oauth-client-secret"
+                    hint="Stored server-side with 0600 permissions. Never returned by the API."
+                  >
+                    <input
+                      id="cloud-oauth-client-secret"
                       type="password"
-                      value={token}
-                      onChange={(e) => setToken(e.target.value)}
+                      value={clientSecret}
+                      onChange={(e) => setClientSecret(e.target.value)}
                       className={`${inputCls} font-mono`}
                       autoComplete="off"
                       spellCheck={false}
@@ -484,18 +524,25 @@ export function CloudMountsSection({ show }: { show: (m: string) => void }) {
                     <Button
                       variant="primary"
                       onClick={() =>
-                        authorizeMutation.mutate({
-                          name: oauthName.trim(),
+                        setOAuthAppMutation.mutate({
                           provider: selected.id,
-                          token: token.trim(),
+                          client_id: clientId.trim(),
+                          client_secret: clientSecret.trim(),
                         })
                       }
-                      disabled={!token.trim() || authorizeMutation.isPending}
+                      disabled={
+                        !clientId.trim() || !clientSecret.trim() || setOAuthAppMutation.isPending
+                      }
                     >
-                      {authorizeMutation.isPending ? "Saving…" : "Save connection"}
+                      {setOAuthAppMutation.isPending ? "Saving…" : "Save OAuth client"}
                     </Button>
                   </div>
                 </div>
+              ) : (
+                <p className="text-xs text-muted" role="status">
+                  An administrator must add OAuth app credentials for {selected.label} before you
+                  can connect.
+                </p>
               )}
             </div>
           ) : (

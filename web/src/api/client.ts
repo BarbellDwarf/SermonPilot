@@ -425,16 +425,21 @@ export interface ApiCloudFile {
   size: number | null;
 }
 
+export interface ApiOAuthAppStatus {
+  providers: Record<string, { has_credentials: boolean }>;
+}
+
 export const cloudApi = {
   providers: () =>
     send<{ items: ApiCloudProvider[]; rclone: boolean }>("/api/cloud/providers", "GET"),
-  authUrl: (provider: string, name: string) =>
+  oauthApps: () => send<ApiOAuthAppStatus>("/api/cloud/oauth-app", "GET"),
+  setOAuthApp: (body: { provider: string; client_id: string; client_secret: string }) =>
+    send<{ provider: string; has_credentials: boolean }>("/api/cloud/oauth-app", "PUT", body),
+  oauthStart: (provider: string, name: string) =>
     send<{ url: string; name: string; provider: string }>(
-      `/api/cloud/auth-url?provider=${encodeURIComponent(provider)}&name=${encodeURIComponent(name)}`,
+      `/api/cloud/oauth/start?provider=${encodeURIComponent(provider)}&name=${encodeURIComponent(name)}`,
       "GET",
     ),
-  authorize: (body: { name: string; provider: string; token: string }) =>
-    send<ApiCloudRemote>("/api/cloud/authorize", "POST", body),
   list: () => send<{ items: ApiCloudRemote[]; total: number }>("/api/cloud/remotes", "GET"),
   create: (body: { name: string; provider: string; keys: Record<string, string> }) =>
     send<ApiCloudRemote>("/api/cloud/remotes", "POST", body),
