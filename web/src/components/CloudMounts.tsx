@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   cloudApi,
   isLive,
+  type ApiAuthorizeStart,
   type ApiCloudFile,
   type ApiCloudProvider,
   type ApiCloudRemote,
@@ -256,6 +257,9 @@ export function CloudMountsSection({
   const [connectId, setConnectId] = useState<string | null>(null);
   const [oauthName, setOauthName] = useState("");
   const [starting, setStarting] = useState(false);
+  const [paste, setPaste] = useState<ApiAuthorizeStart | null>(null);
+  const [pastedUrl, setPastedUrl] = useState("");
+  const [pasteError, setPasteError] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [keys, setKeys] = useState<KeysForm>(EMPTY_KEYS);
@@ -350,12 +354,68 @@ export function CloudMountsSection({
   const selectProvider = (id: string) => {
     setConnectId((cur) => (cur === id ? null : id));
     setOauthName("");
+    setPaste(null);
+    setPastedUrl("");
+    setPasteError("");
     setClientId("");
     setClientSecret("");
     setKeys(EMPTY_KEYS);
   };
 
-  const startAuthorize = (provider: string) => {
+  const pasteMutation = useMutation({
+    mutationFn: (body: { name: string; provider: string; redirect_url: string }): Promise<ApiCloudRemote> =>
+      isLive
+        ? cloudApi.authorizePaste(body)
+        : Promise.resolve(mockAddRemote(body.name, body.provider)),
+    onSuccess: (remote) => {
+      show(`Connected ${remote.name}.`);
+      setPaste(null);
+      setPastedUrl("");
+      setPasteError("");
+      setOauthName("");
+      invalidate();
+    },
+    onError: (e) => setPasteError((e as Error).message),
+  });
+
+  const startPasteFlow = (provider: string) => {
+    const name = oauthName.trim();
+    if (!NAME_RE.test(name)) return;
+    setStarting(true);
+    setPasteError("");
+    if (!isLive) {
+      const mock: ApiAuthorizeStart = {
+        url: "https://accounts.google.com/o/oauth2/auth?mock",
+        name,
+        provider,
+        session_key: `${name}:${provider}`,
+        instructions:
+          "Approve access, then copy the full address from your browser address bar and paste it below.",
+      };
+      setPaste(mock);
+      setStarting(false);
+      return;
+    }
+    void cloudApi
+      .authUrl(provider, name)
+      .then((r) => {
+        setPaste(r);
+        window.open(r.url, "_blank", "noopener");
+      })
+      .catch((e) => show(`Could not start authorization: ${(e as Error).message}`))
+      .finally(() => setStarting(false));
+  };
+
+  const submitPaste = () => {
+    if (!paste || !pastedUrl.trim()) return;
+    pasteMutation.mutate({
+      name: paste.name,
+      provider: paste.provider,
+      redirect_url: pastedUrl.trim(),
+    });
+  };
+
+  const startAdvancedOAuth = (provider: string) => {
     const name = oauthName.trim();
     if (!NAME_RE.test(name)) return;
     setStarting(true);
@@ -458,92 +518,157 @@ export function CloudMountsSection({
           </p>
           {selected.auth === "oauth" ? (
             <div className="mt-2 flex flex-col gap-3">
-              {oauthApps[selected.id]?.has_credentials ? (
-                <>
-                  <Field
-                    label="Remote name"
-                    htmlFor="cloud-oauth-name"
-                    hint="1-64 chars: letters, digits, dot, dash, underscore."
-                  >
-                    <input
-                      id="cloud-oauth-name"
-                      value={oauthName}
-                      onChange={(e) => setOauthName(e.target.value)}
-                      className={`${inputCls} font-mono`}
-                      autoComplete="off"
-                      disabled={starting}
-                    />
-                  </Field>
-                  <div>
-                    <Button
-                      variant="primary"
-                      onClick={() => startAuthorize(selected.id)}
-                      disabled={!NAME_RE.test(oauthName.trim()) || starting}
-                    >
-                      {starting ? "Redirecting…" : "Connect with OAuth"}
-                    </Button>
-                    <p className="mt-1 text-xs text-muted">
-                      You will be sent to {selected.label} to approve access, then returned here.
-                    </p>
-                  </div>
-                </>
-              ) : isAdmin ? (
-                <div className="flex flex-col gap-3">
-                  <p className="text-xs text-muted">
-                    Create an OAuth client in the {selected.label} console and paste its credentials
-                    here. Authorized redirect URI:{" "}
-                    <span className="break-all font-mono">
-                      {window.location.origin}/api/cloud/oauth/callback
-                    </span>
-                  </p>
-                  <Field label="Client ID" htmlFor="cloud-oauth-client-id">
-                    <input
-                      id="cloud-oauth-client-id"
-                      value={clientId}
-                      onChange={(e) => setClientId(e.target.value)}
-                      className={`${inputCls} font-mono`}
-                      autoComplete="off"
-                    />
-                  </Field>
-                  <Field
-                    label="Client secret"
-                    htmlFor="cloud-oauth-client-secret"
-                    hint="Stored server-side with 0600 permissions. Never returned by the API."
-                  >
-                    <input
-                      id="cloud-oauth-client-secret"
-                      type="password"
-                      value={clientSecret}
-                      onChange={(e) => setClientSecret(e.target.value)}
-                      className={`${inputCls} font-mono`}
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                  </Field>
-                  <div>
-                    <Button
-                      variant="primary"
-                      onClick={() =>
-                        setOAuthAppMutation.mutate({
-                          provider: selected.id,
-                          client_id: clientId.trim(),
-                          client_secret: clientSecret.trim(),
-                        })
-                      }
-                      disabled={
-                        !clientId.trim() || !clientSecret.trim() || setOAuthAppMutation.isPending
-                      }
-                    >
-                      {setOAuthAppMutation.isPending ? "Saving…" : "Save OAuth client"}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-muted" role="status">
-                  An administrator must add OAuth app credentials for {selected.label} before you
-                  can connect.
+              <Field
+                label="Remote name"
+                htmlFor="cloud-oauth-name"
+                hint="1-64 chars: letters, digits, dot, dash, underscore."
+              >
+                <input
+                  id="cloud-oauth-name"
+                  value={oauthName}
+                  onChange={(e) => setOauthName(e.target.value)}
+                  className={`${inputCls} font-mono`}
+                  autoComplete="off"
+                  disabled={starting}
+                />
+              </Field>
+              <div>
+                <Button
+                  variant="primary"
+                  onClick={() => startPasteFlow(selected.id)}
+                  disabled={!NAME_RE.test(oauthName.trim()) || starting}
+                >
+                  {starting ? "Opening…" : "Connect"}
+                </Button>
+                <p className="mt-1 text-xs text-muted">
+                  No developer console setup needed. Approve access, then paste the redirect URL
+                  back here.
                 </p>
-              )}
+              </div>
+
+              {paste ? (
+                <div className="rounded-lg border border-line p-3">
+                  <p className="text-xs text-muted">{paste.instructions}</p>
+                  <p className="mt-2">
+                    <a
+                      href={paste.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="break-all text-xs text-accent underline"
+                    >
+                      Open the consent page
+                    </a>
+                  </p>
+                  <Field
+                    label="Pasted URL"
+                    htmlFor="cloud-paste-url"
+                    hint="Full address from the browser bar, or just the part after the question mark."
+                  >
+                    <input
+                      id="cloud-paste-url"
+                      value={pastedUrl}
+                      onChange={(e) => {
+                        setPastedUrl(e.target.value);
+                        setPasteError("");
+                      }}
+                      className={`${inputCls} font-mono`}
+                      autoComplete="off"
+                      placeholder="http://127.0.0.1:53682/?code=..."
+                    />
+                  </Field>
+                  <div className="mt-2">
+                    <Button
+                      variant="primary"
+                      onClick={submitPaste}
+                      disabled={!pastedUrl.trim() || pasteMutation.isPending}
+                    >
+                      {pasteMutation.isPending ? "Finishing…" : "Finish connection"}
+                    </Button>
+                  </div>
+                  {pasteError ? (
+                    <p role="alert" className="mt-2 text-xs text-danger">
+                      {pasteError}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {isAdmin ? (
+                <details className="rounded-md border border-line p-3">
+                  <summary className="cursor-pointer text-xs font-semibold text-muted">
+                    Advanced: use your own OAuth client
+                  </summary>
+                  <div className="mt-3 flex flex-col gap-3">
+                    {oauthApps[selected.id]?.has_credentials ? (
+                      <div>
+                        <Button
+                          variant="secondary"
+                          onClick={() => startAdvancedOAuth(selected.id)}
+                          disabled={!NAME_RE.test(oauthName.trim()) || starting}
+                        >
+                          {starting ? "Redirecting…" : "Connect with OAuth"}
+                        </Button>
+                        <p className="mt-1 text-xs text-muted">
+                          You will be sent to {selected.label} to approve access, then returned here.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-xs text-muted">
+                          Create an OAuth client in the {selected.label} console and paste its
+                          credentials here. Authorized redirect URI:{" "}
+                          <span className="break-all font-mono">
+                            {window.location.origin}/api/cloud/oauth/callback
+                          </span>
+                        </p>
+                        <Field label="Client ID" htmlFor="cloud-oauth-client-id">
+                          <input
+                            id="cloud-oauth-client-id"
+                            value={clientId}
+                            onChange={(e) => setClientId(e.target.value)}
+                            className={`${inputCls} font-mono`}
+                            autoComplete="off"
+                          />
+                        </Field>
+                        <Field
+                          label="Client secret"
+                          htmlFor="cloud-oauth-client-secret"
+                          hint="Stored server-side with 0600 permissions. Never returned by the API."
+                        >
+                          <input
+                            id="cloud-oauth-client-secret"
+                            type="password"
+                            value={clientSecret}
+                            onChange={(e) => setClientSecret(e.target.value)}
+                            className={`${inputCls} font-mono`}
+                            autoComplete="off"
+                            spellCheck={false}
+                          />
+                        </Field>
+                        <div>
+                          <Button
+                            variant="primary"
+                            onClick={() =>
+                              setOAuthAppMutation.mutate({
+                                provider: selected.id,
+                                client_id: clientId.trim(),
+                                client_secret: clientSecret.trim(),
+                              })
+                            }
+                            disabled={
+                              !clientId.trim() ||
+                              !clientSecret.trim() ||
+                              setOAuthAppMutation.isPending
+                            }
+                          >
+                            {setOAuthAppMutation.isPending ? "Saving…" : "Save OAuth client"}
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </details>
+              ) : null}
             </div>
           ) : (
             <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
