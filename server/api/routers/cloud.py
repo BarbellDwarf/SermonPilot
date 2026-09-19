@@ -269,6 +269,17 @@ def _wait_for(getter, timeout: float) -> str:
     return ""
 
 
+def _public_base_url(request: Request) -> str:
+    proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+    host = request.headers.get("x-forwarded-host", "").split(",")[0].strip()
+    if proto or host:
+        host = host or request.headers.get("host", "")
+        if host:
+            root = (request.scope.get("root_path") or "").rstrip("/")
+            return f"{proto or request.url.scheme}://{host}{root}/"
+    return str(request.base_url)
+
+
 def _proxied_authorize_url(base_url: str, key: str, raw_url: str) -> str:
     parsed = urlsplit(raw_url)
     if not parsed.port:
@@ -532,7 +543,7 @@ def auth_url(
     name = _validate_name(name)
     if provider not in _OAUTH_PROVIDERS:
         raise HTTPException(status_code=422, detail=f"{provider} uses key credentials, not oauth")
-    url = _start_authorize(user.get("id"), name, provider, str(request.base_url))
+    url = _start_authorize(user.get("id"), name, provider, _public_base_url(request))
     return {"url": url, "name": name, "provider": provider}
 
 
