@@ -3,6 +3,10 @@
 P5e. Jobs are created through the real ui.job_queue with the requesting
 user stamped as user_id (attribution), and an idempotence guard refuses a
 second active job for the same sermon.
+
+A job that reached a terminal state within _ACTIVE_JOB_GRACE_SECONDS still
+counts as active, so a fast double-click cannot enqueue a duplicate behind a
+job that completed between the two clicks.
 """
 
 from __future__ import annotations
@@ -12,6 +16,7 @@ import re
 import secrets
 import sqlite3
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +29,8 @@ from server.api.scoping import visible
 router = APIRouter(prefix="/api", tags=["write"])
 
 _ACTIVE_STATUSES = ("queued", "running")
+
+_ACTIVE_JOB_GRACE_SECONDS = 2.0
 
 _UPLOAD_EXTENSIONS = frozenset(
     {"mkv", "mp4", "mov", "webm", "m4v", "mp3", "wav", "m4a", "flac", "ogg", "mpa"}
@@ -199,13 +206,22 @@ def _active_job_for(sermon_id: str) -> dict[str, Any] | None:
     try:
         from server.api.db import ReadOnlySermonDatabase
 
+        cutoff = (datetime.now() - timedelta(seconds=_ACTIVE_JOB_GRACE_SECONDS)).isoformat()
         with ReadOnlySermonDatabase().get_connection() as conn:
             row = conn.execute(
                 "SELECT id, type, status FROM background_jobs"
-                " WHERE status IN ('queued', 'running')"
+                " WHERE (status IN (?, ?)"
+                "        OR (status IN ('completed', 'failed')"
+                "            AND completed_at IS NOT NULL"
+                "            AND datetime(completed_at) >= datetime(?)))"
                 " AND (parameters LIKE ? OR parameters LIKE ?)"
                 " ORDER BY created_at DESC LIMIT 1",
-                (f'%"{sermon_id}"%', f"%{sermon_id}%"),
+                (
+                    *_ACTIVE_STATUSES,
+                    cutoff,
+                    f'%"{sermon_id}"%',
+                    f"%{sermon_id}%",
+                ),
             ).fetchone()
         return dict(row) if row else None
     except sqlite3.OperationalError:

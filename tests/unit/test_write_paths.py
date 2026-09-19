@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import sqlite3
+from datetime import datetime, timedelta
 
 from server.api.accounts import get_db_path
 
@@ -43,6 +45,7 @@ def test_apply_queues_job_with_attribution_and_guard(client, scoped_setup, monke
 
     monkeypatch.setattr(dbmod, "_db", None)
     monkeypatch.setenv("DATABASE_URL", get_db_path())
+    monkeypatch.setattr("ui.job_queue.JobQueue._resources_available", lambda self: False)
 
     r = client.post(
         f"/api/sermons/{sid}/plan/apply",
@@ -76,6 +79,59 @@ def test_apply_queues_job_with_attribution_and_guard(client, scoped_setup, monke
         headers=s["b"]["headers"],
     )
     assert foreign.status_code == 404
+
+
+def _insert_completed_apply(sermon_id: str, user_id: str, completed_at: datetime) -> str:
+    conn = sqlite3.connect(get_db_path())
+    conn.execute(
+        "INSERT INTO background_jobs (id, type, title, status, parameters, user_id, completed_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            "j-just-completed",
+            "auto_edit_apply",
+            f"Apply edit: {sermon_id}",
+            "completed",
+            json.dumps({"sermon_id": sermon_id, "render_only": True}),
+            user_id,
+            completed_at.isoformat(),
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return "j-just-completed"
+
+
+def test_apply_blocks_reapply_within_grace_window(client, scoped_setup, monkeypatch):
+    s = scoped_setup
+    import ui.database as dbmod
+
+    monkeypatch.setattr(dbmod, "_db", None)
+    monkeypatch.setenv("DATABASE_URL", get_db_path())
+    _insert_completed_apply("s-a", s["a"]["id"], datetime.now())
+
+    r = client.post(
+        "/api/sermons/s-a/plan/apply",
+        json={"start": 10.0, "end": 20.0, "render_only": True},
+        headers=s["a"]["headers"],
+    )
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["job_id"] == "j-just-completed"
+
+
+def test_apply_allows_reapply_after_grace_window(client, scoped_setup, monkeypatch):
+    s = scoped_setup
+    import ui.database as dbmod
+
+    monkeypatch.setattr(dbmod, "_db", None)
+    monkeypatch.setenv("DATABASE_URL", get_db_path())
+    _insert_completed_apply("s-a", s["a"]["id"], datetime.now() - timedelta(seconds=30))
+
+    r = client.post(
+        "/api/sermons/s-a/plan/apply",
+        json={"start": 10.0, "end": 20.0, "render_only": True},
+        headers=s["a"]["headers"],
+    )
+    assert r.status_code == 202, r.text
 
 
 def test_cancel_job_scoped(client, scoped_setup, monkeypatch):
