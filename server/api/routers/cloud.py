@@ -520,6 +520,17 @@ def _sweep_sessions() -> None:
 
 
 def extract_authorize_url(text: str) -> str:
+    """Return the consent-launcher URL from rclone's stdout.
+
+    rclone prints multiple URLs: the redirect-notice mentions the bare callback
+    (http://127.0.0.1:53682/) BEFORE the actual link ("go to the following link:
+    .../auth?state=..."). The launcher URL is the one carrying /auth?state= -
+    grabbing the first URL yields the bare callback and the proxied page then
+    serves rclone's Failure page instead of the consent flow.
+    """
+    match = re.search(r"https?://[^\s'\"/]+/auth\?state=[^\s'\"&]+", text)
+    if match:
+        return match.group(0)
     match = re.search(r"https?://[^\s'\"]+", text)
     return match.group(0) if match else ""
 
