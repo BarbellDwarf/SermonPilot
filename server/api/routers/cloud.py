@@ -18,10 +18,15 @@ at runtime with ``shutil.which``; without it these endpoints return 503.
 
 from __future__ import annotations
 
+import base64
 import configparser
+import hashlib
+import hmac
+import html
 import json
 import os
 import re
+import secrets
 import shutil
 import socket
 import subprocess
@@ -29,14 +34,14 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
-from server.api.routers.auth import require_user
+from server.api.routers.auth import admin_only, require_user
 
 router = APIRouter(prefix="/api/cloud", tags=["cloud"])
 proxy_router = APIRouter(tags=["cloud"])
@@ -56,7 +61,47 @@ REMOTE_PREFIX = "remote:"
 
 DEFAULT_RCLONE_DIR = "/data/rclone"
 _AUTHORIZE_TTL = 900.0
+_OAUTH_STATE_TTL = 900.0
 _NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+# App-native OAuth: the app (not rclone) runs the consent dance, so the
+# redirect_uri points back at this console origin and any LAN browser works.
+# rclone still reads the resulting remote; client_id/client_secret live in the
+# remote block so rclone can refresh the access token itself.
+PROVIDER_OAUTH: dict[str, dict[str, Any]] = {
+    "drive": {
+        "authorize_url": "https://accounts.google.com/o/oauth2/v2/auth",
+        "token_url": "https://oauth2.googleapis.com/token",
+        "scope": "https://www.googleapis.com/auth/drive",
+        "authorize_extra": {"access_type": "offline", "prompt": "consent"},
+        "validate_url": "https://www.googleapis.com/drive/v3/about",
+        "validate_params": {"fields": "user"},
+        "remote_type": "drive",
+    },
+    "dropbox": {
+        "authorize_url": "https://www.dropbox.com/oauth2/authorize",
+        "token_url": "https://api.dropboxapi.com/oauth2/token",
+        "scope": "",
+        "authorize_extra": {"token_access_type": "offline"},
+        "validate_url": "https://api.dropboxapi.com/2/users/get_current_account",
+        "validate_method": "POST",
+        "remote_type": "dropbox",
+    },
+    "onedrive": {
+        "authorize_url": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+        "token_url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+        "scope": "offline_access Files.ReadWrite.All User.Read",
+        "authorize_extra": {},
+        "validate_url": "https://graph.microsoft.com/v1.0/me",
+        "remote_type": "onedrive",
+    },
+}
+
+_OAUTH_APP_FILE = "oauth_apps.json"
+_STATE_SECRET_FILE = ".oauth_state_secret"
+_CONSUMED_STATES: dict[str, float] = {}
+_STATE_LOCK = threading.Lock()
+_STATE_SECRET: str | None = None
 
 
 def _rclone_dir() -> Path:
@@ -195,6 +240,228 @@ def _create_remote(
         fields = {"account": supplied.get("account", ""), "key": supplied.get("key", "")}
     _write_remote(user_id, name, provider, fields)
     _validate_remote(user_id, name)
+
+
+def _require_oauth_provider(provider: str) -> str:
+    provider = _require_provider(provider)
+    if provider not in _OAUTH_PROVIDERS:
+        raise HTTPException(status_code=422, detail=f"{provider} uses key credentials, not oauth")
+    return provider
+
+
+def _oauth_apps_path() -> Path:
+    return _rclone_dir() / _OAUTH_APP_FILE
+
+
+def _load_oauth_apps() -> dict[str, dict[str, str]]:
+    path = _oauth_apps_path()
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {
+        provider: {
+            "client_id": str(app.get("client_id", "")),
+            "client_secret": str(app.get("client_secret", "")),
+        }
+        for provider, app in data.items()
+        if isinstance(app, dict)
+    }
+
+
+def _save_oauth_apps(data: dict[str, dict[str, str]]) -> None:
+    path = _oauth_apps_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def _get_oauth_app(provider: str) -> dict[str, str] | None:
+    app = _load_oauth_apps().get(provider)
+    if not app or not app.get("client_id") or not app.get("client_secret"):
+        return None
+    return app
+
+
+def _oauth_apps_status() -> dict[str, dict[str, bool]]:
+    return {
+        provider: {"has_credentials": _get_oauth_app(provider) is not None}
+        for provider in sorted(_OAUTH_PROVIDERS)
+    }
+
+
+def _state_secret() -> str:
+    global _STATE_SECRET
+    env = os.environ.get("SERMONPILOT_OAUTH_STATE_SECRET", "").strip()
+    if env:
+        return env
+    with _STATE_LOCK:
+        if _STATE_SECRET:
+            return _STATE_SECRET
+        path = _rclone_dir() / _STATE_SECRET_FILE
+        if path.is_file():
+            _STATE_SECRET = path.read_text(encoding="utf-8").strip()
+        if not _STATE_SECRET:
+            _STATE_SECRET = secrets.token_urlsafe(48)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(_STATE_SECRET, encoding="utf-8")
+            try:
+                os.chmod(path, 0o600)
+            except OSError:
+                pass
+        return _STATE_SECRET
+
+
+def _b64e(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+
+def _b64d(value: str) -> bytes:
+    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+
+
+def _sign_state(payload: dict[str, Any]) -> str:
+    body = _b64e(json.dumps(payload, separators=(",", ":")).encode())
+    sig = hmac.new(_state_secret().encode(), body.encode(), hashlib.sha256).digest()
+    return f"{body}.{_b64e(sig)}"
+
+
+def _sweep_consumed() -> None:
+    cutoff = time.time() - _OAUTH_STATE_TTL
+    for nonce, used_at in list(_CONSUMED_STATES.items()):
+        if used_at < cutoff:
+            _CONSUMED_STATES.pop(nonce, None)
+
+
+def _verify_state(state: str) -> dict[str, Any]:
+    body, _, sig = (state or "").partition(".")
+    if not body or not sig:
+        raise HTTPException(status_code=400, detail="invalid oauth state")
+    expected = hmac.new(_state_secret().encode(), body.encode(), hashlib.sha256).digest()
+    try:
+        provided = _b64d(sig)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid oauth state") from None
+    if not hmac.compare_digest(expected, provided):
+        raise HTTPException(status_code=400, detail="invalid oauth state")
+    try:
+        payload = json.loads(_b64d(body))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid oauth state") from None
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="invalid oauth state")
+    if float(payload.get("exp") or 0) < time.time():
+        raise HTTPException(status_code=400, detail="oauth state expired")
+    nonce = str(payload.get("nonce") or "")
+    if not nonce or nonce in _CONSUMED_STATES:
+        raise HTTPException(status_code=400, detail="oauth state already used")
+    _CONSUMED_STATES[nonce] = time.time()
+    _sweep_consumed()
+    return payload
+
+
+def _build_auth_url(provider: str, client_id: str, redirect_uri: str, state: str) -> str:
+    spec = PROVIDER_OAUTH[provider]
+    params: dict[str, str] = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "state": state,
+        **spec.get("authorize_extra", {}),
+    }
+    if spec.get("scope"):
+        params["scope"] = spec["scope"]
+    return f"{spec['authorize_url']}?{urlencode(params)}"
+
+
+def _rclone_token(token: dict[str, Any]) -> str:
+    block: dict[str, Any] = {
+        "access_token": token.get("access_token", ""),
+        "token_type": token.get("token_type") or "Bearer",
+    }
+    if token.get("refresh_token"):
+        block["refresh_token"] = token["refresh_token"]
+    expires_in = token.get("expires_in")
+    if expires_in:
+        try:
+            expiry = time.gmtime(time.time() + float(expires_in))
+            block["expiry"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", expiry)
+        except (TypeError, ValueError):
+            pass
+    return json.dumps(block, separators=(",", ":"))
+
+
+def _write_oauth_remote(
+    user_id: str | None,
+    name: str,
+    provider: str,
+    client_id: str,
+    client_secret: str,
+    token_json: str,
+) -> None:
+    name = _validate_name(name)
+    fields = {
+        "token": token_json,
+        "client_id": client_id,
+        "client_secret": client_secret,
+    }
+    scope = PROVIDER_OAUTH[provider].get("scope")
+    if scope:
+        fields["scope"] = scope
+    _write_remote(user_id, name, PROVIDER_OAUTH[provider]["remote_type"], fields)
+
+
+async def _exchange_code(
+    provider: str, code: str, client_id: str, client_secret: str, redirect_uri: str
+) -> dict[str, Any]:
+    spec = PROVIDER_OAUTH[provider]
+    data = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": redirect_uri,
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(spec["token_url"], data=data)
+    if resp.status_code != 200:
+        raise HTTPException(status_code=400, detail=f"{provider} token exchange failed")
+    return resp.json()
+
+
+async def _validate_token(provider: str, access_token: str) -> None:
+    spec = PROVIDER_OAUTH[provider]
+    headers = {"Authorization": f"Bearer {access_token}"}
+    method = spec.get("validate_method", "GET")
+    kwargs: dict[str, Any] = {"headers": headers}
+    if spec.get("validate_params"):
+        kwargs["params"] = spec["validate_params"]
+    if method == "POST":
+        headers["Content-Type"] = "application/json"
+        kwargs["content"] = b"null"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.request(method, spec["validate_url"], **kwargs)
+    if resp.status_code not in (200, 201):
+        raise HTTPException(status_code=400, detail=f"{provider} rejected the token")
+
+
+def _callback_page(title: str, message: str) -> HTMLResponse:
+    safe_title = html.escape(title)
+    safe_message = html.escape(message)
+    page = (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        f"<title>{safe_title}</title></head><body style='font-family:sans-serif;padding:2rem'>"
+        f"<h1 style='font-size:1.1rem'>{safe_title}</h1><p>{safe_message}</p>"
+        "<p><a href='/settings'>Back to Settings</a></p></body></html>"
+    )
+    return HTMLResponse(page)
 
 
 class _AuthorizeSession:
@@ -526,6 +793,12 @@ class AuthorizeBody(BaseModel):
     token: str = ""
 
 
+class OAuthAppBody(BaseModel):
+    provider: str
+    client_id: str
+    client_secret: str
+
+
 class BrowseBody(BaseModel):
     path: str = ""
 
@@ -535,6 +808,89 @@ def providers(user=Depends(require_user)) -> dict[str, Any]:
     return {"items": PROVIDERS, "rclone": bool(shutil.which("rclone"))}
 
 
+@router.put("/oauth-app")
+def put_oauth_app(body: OAuthAppBody, user=Depends(admin_only)) -> dict[str, Any]:
+    provider = _require_oauth_provider(body.provider)
+    client_id = body.client_id.strip()
+    client_secret = body.client_secret.strip()
+    if not client_id or not client_secret:
+        raise HTTPException(status_code=422, detail="client_id and client_secret are required")
+    apps = _load_oauth_apps()
+    apps[provider] = {"client_id": client_id, "client_secret": client_secret}
+    _save_oauth_apps(apps)
+    return {"provider": provider, "has_credentials": True}
+
+
+@router.get("/oauth-app")
+def get_oauth_app(user=Depends(require_user)) -> dict[str, Any]:
+    return {"providers": _oauth_apps_status()}
+
+
+@router.get("/oauth/start")
+def oauth_start(
+    provider: str, name: str, request: Request, user=Depends(require_user)
+) -> dict[str, Any]:
+    provider = _require_oauth_provider(provider)
+    name = _validate_name(name)
+    app = _get_oauth_app(provider)
+    if app is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"no OAuth client configured for {provider}; an admin must add one",
+        )
+    redirect_uri = f"{_public_base_url(request)}api/cloud/oauth/callback"
+    state = _sign_state(
+        {
+            "user_id": user.get("id"),
+            "name": name,
+            "provider": provider,
+            "redirect_uri": redirect_uri,
+            "nonce": secrets.token_urlsafe(16),
+            "exp": time.time() + _OAUTH_STATE_TTL,
+        }
+    )
+    url = _build_auth_url(provider, app["client_id"], redirect_uri, state)
+    return {"url": url, "name": name, "provider": provider}
+
+
+@router.get("/oauth/callback", include_in_schema=False)
+async def oauth_callback(
+    request: Request, code: str = "", state: str = "", error: str = ""
+) -> Response:
+    if error:
+        return _callback_page("Authorization failed", f"The provider returned: {error}")
+    payload = _verify_state(state)
+    provider = str(payload.get("provider") or "")
+    if provider not in _OAUTH_PROVIDERS:
+        raise HTTPException(status_code=400, detail="invalid oauth state")
+    app = _get_oauth_app(provider)
+    if app is None:
+        raise HTTPException(status_code=400, detail="oauth client no longer configured")
+    if not code:
+        return _callback_page("Authorization failed", "No authorization code was returned.")
+    token = await _exchange_code(
+        provider, code, app["client_id"], app["client_secret"], str(payload["redirect_uri"])
+    )
+    access_token = str(token.get("access_token") or "")
+    if not access_token:
+        raise HTTPException(status_code=400, detail="provider returned no access token")
+    await _validate_token(provider, access_token)
+    _write_oauth_remote(
+        payload.get("user_id"),
+        str(payload.get("name") or ""),
+        provider,
+        app["client_id"],
+        app["client_secret"],
+        _rclone_token(token),
+    )
+    name = quote(str(payload.get("name") or ""))
+    target = f"{_public_base_url(request)}settings?cloud=connected&name={name}"
+    return RedirectResponse(target, status_code=303)
+
+
+# DEPRECATED (#296): the rclone-authorize subprocess flow below pins the
+# provider redirect at 127.0.0.1, which a LAN browser cannot reach. The UI now
+# uses /oauth/start; these routes stay for compatibility only.
 @router.get("/auth-url")
 def auth_url(
     provider: str, name: str, request: Request, user=Depends(require_user)
