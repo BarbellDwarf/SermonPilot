@@ -125,7 +125,6 @@ qa_normalization:
     min_speakers: 1  # Minimum number of speakers to detect
     max_speakers: 10  # Maximum number of speakers to detect
 
-# Content Management Settings
 # Embedding Configuration for RAG System
 embeddings:
   # Primary embedding provider
@@ -155,9 +154,11 @@ embeddings:
       model: "all-MiniLM-L6-v2"
     # Hash-based fallback is automatically added as final option
 
-# Web UI Configuration
-web_ui:
-  analytics_enabled: true  # Enable analytics dashboard
+# Analytics / RAG System
+# ChromaDB persistence directory for the Analytics chat; a relative path
+# resolves against the project root. See docs/RAG_SYSTEM.md.
+rag_system:
+  vector_db_path: "analytics_vector_db"
 
 # Processing Options
 dry_run: false  # Set to true to preview changes without updating
@@ -203,8 +204,6 @@ metadata_processing:
     update_if_minimal: true  # Update if less than min_length_threshold chars
     force_update: false     # Update even if substantial content exists
     min_length_threshold: 10  # Characters to consider "minimal"
-
-# Default search criteria
 
 # Transcription Settings
 # Cloud backends read their key from the environment (preferred) or the DB
