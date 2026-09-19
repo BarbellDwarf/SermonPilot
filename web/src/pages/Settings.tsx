@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { adminApi, isLive, meApi, metaApi, type AdminUser } from "../api/client";
 import { useUserSettings } from "../api/useUserSettings";
 import { AudioSettingsSection } from "../components/AudioSettings";
@@ -373,7 +374,10 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
 
 export function Settings({ user }: { user: { display_name: string; role?: string } }) {
   const { toast, show } = useSectionToast();
-  const [active, setActive] = useState<TabId>("general");
+  const [searchParams] = useSearchParams();
+  const [active, setActive] = useState<TabId>(
+    searchParams.get("cloud") === "connected" ? "cloud" : "general",
+  );
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const focusTab = (id: TabId) => {
@@ -456,7 +460,7 @@ export function Settings({ user }: { user: { display_name: string; role?: string
       )}
       {active === "cloud" && (
         <div role="tabpanel" id="panel-cloud" aria-labelledby="tab-cloud" className="flex flex-col gap-4">
-        <CloudMountsSection show={show} />
+        <CloudMountsSection show={show} isAdmin={user.role === "admin"} />
         </div>
       )}
       {active === "audio" && (
