@@ -9,7 +9,6 @@ dependency below enforces Bearer-token auth on every /api route except
 from __future__ import annotations
 
 import os
-import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -19,14 +18,12 @@ from server.api.accounts import (
     create_session,
     create_user,
     delete_session,
-    get_db_path,
     get_session_user,
     get_setting,
     get_user_by_id,
     get_user_by_username,
     hash_password,
     list_users,
-    migrate,
     set_setting,
     verify_password,
     writable_conn,
@@ -126,7 +123,7 @@ def bootstrap() -> dict:
 def login(body: LoginBody):
     with writable_conn() as conn:
         row = get_user_by_username(conn, body.username)
-        if row is None or not row["is_active"] or not verify_password(body.password, row["password_hash"]):
+        if row is None or not row["is_active"] or not verify_password(body.password, row["password_hash"]):  # noqa: E501
             raise HTTPException(status_code=401, detail="invalid credentials")
         token = create_session(conn, row["id"])
     return {"token": token, "user": _public_user(row)}
@@ -178,13 +175,13 @@ def admin_patch_user(user_id: str, body: UserPatchBody):
         if row is None:
             raise HTTPException(status_code=404, detail="no such user")
         if body.is_active is not None:
-            conn.execute("UPDATE users SET is_active = ? WHERE id = ?", (int(body.is_active), user_id))
+            conn.execute("UPDATE users SET is_active = ? WHERE id = ?", (int(body.is_active), user_id))  # noqa: E501
         if body.role is not None:
             if body.role not in ("admin", "user"):
                 raise HTTPException(status_code=422, detail="role must be admin or user")
             conn.execute("UPDATE users SET role = ? WHERE id = ?", (body.role, user_id))
         if body.new_password:
-            conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(body.new_password), user_id))
+            conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(body.new_password), user_id))  # noqa: E501
         row = get_user_by_id(conn, user_id)
     return _public_user(row)
 

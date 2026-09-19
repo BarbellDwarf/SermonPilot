@@ -33,10 +33,10 @@ def fresh_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def clear_config_env(monkeypatch):
+def clear_config_env(monkeypatch, tmp_path):
     for var in ENV_CONFIG_MAP:
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.delenv("SA_UPDATER_CONFIG", raising=False)
+    monkeypatch.setenv("SA_UPDATER_CONFIG", str(tmp_path / "absent-config.yaml"))
 
 
 def test_env_overrides_db_for_mapped_keys(fresh_db, clear_config_env, monkeypatch):
@@ -162,7 +162,8 @@ def test_export_import_round_trip(fresh_db, clear_config_env, monkeypatch, tmp_p
     }
 
     assert save_config_to_file(saved) is True
-    assert not (tmp_path / "config.yaml").exists()
+    exported = yaml.safe_load((tmp_path / "config.yaml").read_text(encoding="utf-8"))
+    assert exported["broadcaster_id"] == "round-trip-broadcaster"
 
     loaded = load_config_from_file()
 
@@ -170,26 +171,35 @@ def test_export_import_round_trip(fresh_db, clear_config_env, monkeypatch, tmp_p
     assert loaded["metadata_processing"]["description"]["min_words"] == 55
 
 
-def test_save_never_writes_a_config_file(fresh_db, clear_config_env, monkeypatch, tmp_path):
+def test_save_overwrites_config_file_without_literals(
+    fresh_db, clear_config_env, monkeypatch, tmp_path
+):
     monkeypatch.setattr(config_utils, "project_root", tmp_path)
     existing = tmp_path / "config.yaml"
     existing.write_text("broadcaster_id: old-value\n", encoding="utf-8")
 
-    assert save_config_to_file({"broadcaster_id": "new-value"}) is True
+    assert save_config_to_file({"broadcaster_id": "new-value", "api_key": "literal-key"}) is True
 
     exported = yaml.safe_load(existing.read_text(encoding="utf-8"))
-    assert exported["broadcaster_id"] == "old-value"
+    assert exported["broadcaster_id"] == "new-value"
+    assert exported["api_key"] == "${SERMONAUDIO_API_KEY}"
 
 
-def test_save_fails_without_database(monkeypatch):
+def test_save_succeeds_when_database_unavailable(
+    fresh_db, clear_config_env, monkeypatch, tmp_path
+):
     import ui.database as database_module
+
+    monkeypatch.setattr(config_utils, "project_root", tmp_path)
+    monkeypatch.setenv("DATABASE_URL", str(tmp_path / "unavailable.db"))
 
     def unavailable(*args, **kwargs):
         raise RuntimeError("settings database unavailable")
 
     monkeypatch.setattr(database_module, "SermonDatabase", unavailable)
 
-    assert save_config_to_file({"broadcaster_id": "unused"}) is False
+    assert save_config_to_file({"broadcaster_id": "best-effort"}) is True
+    assert (tmp_path / "config.yaml").exists()
 
 
 def test_plaintext_db_secret_warns(fresh_db, clear_config_env, caplog):
@@ -211,7 +221,7 @@ def test_plaintext_warning_names_the_env_var(fresh_db, clear_config_env, caplog)
         load_config_from_file()
 
     assert any(
-        "WHISPER_OPENAI_API_KEY" in record.message for record in caplog.records
+        "OPENAI_API_KEY" in record.message for record in caplog.records
     )
 
 
@@ -337,6 +347,7 @@ def test_file_layer_loses_to_db(fresh_db, clear_config_env, monkeypatch, tmp_pat
 
 def test_legacy_yaml_migrates_once(fresh_db, clear_config_env, monkeypatch, tmp_path):
     monkeypatch.setattr(config_utils, "project_root", tmp_path)
+    monkeypatch.delenv("SA_UPDATER_CONFIG", raising=False)
     (tmp_path / "config.yaml").write_text(yaml.safe_dump({"hashtag_verification": False}))
 
     config = resolve_config(fresh_db)

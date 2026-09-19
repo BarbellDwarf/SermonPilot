@@ -50,6 +50,21 @@ except ImportError:
     _stub_sermonaudio()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_dotenv(monkeypatch):
+    """Stop a developer's real .env from leaking into the hermetic fast suite.
+
+    Production loads project_root/.env during config resolution. No test
+    asserts that file's contents, so a no-op loader keeps the suite
+    independent of the machine it runs on.
+    """
+    try:
+        import dotenv
+    except ImportError:
+        return
+    monkeypatch.setattr(dotenv, "load_dotenv", lambda *args, **kwargs: None)
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--run-heavy",

@@ -28,9 +28,8 @@ except ImportError:  # Streamlit entrypoint runs from /app (top-level imports)
 
 # Belt-and-braces: coerce str/foreign-enum job types via value lookup so a dual-module
 # import of job_queue (top-level vs ui.) can never produce a missing-executor lookup.
-from ui.job_queue import JobType as _CanonicalJobType
-
 from ui.config_utils import default_cache_root  # noqa: E402
+from ui.job_queue import JobType as _CanonicalJobType  # noqa: E402
 
 
 def _canon(job_type):

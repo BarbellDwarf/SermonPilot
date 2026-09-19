@@ -9,7 +9,8 @@ import datetime
 
 import pandas as pd
 import streamlit as st
-from ui.ui_state import managed_expander, managed_popover
+
+from ui.ui_state import managed_expander
 
 # Import the new analytics chat interface
 try:
@@ -695,7 +696,7 @@ def get_real_content_data():
             validation_results = []
         result_by_sermon = {
             r['sermon_id']: r for r in validation_results
-            if r.get('sermon_id') and isinstance(r.get('score'), (int, float))
+            if r.get('sermon_id') and isinstance(r.get('score'), int | float)
         }
 
         all_sermons = repo.get_all_sermons()

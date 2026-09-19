@@ -14,12 +14,12 @@ import json
 import logging
 import re
 import sys
-import tempfile
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import streamlit as st
+
 from ui.ui_state import managed_expander, managed_popover
 
 # Add src and ui directories to path
@@ -1630,7 +1630,7 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                 value=float(plan.get("audio_offset") or 0.0),
                 step=0.1,
                 key=f"editplan_re_audio_offset_{sermon_id}",
-                help="Positive delays the audio later relative to video; negative moves it earlier.",
+                help="Positive delays the audio later relative to video; negative moves it earlier.",  # noqa: E501
             )
             apply_mode_re = None
             if re_render_only:
@@ -1791,7 +1791,7 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
                 value=default_offset,
                 step=0.1,
                 key=f"editplan_audio_offset_{sermon_id}_{gen}",
-                help="Positive delays the audio later relative to video; negative moves it earlier.",
+                help="Positive delays the audio later relative to video; negative moves it earlier.",  # noqa: E501
             )
         st.caption(
             "Audio offset: positive shifts audio later than video (use when sound comes early), "
@@ -1921,7 +1921,7 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
         for row in history:
             row_notes = str(row.get("notes") or "").strip()
             row_offset = float(row.get("audio_offset") or 0.0)
-            label = f"r{row.get('revision')}: {row_notes}" if row_notes else f"r{row.get('revision')}"
+            label = f"r{row.get('revision')}: {row_notes}" if row_notes else f"r{row.get('revision')}"  # noqa: E501
             if abs(row_offset) > 1e-6:
                 label += f" [audio offset {row_offset:+.1f}s]"
             if label and label not in prior_notes:

@@ -29,12 +29,19 @@ jobs:
         # The fast suite (-m "not heavy") imports only these packages, so the
         # full requirements set (torch, whisper, chromadb, ...) stays out of CI.
         run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           python -m pip install --upgrade pip
-          pip install ruff pytest requests python-dotenv PyYAML streamlit
+          pip install ruff pytest requests python-dotenv PyYAML streamlit fastapi httpx
           pip install -e . --no-deps
 
       - name: Lint with ruff
         run: ruff check .
+
+      - name: Build web bundle (SPA tests need web/dist)
+        run: |
+          cd web
+          npm ci --no-audit --no-fund
+          npm run build
 
       - name: Run fast tests
         # Heavy tests (model downloads, GPU, long audio) are marked with
