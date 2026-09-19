@@ -104,16 +104,21 @@ def test_providers_static_catalog(client, scoped_setup):
 
 def test_auth_url_emits_rclone_url(client, scoped_setup, monkeypatch):
     s = scoped_setup
-    monkeypatch.setattr(
-        cloud, "_start_authorize", lambda u, n, p: "http://127.0.0.1:53682/auth?state=abc"
-    )
+    def fake_start(u, n, p, base):
+        key = cloud._session_key(u, n)
+        return f"{base.rstrip('/')}/rclone-auth/{key}/auth?state=abc"
+
+    monkeypatch.setattr(cloud, "_start_authorize", fake_start)
     r = client.get(
         "/api/cloud/auth-url",
         params={"provider": "drive", "name": "mydrive"},
         headers=s["a"]["headers"],
     )
     assert r.status_code == 200, r.text
-    assert r.json()["url"].startswith("http://127.0.0.1:53682/auth?")
+    assert r.json()["url"] == (
+        f"http://testserver/rclone-auth/{cloud._session_key(s['a']['id'], 'mydrive')}"
+        "/auth?state=abc"
+    )
     assert r.json()["name"] == "mydrive"
 
     keys = client.get(

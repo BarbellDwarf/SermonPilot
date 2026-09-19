@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 
 from server.api.accounts import migrate
 from server.api.routers.auth import router as auth_router
+from server.api.routers.cloud import proxy_router as cloud_proxy_router
 from server.api.routers.cloud import router as cloud_router
 from server.api.routers.jobs import router as jobs_router
 from server.api.routers.meta import router as meta_router
@@ -103,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(writes_router)
     app.include_router(files_router)
     app.include_router(cloud_router)
+    app.include_router(cloud_proxy_router)
 
     dist = Path(__file__).resolve().parent.parent.parent / "web" / "dist"
     if dist.is_dir():

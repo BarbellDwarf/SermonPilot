@@ -7,8 +7,11 @@ user can never reach another user's remotes.
 
 OAuth providers run headless through ``rclone authorize <provider>
 --auth-no-open-browser``: ``GET /auth-url`` starts the subprocess and returns
-the 127.0.0.1 callback URL it prints, the user completes consent, and
-``POST /authorize`` reads the token JSON rclone emits on stdout and stores it.
+a callback URL on the request's own origin under ``/rclone-auth/<session>/``,
+the user completes consent, and ``POST /authorize`` reads the token JSON
+rclone emits on stdout and stores it. The proxy route forwards that path to
+the per-session loopback port rclone bound, so the consent page is reachable
+from any browser on the LAN, not just the server's loopback.
 Key providers (S3, B2) take credentials directly on create. rclone is resolved
 at runtime with ``shutil.which``; without it these endpoints return 503.
 """
@@ -26,14 +29,17 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from server.api.routers.auth import require_user
 
 router = APIRouter(prefix="/api/cloud", tags=["cloud"])
+proxy_router = APIRouter(tags=["cloud"])
 
 PROVIDERS = [
     {"id": "drive", "label": "Google Drive", "auth": "oauth"},
@@ -194,6 +200,7 @@ def _create_remote(
 class _AuthorizeSession:
     def __init__(self, proc: subprocess.Popen) -> None:
         self.proc = proc
+        self.port: int | None = None
         self.lines: list[str] = []
         self.lock = threading.Lock()
         self.started = time.time()
@@ -262,7 +269,17 @@ def _wait_for(getter, timeout: float) -> str:
     return ""
 
 
-def _start_authorize(user_id: str | None, name: str, provider: str) -> str:
+def _proxied_authorize_url(base_url: str, key: str, raw_url: str) -> str:
+    parsed = urlsplit(raw_url)
+    if not parsed.port:
+        return ""
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    return f"{base_url.rstrip('/')}/rclone-auth/{key}{path}"
+
+
+def _start_authorize(user_id: str | None, name: str, provider: str, base_url: str) -> str:
     _sweep_sessions()
     proc = subprocess.Popen(
         [_rclone_exe(), "authorize", provider, "--auth-no-open-browser"],
@@ -273,10 +290,15 @@ def _start_authorize(user_id: str | None, name: str, provider: str) -> str:
     key = _session_key(user_id, name)
     session = _AuthorizeSession(proc)
     _SESSIONS[key] = session
-    url = _wait_for(lambda: extract_authorize_url(session.text()), 15)
-    if not url:
+    raw_url = _wait_for(lambda: extract_authorize_url(session.text()), 15)
+    if not raw_url:
         _discard_session(key)
         raise HTTPException(status_code=502, detail="rclone did not emit an authorization URL")
+    url = _proxied_authorize_url(base_url, key, raw_url)
+    if not url:
+        _discard_session(key)
+        raise HTTPException(status_code=502, detail="rclone authorization URL has no callback port")
+    session.port = urlsplit(raw_url).port
     return url
 
 
@@ -288,6 +310,70 @@ def _collect_authorize_token(user_id: str | None, name: str, timeout: float = 18
     token = _wait_for(lambda: extract_authorize_token(session.text()), timeout)
     _discard_session(key)
     return token
+
+
+_HOP_BY_HOP = frozenset(
+    {
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailers",
+        "transfer-encoding",
+        "upgrade",
+    }
+)
+
+
+async def _forward(
+    port: int,
+    method: str,
+    path: str,
+    query: str,
+    headers: dict[str, str],
+    body: bytes,
+) -> httpx.Response:
+    url = f"http://127.0.0.1:{port}{path}"
+    if query:
+        url = f"{url}?{query}"
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+        return await client.request(method, url, headers=headers, content=body)
+
+
+@proxy_router.api_route(
+    "/rclone-auth/{session_key}/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+    include_in_schema=False,
+)
+async def rclone_auth_proxy(session_key: str, path: str, request: Request) -> Response:
+    session = _SESSIONS.get(session_key)
+    if session is None or session.port is None:
+        raise HTTPException(status_code=404, detail="no such authorization session")
+    headers = {
+        name: value
+        for name, value in request.headers.items()
+        if name.lower() not in _HOP_BY_HOP and name.lower() not in ("host", "content-length")
+    }
+    upstream = await _forward(
+        session.port,
+        request.method,
+        f"/{path}",
+        request.url.query,
+        headers,
+        await request.body(),
+    )
+    response_headers = {
+        name: value
+        for name, value in upstream.headers.items()
+        if name.lower() not in _HOP_BY_HOP
+        and name.lower() not in ("content-length", "content-encoding")
+    }
+    return Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        headers=response_headers,
+    )
 
 
 _SERVE_LOCK = threading.Lock()
@@ -439,12 +525,14 @@ def providers(user=Depends(require_user)) -> dict[str, Any]:
 
 
 @router.get("/auth-url")
-def auth_url(provider: str, name: str, user=Depends(require_user)) -> dict[str, Any]:
+def auth_url(
+    provider: str, name: str, request: Request, user=Depends(require_user)
+) -> dict[str, Any]:
     provider = _require_provider(provider)
     name = _validate_name(name)
     if provider not in _OAUTH_PROVIDERS:
         raise HTTPException(status_code=422, detail=f"{provider} uses key credentials, not oauth")
-    url = _start_authorize(user.get("id"), name, provider)
+    url = _start_authorize(user.get("id"), name, provider, str(request.base_url))
     return {"url": url, "name": name, "provider": provider}
 
 
