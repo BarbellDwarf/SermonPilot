@@ -96,10 +96,8 @@ class AnalyticsManager:
         self.config = config
         self.api_key = config.get('api_key')
         self.broadcaster_id = config.get('broadcaster_id')
-        self.analytics_enabled = config.get('web_ui', {}).get('analytics_enabled', True)
-        self.refresh_interval = (
-            config.get('web_ui', {}).get('analytics_refresh_interval', 300)  # 5 minutes
-        )
+        self.analytics_enabled = True
+        self.refresh_interval = 300  # 5 minutes
 
         # Initialize SermonAudio API
         if self.api_key:

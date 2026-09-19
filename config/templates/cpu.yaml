@@ -115,10 +115,6 @@ embeddings:
       model: "all-MiniLM-L6-v2"
     # Hash-based fallback is automatically added as final option
 
-# Web UI Configuration
-web_ui:
-  analytics_enabled: true  # Enable analytics dashboard
-
 # Processing Options
 dry_run: false  # Set to true to preview changes without updating
 debug: false    # Set to true to enable verbose debug output

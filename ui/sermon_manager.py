@@ -89,7 +89,7 @@ class SermonManager:
         self.api_key = config.get('api_key')
         self.broadcaster_id = config.get('broadcaster_id')
         self.output_directory = Path(config.get('output_directory', 'processed_sermons'))
-        self.cache_ttl = config.get('web_ui', {}).get('sermon_cache_ttl', 3600)  # 1 hour
+        self.cache_ttl = 3600  # 1 hour
 
         # Initialize SermonAudio API
         if self.api_key:
