@@ -188,24 +188,25 @@ git commit -m "test commit"  # Will scan for credentials
 
 ### Configuration Validation
 
-#### Automatic Validation
-The system validates the configuration on startup through the secure config
-loader, which performs environment variable substitution and rejects
-hardcoded credentials:
+Configuration resolution does **not** run a credential scan at startup. The
+active path, `ui/config_utils.resolve_config()`, layers built-in defaults, an
+optional file, the DB `config_cache`, and `ENV_CONFIG_MAP` environment
+overrides (environment wins), then expands `${VAR}` and `${VAR:-default}`
+placeholders. Unresolved or obviously-invalid short values are treated as
+unset and never sent to an endpoint.
 
-```python
-from src.secure_config import load_secure_config
+A standalone scanner ships in `src/secure_config.py`. It reads a YAML file,
+flags hardcoded credential shapes, and checks required variables; it is a
+manual utility and is not wired into application startup.
 
-config = load_secure_config()  # validates security and substitutes env vars
-```
-
-#### Manual Validation
-Run security checks manually:
+Run it manually:
 
 ```bash
-# Validate configuration security
+# Scan a YAML config file for hardcoded credentials
 python src/secure_config.py
 ```
+
+With no `config.yaml` present it validates `config/config.example.yaml`.
 
 ### Troubleshooting
 
