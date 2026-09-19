@@ -358,7 +358,7 @@ class TestOperationProviderOverride:
         manager = LLMManager(CONFIG_WITH_OVERRIDE)
         manager.primary_provider = None
         manager.fallback_providers = []
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             manager.chat([{"role": "user", "content": "hi"}], operation="description")
 
 

@@ -7,7 +7,8 @@ from typing import Any
 
 import numpy as np
 import streamlit as st
-from ui.ui_state import managed_expander, managed_popover
+
+from ui.ui_state import managed_expander
 
 
 class AudioPreview:

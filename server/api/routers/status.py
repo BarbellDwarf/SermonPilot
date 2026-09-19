@@ -44,11 +44,11 @@ def _version() -> str:
 
 
 def _serialize(value: Any) -> Any:
-    if isinstance(value, (datetime.datetime, datetime.date)):
+    if isinstance(value, datetime.datetime | datetime.date):
         return value.isoformat()
     if isinstance(value, dict):
         return {str(key): _serialize(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [_serialize(item) for item in value]
     return value
 

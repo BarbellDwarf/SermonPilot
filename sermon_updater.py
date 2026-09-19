@@ -1030,7 +1030,7 @@ def update_sermon_metadata(sermon_id: str, description: str, hashtags: str | lis
     headers = get_api_headers()
     if hashtags is None:
         keywords = ""
-    elif isinstance(hashtags, (list, tuple)):
+    elif isinstance(hashtags, list | tuple):
         keywords = ','.join(str(tag) for tag in hashtags)
     else:
         keywords = str(hashtags)

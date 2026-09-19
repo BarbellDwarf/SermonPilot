@@ -65,7 +65,7 @@ def _stat_path(path: Path) -> dict[str, Any]:
     try:
         st = path.stat()
     except OSError:
-        return {"exists": False, "size": None, "size_human": "—", "ext": "", "kind": "—", "name": path.name}
+        return {"exists": False, "size": None, "size_human": "—", "ext": "", "kind": "—", "name": path.name}  # noqa: E501
     ext = path.suffix.lower().lstrip(".")
     size = st.st_size
     return {
@@ -450,7 +450,7 @@ class ServerPathBody(BaseModel):
 def server_path_stat(path: str = "", user=Depends(require_user)) -> dict[str, Any]:
     candidate = Path(path.strip()).expanduser() if path.strip() else None
     if candidate is None or not path.strip().startswith("/"):
-        return {"exists": False, "size": None, "size_human": "—", "ext": "", "kind": "—", "name": ""}
+        return {"exists": False, "size": None, "size_human": "—", "ext": "", "kind": "—", "name": ""}  # noqa: E501
     return _stat_path(candidate)
 
 

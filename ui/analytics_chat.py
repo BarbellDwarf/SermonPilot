@@ -10,10 +10,10 @@ from datetime import datetime
 from typing import Any
 
 import streamlit as st
-from ui.ui_state import managed_expander, managed_popover
 
 from ui.rag_system import SermonAnalyticsRAG, initialize_rag_system_with_data
 from ui.sermonaudio_analytics import SermonAudioAnalytics
+from ui.ui_state import managed_expander
 
 logger = logging.getLogger(__name__)
 

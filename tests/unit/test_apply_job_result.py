@@ -8,6 +8,7 @@ if str(_UI_DIR) not in sys.path:
     sys.path.insert(0, str(_UI_DIR))
 
 from job_queue import _coerce_job_result  # noqa: E402
+
 from ui.database import SermonDatabase, SermonRepository  # noqa: E402
 
 
