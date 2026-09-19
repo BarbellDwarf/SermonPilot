@@ -24,6 +24,10 @@ FROM base-${GPU_BACKEND} AS base
 ARG GPU_BACKEND
 ARG SERMONPILOT_VARIANT=${GPU_BACKEND}
 
+# rclone for per-user cloud remotes (#296) - official installer, current version
+RUN curl -fsSL https://rclone.org/install.sh | bash || \
+    (apt-get update && apt-get install -y rclone)
+
 RUN apt-get update && apt-get install -y \
     python3.11 \
     python3.11-venv \
