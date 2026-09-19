@@ -34,7 +34,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -62,7 +62,14 @@ REMOTE_PREFIX = "remote:"
 DEFAULT_RCLONE_DIR = "/data/rclone"
 _AUTHORIZE_TTL = 900.0
 _OAUTH_STATE_TTL = 900.0
+_PASTE_STATE_GRACE = 600.0
 _NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+PASTE_INSTRUCTIONS = (
+    "Approve access on the consent page. Your browser will then try to open a "
+    "local page that will not load - that is expected. Copy the FULL address "
+    "from your browser address bar (it contains code=) and paste it below."
+)
 
 # App-native OAuth: the app (not rclone) runs the consent dance, so the
 # redirect_uri points back at this console origin and any LAN browser works.
@@ -468,6 +475,8 @@ class _AuthorizeSession:
     def __init__(self, proc: subprocess.Popen) -> None:
         self.proc = proc
         self.port: int | None = None
+        self.state = ""
+        self.provider = ""
         self.lines: list[str] = []
         self.lock = threading.Lock()
         self.started = time.time()
@@ -557,6 +566,20 @@ def _proxied_authorize_url(base_url: str, key: str, raw_url: str) -> str:
     return f"{base_url.rstrip('/')}/rclone-auth/{key}{path}"
 
 
+def _parse_redirect(redirect_url: str) -> tuple[str, str, str]:
+    raw = (redirect_url or "").strip()
+    if not raw:
+        return "", "", ""
+    query = raw.split("?", 1)[1] if "?" in raw else raw
+    params = parse_qs(query)
+    code = (params.get("code") or [""])[0].strip()
+    state = (params.get("state") or [""])[0].strip()
+    scope = (params.get("scope") or [""])[0].strip()
+    if not code and "=" not in raw:
+        code = raw
+    return code, state, scope
+
+
 def _start_authorize(user_id: str | None, name: str, provider: str, base_url: str) -> str:
     _sweep_sessions()
     proc = subprocess.Popen(
@@ -576,7 +599,10 @@ def _start_authorize(user_id: str | None, name: str, provider: str, base_url: st
     if not url:
         _discard_session(key)
         raise HTTPException(status_code=502, detail="rclone authorization URL has no callback port")
-    session.port = urlsplit(raw_url).port
+    parsed = urlsplit(raw_url)
+    session.port = parsed.port
+    session.provider = provider
+    session.state = (parse_qs(parsed.query).get("state") or [""])[0].strip()
     return url
 
 
@@ -793,6 +819,12 @@ class AuthorizeBody(BaseModel):
     token: str = ""
 
 
+class AuthorizePasteBody(BaseModel):
+    name: str
+    provider: str
+    redirect_url: str
+
+
 class OAuthAppBody(BaseModel):
     provider: str
     client_id: str
@@ -888,9 +920,10 @@ async def oauth_callback(
     return RedirectResponse(target, status_code=303)
 
 
-# DEPRECATED (#296): the rclone-authorize subprocess flow below pins the
-# provider redirect at 127.0.0.1, which a LAN browser cannot reach. The UI now
-# uses /oauth/start; these routes stay for compatibility only.
+# Paste-the-redirect flow (#296): rclone's own OAuth client redirects the
+# user's browser to http://127.0.0.1:<port>, which cannot load on their machine.
+# The user copies that address and posts it here; we replay the callback against
+# rclone's listener on the server loopback and rclone prints the token.
 @router.get("/auth-url")
 def auth_url(
     provider: str, name: str, request: Request, user=Depends(require_user)
@@ -900,7 +933,66 @@ def auth_url(
     if provider not in _OAUTH_PROVIDERS:
         raise HTTPException(status_code=422, detail=f"{provider} uses key credentials, not oauth")
     url = _start_authorize(user.get("id"), name, provider, _public_base_url(request))
-    return {"url": url, "name": name, "provider": provider}
+    return {
+        "url": url,
+        "name": name,
+        "provider": provider,
+        "session_key": _session_key(user.get("id"), name),
+        "instructions": PASTE_INSTRUCTIONS,
+    }
+
+
+@router.post("/authorize/paste", status_code=201)
+async def authorize_paste(
+    body: AuthorizePasteBody, user=Depends(require_user)
+) -> dict[str, Any]:
+    provider = _require_provider(body.provider)
+    if provider not in _OAUTH_PROVIDERS:
+        raise HTTPException(status_code=422, detail=f"{provider} uses key credentials, not oauth")
+    name = _validate_name(body.name)
+    key = _session_key(user.get("id"), name)
+    session = _SESSIONS.get(key)
+    if session is None or (session.provider and session.provider != provider):
+        raise HTTPException(status_code=404, detail="no such authorization session")
+    code, pasted_state, scope = _parse_redirect(body.redirect_url)
+    if not code:
+        raise HTTPException(status_code=422, detail="no authorization code found in the pasted URL")
+    # State security: a pasted state must match the state rclone printed, so a
+    # confused deputy cannot submit someone else's code. Code-only pastes are
+    # accepted only for a session young enough that the code could not have been
+    # replayed; the session key already binds it to this user.
+    if pasted_state:
+        if session.state and session.state != pasted_state:
+            _discard_session(key)
+            raise HTTPException(status_code=422, detail="oauth state does not match this session")
+    elif time.time() - session.started > _PASTE_STATE_GRACE:
+        _discard_session(key)
+        raise HTTPException(status_code=422, detail="authorization session expired")
+    if session.port is None:
+        _discard_session(key)
+        raise HTTPException(
+            status_code=422, detail="authorization session has no callback listener"
+        )
+    params = {"code": code}
+    if scope:
+        params["scope"] = scope
+    query = urlencode(params)
+    try:
+        upstream = await _forward(session.port, "GET", "/", query, {}, b"")
+    except Exception as exc:
+        _discard_session(key)
+        raise HTTPException(
+            status_code=422, detail=f"could not reach rclone listener: {exc}"
+        ) from None
+    if upstream.status_code >= 400:
+        _discard_session(key)
+        detail = (upstream.text or "rclone rejected the authorization code").strip()
+        raise HTTPException(status_code=422, detail=detail[:500])
+    token = _collect_authorize_token(user.get("id"), name)
+    if not token:
+        raise HTTPException(status_code=422, detail="authorization not completed")
+    _create_remote(user.get("id"), name, provider, token=token)
+    return _public_remote(user.get("id"), name)
 
 
 @router.post("/authorize", status_code=201)
