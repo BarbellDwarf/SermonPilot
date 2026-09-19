@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Button,
   Chip,
@@ -60,10 +60,12 @@ const supportedFormats = ["MP3", "WAV", "M4A", "MP4", "MOV"];
 const initialMeta = { title: "", speaker: "", date: "", series: "", eventType: "", scripture: "" };
 
 export function NewSermon() {
-  const [uploadTab, setUploadTab] = useState<UploadTab>("browser");
+  const [searchParams] = useSearchParams();
+  const prefilledPath = searchParams.get("server_path") ?? "";
+  const [uploadTab, setUploadTab] = useState<UploadTab>(prefilledPath ? "server" : "browser");
   const [fileName, setFileName] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [serverPath, setServerPath] = useState("");
+  const [serverPath, setServerPath] = useState(prefilledPath);
   const [pathStat, setPathStat] = useState<ServerPathStat | null>(null);
   const [statPending, setStatPending] = useState(false);
   const [meta, setMeta] = useState(initialMeta);
@@ -116,11 +118,11 @@ export function NewSermon() {
       .catch(() => setBrandingFiles([]));
   }, []);
 
-  const pathLooksValid = serverPath.trim().startsWith("/") && serverPath.trim().length > 3;
+  const remotePath = /^remote:[A-Za-z0-9._-]{1,64}:.+$/.test(serverPath.trim());
+  const pathLooksValid =
+    (serverPath.trim().startsWith("/") && serverPath.trim().length > 3) || remotePath;
   const serverValid = isLive
-    ? pathStat
-      ? pathStat.exists && pathStat.is_file !== false
-      : pathLooksValid
+    ? remotePath || (pathStat ? pathStat.exists && pathStat.is_file !== false : pathLooksValid)
     : pathLooksValid;
   const browserHasSource = isLive ? fileObj !== null : fileName !== null;
   const hasSource = uploadTab === "browser" ? browserHasSource : serverValid;
@@ -274,6 +276,13 @@ export function NewSermon() {
   };
 
   const serverChips = isLive ? (
+    remotePath ? (
+      <>
+        <Chip tone="ok">cloud reference</Chip>
+        <Chip tone="info">remote</Chip>
+        <Chip tone="neutral">validated on queue</Chip>
+      </>
+    ) : (
     <>
       <Chip tone={pathStat?.exists ? "ok" : "neutral"}>
         {statPending ? "checking…" : pathStat ? (pathStat.exists ? "exists" : "not found") : "no check yet"}
@@ -285,6 +294,7 @@ export function NewSermon() {
         {pathStat?.exists && pathStat.ext ? `${pathStat.ext} · ${pathStat.kind}` : "type —"}
       </Chip>
     </>
+    )
   ) : (
     <>
       <Chip tone={serverValid ? "ok" : "neutral"}>{serverValid ? "exists" : "no check yet"}</Chip>
@@ -443,12 +453,12 @@ export function NewSermon() {
           </div>
         ) : (
           <div className="mt-3 flex flex-col gap-3">
-            <Field label="Server path" htmlFor="server-path" hint="Absolute path on the processing machine, e.g. /media/sample-sermon.mp3">
+            <Field label="Server path" htmlFor="server-path" hint="Absolute path on the processing machine, or a cloud reference remote:<name>:<path> from Settings > Cloud Mounts.">
               <input
                 id="server-path"
                 value={serverPath}
                 onChange={(e) => setServerPath(e.target.value)}
-                placeholder="/media/sample-sermon.mp3"
+                placeholder="/media/sample-sermon.mp3 or remote:drive:sermons/sample.mp3"
                 inputMode="text"
                 autoComplete="off"
                 className={inputCls}
