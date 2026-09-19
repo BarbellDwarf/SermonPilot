@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from "react";
 import { adminApi, isLive, meApi, metaApi, type AdminUser } from "../api/client";
 import { useUserSettings } from "../api/useUserSettings";
 import { AudioSettingsSection } from "../components/AudioSettings";
+import { CloudMountsSection } from "../components/CloudMounts";
 import { ConfigBackupSection } from "../components/ConfigBackup";
 import { GeneralSettingsSection } from "../components/GeneralSettings";
 import { LlmConnectionsSection } from "../components/LlmConnections";
@@ -25,6 +26,7 @@ const TABS = [
   { id: "general", label: "General" },
   { id: "llm", label: "LLM Providers" },
   { id: "sermonaudio", label: "SermonAudio Accounts" },
+  { id: "cloud", label: "Cloud Mounts" },
   { id: "audio", label: "Audio" },
   { id: "transcription", label: "Transcription" },
   { id: "validation", label: "Validation" },
@@ -450,6 +452,11 @@ export function Settings({ user }: { user: { display_name: string; role?: string
       {active === "sermonaudio" && (
         <div role="tabpanel" id="panel-sermonaudio" aria-labelledby="tab-sermonaudio" className="flex flex-col gap-4">
         <SermonAudioAccountsSection show={show} />
+        </div>
+      )}
+      {active === "cloud" && (
+        <div role="tabpanel" id="panel-cloud" aria-labelledby="tab-cloud" className="flex flex-col gap-4">
+        <CloudMountsSection show={show} />
         </div>
       )}
       {active === "audio" && (

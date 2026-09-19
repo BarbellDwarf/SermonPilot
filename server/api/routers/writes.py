@@ -470,13 +470,26 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
         raise HTTPException(
             status_code=422, detail=f"missing required fields: {', '.join(missing)}"
         )
-    if not body.container_path.strip().startswith("/"):
-        raise HTTPException(status_code=422, detail="container_path must be absolute")
-    source = Path(body.container_path.strip()).expanduser()
-    info = _stat_path(source)
-    if not info["exists"] or not source.is_file():
-        raise HTTPException(status_code=422, detail="container_path does not exist")
-    ext = info["ext"]
+    if body.container_path.strip().startswith("remote:"):
+        from server.api.routers.cloud import resolve_remote_uri
+
+        resolved = resolve_remote_uri(user.get("id"), body.container_path.strip())
+        if not resolved:
+            raise HTTPException(status_code=422, detail="invalid remote path")
+        source_path = resolved
+        original_name = body.container_path.strip().rstrip("/").rsplit("/", 1)[-1]
+        ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
+        info = {"size": None, "size_human": "—", "ext": ext, "kind": _kind_for_ext(ext)}
+    else:
+        if not body.container_path.strip().startswith("/"):
+            raise HTTPException(status_code=422, detail="container_path must be absolute")
+        source = Path(body.container_path.strip()).expanduser()
+        info = _stat_path(source)
+        if not info["exists"] or not source.is_file():
+            raise HTTPException(status_code=422, detail="container_path does not exist")
+        ext = info["ext"]
+        source_path = str(source)
+        original_name = source.name
     if ext not in _UPLOAD_EXTENSIONS:
         raise HTTPException(
             status_code=415,
@@ -499,8 +512,8 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
     resolved_bible = (body.bible_text or body.scripture).strip()
     job_id = _enqueue_sermon_processing(
         sermon_id=sermon_id,
-        source_path=str(source),
-        original_name=source.name,
+        source_path=source_path,
+        original_name=original_name,
         title=body.title,
         speaker=body.speaker,
         recorded_date=body.recorded_date,
@@ -521,7 +534,7 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
         "id": sermon_id,
         "job_id": job_id,
         "status": "queued",
-        "filename": source.name,
+        "filename": original_name,
         "size": info["size"],
         "size_human": info["size_human"],
         "ext": ext,
