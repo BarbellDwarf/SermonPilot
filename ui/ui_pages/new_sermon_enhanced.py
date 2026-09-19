@@ -120,7 +120,9 @@ def _show_upload_section():
             type=['mp3', 'wav', 'm4a', 'flac', 'ogg', 'mp4', 'mov', 'webm', 'mkv'],
             help=(
                 "Supported formats: Audio (MP3, WAV, M4A, FLAC, OGG) and Video "
-                "(MP4, MOV, WebM, MKV). For files over ~2GB use the Server Path tab instead."
+                "(MP4, MOV, WebM, MKV). The browser upload limit is configurable "
+                "with the STREAMLIT_SERVER_MAX_UPLOAD_SIZE environment variable "
+                "(30 GB by default). For larger files use the Server Path tab instead."
             ),
         )
 
