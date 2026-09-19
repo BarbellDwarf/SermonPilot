@@ -18,7 +18,7 @@ EXPECTED_FTS_COLS = [
 ]
 
 CHILD_TABLES = (
-    'sermon_files', 'processing_info', 'qa_segments', 'sermon_content',
+    'sermon_files', 'processing_info', 'sermon_content',
     'upload_info', 'validation_results', 'manual_review', 'llm_api_usage',
     'processing_status',
 )
@@ -28,7 +28,6 @@ INDEX_STATEMENTS = (
     ("idx_llm_usage_timestamp", "llm_api_usage(timestamp)"),
     ("idx_llm_usage_provider_model", "llm_api_usage(provider, model)"),
     ("idx_llm_usage_sermon_id", "llm_api_usage(sermon_id)"),
-    ("idx_qa_segments_sermon_id", "qa_segments(sermon_id)"),
     ("idx_processing_status_sermon_operation",
      "processing_status(sermon_id, operation)"),
     ("idx_processing_status_started_at", "processing_status(started_at)"),

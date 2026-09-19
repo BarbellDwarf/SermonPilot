@@ -85,8 +85,6 @@ class SermonImporter:
             'file_paths': {},
             'content': {},
             'processing_info': {
-                'qa_segments': [],
-                'qa_segments_count': 0,
                 'enhancement_method': 'unknown'
             }
         }
@@ -183,17 +181,6 @@ class SermonImporter:
                     metadata['processing_info'].update(processing_data)
             except Exception as e:
                 logger.warning(f"Could not read processing info {file_path}: {e}")
-
-        # Q&A segments file
-        elif file_name == FILENAMES["qa_segments"]:
-            try:
-                with open(file_path, encoding='utf-8') as f:
-                    qa_segments = json.load(f)
-                    metadata['processing_info']['qa_segments'] = qa_segments
-                    metadata['processing_info']['qa_segments_count'] = len(qa_segments)
-                    metadata['processing_info']['qa_normalization_applied'] = len(qa_segments) > 0
-            except Exception as e:
-                logger.warning(f"Could not read Q&A segments {file_path}: {e}")
 
     def _extract_api_metadata(
         self, sermon_id: str, metadata: dict[str, Any], refresh_api_data: bool = False

@@ -36,8 +36,6 @@ def test_audio_processor_release_gpu_drops_models():
     processor = audio_processing.AudioProcessor.__new__(audio_processing.AudioProcessor)
     processor.df_model = object()
     processor.df_state = object()
-    processor.qa_normalizer = object()
     processor.release_gpu()
     assert processor.df_model is None
     assert processor.df_state is None
-    assert processor.qa_normalizer is None
