@@ -137,7 +137,11 @@ STREAMLIT_PID=$!
 # Start read-only web API + SPA (opt out with SERMONPILOT_WEB_API=0)
 if [ "${SERMONPILOT_WEB_API:-}" != "0" ]; then
     echo "🌐 Starting web API..."
-    uvicorn server.api.app:app --host 0.0.0.0 --port "${SERMONPILOT_WEB_PORT:-8504}" &
+    # --proxy-headers trusts X-Forwarded-Proto/Host from the TLS-terminating
+    # reverse proxy; --forwarded-allow-ips='*' accepts all upstreams, which is
+    # fine because this console only listens on the LAN/docker network.
+    uvicorn server.api.app:app --host 0.0.0.0 --port "${SERMONPILOT_WEB_PORT:-8504}" \
+        --proxy-headers --forwarded-allow-ips='*' &
     UVICORN_PID=$!
 fi
 
