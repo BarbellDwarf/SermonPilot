@@ -507,14 +507,6 @@ class ProcessingModeSelector:
             if feature in settings:
                 available_features += 1
 
-        # AI features require additional dependencies
-        if settings.get('speech_enhancement', False):
-            try:
-                import librosa  # noqa: F401
-                available_features += 0  # Already counted
-            except ImportError:
-                available_features -= 0.5
-
         return (available_features / total_features) if total_features > 0 else 1.0
 
     def _render_processing_summary(self, settings: dict[str, Any]):

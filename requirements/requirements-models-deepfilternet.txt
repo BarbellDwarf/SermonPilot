@@ -4,9 +4,7 @@
 
 # Core audio processing
 numpy>=1.26.2
-scipy>=1.11.4
 soundfile>=0.12.1
-librosa>=0.10.1
 
 # PyTorch ecosystem (single pin, same floor as pyproject)
 torch>=2.13.0

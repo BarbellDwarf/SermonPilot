@@ -15,9 +15,7 @@ dependencies = [
     # Audio processing core
     "pydub>=0.25.1",
     "numpy>=1.26.2",
-    "scipy>=1.11.4",
     "soundfile>=0.12.1",
-    "librosa>=0.10.1",
     "mutagen>=1.47.0",
     # PyTorch ecosystem (single pin; per-index override files in requirements/)
     "torch>=2.13.0",
