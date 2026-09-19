@@ -24,9 +24,17 @@ FROM base-${GPU_BACKEND} AS base
 ARG GPU_BACKEND
 ARG SERMONPILOT_VARIANT=${GPU_BACKEND}
 
-# rclone for per-user cloud remotes (#296) - official installer, current version
-RUN curl -fsSL https://rclone.org/install.sh | bash || \
-    (apt-get update && apt-get install -y rclone)
+# rclone for per-user cloud remotes (#296) - direct binary (install.sh needs unzip, absent here)
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    curl -fsSL -o /tmp/rclone.zip "https://downloads.rclone.org/rclone-current-linux-${arch}.zip"; \
+    apt-get update && apt-get install -y --no-install-recommends unzip ca-certificates && \
+    unzip -o /tmp/rclone.zip -d /tmp/rclone-extract && \
+    cp "$(find /tmp/rclone-extract -name rclone -type f | head -1)" /usr/local/bin/rclone && \
+    chmod 755 /usr/local/bin/rclone && \
+    rm -rf /tmp/rclone.zip /tmp/rclone-extract && \
+    apt-get purge -y unzip && apt-get autoremove -y && rm -rf /var/lib/apt/lists/* && \
+    rclone version
 
 RUN apt-get update && apt-get install -y \
     python3.11 \
