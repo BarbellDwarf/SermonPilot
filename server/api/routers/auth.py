@@ -32,7 +32,15 @@ from server.api.accounts import (
 router = APIRouter(prefix="/api")
 
 # Routes exempt from auth (matched as path prefixes on the request scope).
-PUBLIC_PATHS = ("/api/health", "/api/auth/login", "/api/auth/bootstrap", "/api/meta")
+# /api/cloud/oauth/callback is public because the provider redirects the
+# browser there without a bearer token; the signed single-use state is the auth.
+PUBLIC_PATHS = (
+    "/api/health",
+    "/api/auth/login",
+    "/api/auth/bootstrap",
+    "/api/meta",
+    "/api/cloud/oauth/callback",
+)
 
 
 def _public(path: str) -> bool:
