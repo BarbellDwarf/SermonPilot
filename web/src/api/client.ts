@@ -514,10 +514,37 @@ export interface MeFile {
   size: number | null;
 }
 
+export interface ApiFileEntry {
+  name: string;
+  path: string;
+  type: "file" | "dir";
+  size: number | null;
+}
+
+export interface ApiExploreResult {
+  path: string;
+  parent: string | null;
+  root: string;
+  roots: { name: string; path: string }[];
+  items: ApiFileEntry[];
+}
+
+export interface ApiOutputDir {
+  output_dir: string;
+  source: "user" | "default";
+}
+
 export const filesApi = {
   list: () => send<{ items: MeFile[]; root: string }>("/api/me/files", "GET"),
   downloadUrl: (path: string) =>
     `${BASE}/api/me/files/download?path=${encodeURIComponent(path)}`,
+  explore: (path: string) => authed<ApiExploreResult>("/api/files/explore", { path }),
+};
+
+export const outputDirApi = {
+  get: () => send<ApiOutputDir>("/api/me/output-dir", "GET"),
+  put: (output_dir: string) =>
+    send<ApiOutputDir>("/api/me/output-dir", "PUT", { output_dir }),
 };
 
 export const metaApi = {

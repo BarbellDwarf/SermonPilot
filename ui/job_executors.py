@@ -432,6 +432,9 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
 
         form_data = job.parameters.get('form_data') or {}
         config = job.parameters.get('config') or {}
+        output_override = job.parameters.get('output_dir')
+        if output_override:
+            config = {**config, 'output_directory': str(output_override)}
         uploaded_file_path = (
             job.parameters.get('uploaded_file_path')
             or form_data.get('uploaded_file_path')
