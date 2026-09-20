@@ -221,7 +221,15 @@ def test_failed_validation_rolls_back(client, scoped_setup, monkeypatch):
 def test_browse_parses_lsf_listing(client, scoped_setup, monkeypatch):
     s = scoped_setup
     cfg = cloud._config_path(s["a"]["id"])
-    _fake_rclone(monkeypatch, cfg, lsf_out="1024;talk.mp3\n-1;sub/\n2048;more/talk2.mp3\n")
+    _fake_rclone(
+        monkeypatch,
+        cfg,
+        lsf_out=(
+            "talk.mp3;1024;2026-09-20 20:47:00\n"
+            "sub/;-1;2026-09-20 20:45:00\n"
+            "more/talk2.mp3;2048;2026-09-20 20:46:00\n"
+        ),
+    )
     seed = client.post(
         "/api/cloud/remotes",
         json={
@@ -238,9 +246,17 @@ def test_browse_parses_lsf_listing(client, scoped_setup, monkeypatch):
     assert r.status_code == 200, r.text
     assert r.json()["path"] == "talks"
     items = r.json()["items"]
-    assert items[0] == {"name": "talk.mp3", "path": "talk.mp3", "type": "file", "size": 1024}
+    assert items[0] == {
+        "name": "talk.mp3",
+        "path": "talk.mp3",
+        "type": "file",
+        "size": 1024,
+        "modified": "2026-09-20T20:47:00",
+        "mime": "",
+    }
     assert items[1]["type"] == "directory" and items[1]["size"] is None
     assert items[2]["name"] == "talk2.mp3" and items[2]["path"] == "more/talk2.mp3"
+    assert items[2]["modified"] == "2026-09-20T20:46:00"
 
 
 def test_missing_rclone_returns_503(client, scoped_setup, monkeypatch):
@@ -266,10 +282,35 @@ def test_parse_remote_path_and_lsf_helpers():
     assert cloud.parse_remote_path("remote:mine:/talks/x.mp3") == ("mine", "talks/x.mp3")
     assert cloud.parse_remote_path("remote:mine") == ("mine", "")
     assert cloud.parse_remote_path("/local/x.mp3") is None
-    assert cloud._parse_lsf("10;a.txt\n-1;dir/\n") == [
-        {"name": "a.txt", "path": "a.txt", "type": "file", "size": 10},
-        {"name": "dir", "path": "dir", "type": "directory", "size": None},
+    assert cloud._parse_lsf("a.txt;10;2026-09-20 20:47:00\ndir/;-1;2026-09-20 20:45:00\n") == [
+        {
+            "name": "a.txt",
+            "path": "a.txt",
+            "type": "file",
+            "size": 10,
+            "modified": "2026-09-20T20:47:00",
+            "mime": "",
+        },
+        {
+            "name": "dir",
+            "path": "dir",
+            "type": "directory",
+            "size": None,
+            "modified": "2026-09-20T20:45:00",
+            "mime": "",
+        },
     ]
+
+
+def test_parse_lsf_keeps_zero_byte_and_semicolon_names():
+    listing = "empty.wav;0;2026-09-20 20:47:00\nmy;file.mp3;12;2026-09-20 20:48:00\n"
+    items = cloud._parse_lsf(listing)
+    assert items[0]["size"] == 0
+    assert items[0]["modified"] == "2026-09-20T20:47:00"
+    assert items[1]["name"] == "my;file.mp3"
+    assert items[1]["path"] == "my;file.mp3"
+    assert items[1]["size"] == 12
+    assert items[1]["modified"] == "2026-09-20T20:48:00"
 
 
 def test_serve_helper_returns_webdav_url(client, scoped_setup, monkeypatch):

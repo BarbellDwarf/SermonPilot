@@ -37,23 +37,72 @@ export function mockDetachSharedDrive(name: string): void {
 
 const MOCK_TREE: Record<string, ApiCloudFile[]> = {
   "": [
-    { name: "sermons", path: "sermons", type: "directory", size: null },
-    { name: "sample-sermon.mp3", path: "sample-sermon.mp3", type: "file", size: 42_100_000 },
+    { name: "sermons", path: "sermons", type: "directory", size: null, modified: "2026-09-20T20:47:00" },
+    {
+      name: "sample-sermon.mp3",
+      path: "sample-sermon.mp3",
+      type: "file",
+      size: 42_100_000,
+      modified: "2026-09-20T20:47:00",
+    },
   ],
   sermons: [
-    { name: "2026", path: "2026", type: "directory", size: null },
-    { name: "old-sermon.mp3", path: "old-sermon.mp3", type: "file", size: 38_000_000 },
+    { name: "2026", path: "2026", type: "directory", size: null, modified: "2026-09-19T09:00:00" },
+    {
+      name: "old-sermon.mp3",
+      path: "old-sermon.mp3",
+      type: "file",
+      size: 38_000_000,
+      modified: "2026-09-01T08:00:00",
+    },
   ],
   "sermons/2026": [
-    { name: "september.mp3", path: "september.mp3", type: "file", size: 51_200_000 },
+    {
+      name: "september.mp3",
+      path: "september.mp3",
+      type: "file",
+      size: 51_200_000,
+      modified: "2026-09-14T11:30:00",
+    },
   ],
 };
 
 const MOCK_DRIVE_TREE: Record<string, ApiCloudFile[]> = {
   "": [
-    { name: "shared-sermon.mp3", path: "shared-sermon.mp3", type: "file", size: 47_500_000 },
+    {
+      name: "shared-sermon.mp3",
+      path: "shared-sermon.mp3",
+      type: "file",
+      size: 47_500_000,
+      modified: "2026-09-18T07:15:00",
+    },
   ],
 };
+
+export function formatModified(value?: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(
+    date.getMinutes(),
+  )}`;
+}
+
+export function sortNewestFirst<T extends { name: string; modified?: string | null }>(
+  items: T[],
+  isDirectory: (item: T) => boolean,
+): T[] {
+  return [...items].sort((a, b) => {
+    const aDir = isDirectory(a);
+    const bDir = isDirectory(b);
+    if (aDir !== bDir) return aDir ? -1 : 1;
+    const aMod = a.modified ?? "";
+    const bMod = b.modified ?? "";
+    if (aMod && bMod && aMod !== bMod) return bMod.localeCompare(aMod);
+    return a.name.localeCompare(b.name);
+  });
+}
 
 function formatSize(bytes: number | null): string {
   if (bytes === null) return "—";
@@ -106,11 +155,9 @@ export function CloudBrowser({
         ? cloudApi.browse(name, path, driveId)
         : Promise.resolve({ path, items: (driveId ? MOCK_DRIVE_TREE : MOCK_TREE)[path] ?? [] }),
     staleTime: 5_000,
+    refetchOnMount: "always",
   });
-  const items = [...(browse.data?.items ?? [])].sort((a, b) => {
-    if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
+  const items = sortNewestFirst(browse.data?.items ?? [], (item) => item.type === "directory");
   const segments = path ? path.split("/") : [];
   const parent = segments.slice(0, -1).join("/");
   const sharedDrives = sharedQuery.data?.items ?? [];
@@ -139,6 +186,9 @@ export function CloudBrowser({
           ) : null}
           <Button onClick={() => onPath(parent)} disabled={!path}>
             Up one level
+          </Button>
+          <Button onClick={() => browse.refetch()} disabled={browse.isFetching}>
+            {browse.isFetching ? "Refreshing…" : "Refresh"}
           </Button>
         </div>
       </div>
@@ -245,8 +295,24 @@ export function CloudBrowser({
                 ) : (
                   <>
                     <span className="min-w-0 flex-1 truncate px-1 text-sm">{item.name}</span>
-                    <span className="font-mono text-xs text-muted">{formatSize(item.size)}</span>
-                    <Button variant="primary" onClick={() => onUse({ ...item, path: full })}>
+                    <span className="font-mono text-xs text-muted">
+                      {formatModified(item.modified)}
+                    </span>
+                    {item.size === 0 ? (
+                      <span className="font-mono text-xs text-muted">empty file</span>
+                    ) : (
+                      <span className="font-mono text-xs text-muted">{formatSize(item.size)}</span>
+                    )}
+                    <Button
+                      variant="primary"
+                      disabled={item.size === 0}
+                      title={
+                        item.size === 0
+                          ? "This file is 0 bytes and cannot be processed"
+                          : undefined
+                      }
+                      onClick={() => onUse({ ...item, path: full })}
+                    >
                       Use this file
                     </Button>
                   </>

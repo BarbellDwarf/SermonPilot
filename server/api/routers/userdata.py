@@ -13,6 +13,7 @@ import base64
 import os
 import secrets
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -484,6 +485,14 @@ def _entry_size(entry: os.DirEntry) -> int | None:
         return None
 
 
+def _entry_modified(entry: os.DirEntry) -> str | None:
+    try:
+        stamp = entry.stat(follow_symlinks=True).st_mtime
+    except OSError:
+        return None
+    return datetime.fromtimestamp(stamp).isoformat(timespec="seconds")
+
+
 @explore_router.get("/explore")
 def explore_files(path: str = "", user=Depends(require_user)) -> dict[str, Any]:
     roots = _explore_roots(user)
@@ -516,6 +525,7 @@ def explore_files(path: str = "", user=Depends(require_user)) -> dict[str, Any]:
                     "path": str(Path(entry.path)),
                     "type": "dir" if is_dir else "file",
                     "size": None if is_dir else _entry_size(entry),
+                    "modified": _entry_modified(entry),
                 }
             )
     items.sort(key=lambda item: (0 if item["type"] == "dir" else 1, item["name"].lower()))

@@ -429,6 +429,8 @@ export interface ApiCloudFile {
   path: string;
   type: "directory" | "file";
   size: number | null;
+  modified?: string | null;
+  mime?: string;
 }
 
 export interface ApiOAuthAppStatus {
@@ -543,6 +545,7 @@ export interface ApiFileEntry {
   path: string;
   type: "file" | "dir";
   size: number | null;
+  modified?: string | null;
 }
 
 export interface ApiExploreResult {

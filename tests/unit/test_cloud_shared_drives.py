@@ -151,7 +151,7 @@ def test_detach_clears_team_drive(client, scoped_setup, monkeypatch):
 def test_browse_with_drive_id_uses_alias(client, scoped_setup, monkeypatch):
     s = scoped_setup
     cfg = cloud._config_path(s["a"]["id"])
-    calls = _fake_rclone(monkeypatch, cfg, lsf_out="1024;talk.mp3\n")
+    calls = _fake_rclone(monkeypatch, cfg, lsf_out="talk.mp3;1024;2026-09-20 20:47:00\n")
     _seed_drive(cfg)
     r = client.post(
         "/api/cloud/remotes/mydrive/browse",
