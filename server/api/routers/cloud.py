@@ -802,23 +802,32 @@ def resolve_remote_uri(user_id: str | None, container_path: str) -> str | None:
     return f"{base}{quote(sub)}" if sub else base
 
 
+def _normalize_modtime(value: str) -> str:
+    raw = value.strip()
+    if not raw:
+        return ""
+    return raw.replace(" ", "T", 1)
+
+
 def _parse_lsf(text: str) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for raw in text.splitlines():
         line = raw.rstrip("\r")
         if not line:
             continue
-        size: int | None = None
-        if ";" in line:
-            size_raw, _, path = line.partition(";")
-            try:
-                size = int(size_raw)
-            except ValueError:
-                size = None
+        fields = line.rsplit(";", 2)
+        if len(fields) == 3:
+            path, size_raw, modified_raw = fields
+        elif len(fields) == 2:
+            path, size_raw, modified_raw = fields[0], fields[1], ""
         else:
-            path = line
+            path, size_raw, modified_raw = line, "", ""
         if not path:
             continue
+        try:
+            size: int | None = int(size_raw)
+        except ValueError:
+            size = None
         is_dir = path.endswith("/")
         clean = path.rstrip("/")
         items.append(
@@ -827,6 +836,8 @@ def _parse_lsf(text: str) -> list[dict[str, Any]]:
                 "path": clean,
                 "type": "directory" if is_dir else "file",
                 "size": None if is_dir or (size is None or size < 0) else size,
+                "modified": _normalize_modtime(modified_raw),
+                "mime": "",
             }
         )
     return items
@@ -1081,7 +1092,7 @@ def browse_remote(
         "--max-depth",
         "1",
         "--format",
-        "sp",
+        "pst",
         check=False,
         timeout=120,
     )
