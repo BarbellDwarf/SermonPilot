@@ -351,3 +351,4 @@ def test_server_path_remote_uses_resolver(client, scoped_setup, monkeypatch):
     conn.close()
     params = json.loads(row[0])
     assert params["uploaded_file_path"] == "http://127.0.0.1:9999/talks/a.mp3"
+    assert params["user_id"] == s["a"]["id"]
