@@ -15,6 +15,7 @@ import {
   brandingApi,
   cloudApi,
   isLive,
+  outputDirApi,
   serverPathApi,
   uploadApi,
   type ApiCloudFile,
@@ -23,6 +24,7 @@ import {
   type ServerPathStat,
 } from "../api/client";
 import { CloudBrowser, MOCK_REMOTES } from "../components/CloudBrowser";
+import { FileExplorerDialog } from "../components/FileExplorer";
 
 type UploadTab = "browser" | "server";
 type AutoEditMode = "interactive" | "auto";
@@ -132,6 +134,10 @@ export function NewSermon() {
   const [cloudRemotes, setCloudRemotes] = useState<ApiCloudRemote[]>([]);
   const [cloudPick, setCloudPick] = useState("");
   const [cloudOpen, setCloudOpen] = useState(false);
+  const [localOpen, setLocalOpen] = useState(false);
+  const [outputDir, setOutputDir] = useState("processed_sermons");
+  const [outputSource, setOutputSource] = useState<"user" | "default">("default");
+  const [outputOpen, setOutputOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const cardInput = useRef<HTMLInputElement>(null);
 
@@ -178,9 +184,43 @@ export function NewSermon() {
       .catch(() => setCloudRemotes([]));
   }, []);
 
+  // Resolved per-user output location (default for the next sermon).
+  useEffect(() => {
+    if (!isLive) return;
+    void outputDirApi
+      .get()
+      .then((r) => {
+        setOutputDir(r.output_dir);
+        setOutputSource(r.source);
+      })
+      .catch(() => undefined);
+  }, []);
+
   const useCloudFile = (item: ApiCloudFile) => {
     setServerPath(`remote:${cloudPick}:${item.path}`);
     setCloudOpen(false);
+  };
+
+  const useLocalFile = (path: string) => {
+    setServerPath(path);
+    setLocalOpen(false);
+  };
+
+  const pickOutputDir = (path: string) => {
+    setOutputOpen(false);
+    setOutputDir(path);
+    setOutputSource("user");
+    if (!isLive) {
+      showToast("Output location updated (mock).");
+      return;
+    }
+    void outputDirApi
+      .put(path)
+      .then((r) => {
+        setOutputDir(r.output_dir);
+        showToast("Output location saved as your default.");
+      })
+      .catch((e) => showToast(`Could not save output location: ${(e as Error).message}`));
   };
 
   const remotePath = /^remote:[A-Za-z0-9._-]{1,64}:.+$/.test(serverPath.trim());
@@ -265,6 +305,7 @@ export function NewSermon() {
     auto_edit_mode: autoEdit ? autoEditMode : null,
     logo_path: logoPath === "none" ? "" : logoPath,
     fade_to_black: fadeBlack,
+    output_dir: outputDir,
   });
 
   const start = () => {
@@ -382,6 +423,7 @@ export function NewSermon() {
     aiMeta ? "ai meta" : "no ai meta",
     dryRun ? "dry run" : "live run",
     autoEdit ? `edit:${autoEditMode}` : "no edit",
+    `out:${outputDir}`,
   ];
 
   return (
@@ -529,6 +571,9 @@ export function NewSermon() {
                   autoComplete="off"
                   className={`${inputCls} min-w-0 flex-1`}
                 />
+                <Button variant="secondary" onClick={() => setLocalOpen(true)}>
+                  Browse files
+                </Button>
                 {remotePath ? (
                   <span
                     className="inline-flex max-w-full items-center gap-1 rounded-full border border-info px-2.5 py-1 text-xs text-info"
@@ -588,6 +633,25 @@ export function NewSermon() {
           </div>
         )}
       </SectionCard>
+
+      <details className="rounded-md border border-line bg-ink p-3">
+        <summary className="cursor-pointer text-xs font-semibold text-muted">Output location</summary>
+        <p className="mt-2 text-sm">
+          Writes to <span className="font-mono text-mist">{outputDir}</span>{" "}
+          <span className="text-xs text-muted">
+            ({outputSource === "user" ? "your default" : "default"})
+          </span>
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Button variant="secondary" onClick={() => setOutputOpen(true)}>
+            Change output location
+          </Button>
+        </div>
+        <p className="mt-1 text-xs text-muted">
+          Changing this saves it as your default for future sermons. This run is queued with the
+          location chosen here.
+        </p>
+      </details>
 
       <SectionCard n={2} title="Metadata" sub="Title, speaker, and date are required. The rest sharpens search and display.">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -769,6 +833,21 @@ export function NewSermon() {
           onUse={useCloudFile}
         />
       ) : null}
+
+      <FileExplorerDialog
+        open={localOpen}
+        title="Pick a server file"
+        pick="file"
+        onPickFile={useLocalFile}
+        onClose={() => setLocalOpen(false)}
+      />
+      <FileExplorerDialog
+        open={outputOpen}
+        title="Choose an output location"
+        pick="folder"
+        onPickFolder={pickOutputDir}
+        onClose={() => setOutputOpen(false)}
+      />
 
       <ConfirmDialog
         open={confirmReset}

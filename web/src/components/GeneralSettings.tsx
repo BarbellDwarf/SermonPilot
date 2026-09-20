@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { isLive } from "../api/client";
+import { isLive, outputDirApi } from "../api/client";
 import { useUserSettings } from "../api/useUserSettings";
 import { Button, Field, SectionCard, Toggle, inputCls } from "./ui";
+import { FileExplorerDialog } from "./FileExplorer";
 
 interface GeneralState {
   dryRun: boolean;
@@ -24,9 +25,26 @@ const DEFAULTS: GeneralState = {
 export function GeneralSettingsSection({ show }: { show: (m: string) => void }) {
   const [saved, setSaved] = useUserSettings<GeneralState>("settings.general", DEFAULTS);
   const [cur, setCur] = useState<GeneralState>(saved);
+  const [browseOpen, setBrowseOpen] = useState(false);
   const dirty = isLive && JSON.stringify(cur) !== JSON.stringify(saved);
   const set = <K extends keyof GeneralState>(k: K, v: GeneralState[K]) =>
     setCur((c) => ({ ...c, [k]: v }));
+
+  const save = () => {
+    const commit = () => {
+      setSaved(cur);
+      setCur(cur);
+      show(isLive ? "General settings saved." : "General settings saved (mock).");
+    };
+    if (isLive && cur.outputDir !== saved.outputDir) {
+      void outputDirApi
+        .put(cur.outputDir)
+        .then(commit)
+        .catch((e) => show(`Output directory rejected: ${(e as Error).message}`));
+      return;
+    }
+    commit();
+  };
 
   return (
     <SectionCard
@@ -57,14 +75,19 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
 
       <h3 className="mt-4 text-sm font-semibold">Output settings</h3>
       <div className="mt-2 grid grid-cols-1 gap-2">
-        <Field label="Output directory" htmlFor="gen-outdir" hint="Directory for processed sermon files.">
-          <input
-            id="gen-outdir"
-            value={cur.outputDir}
-            onChange={(e) => set("outputDir", e.target.value)}
-            className={`${inputCls} font-mono`}
-            autoComplete="off"
-          />
+        <Field label="Output directory" htmlFor="gen-outdir" hint="Directory for processed sermon files. This is your default for new sermons.">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              id="gen-outdir"
+              value={cur.outputDir}
+              onChange={(e) => set("outputDir", e.target.value)}
+              className={`${inputCls} min-w-0 flex-1 font-mono`}
+              autoComplete="off"
+            />
+            <Button variant="secondary" onClick={() => setBrowseOpen(true)}>
+              Browse…
+            </Button>
+          </div>
         </Field>
         <Toggle
           checked={cur.saveOriginal}
@@ -81,15 +104,7 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button
-          variant="primary"
-          disabled={!dirty}
-          onClick={() => {
-            setSaved(cur);
-            setCur(cur);
-            show(isLive ? "General settings saved." : "General settings saved (mock).");
-          }}
-        >
+        <Button variant="primary" disabled={!dirty} onClick={save}>
           Save
         </Button>
         {!dirty ? (
@@ -100,6 +115,14 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
           </span>
         )}
       </div>
+
+      <FileExplorerDialog
+        open={browseOpen}
+        title="Choose an output directory"
+        pick="folder"
+        onPickFolder={(p) => set("outputDir", p)}
+        onClose={() => setBrowseOpen(false)}
+      />
     </SectionCard>
   );
 }

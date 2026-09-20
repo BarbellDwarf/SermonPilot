@@ -120,6 +120,16 @@ def _save_draft_sermon(
         raise HTTPException(status_code=500, detail="could not save sermon")
 
 
+def _output_dir_for(user: dict, requested: str) -> str:
+    """Resolve the per-run output override, falling back to the user's default."""
+    from server.api.routers.userdata import resolve_user_output_dir, validate_output_path
+
+    raw = (requested or "").strip()
+    if not raw:
+        return str(resolve_user_output_dir(user))
+    return str(validate_output_path(raw))
+
+
 def _enqueue_sermon_processing(
     *,
     sermon_id: str,
@@ -139,6 +149,7 @@ def _enqueue_sermon_processing(
     auto_edit_mode: str | None = None,
     logo_path: str = "",
     fade_to_black: bool = True,
+    output_dir: str | None = None,
     user_id: str | None,
 ) -> str:
     from ui.job_queue import JobType
@@ -179,6 +190,7 @@ def _enqueue_sermon_processing(
             "uploaded_file_path": source_path,
             "auto_edit_enabled": bool(auto_edit_enabled),
             "auto_edit_mode": auto_edit_mode,
+            "output_dir": output_dir,
         },
         priority=8,
         user_id=user_id,
@@ -341,6 +353,7 @@ async def upload_sermon(
     logo_path: str = Form(default=""),
     auto_edit_logo_path: str = Form(default=""),
     fade_to_black: bool = Form(default=True),
+    output_dir: str = Form(default=""),
     user=Depends(require_user),
 ):
     missing = [
@@ -432,6 +445,7 @@ async def upload_sermon(
         auto_edit_mode=auto_edit_mode,
         logo_path=resolved_logo,
         fade_to_black=fade_to_black,
+        output_dir=_output_dir_for(user, output_dir),
         user_id=user.get("id"),
     )
     return {
@@ -460,6 +474,7 @@ class ServerPathBody(BaseModel):
     logo_path: str = ""
     auto_edit_logo_path: str = ""
     fade_to_black: bool = True
+    output_dir: str = ""
 
 
 @router.get("/sermons/server-path/stat")
@@ -544,6 +559,7 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
         auto_edit_mode=body.auto_edit_mode,
         logo_path=resolved_logo,
         fade_to_black=body.fade_to_black,
+        output_dir=_output_dir_for(user, body.output_dir),
         user_id=user.get("id"),
     )
     return {
