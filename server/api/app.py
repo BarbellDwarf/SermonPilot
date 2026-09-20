@@ -25,6 +25,7 @@ from server.api.routers.sermons import router as sermons_router
 from server.api.routers.status import router as status_router
 from server.api.routers.userdata import (
     admin_backup_router,
+    explore_router,
     files_router,
     me_router,
 )
@@ -103,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_backup_router)
     app.include_router(writes_router)
     app.include_router(files_router)
+    app.include_router(explore_router)
     app.include_router(cloud_router)
     app.include_router(cloud_proxy_router)
 
