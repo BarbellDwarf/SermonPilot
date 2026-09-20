@@ -13,15 +13,60 @@ import {
 } from "../components/ui";
 import {
   brandingApi,
+  cloudApi,
   isLive,
   serverPathApi,
   uploadApi,
+  type ApiCloudFile,
+  type ApiCloudRemote,
   type BrandingItem,
   type ServerPathStat,
 } from "../api/client";
+import { CloudBrowser, MOCK_REMOTES } from "../components/CloudBrowser";
 
 type UploadTab = "browser" | "server";
 type AutoEditMode = "interactive" | "auto";
+
+function CloudFileDialog({
+  open,
+  name,
+  onClose,
+  onUse,
+}: {
+  open: boolean;
+  name: string;
+  onClose: () => void;
+  onUse: (item: ApiCloudFile) => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [path, setPath] = useState("");
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (open && !el.open) el.showModal();
+    if (!open && el.open) el.close();
+  }, [open]);
+  useEffect(() => {
+    if (open) setPath("");
+  }, [open, name]);
+  return (
+    <dialog
+      ref={ref}
+      aria-label={`Browse ${name}`}
+      onClose={onClose}
+      onClick={(e) => {
+        if (e.target === ref.current) onClose();
+      }}
+      className="w-[min(44rem,calc(100vw-2rem))] max-h-[85vh] overflow-y-auto rounded-xl border border-line bg-surface p-4 text-mist backdrop:bg-black/60"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">Pick a cloud file</h2>
+        <Button onClick={onClose}>Close</Button>
+      </div>
+      <CloudBrowser name={name} path={path} onPath={setPath} onUse={onUse} />
+    </dialog>
+  );
+}
 
 // Static full SermonAudio eventType enum (mirrors ui.sermon_metadata.DEFAULT_EVENT_TYPES).
 const eventTypes = [
@@ -84,6 +129,9 @@ export function NewSermon() {
   const [toast, setToast] = useState<string | null>(null);
   const [fileObj, setFileObj] = useState<File | null>(null);
   const [queuedJob, setQueuedJob] = useState<string | null>(null);
+  const [cloudRemotes, setCloudRemotes] = useState<ApiCloudRemote[]>([]);
+  const [cloudPick, setCloudPick] = useState("");
+  const [cloudOpen, setCloudOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const cardInput = useRef<HTMLInputElement>(null);
 
@@ -117,6 +165,23 @@ export function NewSermon() {
       .then((r) => setBrandingFiles(r.items))
       .catch(() => setBrandingFiles([]));
   }, []);
+
+  // Cloud remotes for the "From cloud" picker.
+  useEffect(() => {
+    if (!isLive) {
+      setCloudRemotes(MOCK_REMOTES);
+      return;
+    }
+    void cloudApi
+      .list()
+      .then((r) => setCloudRemotes(r.items))
+      .catch(() => setCloudRemotes([]));
+  }, []);
+
+  const useCloudFile = (item: ApiCloudFile) => {
+    setServerPath(`remote:${cloudPick}:${item.path}`);
+    setCloudOpen(false);
+  };
 
   const remotePath = /^remote:[A-Za-z0-9._-]{1,64}:.+$/.test(serverPath.trim());
   const pathLooksValid =
@@ -454,19 +519,67 @@ export function NewSermon() {
         ) : (
           <div className="mt-3 flex flex-col gap-3">
             <Field label="Server path" htmlFor="server-path" hint="Absolute path on the processing machine, or a cloud reference remote:<name>:<path> from Settings > Cloud Mounts.">
-              <input
-                id="server-path"
-                value={serverPath}
-                onChange={(e) => setServerPath(e.target.value)}
-                placeholder="/media/sample-sermon.mp3 or remote:drive:sermons/sample.mp3"
-                inputMode="text"
-                autoComplete="off"
-                className={inputCls}
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  id="server-path"
+                  value={serverPath}
+                  onChange={(e) => setServerPath(e.target.value)}
+                  placeholder="/media/sample-sermon.mp3 or remote:drive:sermons/sample.mp3"
+                  inputMode="text"
+                  autoComplete="off"
+                  className={`${inputCls} min-w-0 flex-1`}
+                />
+                {remotePath ? (
+                  <span
+                    className="inline-flex max-w-full items-center gap-1 rounded-full border border-info px-2.5 py-1 text-xs text-info"
+                    title={serverPath.trim()}
+                  >
+                    Cloud file:
+                    <span className="truncate font-mono">{serverPath.trim()}</span>
+                  </span>
+                ) : null}
+              </div>
             </Field>
             <div className="flex flex-wrap gap-2" aria-live="polite" aria-label="Path validation">
               {serverChips}
             </div>
+
+            <div className="rounded-md border border-line bg-ink p-3">
+              <p className="text-xs font-semibold text-muted">From cloud</p>
+              <div className="mt-2 flex flex-wrap items-end gap-2">
+                <div className="min-w-[12rem] flex-1">
+                  <label htmlFor="cloud-pick" className="sr-only">
+                    Cloud remote
+                  </label>
+                  <select
+                    id="cloud-pick"
+                    value={cloudPick}
+                    onChange={(e) => setCloudPick(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="">Choose a remote…</option>
+                    {cloudRemotes.map((r) => (
+                      <option key={r.name} value={r.name}>
+                        {r.name} · {r.provider}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={() => setCloudOpen(true)}
+                  disabled={!cloudPick}
+                >
+                  Browse cloud
+                </Button>
+              </div>
+              {cloudRemotes.length === 0 ? (
+                <p className="mt-1 text-xs text-muted">
+                  No cloud remotes yet. Connect one in Settings › Cloud Mounts.
+                </p>
+              ) : null}
+            </div>
+
             {isLive ? (
               <p className="text-xs text-muted">
                 The server checks the path exists, then queues the real pipeline against it. Nothing is copied.
@@ -647,6 +760,15 @@ export function NewSermon() {
           </p>
         </div>
       </div>
+
+      {cloudPick ? (
+        <CloudFileDialog
+          open={cloudOpen}
+          name={cloudPick}
+          onClose={() => setCloudOpen(false)}
+          onUse={useCloudFile}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={confirmReset}
