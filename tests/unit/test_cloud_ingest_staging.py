@@ -21,10 +21,12 @@ from ui.job_executors import execute_sermon_processing_job  # noqa: E402
 
 
 class _FakeResponse:
-    def __init__(self, data: bytes, on_read=None) -> None:
+    def __init__(self, data: bytes, on_read=None, content_type: str | None = None) -> None:
         self._data = data
         self._pos = 0
         self.headers = {"Content-Length": str(len(data))}
+        if content_type:
+            self.headers["Content-Type"] = content_type
         self._on_read = on_read
 
     def read(self, size: int = -1) -> bytes:
@@ -162,6 +164,44 @@ def test_cancel_mid_download_cleans_partial(staging, monkeypatch):
     with pytest.raises(JobCancelledError):
         execute_sermon_processing_job(job)
 
+    assert list(staging.iterdir()) == []
+
+
+def test_http_html_content_type_is_a_fetch_failure(staging, monkeypatch):
+    seen: list[str] = []
+    _stub_process(monkeypatch, seen)
+    monkeypatch.setattr(
+        job_executors,
+        "_open_url",
+        lambda url: _FakeResponse(b"<html>not found</html>", content_type="text/html"),
+    )
+
+    result = execute_sermon_processing_job(
+        _job(_params("http://127.0.0.1:9999/talks/a.mkv"))
+    )
+
+    assert result.success is False
+    assert "cloud fetch failed" in result.error
+    assert not seen
+    assert list(staging.iterdir()) == []
+
+
+def test_http_html_body_is_a_fetch_failure(staging, monkeypatch):
+    seen: list[str] = []
+    _stub_process(monkeypatch, seen)
+    monkeypatch.setattr(
+        job_executors,
+        "_open_url",
+        lambda url: _FakeResponse(b"  <!DOCTYPE html><html></html>"),
+    )
+
+    result = execute_sermon_processing_job(
+        _job(_params("http://127.0.0.1:9999/talks/a.mkv"))
+    )
+
+    assert result.success is False
+    assert "cloud fetch failed" in result.error
+    assert not seen
     assert list(staging.iterdir()) == []
 
 
