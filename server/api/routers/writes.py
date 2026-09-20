@@ -191,6 +191,7 @@ def _enqueue_sermon_processing(
             "auto_edit_enabled": bool(auto_edit_enabled),
             "auto_edit_mode": auto_edit_mode,
             "output_dir": output_dir,
+            "user_id": user_id,
         },
         priority=8,
         user_id=user_id,

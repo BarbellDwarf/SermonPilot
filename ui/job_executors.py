@@ -8,12 +8,15 @@ Each executor is responsible for performing the work and updating job progress.
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
+import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 # Add project paths for imports
 ui_dir = Path(__file__).parent
@@ -120,6 +123,140 @@ def _cleanup_job_files(config: dict, uploaded_file_path: str | None,
             shutil.rmtree(processing_dir, ignore_errors=True)
     except Exception as e:
         logger.warning("Failed to clean up job files: %s", e)
+
+
+_CLOUD_CHUNK_BYTES = 1024 * 1024
+
+
+def _is_cloud_source(source: str | None) -> bool:
+    """True when a job source is a webdav URL or an unresolved remote: ref."""
+    if not source:
+        return False
+    return source.startswith(("http://", "https://", "remote:"))
+
+
+def _staging_root(create: bool = True) -> Path:
+    """Local staging root for cloud-sourced downloads.
+
+    $SERMONPILOT_CLOUD_STAGING_DIR wins; otherwise a cloud_ingest/ subdir of
+    the disk cache root that also holds the upload work area.
+    """
+    override = os.environ.get("SERMONPILOT_CLOUD_STAGING_DIR")
+    root = Path(override).expanduser() if override else (default_cache_root() / "cloud_ingest")
+    if create:
+        root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _keep_cloud_staging() -> bool:
+    return os.environ.get("SERMONPILOT_KEEP_CLOUD_STAGING", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def _safe_staging_name(url: str, original_name: str | None = None) -> str:
+    """Derive a filesystem-safe basename, preserving the extension."""
+    raw = original_name or unquote(urlparse(url).path.rsplit("/", 1)[-1])
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", Path(raw).name).strip()
+    return safe or "cloud_source"
+
+
+def _open_url(url: str):
+    return urllib.request.urlopen(url, timeout=60)  # noqa: S310 - URL from our own resolver
+
+
+def _download_url(url: str, dest: Path, job: Job, cancel_check: Callable[[], None]) -> int:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    received = 0
+    logged_pct = -1
+    with _open_url(url) as resp:
+        headers = getattr(resp, "headers", None)
+        raw_length = headers.get("Content-Length") if headers else None
+        try:
+            total = int(raw_length) if raw_length else 0
+        except (TypeError, ValueError):
+            total = 0
+        with open(dest, "wb") as out:
+            while True:
+                if cancel_check:
+                    cancel_check()
+                chunk = resp.read(_CLOUD_CHUNK_BYTES)
+                if not chunk:
+                    break
+                out.write(chunk)
+                received += len(chunk)
+                if total:
+                    file_pct = int(min(100, received * 100 / total))
+                    job.update_progress(5 + file_pct * 0.2)
+                    if file_pct == 100 or file_pct - logged_pct >= 5:
+                        msg = f"Fetching from cloud ({file_pct}%)"
+                        job.update_progress(5 + file_pct * 0.2, msg)
+                        logged_pct = file_pct
+                else:
+                    job.update_progress(5, f"Fetching from cloud ({received // (1024 * 1024)} MB)")
+    return received
+
+
+def _stage_cloud_source(
+    job: Job, source: str, cancel_check: Callable[[], None],
+) -> tuple[str | None, str | None]:
+    """Download an http(s)/remote: source into the local staging dir.
+
+    Returns (local_path, error). On failure the partial file is removed and the
+    error string is the real reason. Raises JobCancelledError on cancellation.
+    """
+    if source.startswith("remote:"):
+        user_id = _job_user_id(job)
+        if not user_id:
+            return None, "cloud source requires a user id (none on job parameters)"
+        try:
+            from server.api.routers.cloud import resolve_remote_uri
+
+            source = resolve_remote_uri(user_id, source)
+        except Exception as exc:
+            return None, f"cloud fetch failed: could not resolve remote path: {exc}"
+        if not source:
+            return None, "cloud fetch failed: invalid remote path"
+
+    if not source.startswith(("http://", "https://")):
+        return None, f"cloud fetch failed: unsupported source URL: {source}"
+
+    form_data = (job.parameters or {}).get("form_data") or {}
+    dest = _staging_root() / _safe_staging_name(source, form_data.get("original_filename"))
+    job.add_log(f"Staging cloud source to {dest}")
+    try:
+        _download_url(source, dest, job, cancel_check)
+    except JobCancelledError:
+        dest.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        dest.unlink(missing_ok=True)
+        return None, f"cloud fetch failed: {exc}"
+    return str(dest), None
+
+
+def _cleanup_staged_file(path: str | None, job: Job, keep: bool = False) -> None:
+    """Remove a staged cloud download plus its derived siblings, staging-dir-only."""
+    if not path:
+        return
+    try:
+        root = _staging_root(create=False).resolve()
+        candidate = Path(path).resolve()
+        if candidate.parent != root:
+            return
+        targets = (
+            candidate,
+            candidate.with_name(f"{candidate.stem}_enhanced{candidate.suffix}"),
+            candidate.with_name(f"{candidate.stem}_cleaned.wav"),
+        )
+        for target in targets:
+            if keep and target == candidate:
+                continue
+            target.unlink(missing_ok=True)
+        if not keep:
+            job.add_log(f"Removed staged cloud copy {candidate.name}")
+    except Exception as exc:
+        logger.warning("Failed to clean up staged cloud file: %s", exc)
 
 
 def _inject_sermon_updater_config(config: dict) -> None:
@@ -423,7 +560,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
         - config: full config dict (used to set globals in sermon_updater)
     """
     processing_temp_dir: str | None = None
-    cleanup_state = {"keep_upload": True}
+    cleanup_state = {"keep_upload": True, "staged_path": None}
     try:
         if job.cancelled or job.status == JobStatus.CANCELLED:
             raise JobCancelledError("Job cancelled by user")
@@ -446,6 +583,20 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
                 message="No uploaded file path provided",
                 error="Missing uploaded_file_path in job parameters"
             )
+
+        if _is_cloud_source(uploaded_file_path):
+            staged_path, fetch_error = _stage_cloud_source(
+                job, uploaded_file_path, lambda: _raise_if_job_cancelled(job)
+            )
+            if fetch_error:
+                job.add_log(fetch_error)
+                return JobResult(
+                    success=False,
+                    message="Cloud fetch failed",
+                    error=fetch_error,
+                )
+            cleanup_state["staged_path"] = staged_path
+            uploaded_file_path = staged_path
 
         if not Path(uploaded_file_path).exists():
             return JobResult(
@@ -580,6 +731,9 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
         _cleanup_job_files(
             parameters.get('config') or {}, uploaded_file_path, processing_temp_dir, job,
             keep_upload=cleanup_state["keep_upload"],
+        )
+        _cleanup_staged_file(
+            cleanup_state["staged_path"], job, keep=_keep_cloud_staging(),
         )
 
 

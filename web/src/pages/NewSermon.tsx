@@ -638,7 +638,7 @@ export function NewSermon() {
 
             {isLive ? (
               <p className="text-xs text-muted">
-                The server checks the path exists, then queues the real pipeline against it. Nothing is copied.
+                The server checks the path exists, then queues the real pipeline against it. Local paths are read in place; cloud sources are fetched into the server's work area for processing, then removed.
               </p>
             ) : null}
           </div>
