@@ -10,9 +10,11 @@ stored key; restores reject masked values.
 from __future__ import annotations
 
 import base64
+import os
 import secrets
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -335,24 +337,51 @@ def backup_full_db(user=Depends(require_user)):
 
 files_router = APIRouter(prefix="/api/me/files", tags=["files"])
 
+_APP_ROOT = Path(__file__).resolve().parents[3]
 
-def _user_output_dir(user: dict) -> Path:
+_DEFAULT_OUTPUT_DIR = "processed_sermons"
+
+
+def _resolve_output_path(value: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = _APP_ROOT / path
+    return path.resolve()
+
+
+def resolve_user_output_dir(user: dict) -> Path:
+    """Absolute output root for a user: settings.general.output_dir or the default."""
     with writable_conn() as conn:
         general = get_setting(conn, user["id"], "settings.general")
     configured = ""
     if isinstance(general, dict):
-        configured = str(general.get("output_dir") or "")
-    if not configured:
-        configured = "processed_sermons"
-    path = Path(configured)
-    if not path.is_absolute():
-        path = Path(__file__).resolve().parents[2] / path
-    return path.resolve()
+        configured = str(general.get("output_dir") or "").strip()
+    return _resolve_output_path(configured or _DEFAULT_OUTPUT_DIR)
+
+
+def validate_output_path(value: str) -> Path:
+    """Resolve and validate an output directory; raise 422 when unusable."""
+    raw = (value or "").strip()
+    if not raw:
+        raise HTTPException(status_code=422, detail="output_dir cannot be empty")
+    resolved = _resolve_output_path(raw)
+    if resolved == Path(resolved.anchor):
+        raise HTTPException(status_code=422, detail="output_dir cannot be the filesystem root")
+    if resolved.exists():
+        if not resolved.is_dir():
+            raise HTTPException(status_code=422, detail="output_dir is not a directory")
+        return resolved
+    parent = resolved.parent
+    while not parent.exists() and parent != parent.parent:
+        parent = parent.parent
+    if not parent.is_dir():
+        raise HTTPException(status_code=422, detail="output_dir has no writable parent")
+    return resolved
 
 
 @files_router.get("")
 def list_user_files(user=Depends(require_user)):
-    root = _user_output_dir(user)
+    root = resolve_user_output_dir(user)
     items = []
     if root.is_dir():
         for entry in sorted(root.iterdir(), key=lambda p: p.name.lower()):
@@ -367,7 +396,7 @@ def list_user_files(user=Depends(require_user)):
 
 @files_router.get("/download")
 def download_file(path: str, user=Depends(require_user)):
-    root = _user_output_dir(user).resolve()
+    root = resolve_user_output_dir(user).resolve()
     candidate = (root / path).resolve()
     if not str(candidate).startswith(str(root)):
         raise HTTPException(status_code=400, detail="path escapes the output directory")
@@ -376,3 +405,129 @@ def download_file(path: str, user=Depends(require_user)):
     from fastapi.responses import FileResponse
 
     return FileResponse(str(candidate), filename=candidate.name)
+
+
+class OutputDirBody(BaseModel):
+    output_dir: str = ""
+
+
+@me_router.get("/output-dir")
+def get_output_dir(user=Depends(require_user)):
+    with writable_conn() as conn:
+        general = get_setting(conn, user["id"], "settings.general")
+    configured = ""
+    if isinstance(general, dict):
+        configured = str(general.get("output_dir") or "").strip()
+    if configured:
+        return {"output_dir": configured, "source": "user"}
+    return {"output_dir": _DEFAULT_OUTPUT_DIR, "source": "default"}
+
+
+@me_router.put("/output-dir")
+def put_output_dir(body: OutputDirBody, user=Depends(require_user)):
+    validate_output_path(body.output_dir)
+    stored = body.output_dir.strip()
+    with writable_conn() as conn:
+        general = get_setting(conn, user["id"], "settings.general")
+        general = dict(general) if isinstance(general, dict) else {}
+        general["output_dir"] = stored
+        set_setting(conn, user["id"], "settings.general", general)
+    return {"output_dir": stored, "source": "user"}
+
+
+explore_router = APIRouter(prefix="/api/files", tags=["files"])
+
+
+def _within_roots(candidate: Path, roots: list[Path]) -> bool:
+    return any(candidate == root or root in candidate.parents for root in roots)
+
+
+def _matching_root(candidate: Path, roots: list[Path]) -> Path:
+    for root in roots:
+        if candidate == root or root in candidate.parents:
+            return root
+    return roots[0]
+
+
+def _root_entries(roots: list[Path]) -> list[dict[str, str]]:
+    return [{"name": root.name or str(root), "path": str(root)} for root in roots]
+
+
+def _explore_roots(user: dict) -> list[Path]:
+    candidates = [
+        resolve_user_output_dir(user),
+        Path(os.environ.get("SERMONPILOT_RAW_INGEST", "/data/raw_ingest")),
+    ]
+    try:
+        from ui.config_utils import resolve_config
+
+        configured = str(resolve_config().get("input_directory") or "").strip()
+        if configured:
+            candidates.append(Path(configured))
+    except Exception:
+        pass
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        resolved = _resolve_output_path(str(candidate))
+        if str(resolved) in seen:
+            continue
+        seen.add(str(resolved))
+        roots.append(resolved)
+    return roots
+
+
+def _entry_size(entry: os.DirEntry) -> int | None:
+    try:
+        return entry.stat(follow_symlinks=True).st_size
+    except OSError:
+        return None
+
+
+@explore_router.get("/explore")
+def explore_files(path: str = "", user=Depends(require_user)) -> dict[str, Any]:
+    roots = _explore_roots(user)
+    raw = (path or "").strip()
+    if raw:
+        target = _resolve_output_path(raw)
+        if not _within_roots(target, roots):
+            raise HTTPException(status_code=403, detail="path is outside the allowed roots")
+        if not target.is_dir():
+            raise HTTPException(status_code=404, detail="directory not found")
+    else:
+        target = roots[0]
+    root = _matching_root(target, roots)
+    items: list[dict[str, Any]] = []
+    if target.is_dir():
+        try:
+            entries = list(os.scandir(target))
+        except OSError as exc:
+            raise HTTPException(status_code=404, detail=f"cannot read directory: {exc}") from exc
+        for entry in entries:
+            if entry.name.startswith("."):
+                continue
+            try:
+                is_dir = entry.is_dir(follow_symlinks=True)
+            except OSError:
+                is_dir = False
+            items.append(
+                {
+                    "name": entry.name,
+                    "path": str(Path(entry.path)),
+                    "type": "dir" if is_dir else "file",
+                    "size": None if is_dir else _entry_size(entry),
+                }
+            )
+    items.sort(key=lambda item: (0 if item["type"] == "dir" else 1, item["name"].lower()))
+    parent = (
+        str(target.parent)
+        if target != root and _within_roots(target.parent, roots)
+        else None
+    )
+    return {
+        "path": str(target),
+        "parent": parent,
+        "root": str(root),
+        "roots": _root_entries(roots),
+        "items": items,
+    }
