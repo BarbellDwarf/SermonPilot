@@ -206,7 +206,7 @@ def _write_remote(user_id: str | None, name: str, provider: str, keys: dict[str,
 
 
 def _validate_remote(user_id: str | None, name: str) -> None:
-    proc = _run(user_id, "lsf", f"{name}:", "--max-items", "1", check=False, timeout=120)
+    proc = _run(user_id, "lsf", f"{name}:", "--max-depth", "1", check=False, timeout=120)
     if proc.returncode != 0:
         _run(user_id, "config", "delete", name, check=False)
         detail = (proc.stderr or proc.stdout or "remote did not validate").strip()
@@ -1052,8 +1052,8 @@ def browse_remote(name: str, body: BrowseBody, user=Depends(require_user)) -> di
         user.get("id"),
         "lsf",
         f"{name}:{sub}",
-        "--max-items",
-        "200",
+        "--max-depth",
+        "1",
         "--format",
         "sp",
         check=False,
@@ -1062,4 +1062,5 @@ def browse_remote(name: str, body: BrowseBody, user=Depends(require_user)) -> di
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "could not list remote").strip()
         raise HTTPException(status_code=422, detail=detail[:500])
-    return {"path": sub, "items": _parse_lsf(proc.stdout)}
+    items = _parse_lsf(proc.stdout)[:200]  # cap payload size per browse call
+    return {"path": sub, "items": items}
