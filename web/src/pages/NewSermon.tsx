@@ -32,11 +32,15 @@ type AutoEditMode = "interactive" | "auto";
 function CloudFileDialog({
   open,
   name,
+  provider,
+  attachedDriveId,
   onClose,
   onUse,
 }: {
   open: boolean;
   name: string;
+  provider?: string;
+  attachedDriveId?: string;
   onClose: () => void;
   onUse: (item: ApiCloudFile) => void;
 }) {
@@ -65,7 +69,14 @@ function CloudFileDialog({
         <h2 className="text-lg font-semibold">Pick a cloud file</h2>
         <Button onClick={onClose}>Close</Button>
       </div>
-      <CloudBrowser name={name} path={path} onPath={setPath} onUse={onUse} />
+      <CloudBrowser
+        name={name}
+        path={path}
+        onPath={setPath}
+        onUse={onUse}
+        provider={provider}
+        attachedDriveId={attachedDriveId}
+      />
     </dialog>
   );
 }
@@ -829,6 +840,8 @@ export function NewSermon() {
         <CloudFileDialog
           open={cloudOpen}
           name={cloudPick}
+          provider={cloudRemotes.find((r) => r.name === cloudPick)?.provider}
+          attachedDriveId={cloudRemotes.find((r) => r.name === cloudPick)?.team_drive}
           onClose={() => setCloudOpen(false)}
           onUse={useCloudFile}
         />

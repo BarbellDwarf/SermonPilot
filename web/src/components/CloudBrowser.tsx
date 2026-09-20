@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { cloudApi, isLive, type ApiCloudFile, type ApiCloudRemote } from "../api/client";
+import { useState } from "react";
+import { cloudApi, isLive, type ApiCloudFile, type ApiCloudRemote, type ApiSharedDrive } from "../api/client";
 import { Button, Chip } from "./ui";
 
 export let MOCK_REMOTES: ApiCloudRemote[] = [
@@ -16,6 +17,24 @@ export function mockRemoveRemote(name: string): void {
   MOCK_REMOTES = MOCK_REMOTES.filter((r) => r.name !== name);
 }
 
+export const MOCK_SHARED_DRIVES: ApiSharedDrive[] = [
+  { id: "0ABCdef", name: "Church Media" },
+  { id: "0GHIjkl", name: "Archives" },
+];
+
+export function mockAttachSharedDrive(name: string, driveId: string): void {
+  MOCK_REMOTES = MOCK_REMOTES.map((r) => (r.name === name ? { ...r, team_drive: driveId } : r));
+}
+
+export function mockDetachSharedDrive(name: string): void {
+  MOCK_REMOTES = MOCK_REMOTES.map((r) => {
+    if (r.name !== name) return r;
+    const next = { ...r };
+    delete next.team_drive;
+    return next;
+  });
+}
+
 const MOCK_TREE: Record<string, ApiCloudFile[]> = {
   "": [
     { name: "sermons", path: "sermons", type: "directory", size: null },
@@ -27,6 +46,12 @@ const MOCK_TREE: Record<string, ApiCloudFile[]> = {
   ],
   "sermons/2026": [
     { name: "september.mp3", path: "september.mp3", type: "file", size: 51_200_000 },
+  ],
+};
+
+const MOCK_DRIVE_TREE: Record<string, ApiCloudFile[]> = {
+  "": [
+    { name: "shared-sermon.mp3", path: "shared-sermon.mp3", type: "file", size: 47_500_000 },
   ],
 };
 
@@ -51,18 +76,35 @@ export function CloudBrowser({
   path,
   onPath,
   onUse,
+  provider,
+  attachedDriveId,
 }: {
   name: string;
   path: string;
   onPath: (p: string) => void;
   onUse: (item: ApiCloudFile) => void;
+  provider?: string;
+  attachedDriveId?: string;
 }) {
-  const browse = useQuery({
-    queryKey: ["cloud", "browse", name, path],
+  const [drive, setDrive] = useState<ApiSharedDrive | null>(null);
+  const driveId = drive?.id;
+  const isDrive = provider === "drive";
+  const sharedQuery = useQuery({
+    queryKey: ["cloud", "shared-drives", name],
     queryFn: () =>
       isLive
-        ? cloudApi.browse(name, path)
-        : Promise.resolve({ path, items: MOCK_TREE[path] ?? [] }),
+        ? cloudApi.sharedDrives(name)
+        : Promise.resolve({ items: MOCK_SHARED_DRIVES }),
+    enabled: isDrive,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const browse = useQuery({
+    queryKey: ["cloud", "browse", name, path, driveId ?? ""],
+    queryFn: () =>
+      isLive
+        ? cloudApi.browse(name, path, driveId)
+        : Promise.resolve({ path, items: (driveId ? MOCK_DRIVE_TREE : MOCK_TREE)[path] ?? [] }),
     staleTime: 5_000,
   });
   const items = [...(browse.data?.items ?? [])].sort((a, b) => {
@@ -71,21 +113,86 @@ export function CloudBrowser({
   });
   const segments = path ? path.split("/") : [];
   const parent = segments.slice(0, -1).join("/");
+  const sharedDrives = sharedQuery.data?.items ?? [];
+  const selectDrive = (next: ApiSharedDrive) => {
+    setDrive((cur) => (cur?.id === next.id ? null : next));
+    onPath("");
+  };
 
   return (
     <div className="mt-3 rounded-lg border border-line bg-ink p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-semibold">
           Browsing <span className="font-mono text-accent">{name}</span>
+          {drive ? <span className="text-muted"> (shared drive: {drive.name})</span> : null}
         </p>
-        <Button onClick={() => onPath(parent)} disabled={!path}>
-          Up one level
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {drive ? (
+            <Button
+              onClick={() => {
+                setDrive(null);
+                onPath("");
+              }}
+            >
+              Back to My Drive
+            </Button>
+          ) : null}
+          <Button onClick={() => onPath(parent)} disabled={!path}>
+            Up one level
+          </Button>
+        </div>
       </div>
       <p className="mt-1 text-xs text-muted">
         Pick a file, then choose <span className="font-semibold text-mist">Use this file</span> to
         start a new sermon with it.
       </p>
+
+      {isDrive ? (
+        <details className="mt-2 rounded-md border border-line p-2">
+          <summary className="cursor-pointer text-xs font-semibold text-muted">
+            Shared with me
+          </summary>
+          {sharedQuery.isError ? (
+            <p role="alert" className="mt-2 text-xs text-danger">
+              {(sharedQuery.error as Error).message}
+            </p>
+          ) : sharedQuery.isPending ? (
+            <p className="mt-2 text-xs text-muted" role="status">
+              Loading shared drives…
+            </p>
+          ) : sharedDrives.length === 0 ? (
+            <p className="mt-2 text-xs text-muted">No shared drives on this account.</p>
+          ) : (
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {sharedDrives.map((d) => {
+                const active = drive?.id === d.id;
+                const attached = attachedDriveId === d.id;
+                return (
+                  <li key={d.id}>
+                    <button
+                      type="button"
+                      onClick={() => selectDrive(d)}
+                      aria-pressed={active}
+                      className={`rounded border px-2 py-1 text-left text-xs ${
+                        active ? "border-accent text-mist" : "border-line text-muted hover:text-mist"
+                      }`}
+                    >
+                      <span className="block font-semibold">{d.name}</span>
+                      <span className="block font-mono text-[10px]">
+                        {d.id}
+                        {attached ? " · attached" : ""}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <p className="mt-2 text-xs text-muted">
+            Walk a shared drive here, then attach it from Cloud Mounts to use its files.
+          </p>
+        </details>
+      ) : null}
       <nav aria-label="Folder path" className="mt-2 flex flex-wrap items-center gap-1 text-xs">
         <button
           type="button"

@@ -10,7 +10,15 @@ import {
   type ApiCloudRemote,
 } from "../api/client";
 import { Button, Chip, ConfirmDialog, Field, SectionCard, inputCls } from "./ui";
-import { CloudBrowser, MOCK_REMOTES, mockAddRemote, mockRemoveRemote } from "./CloudBrowser";
+import {
+  CloudBrowser,
+  MOCK_REMOTES,
+  MOCK_SHARED_DRIVES,
+  mockAddRemote,
+  mockAttachSharedDrive,
+  mockDetachSharedDrive,
+  mockRemoveRemote,
+} from "./CloudBrowser";
 
 const NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
 const S3_PROVIDERS = new Set(["s3"]);
@@ -51,12 +59,16 @@ function FolderIcon() {
 function RemoteRow({
   remote,
   active,
+  sharedOpen,
   onBrowse,
+  onShared,
   onDelete,
 }: {
   remote: ApiCloudRemote;
   active: boolean;
+  sharedOpen: boolean;
   onBrowse: () => void;
+  onShared: () => void;
   onDelete: () => void;
 }) {
   const ping = useQuery({
@@ -80,8 +92,24 @@ function RemoteRow({
       <div className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold">{remote.name}</span>
         <span className="block font-mono text-xs text-muted">{remote.provider}</span>
+        {remote.team_drive ? (
+          <span className="mt-1 inline-flex items-center gap-1 text-xs text-muted">
+            <Chip tone="info">shared drive</Chip>
+            <span className="font-mono">{remote.team_drive}</span>
+          </span>
+        ) : null}
       </div>
       <Chip tone={tone}>{status}</Chip>
+      {remote.provider === "drive" ? (
+        <Button
+          variant={sharedOpen ? "primary" : "secondary"}
+          onClick={onShared}
+          aria-pressed={sharedOpen}
+          aria-label={`Shared drives for ${remote.name}`}
+        >
+          Shared drives
+        </Button>
+      ) : null}
       <Button
         variant={active ? "primary" : "secondary"}
         onClick={onBrowse}
@@ -95,6 +123,92 @@ function RemoteRow({
         Delete
       </Button>
     </li>
+  );
+}
+
+function SharedDrivesPanel({
+  remote,
+  onAttach,
+  onDetach,
+  attaching,
+  detaching,
+  error,
+}: {
+  remote: ApiCloudRemote;
+  onAttach: (driveId: string) => void;
+  onDetach: () => void;
+  attaching: boolean;
+  detaching: boolean;
+  error: string;
+}) {
+  const query = useQuery({
+    queryKey: ["cloud", "shared-drives", remote.name],
+    queryFn: () =>
+      isLive
+        ? cloudApi.sharedDrives(remote.name)
+        : Promise.resolve({ items: MOCK_SHARED_DRIVES }),
+    staleTime: 30_000,
+    retry: false,
+  });
+  const drives = query.data?.items ?? [];
+  return (
+    <div className="rounded-md border border-line bg-ink p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold">
+          Shared drives for <span className="font-mono text-accent">{remote.name}</span>
+        </p>
+        {remote.team_drive ? (
+          <Button variant="secondary" onClick={onDetach} disabled={detaching}>
+            {detaching ? "Detaching…" : "Detach"}
+          </Button>
+        ) : null}
+      </div>
+      <p className="mt-1 text-xs text-muted">
+        {remote.team_drive
+          ? "Attached: this remote currently points at the shared drive below."
+          : "Attaching makes this remote point at the shared drive, replacing My Drive."}
+      </p>
+      {query.isError ? (
+        <p role="alert" className="mt-2 text-xs text-danger">
+          {(query.error as Error).message}
+        </p>
+      ) : query.isPending ? (
+        <p className="mt-2 text-xs text-muted" role="status">
+          Loading shared drives…
+        </p>
+      ) : drives.length === 0 ? (
+        <p className="mt-2 text-xs text-muted">No shared drives on this account.</p>
+      ) : (
+        <ul className="mt-2 flex flex-col gap-2">
+          {drives.map((d) => {
+            const attached = remote.team_drive === d.id;
+            return (
+              <li key={d.id} className="flex flex-wrap items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-sm">{d.name}</span>
+                <span className="font-mono text-xs text-muted">{d.id}</span>
+                {attached ? (
+                  <Chip tone="ok">attached</Chip>
+                ) : (
+                  <Button
+                    variant="primary"
+                    onClick={() => onAttach(d.id)}
+                    disabled={attaching}
+                    aria-label={`Attach ${d.name} to ${remote.name}`}
+                  >
+                    Attach
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {error ? (
+        <p role="alert" className="mt-2 text-xs text-danger">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -138,6 +252,8 @@ export function CloudMountsSection({
   const [clientSecret, setClientSecret] = useState("");
   const [keys, setKeys] = useState<KeysForm>(EMPTY_KEYS);
   const [browseName, setBrowseName] = useState<string | null>(null);
+  const [sharedName, setSharedName] = useState<string | null>(null);
+  const [sharedError, setSharedError] = useState("");
   const [path, setPath] = useState("");
   const [pendingDelete, setPendingDelete] = useState<ApiCloudRemote | null>(null);
 
@@ -203,9 +319,34 @@ export function CloudMountsSection({
         setBrowseName(null);
         setPath("");
       }
+      if (sharedName === name) setSharedName(null);
       invalidate();
     },
     onError: (e) => show(`Could not delete: ${(e as Error).message}`),
+  });
+
+  const attachDriveMutation = useMutation({
+    mutationFn: (vars: { name: string; driveId: string }): Promise<unknown> =>
+      isLive
+        ? cloudApi.attachSharedDrive(vars.name, vars.driveId)
+        : Promise.resolve(mockAttachSharedDrive(vars.name, vars.driveId)),
+    onSuccess: (_data, vars) => {
+      setSharedError("");
+      show(`Attached shared drive to ${vars.name}.`);
+      invalidate();
+    },
+    onError: (e) => setSharedError((e as Error).message),
+  });
+
+  const detachDriveMutation = useMutation({
+    mutationFn: (name: string): Promise<unknown> =>
+      isLive ? cloudApi.detachSharedDrive(name) : Promise.resolve(mockDetachSharedDrive(name)),
+    onSuccess: (_data, name) => {
+      setSharedError("");
+      show(`Detached shared drive from ${name}.`);
+      invalidate();
+    },
+    onError: (e) => setSharedError((e as Error).message),
   });
 
   useEffect(() => {
@@ -649,9 +790,15 @@ export function CloudMountsSection({
             key={r.name}
             remote={r}
             active={browseName === r.name}
+            sharedOpen={sharedName === r.name}
             onBrowse={() => {
               setBrowseName((cur) => (cur === r.name ? null : r.name));
+              if (sharedName === r.name) setSharedName(null);
               setPath("");
+            }}
+            onShared={() => {
+              setSharedError("");
+              setSharedName((cur) => (cur === r.name ? null : r.name));
             }}
             onDelete={() => setPendingDelete(r)}
           />
@@ -661,8 +808,36 @@ export function CloudMountsSection({
         <p className="mt-2 text-xs text-muted">No cloud remotes yet. Connect a provider above.</p>
       ) : null}
 
+      {sharedName
+        ? (() => {
+            const remote = remotes.find((r) => r.name === sharedName);
+            if (!remote) return null;
+            return (
+              <div className="mt-3">
+                <SharedDrivesPanel
+                  remote={remote}
+                  attaching={attachDriveMutation.isPending}
+                  detaching={detachDriveMutation.isPending}
+                  error={sharedError}
+                  onAttach={(driveId) =>
+                    attachDriveMutation.mutate({ name: remote.name, driveId })
+                  }
+                  onDetach={() => detachDriveMutation.mutate(remote.name)}
+                />
+              </div>
+            );
+          })()
+        : null}
+
       {browseName ? (
-        <CloudBrowser name={browseName} path={path} onPath={setPath} onUse={useFile} />
+        <CloudBrowser
+          name={browseName}
+          path={path}
+          onPath={setPath}
+          onUse={useFile}
+          provider={remotes.find((r) => r.name === browseName)?.provider}
+          attachedDriveId={remotes.find((r) => r.name === browseName)?.team_drive}
+        />
       ) : null}
 
       <ConfirmDialog
