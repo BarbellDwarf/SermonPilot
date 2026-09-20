@@ -859,6 +859,7 @@ class OAuthAppBody(BaseModel):
 
 class BrowseBody(BaseModel):
     path: str = ""
+    drive_id: str = ""  # optional: browse a shared drive via the team_drive alias
 
 
 @router.get("/providers")
