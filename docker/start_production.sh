@@ -68,6 +68,10 @@ cleanup() {
         kill -TERM "$STREAMLIT_PID" 2>/dev/null
         wait "$STREAMLIT_PID" 2>/dev/null
     fi
+    if [ -n "$INGEST_WATCHER_PID" ]; then
+        kill -TERM "$INGEST_WATCHER_PID" 2>/dev/null
+        wait "$INGEST_WATCHER_PID" 2>/dev/null
+    fi
     echo "Shutdown complete"
     exit 0
 }
@@ -145,5 +149,16 @@ if [ "${SERMONPILOT_WEB_API:-}" != "0" ]; then
     UVICORN_PID=$!
 fi
 
+# Start the ingest watcher (opt in with INGEST_WATCHER_ENABLED=1; default off).
+# Notify-only: it polls the configured per-user cloud remote and sends Signal
+# alerts. It never downloads or processes anything.
+case "${INGEST_WATCHER_ENABLED:-}" in
+    1|true|TRUE|yes|YES|on|ON)
+        echo "Starting ingest watcher..."
+        python -m src.ingest_watcher &
+        INGEST_WATCHER_PID=$!
+        ;;
+esac
+
 # Wait for background processes
-wait $STREAMLIT_PID ${UVICORN_PID:-}
+wait $STREAMLIT_PID ${UVICORN_PID:-} ${INGEST_WATCHER_PID:-}

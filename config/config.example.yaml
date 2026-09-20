@@ -232,3 +232,45 @@ auto_edit:
     nvenc: true  # Encoder detect chain: nvenc -> vaapi (Intel+AMD) -> libx264
     delete_original: false  # Delete the raw source after a verified transcode and applied edit
     min_source_gb: 2.0  # Only transcode sources at or above this size
+
+# Ingest Watcher (#283) - notify when new recordings land on a cloud remote
+#
+# A standalone poller that watches ONE per-user rclone remote and sends a
+# Signal notification when a new, stable recording appears. It never
+# downloads or processes files. Run it with:
+#
+#   python -m src.ingest_watcher
+#
+# The remote is read through the user's own rclone config at
+# $SERMONPILOT_RCLONE_DIR/<user_id>/config (Settings > Cloud Mounts), so no
+# host bind-mount is involved. Docker launches the watcher only when
+# INGEST_WATCHER_ENABLED is truthy (default off); setting enabled: true alone
+# does not start it inside the container.
+#
+# Signal gateway credentials come from the environment only:
+#   INGEST_SIGNAL_URL         default http://192.0.2.22:8080
+#   INGEST_SIGNAL_SENDER      sending number/group id
+#   INGEST_SIGNAL_RECIPIENTS  comma-separated numbers/group ids
+# With sender/recipients unset the watcher logs "notify disabled" and only
+# records detections in its state file.
+ingest_watcher:
+  enabled: false  # DEFAULT off; existing deployments are unchanged
+  remote: ""  # rclone remote NAME, e.g. "cloud-remote"
+  user_id: ""  # whose rclone config to read; typically the admin account
+  watch_subpath: ""  # path inside the remote, e.g. "Sermon Audio/"
+  poll_interval_seconds: 60
+  # A file must keep the same size AND modtime for this long, across at least
+  # two polls, before it is announced (cloud writes are slow).
+  stability_window_seconds: 300
+  size_floor_mb: 50  # ignore files smaller than this
+  extension_allowlist:  # files outside this list are ignored
+    - .mkv
+    - .mp4
+    - .mov
+    - .m4a
+    - .wav
+  state_file: /data/ingest_watcher_state.json  # first-seen/last-seen bookkeeping
+  signal:
+    url: "${INGEST_SIGNAL_URL}"
+    sender: "${INGEST_SIGNAL_SENDER}"
+    recipients: "${INGEST_SIGNAL_RECIPIENTS}"
