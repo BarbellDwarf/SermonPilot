@@ -189,8 +189,23 @@ def _remote_provider(user_id: str | None, name: str) -> str:
     return ""
 
 
+def _current_team_drive(user_id: str | None, name: str) -> str:
+    parser = _read_config(user_id)
+    if parser.has_section(name) and parser.has_option(name, "team_drive"):
+        return parser.get(name, "team_drive").strip()
+    return ""
+
+
 def _public_remote(user_id: str | None, name: str) -> dict[str, Any]:
-    return {"name": name, "provider": _remote_provider(user_id, name), "status": "configured"}
+    remote: dict[str, Any] = {
+        "name": name,
+        "provider": _remote_provider(user_id, name),
+        "status": "configured",
+    }
+    drive = _current_team_drive(user_id, name)
+    if drive:
+        remote["team_drive"] = drive
+    return remote
 
 
 def _write_remote(user_id: str | None, name: str, provider: str, keys: dict[str, str]) -> None:
@@ -1042,16 +1057,26 @@ def delete_remote(name: str, user=Depends(require_user)) -> None:
     _run(user.get("id"), "config", "delete", name)
 
 
+class SharedDriveBody(BaseModel):
+    drive_id: str
+
+
 @router.post("/remotes/{name}/browse")
-def browse_remote(name: str, body: BrowseBody, user=Depends(require_user)) -> dict[str, Any]:
+def browse_remote(
+    name: str,
+    body: BrowseBody,
+    drive_id: str = "",
+    user=Depends(require_user),
+) -> dict[str, Any]:
     name = _validate_name(name)
     if name not in list_remote_names(user.get("id")):
         raise HTTPException(status_code=404, detail="no such remote")
     sub = (body.path or "").strip("/")
+    target = f"{name},team_drive={drive_id.strip()}:{sub}" if drive_id.strip() else f"{name}:{sub}"
     proc = _run(
         user.get("id"),
         "lsf",
-        f"{name}:{sub}",
+        target,
         "--max-depth",
         "1",
         "--format",
@@ -1064,3 +1089,87 @@ def browse_remote(name: str, body: BrowseBody, user=Depends(require_user)) -> di
         raise HTTPException(status_code=422, detail=detail[:500])
     items = _parse_lsf(proc.stdout)[:200]  # cap payload size per browse call
     return {"path": sub, "items": items}
+
+
+def _require_drive_remote(user_id: str | None, name: str) -> None:
+    name = _validate_name(name)
+    if name not in list_remote_names(user_id):
+        raise HTTPException(status_code=404, detail="no such remote")
+    provider = _remote_provider(user_id, name)
+    if provider != "drive":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "shared drives are only available for drive remotes "
+                f"({name} is {provider or 'unknown'})"
+            ),
+        )
+
+
+def _team_drive_validates(user_id: str | None, name: str) -> bool:
+    proc = _run(
+        user_id, "lsf", f"{name}:", "--max-depth", "1", check=False, timeout=120
+    )
+    return proc.returncode == 0
+
+
+def _restore_team_drive(user_id: str | None, name: str, previous: str) -> None:
+    _run(user_id, "config", "update", name, "team_drive", previous or "", check=False)
+
+
+def parse_shared_drives(text: str) -> list[dict[str, str]]:
+    try:
+        data = json.loads(text or "[]")
+    except ValueError:
+        raise HTTPException(
+            status_code=422, detail="could not parse shared drives listing"
+        ) from None
+    items: list[dict[str, str]] = []
+    for entry in data if isinstance(data, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        drive_id = str(entry.get("id") or "").strip()
+        if not drive_id:
+            continue
+        items.append({"id": drive_id, "name": str(entry.get("name") or drive_id)})
+    return items
+
+
+@router.get("/remotes/{name}/shared-drives")
+def list_shared_drives(name: str, user=Depends(require_user)) -> dict[str, Any]:
+    user_id = user.get("id")
+    _require_drive_remote(user_id, name)
+    name = _validate_name(name)
+    proc = _run(user_id, "backend", "drives", f"{name}:", timeout=120)
+    return {"items": parse_shared_drives(proc.stdout)}
+
+
+@router.post("/remotes/{name}/attach-shared-drive")
+def attach_shared_drive(
+    name: str, body: SharedDriveBody, user=Depends(require_user)
+) -> dict[str, Any]:
+    user_id = user.get("id")
+    _require_drive_remote(user_id, name)
+    name = _validate_name(name)
+    drive_id = (body.drive_id or "").strip()
+    if not drive_id:
+        raise HTTPException(status_code=422, detail="drive_id is required")
+    previous = _current_team_drive(user_id, name)
+    _run(user_id, "config", "update", name, "team_drive", drive_id)
+    if not _team_drive_validates(user_id, name):
+        _restore_team_drive(user_id, name, previous)
+        raise HTTPException(status_code=422, detail="attached drive did not validate; rolled back")
+    return {"ok": True, "name": name, "team_drive": drive_id}
+
+
+@router.post("/remotes/{name}/detach-shared-drive")
+def detach_shared_drive(name: str, user=Depends(require_user)) -> dict[str, Any]:
+    user_id = user.get("id")
+    _require_drive_remote(user_id, name)
+    name = _validate_name(name)
+    previous = _current_team_drive(user_id, name)
+    _run(user_id, "config", "update", name, "team_drive", "")
+    if not _team_drive_validates(user_id, name):
+        _restore_team_drive(user_id, name, previous)
+        raise HTTPException(status_code=422, detail="detach did not validate; rolled back")
+    return {"ok": True, "name": name, "team_drive": ""}

@@ -416,6 +416,12 @@ export interface ApiCloudRemote {
   name: string;
   provider: string;
   status: string;
+  team_drive?: string;
+}
+
+export interface ApiSharedDrive {
+  id: string;
+  name: string;
 }
 
 export interface ApiCloudFile {
@@ -460,11 +466,29 @@ export const cloudApi = {
     send<ApiCloudRemote>("/api/cloud/remotes", "POST", body),
   remove: (name: string) =>
     send<void>(`/api/cloud/remotes/${encodeURIComponent(name)}`, "DELETE"),
-  browse: (name: string, path: string) =>
+  browse: (name: string, path: string, driveId?: string) =>
     send<{ path: string; items: ApiCloudFile[] }>(
-      `/api/cloud/remotes/${encodeURIComponent(name)}/browse`,
+      `/api/cloud/remotes/${encodeURIComponent(name)}/browse${
+        driveId ? `?drive_id=${encodeURIComponent(driveId)}` : ""
+      }`,
       "POST",
       { path },
+    ),
+  sharedDrives: (name: string) =>
+    send<{ items: ApiSharedDrive[] }>(
+      `/api/cloud/remotes/${encodeURIComponent(name)}/shared-drives`,
+      "GET",
+    ),
+  attachSharedDrive: (name: string, drive_id: string) =>
+    send<{ ok: boolean; name: string; team_drive: string }>(
+      `/api/cloud/remotes/${encodeURIComponent(name)}/attach-shared-drive`,
+      "POST",
+      { drive_id },
+    ),
+  detachSharedDrive: (name: string) =>
+    send<{ ok: boolean; name: string; team_drive: string }>(
+      `/api/cloud/remotes/${encodeURIComponent(name)}/detach-shared-drive`,
+      "POST",
     ),
 };
 
