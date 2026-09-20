@@ -31,6 +31,8 @@ def test_explore_default_root_lists_items(client, scoped_setup, tmp_path):
     assert names["sub"]["size"] is None
     assert names["talk.mp3"]["type"] == "file"
     assert names["talk.mp3"]["size"] == 103
+    assert names["talk.mp3"]["modified"]
+    assert names["sub"]["modified"]
     assert names["talk.mp3"]["path"] == str((outdir / "talk.mp3").resolve())
 
     child = client.get(
