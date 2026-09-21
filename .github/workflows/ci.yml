@@ -43,6 +43,11 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
 
+      - name: Test web components
+        run: |
+          cd web
+          npm test
+
       - name: Run fast tests
         # Heavy tests (model downloads, GPU, long audio) are marked with
         # pytest.mark.heavy and skipped here; the T-TESTS ticket makes the
