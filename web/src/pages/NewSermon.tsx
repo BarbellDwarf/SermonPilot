@@ -26,6 +26,7 @@ import {
   type ServerPathStat,
 } from "../api/client";
 import { CloudBrowser, MOCK_REMOTES } from "../components/CloudBrowser";
+import { Combobox } from "../components/Combobox";
 import { FileExplorerDialog } from "../components/FileExplorer";
 
 type UploadTab = "browser" | "server";
@@ -777,23 +778,30 @@ export function NewSermon() {
             <input id="ns-title" value={meta.title} onChange={set("title")} placeholder="Sample teaching title" className={inputCls} />
           </Field>
           <Field label="Speaker (required)" htmlFor="ns-speaker">
-            <input id="ns-speaker" list="ns-speaker-options" value={meta.speaker} onChange={set("speaker")} placeholder="Speaker name" autoComplete="off" className={inputCls} />
-            <datalist id="ns-speaker-options">
-              {facetSpeakerOptions.map((f) => (
-                <option key={f.name} value={f.name} />
-              ))}
-            </datalist>
+            <Combobox
+              id="ns-speaker"
+              value={meta.speaker}
+              onChange={(value) => setMeta((m) => ({ ...m, speaker: value }))}
+              options={facetSpeakerOptions}
+              placeholder="Speaker name"
+              ariaLabel="Speaker"
+              className={inputCls}
+              required
+            />
           </Field>
           <Field label="Date (required)" htmlFor="ns-date">
             <input id="ns-date" type="date" value={meta.date} onChange={set("date")} className={inputCls} />
           </Field>
           <Field label="Series" htmlFor="ns-series">
-            <input id="ns-series" list="ns-series-options" value={meta.series} onChange={set("series")} placeholder="Sample Series A" autoComplete="off" className={inputCls} />
-            <datalist id="ns-series-options">
-              {facetSeriesOptions.map((f) => (
-                <option key={f.name} value={f.name} />
-              ))}
-            </datalist>
+            <Combobox
+              id="ns-series"
+              value={meta.series}
+              onChange={(value) => setMeta((m) => ({ ...m, series: value }))}
+              options={facetSeriesOptions}
+              placeholder="Sample Series A"
+              ariaLabel="Series"
+              className={inputCls}
+            />
           </Field>
           <Field label="Event type" htmlFor="ns-event">
             <select id="ns-event" value={meta.eventType} onChange={set("eventType")} className={inputCls}>
