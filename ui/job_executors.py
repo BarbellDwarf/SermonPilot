@@ -327,6 +327,7 @@ def _stage_cloud_source(
             return None, "cloud fetch failed: remote path has no file"
         dest = _staging_root() / _safe_staging_name(sub, form_data.get("original_filename"))
         job.add_log(f"Staging cloud source {name}:{sub} to {dest}")
+        job.request_persist()
         try:
             error = _rclone_copyto(user_id, name, sub, dest, job, cancel_check)
         except JobCancelledError:
@@ -345,6 +346,7 @@ def _stage_cloud_source(
 
     dest = _staging_root() / _safe_staging_name(source, form_data.get("original_filename"))
     job.add_log(f"Staging cloud source to {dest}")
+    job.request_persist()
     try:
         _download_url(source, dest, job, cancel_check)
     except JobCancelledError:
@@ -887,6 +889,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
 
         job.update_progress(10, f"Processing: {Path(uploaded_file_path).name}")
         job.add_log(f"Audio file: {uploaded_file_path}")
+        job.request_persist()
 
         # Call the real process_new_sermon
         from sermon_updater import process_new_sermon
@@ -935,6 +938,8 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             _stamp_sermon_owner(sermon_id, _job_user_id(job))
             plan_status = result.get('edit_plan_status')
             if cloud_output and plan_status != 'pending_review':
+                job.add_log("Uploading output to cloud...")
+                job.request_persist()
                 dest, upload_error = _upload_cloud_output(
                     job, cloud_output, cloud_output_dir or '',
                     lambda: _raise_if_job_cancelled(job),
@@ -1071,6 +1076,7 @@ def execute_auto_edit_job(job: Job) -> JobResult:
 
         job.update_progress(10, f"Processing: {Path(audio_file).name}")
         job.add_log(f"Audio file: {audio_file}")
+        job.request_persist()
 
         from sermon_updater import process_new_sermon
 

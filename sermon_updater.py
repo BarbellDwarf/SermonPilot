@@ -1944,9 +1944,15 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         enhanced_audio_path, transcript_length, error
     """
     def _report(progress, msg):
+        # Every progress report is also a cancellation checkpoint. Long stages
+        # that report progress (transcription segments, metadata, upload) then
+        # poll the cancel hook at the same cadence as their own progress.
+        _check_cancelled()
         if progress_callback is not None:
             try:
                 progress_callback(progress, msg)
+            except ProcessingCancelledError:
+                raise
             except Exception:
                 pass
 
@@ -2152,6 +2158,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     processor.config['clear_custom_file'] = custom_file
                 enhanced_audio_path = temp_dir / "enhanced_audio.wav"
                 _report(15, f"Running audio enhancement ({processor.enhancement_method})...")
+                # Cancellation bound: DeepFilterNet/Clear process_sermon_audio is
+                # one native call that cannot be interrupted mid-flight. The
+                # cancel hook is checked immediately before and after it, so a
+                # cancel during enhancement is observed when the call returns,
+                # bounded by the enhancement call itself, not by the queue poll.
                 success, proc_result = processor.process_sermon_audio(
                     str(process_input),
                     str(enhanced_audio_path)
@@ -2339,6 +2350,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         config=config,
                         backend_override=transcription_backend,
                         progress_callback=_report,
+                        cancel_check=_check_cancelled,
                     )
                     transcript = _join_segment_texts(transcript_segments)
                     if not transcript:
@@ -2353,8 +2365,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                             config=config,
                             backend_override=transcription_backend,
                             progress_callback=_report,
+                            cancel_check=_check_cancelled,
                         )
                         transcript = _join_segment_texts(transcript_segments)
+                except ProcessingCancelledError:
+                    raise
                 except TranscriptionError as e:
                     logger.error("Transcription failed: %s", e)
                     raise RuntimeError(f"Transcription failed: {e}") from e
