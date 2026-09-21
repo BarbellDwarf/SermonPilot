@@ -1,10 +1,23 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { MediaPlayer } from "../components/MediaPlayer";
 import { ReviewPanel } from "../components/ReviewPanel";
+import { TranscriptViewer } from "../components/TranscriptViewer";
 import { sermonStatusLabel, sermonStatusTone } from "./Library";
 import { Button, Card, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast, buttonClass } from "../components/ui";
-import { QueryError, useSermonDetail, useSermonPlan, useSermonTranscript, useUserFiles } from "../api/hooks";
+import { QueryError, useSermonDetail, useSermonMedia, useSermonPlan, useSermonTranscript, useUserFiles } from "../api/hooks";
 import { api, authFetch, isLive, writeApi } from "../api/client";
+
+const FILE_PREVIEW_KIND: Record<string, string> = {
+  audio: "processed",
+  processed_audio: "processed",
+  enhanced_audio: "enhanced",
+  original_audio: "source",
+  original_video: "source",
+  keeper_audio: "keeper",
+  transcript: "transcript",
+  transcript_timestamps: "transcript_timestamps",
+};
 
 export function LibraryDetail() {
   const { id } = useParams();
@@ -18,9 +31,28 @@ export function LibraryDetail() {
 
   const { data: detail, isLoading, error, retry } = useSermonDetail(id);
   const { plan, isLoading: planLoading, error: planError, retry: retryPlan } = useSermonPlan(id);
+  const media = useSermonMedia(id, isLive && !deleted);
   const transcript = useSermonTranscript(id, transcriptOpen);
   const userFiles = useUserFiles(isLive && !!detail && (detail?.files.length ?? 0) > 0);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [seek, setSeek] = useState<{ sec: number; n: number } | null>(null);
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
+
+  const requestSeek = (sec: number) =>
+    setSeek((previous) => ({ sec, n: (previous?.n ?? 0) + 1 }));
+
+  const processedAvailable = media.byKind["processed"]?.available ?? false;
+  const sourceAvailable = media.byKind["source"]?.available ?? false;
+  const primaryKind = media.primary;
+  const primaryItem = primaryKind ? media.byKind[primaryKind] : undefined;
+  const audioKind = media.audio && media.audio !== primaryKind ? media.audio : null;
+  const audioItem = audioKind ? media.byKind[audioKind] : undefined;
+  const primaryEmpty = processedAvailable
+    ? "Preview unavailable."
+    : sourceAvailable
+      ? "Rendered output not available."
+      : "Not rendered yet. The source may have been removed after processing.";
+  const timestampsAvailable = media.byKind["transcript_timestamps"]?.available ?? false;
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -223,6 +255,59 @@ export function LibraryDetail() {
         </Card>
       </section>
 
+      <section aria-labelledby="media-h">
+        <h2 id="media-h" className="mb-2 text-lg font-semibold">Media</h2>
+        {!isLive ? (
+          <EmptyState
+            title="Preview available in the live console"
+            body="Connect the API bridge to play the source and rendered media for this teaching."
+          />
+        ) : media.isLoading ? (
+          <Card>
+            <p className="font-mono text-xs text-muted">Loading media…</p>
+          </Card>
+        ) : media.error ? (
+          <QueryError message={media.error} onRetry={media.retry} />
+        ) : (
+          <Card>
+            <p className="text-sm font-semibold">{primaryItem?.label ?? "Rendered media"}</p>
+            <div className="mt-2">
+              <MediaPlayer
+                sermonId={id ?? sermon.id}
+                kind={primaryKind ?? "processed"}
+                contentType={primaryItem?.content_type}
+                available={!!primaryItem?.available}
+                emptyMessage={primaryEmpty}
+                markers={
+                  plan
+                    ? [
+                        { atSec: plan.startSec, label: "Start" },
+                        { atSec: plan.endSec, label: "End" },
+                      ]
+                    : []
+                }
+                seekToSec={seek?.sec ?? null}
+                seekNonce={seek?.n}
+              />
+            </div>
+            {audioItem?.available ? (
+              <div className="mt-4">
+                <p className="text-sm font-semibold">{audioItem.label}</p>
+                <div className="mt-1">
+                  <MediaPlayer
+                    sermonId={id ?? sermon.id}
+                    kind={audioKind ?? "keeper"}
+                    contentType={audioItem.content_type}
+                    available
+                    label={audioItem.label}
+                  />
+                </div>
+              </div>
+            ) : null}
+          </Card>
+        )}
+      </section>
+
       {planLoading ? (
         <SkeletonList rows={2} />
       ) : planError ? (
@@ -259,32 +344,37 @@ export function LibraryDetail() {
                 <p className="font-mono text-xs text-muted">Loading transcript…</p>
               ) : transcript.error ? (
                 <p className="font-mono text-xs text-danger">{transcript.error}</p>
-              ) : transcript.data && transcript.data.transcript ? (
+              ) : (transcript.data && transcript.data.transcript) || timestampsAvailable ? (
                 <>
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs text-muted">
-                      {transcript.data.total_length} characters
-                      {transcript.data.truncated ? " (truncated)" : ""}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void navigator.clipboard
-                          ?.writeText(transcript.data?.transcript ?? "")
-                          .then(() => {
-                            setCopied(true);
-                            window.setTimeout(() => setCopied(false), 2000);
-                          })
-                          .catch(() => showToast("Copy failed."));
-                      }}
-                      className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted"
-                    >
-                      {copied ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-                  <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md border border-line bg-ink p-3 font-mono text-xs text-mist [overflow-wrap:anywhere]">
-                    {transcript.data.transcript}
-                  </pre>
+                  {transcript.data?.transcript ? (
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-xs text-muted">
+                        {transcript.data.total_length} characters
+                        {transcript.data.truncated ? " (truncated)" : ""}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigator.clipboard
+                            ?.writeText(transcript.data?.transcript ?? "")
+                            .then(() => {
+                              setCopied(true);
+                              window.setTimeout(() => setCopied(false), 2000);
+                            })
+                            .catch(() => showToast("Copy failed."));
+                        }}
+                        className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted"
+                      >
+                        {copied ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+                  ) : null}
+                  <TranscriptViewer
+                    id={id ?? sermon.id}
+                    plainText={transcript.data?.transcript ?? ""}
+                    timestampsAvailable={timestampsAvailable}
+                    onSeek={requestSeek}
+                  />
                 </>
               ) : (
                 <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
@@ -317,21 +407,44 @@ export function LibraryDetail() {
                 {detail.files.map((f) => {
                   const rel = relOf(f.file_path);
                   const name = f.file_path.split("/").pop() || f.file_path;
+                  const key = `${f.file_type}:${f.file_path}`;
+                  const previewKind = FILE_PREVIEW_KIND[f.file_type];
                   return (
-                    <li key={`${f.file_type}:${f.file_path}`} className="flex flex-wrap items-center gap-2 [overflow-wrap:anywhere]">
-                      <span className="min-w-0 flex-1">
-                        {f.file_type} · {rel || f.file_path}
-                        {f.file_size != null ? ` · ${f.file_size} bytes` : ""}
-                      </span>
-                      {rel ? (
-                        <button
-                          type="button"
-                          onClick={() => downloadOne(rel, name)}
-                          disabled={downloading === rel}
-                          className="inline-flex min-h-[44px] shrink-0 items-center rounded-md border border-line px-3 font-sans text-xs font-medium text-mist transition-colors hover:border-muted disabled:opacity-45"
-                        >
-                          {downloading === rel ? "Fetching…" : "Download"}
-                        </button>
+                    <li key={key} className="flex flex-col gap-2 [overflow-wrap:anywhere]">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="min-w-0 flex-1">
+                          {f.file_type} · {rel || f.file_path}
+                          {f.file_size != null ? ` · ${f.file_size} bytes` : ""}
+                        </span>
+                        {previewKind && isLive ? (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewKey((current) => (current === key ? null : key))}
+                            aria-expanded={previewKey === key}
+                            className="inline-flex min-h-[44px] shrink-0 items-center rounded-md border border-line px-3 font-sans text-xs font-medium text-mist transition-colors hover:border-muted"
+                          >
+                            {previewKey === key ? "Hide preview" : "Preview"}
+                          </button>
+                        ) : null}
+                        {rel ? (
+                          <button
+                            type="button"
+                            onClick={() => downloadOne(rel, name)}
+                            disabled={downloading === rel}
+                            className="inline-flex min-h-[44px] shrink-0 items-center rounded-md border border-line px-3 font-sans text-xs font-medium text-mist transition-colors hover:border-muted disabled:opacity-45"
+                          >
+                            {downloading === rel ? "Fetching…" : "Download"}
+                          </button>
+                        ) : null}
+                      </div>
+                      {previewKind && previewKey === key ? (
+                        <MediaPlayer
+                          sermonId={id ?? sermon.id}
+                          kind={previewKind}
+                          contentType={media.byKind[previewKind]?.content_type}
+                          available={!!media.byKind[previewKind]?.available}
+                          emptyMessage="Preview unavailable."
+                        />
                       ) : null}
                     </li>
                   );
@@ -342,7 +455,7 @@ export function LibraryDetail() {
         ) : (
           <EmptyState
             title="Nothing attached yet"
-            body="Rendered audio, source media, and the transcript will be listed here in a later phase."
+            body="No source, rendered, or transcript files are recorded for this teaching."
           />
         )}
       </section>

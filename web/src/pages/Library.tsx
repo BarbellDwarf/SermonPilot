@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { type LibrarySermon, type LibrarySermonStatus } from "../mock/data";
 import { Chip, EmptyState, PageHeader, SkeletonList } from "../components/ui";
+import { MediaPlayer } from "../components/MediaPlayer";
 import { QueryError, useLibrarySermons, type LibrarySort } from "../api/hooks";
 import { isLive } from "../api/client";
 
@@ -26,12 +27,13 @@ const sortOptions: { id: LibrarySort; label: string }[] = [
 ];
 
 function SermonCard({ sermon }: { sermon: LibrarySermon }) {
+  const [open, setOpen] = useState(false);
   return (
-    <li>
+    <li className="flex flex-col rounded-lg border border-line bg-surface p-4">
       <Link
         to={`/library/${sermon.id}`}
         aria-label={`${sermon.title} by ${sermon.speaker}, ${sermonStatusLabel[sermon.status]}`}
-        className="block rounded-lg border border-line bg-surface p-4 text-left transition-colors hover:border-muted"
+        className="block text-left transition-colors hover:opacity-90"
       >
         <div className="flex flex-wrap items-center gap-2">
           <Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>
@@ -45,6 +47,24 @@ function SermonCard({ sermon }: { sermon: LibrarySermon }) {
           {sermon.speaker} · {sermon.date}
         </p>
       </Link>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="mt-2 inline-flex min-h-[36px] w-fit items-center rounded-md border border-line px-2 font-mono text-xs text-muted transition-colors hover:border-muted hover:text-mist"
+      >
+        {open ? "Hide preview" : "Preview"}
+      </button>
+      {open ? (
+        <div className="mt-2">
+          <MediaPlayer
+            sermonId={sermon.id}
+            kind="processed"
+            available={isLive}
+            emptyMessage={isLive ? "Not rendered yet." : "Preview available in the live console."}
+          />
+        </div>
+      ) : null}
     </li>
   );
 }

@@ -144,6 +144,22 @@ NOT started — design at the write-path/render phase.
 (role from /api/auth/me). Future hardening: per-sermon file scoping when per-user
 output dirs fully land; until then the output dir IS the user boundary.
 
+## Media streaming API (range previews, Sep 21)
+
+`GET /api/media/sermons/<id>` lists the artifacts a teaching can preview
+(source, processed, enhanced, keeper, transcript, transcript timestamps,
+and cut snippets) with availability, size, content type, and snippet time
+windows. `GET`/`HEAD /api/media/sermons/<id>/<kind>` streams them with
+byte-range support (`Accept-Ranges: bytes`; 206 + `Content-Range` for
+`bytes=a-b`, `bytes=a-`, `bytes=-n`; 416 when unsatisfiable), chunked
+reads so large files are never loaded whole, and a JSON 404 when the
+artifact is absent. Paths come only from `sermon_files` / `metadata.json`,
+are scoped to the caller's own sermons, and must resolve under the user's
+output dir, raw ingest dir, or configured input/output directories (403
+otherwise, so a tampered row cannot read arbitrary files). Media tags
+cannot set an `Authorization` header, so these routes also accept the
+session token as `?token=`; no other route does.
+
 ## Release readiness (v1.7.0 console scope, P7)
 
 Live in the console now:
