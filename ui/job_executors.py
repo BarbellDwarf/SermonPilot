@@ -909,7 +909,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             skip_audio=bool(form_data.get('skip_audio', False)),
             skip_ai_generation=bool(form_data.get('skip_ai_generation', False)),
             whisper_model=form_data.get('whisper_model', 'large'),
-            transcription_backend=form_data.get('transcription_backend', 'whisper_local'),
+            transcription_backend=form_data.get('transcription_backend'),
             use_clean_audio=bool(form_data.get('use_clean_audio', False)),
             clean_audio_script=form_data.get('clean_audio_script',
                                             '~/Documents/Repositories/deepfilternet/clean-audio.py'),
@@ -1091,8 +1091,7 @@ def execute_auto_edit_job(job: Job) -> JobResult:
             'skip_audio': bool(form_data.get('skip_audio', False)),
             'skip_ai_generation': bool(form_data.get('skip_ai_generation', False)),
             'whisper_model': form_data.get('whisper_model', 'large'),
-            'transcription_backend': form_data.get('transcription_backend',
-                                                    'whisper_local'),
+            'transcription_backend': form_data.get('transcription_backend'),
             'use_clean_audio': bool(form_data.get('use_clean_audio', False)),
             'clean_audio_script': form_data.get(
                 'clean_audio_script',
@@ -1548,8 +1547,7 @@ def execute_auto_edit_apply_job(job: Job) -> JobResult:
                 skip_audio=bool(form_data.get('skip_audio', False)),
                 skip_ai_generation=bool(form_data.get('skip_ai_generation', False)),
                 whisper_model=form_data.get('whisper_model', 'large'),
-                transcription_backend=form_data.get('transcription_backend',
-                                                    'whisper_local'),
+                transcription_backend=form_data.get('transcription_backend'),
                 use_clean_audio=bool(form_data.get('use_clean_audio', False)),
                 clean_audio_script=form_data.get(
                     'clean_audio_script',
