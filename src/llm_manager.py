@@ -6,6 +6,7 @@ Supports OpenAI and Ollama providers with configurable primary and fallback opti
 import logging
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,56 @@ except Exception:
 import requests
 
 logger = logging.getLogger(__name__)
+
+
+class LLMTimeoutError(TimeoutError):
+    """Raised when an LLM call exceeds its wall-clock deadline."""
+
+    def __init__(self, message: str, timeout: float | None = None):
+        super().__init__(message)
+        self.timeout = timeout
+
+
+_DEFAULT_CALL_TIMEOUT_SECONDS = 120.0
+_DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
+_DEFAULT_TOTAL_BUDGET_SECONDS = 300.0
+
+
+def _positive_float(value: Any, default: float) -> float:
+    """Parse a positive timeout value, falling back to ``default``."""
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _call_with_deadline(fn, timeout: float, label: str):
+    """Run ``fn`` on a daemon thread and fail once ``timeout`` elapses.
+
+    Requests carry their own connect/read timeouts, but not every client
+    honours them. This wall-clock bound is the backstop that keeps a hung
+    provider call from wedging the pipeline. The worker is a daemon thread,
+    so a still-blocked call cannot hold up interpreter shutdown.
+    """
+    if not timeout or timeout <= 0:
+        return fn()
+    box: dict[str, Any] = {}
+
+    def _target() -> None:
+        try:
+            box["value"] = fn()
+        except BaseException as exc:  # re-raised on the caller's thread
+            box["error"] = exc
+
+    worker = threading.Thread(target=_target, name=f"llm-call-{label}", daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        raise LLMTimeoutError(f"{label} timed out after {timeout:.0f}s", timeout)
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
 
 # Import database for cost tracking
 try:
@@ -150,10 +201,16 @@ class OllamaProvider(LLMProvider):
         self.temperature = float(config.get('temperature', 0.7))
         self.max_tokens = int(config.get('max_tokens', 2048))
         self.num_ctx = int(config.get('num_ctx', 8192))
+        self.timeout = _positive_float(
+            config.get('timeout_seconds'), _DEFAULT_CALL_TIMEOUT_SECONDS
+        )
+        self.connect_timeout = _positive_float(
+            config.get('connect_timeout_seconds'), _DEFAULT_CONNECT_TIMEOUT_SECONDS
+        )
 
         try:
             import ollama
-            self.ollama = ollama.Client(host=self.host, timeout=300)
+            self.ollama = ollama.Client(host=self.host, timeout=self.timeout)
         except ImportError:
             logger.error("Ollama library not installed. Install with: pip install ollama")
             self.ollama = None
@@ -270,7 +327,7 @@ class OllamaProvider(LLMProvider):
                 f"{self.host}/api/chat",
                 json=payload,
                 headers=self._headers(),
-                timeout=300
+                timeout=(self.connect_timeout, self.timeout)
             )
 
             if response.status_code == 200:
@@ -307,6 +364,9 @@ class OpenAIProvider(LLMProvider):
         self.temperature = float(config.get('temperature', 0.7))
         self.max_tokens = int(config.get('max_tokens', 2048))
         self.extra_headers = config.get('extra_headers') or None
+        self.timeout = _positive_float(
+            config.get('timeout_seconds'), _DEFAULT_CALL_TIMEOUT_SECONDS
+        )
 
         if not self.api_key:
             raise ValueError(
@@ -314,7 +374,7 @@ class OpenAIProvider(LLMProvider):
                 f"(config api_key or {self.ENV_KEY})"
             )
 
-        client_kwargs = {'api_key': self.api_key}
+        client_kwargs = {'api_key': self.api_key, 'timeout': self.timeout, 'max_retries': 0}
         if self.base_url:
             client_kwargs['base_url'] = self.base_url
         if self.extra_headers:
@@ -438,6 +498,17 @@ class LLMManager:
         self.validator_provider = None
         self.operation_providers: dict[str, LLMProvider] = {}
 
+        llm_config = config.get('llm', {}) if isinstance(config, dict) else {}
+        self.call_timeout_seconds = _positive_float(
+            llm_config.get('timeout_seconds'), _DEFAULT_CALL_TIMEOUT_SECONDS
+        )
+        self.connect_timeout_seconds = _positive_float(
+            llm_config.get('connect_timeout_seconds'), _DEFAULT_CONNECT_TIMEOUT_SECONDS
+        )
+        self.total_budget_seconds = _positive_float(
+            llm_config.get('total_budget_seconds'), _DEFAULT_TOTAL_BUDGET_SECONDS
+        )
+
         self._initialize_providers()
 
     def _initialize_providers(self):
@@ -547,6 +618,106 @@ class LLMManager:
         else:
             raise ValueError(f"Unsupported provider type: {provider_type}")
 
+    def _describe_provider(self, provider) -> str:
+        """Provider identity for logs and progress lines."""
+        name = self._get_provider_name(provider)
+        model = self._get_provider_model(provider)
+        host = getattr(provider, 'host', None) or getattr(provider, 'base_url', None)
+        if host:
+            return f"{name}(model={model}, host={host})"
+        return f"{name}(model={model})"
+
+    def _run_provider_call(
+        self,
+        provider: LLMProvider,
+        messages: list[dict[str, str]],
+        operation: str,
+        sermon_id: str | None,
+        deadline: float,
+    ) -> str:
+        """Call one provider with a bounded wall-clock timeout and full logging."""
+        label = self._describe_provider(provider)
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            raise LLMTimeoutError(
+                f"LLM total budget of {self.total_budget_seconds:.0f}s exhausted "
+                f"before calling {label}",
+                self.total_budget_seconds,
+            )
+        call_timeout = min(self.call_timeout_seconds, remaining)
+        logger.info(
+            "LLM call starting: operation=%s provider=%s timeout=%.0fs",
+            operation or "chat",
+            label,
+            call_timeout,
+        )
+        started = time.time()
+        try:
+            response = _call_with_deadline(
+                lambda: provider.chat(messages), call_timeout, label
+            )
+        except LLMTimeoutError:
+            duration_ms = int((time.time() - started) * 1000)
+            logger.error(
+                "LLM call timed out: operation=%s provider=%s after %.2fs",
+                operation or "chat",
+                label,
+                duration_ms / 1000,
+            )
+            self._log_api_usage(
+                provider=self._get_provider_name(provider),
+                model=self._get_provider_model(provider),
+                messages=messages,
+                response="",
+                duration_ms=duration_ms,
+                operation=operation,
+                sermon_id=sermon_id,
+                status="error",
+                error_message=f"timeout after {call_timeout:.0f}s",
+            )
+            raise
+        except Exception as e:
+            duration_ms = int((time.time() - started) * 1000)
+            logger.warning(
+                "LLM call failed: operation=%s provider=%s after %.2fs: %s",
+                operation or "chat",
+                label,
+                duration_ms / 1000,
+                e,
+            )
+            self._log_api_usage(
+                provider=self._get_provider_name(provider),
+                model=self._get_provider_model(provider),
+                messages=messages,
+                response="",
+                duration_ms=duration_ms,
+                operation=operation,
+                sermon_id=sermon_id,
+                status="error",
+                error_message=str(e),
+            )
+            raise
+
+        duration_ms = int((time.time() - started) * 1000)
+        logger.info(
+            "LLM call finished: operation=%s provider=%s duration=%.2fs chars=%d",
+            operation or "chat",
+            label,
+            duration_ms / 1000,
+            len(response or ""),
+        )
+        self._log_api_usage(
+            provider=self._get_provider_name(provider),
+            model=self._get_provider_model(provider),
+            messages=messages,
+            response=response,
+            duration_ms=duration_ms,
+            operation=operation,
+            sermon_id=sermon_id,
+            status="success",
+        )
+        return response
+
     def chat(
         self,
         messages: list[dict[str, str]],
@@ -555,6 +726,11 @@ class LLMManager:
     ) -> str:
         """
         Send a chat request using primary provider with fallback support.
+
+        Every provider call is bounded by ``llm.timeout_seconds`` (default 120)
+        and the whole primary/fallback sequence by ``llm.total_budget_seconds``
+        (default 300), so a hung or slow provider can never wedge the caller.
+        Each call logs the provider, model, host, and duration.
 
         Args:
             messages: List of message dictionaries with 'role' and 'content' keys
@@ -565,117 +741,72 @@ class LLMManager:
             Response content string
 
         Raises:
-            Exception: If both primary and fallback providers fail
+            LLMTimeoutError: If every attempt exceeded its deadline.
+            Exception: If both primary and fallback providers fail.
         """
         start_time = time.time()
+        deadline = start_time + self.total_budget_seconds
+        timed_out = False
 
         operation_provider = self.operation_providers.get(operation) if operation else None
         if operation_provider:
             try:
-                response = operation_provider.chat(messages)
-                duration_ms = int((time.time() - start_time) * 1000)
-
-                self._log_api_usage(
-                    provider=self._get_provider_name(operation_provider),
-                    model=self._get_provider_model(operation_provider),
-                    messages=messages,
-                    response=response,
-                    duration_ms=duration_ms,
-                    operation=operation,
-                    sermon_id=sermon_id,
-                    status="success"
+                response = self._run_provider_call(
+                    operation_provider, messages, operation, sermon_id, deadline
                 )
-
                 logger.info(
-                    f"Operation provider succeeded for {operation}: "
-                    f"{type(operation_provider).__name__}"
+                    "Operation provider succeeded for %s: %s",
+                    operation,
+                    type(operation_provider).__name__,
                 )
                 return response
+            except LLMTimeoutError as e:
+                timed_out = True
+                logger.warning("Operation provider for %s timed out: %s", operation, e)
             except Exception as e:
-                logger.warning(f"Operation provider for {operation} failed: {e}")
-                duration_ms = int((time.time() - start_time) * 1000)
-                self._log_api_usage(
-                    provider=self._get_provider_name(operation_provider),
-                    model=self._get_provider_model(operation_provider),
-                    messages=messages,
-                    response="",
-                    duration_ms=duration_ms,
-                    operation=operation,
-                    sermon_id=sermon_id,
-                    status="error",
-                    error_message=str(e)
-                )
+                logger.warning("Operation provider for %s failed: %s", operation, e)
 
         if self.primary_provider:
             try:
-                response = self.primary_provider.chat(messages)
-                duration_ms = int((time.time() - start_time) * 1000)
-
-                # Log the successful API usage
-                self._log_api_usage(
-                    provider=self._get_provider_name(self.primary_provider),
-                    model=self._get_provider_model(self.primary_provider),
-                    messages=messages,
-                    response=response,
-                    duration_ms=duration_ms,
-                    operation=operation,
-                    sermon_id=sermon_id,
-                    status="success"
+                response = self._run_provider_call(
+                    self.primary_provider, messages, operation, sermon_id, deadline
                 )
-
-                logger.info(f"Primary provider succeeded: {type(self.primary_provider).__name__}")
+                logger.info(
+                    "Primary provider succeeded: %s", type(self.primary_provider).__name__
+                )
                 return response
+            except LLMTimeoutError as e:
+                timed_out = True
+                logger.warning("Primary provider timed out: %s", e)
             except Exception as e:
-                logger.warning(f"Primary provider failed: {e}")
+                logger.warning("Primary provider failed: %s", e)
 
-                # Log the failed API usage
-                duration_ms = int((time.time() - start_time) * 1000)
-                self._log_api_usage(
-                    provider=self._get_provider_name(self.primary_provider),
-                    model=self._get_provider_model(self.primary_provider),
-                    messages=messages,
-                    response="",
-                    duration_ms=duration_ms,
-                    operation=operation,
-                    sermon_id=sermon_id,
-                    status="error",
-                    error_message=str(e)
-                )
-
-        start_time = time.time()
         for fallback in self.fallback_providers:
+            if time.time() >= deadline:
+                logger.warning(
+                    "LLM total budget of %.0fs exhausted before fallback %s",
+                    self.total_budget_seconds,
+                    type(fallback).__name__,
+                )
+                break
             try:
-                response = fallback.chat(messages)
-                duration_ms = int((time.time() - start_time) * 1000)
-                self._log_api_usage(
-                    provider=self._get_provider_name(fallback),
-                    model=self._get_provider_model(fallback),
-                    messages=messages,
-                    response=response,
-                    duration_ms=duration_ms,
-                    operation=operation,
-                    sermon_id=sermon_id,
-                    status="success"
+                response = self._run_provider_call(
+                    fallback, messages, operation, sermon_id, deadline
                 )
-                logger.info(f"Fallback provider succeeded: {type(fallback).__name__}")
+                logger.info("Fallback provider succeeded: %s", type(fallback).__name__)
                 return response
+            except LLMTimeoutError as e:
+                timed_out = True
+                logger.warning("Fallback provider timed out: %s", e)
             except Exception as e:
-                logger.error(f"Fallback provider {type(fallback).__name__} failed: {e}")
+                logger.error("Fallback provider %s failed: %s", type(fallback).__name__, e)
 
-                # Log the failed fallback API usage
-                duration_ms = int((time.time() - start_time) * 1000)
-                self._log_api_usage(
-                    provider='fallback',
-                    model='unknown',
-                    messages=messages,
-                    response="",
-                    duration_ms=duration_ms,
-                    operation=operation,
-                    sermon_id=sermon_id,
-                    status="error",
-                    error_message=str(e)
-                )
-
+        if timed_out:
+            raise LLMTimeoutError(
+                f"All LLM providers timed out (total budget "
+                f"{self.total_budget_seconds:.0f}s)",
+                self.total_budget_seconds,
+            )
         error_msg = (
             "All LLM providers failed. Please check your configuration and network connectivity."
         )
@@ -822,7 +953,16 @@ class LLMManager:
 
             # For validation calls, we'll directly call the validator provider but log the usage
             start_time = time.time()
-            response = self.validator_provider.chat(messages)
+            logger.info(
+                "LLM call starting: operation=description_validation provider=%s timeout=%.0fs",
+                self._describe_provider(self.validator_provider),
+                self.call_timeout_seconds,
+            )
+            response = _call_with_deadline(
+                lambda: self.validator_provider.chat(messages),
+                self.call_timeout_seconds,
+                self._describe_provider(self.validator_provider),
+            )
             duration_ms = int((time.time() - start_time) * 1000)
 
             # Log the API usage for validation
@@ -835,6 +975,13 @@ class LLMManager:
                 operation="description_validation",
                 sermon_id=None,  # Validation might not always have a sermon_id
                 status="success"
+            )
+            logger.info(
+                "LLM call finished: operation=description_validation provider=%s "
+                "duration=%.2fs chars=%d",
+                self._describe_provider(self.validator_provider),
+                duration_ms / 1000,
+                len(response or ""),
             )
 
             response = response.strip()
