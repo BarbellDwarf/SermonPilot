@@ -28,7 +28,7 @@ const DEVICES = [
   { id: "cpu", label: "cpu" },
   { id: "cuda", label: "cuda" },
 ];
-const COMPUTE_TYPES = ["float16", "float32", "int8_float16", "int8"];
+const COMPUTE_TYPES = ["auto", "float16", "float32", "int8_float16", "int8"];
 
 const MANAGEABLE_MODELS = [
   { id: "tiny", size: "75 MB" },
@@ -119,7 +119,7 @@ const DEFAULTS: TranscriptionState = {
   backend: "faster_whisper_local",
   localModel: "base",
   device: "auto",
-  computeType: "float16",
+  computeType: "auto",
   language: "en",
   openaiBaseUrl: "https://api.openai.com/v1",
   openaiModel: "whisper-1",
@@ -195,7 +195,11 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
               ))}
             </select>
           </Field>
-          <Field label="Compute type" htmlFor="tr-compute" hint="Floating point precision.">
+          <Field
+            label="Compute type"
+            htmlFor="tr-compute"
+            hint="auto: int8 on cpu, float16 on cuda. Pin one to override the fallback."
+          >
             <select
               id="tr-compute"
               value={cur.computeType}
