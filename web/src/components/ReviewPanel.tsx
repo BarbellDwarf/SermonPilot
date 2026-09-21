@@ -41,6 +41,15 @@ function CutPreview({
 }) {
   const item = media.byKind[kind];
   const available = isLive && !!item?.available;
+  const fallbackKind = media.byKind["keeper"]?.available
+    ? "keeper"
+    : media.byKind["processed"]?.available
+      ? "processed"
+      : media.byKind["source"]?.available
+        ? "source"
+        : null;
+  const fallbackItem = fallbackKind ? media.byKind[fallbackKind] : undefined;
+  const fallbackAvailable = isLive && !!fallbackItem?.available;
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-1 rounded-md border border-line bg-ink p-3">
       {available ? (
@@ -50,6 +59,15 @@ function CutPreview({
           contentType={item?.content_type}
           available
           label={label}
+        />
+      ) : fallbackAvailable && fallbackKind ? (
+        <MediaPlayer
+          sermonId={sermonId}
+          kind={fallbackKind}
+          contentType={fallbackItem?.content_type}
+          available
+          seekToSec={atSec}
+          label={`Seek · ${formatCut(atSec)}`}
         />
       ) : (
         <button
