@@ -282,12 +282,12 @@ BUILTIN_DEFAULTS: dict[str, Any] = {
     "llm": {
         "primary": {
             "provider": "ollama",
-            "ollama": {"host": "http://localhost:11434", "model": "llama3"},
+            "ollama": {"host": "http://localhost:11434"},
         },
         "fallback": {
             "enabled": True,
             "provider": "openai",
-            "ollama": {"host": "http://localhost:11434", "model": "llama3"},
+            "ollama": {"host": "http://localhost:11434"},
         },
     },
     "embeddings": {

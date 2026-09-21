@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 import sermon_updater as su
-from llm_manager import LLMManager, LLMTimeoutError
+from llm_manager import LLMManager, LLMModelNotFoundError, LLMTimeoutError
 
 
 class _HangingProvider:
@@ -39,6 +39,16 @@ class _WorkingProvider:
 
     def chat(self, messages):
         return self.response
+
+
+class _MissingModelProvider:
+    def __init__(self) -> None:
+        self.config: dict = {}
+        self.model = "llama3"
+        self.host = "http://missing.invalid"
+
+    def chat(self, messages):
+        raise LLMModelNotFoundError("llama3", ["glm-5.3-flash:cloud"])
 
 
 def _manager_with(provider) -> LLMManager:
@@ -123,3 +133,76 @@ def test_generate_hashtags_returns_metadata_on_a_normal_call(
 
     assert "#Grace" in hashtags
     assert "#Mercy" in hashtags
+
+
+def test_pipeline_continues_when_model_is_not_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    audio_file = tmp_path / "sermon.mp3"
+    audio_file.write_bytes(b"fake audio bytes")
+    monkeypatch.setattr(su, "config", {"output_directory": str(tmp_path / "out")})
+
+    manager = _manager_with(_MissingModelProvider())
+    monkeypatch.setattr(su, "llm_manager", manager)
+    monkeypatch.setattr(su, "_reuse_existing_transcript", lambda *a, **k: "")
+    monkeypatch.setattr(su, "_reuse_existing_transcript_segments", lambda *a, **k: [])
+    monkeypatch.setattr(
+        su,
+        "transcribe_segments",
+        lambda *a, **k: [{"start": 0.0, "end": 5.0, "text": "grace and mercy"}],
+    )
+
+    with caplog.at_level(logging.WARNING, logger="sermon_updater"):
+        result = su.process_new_sermon(
+            str(audio_file),
+            speaker_name="Test Speaker",
+            recorded_date="2024-01-01",
+            dry_run=True,
+            skip_audio=True,
+        )
+
+    assert result["success"] is True
+    assert any("llama3" in record.message for record in caplog.records)
+    assert any("not available" in record.message for record in caplog.records)
+    assert result["description"] != "Summary generation failed"
+    assert result["title"] == "Sermon by Test Speaker"
+
+
+def test_metadata_stage_deadline_is_enforced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    audio_file = tmp_path / "sermon.mp3"
+    audio_file.write_bytes(b"fake audio bytes")
+    monkeypatch.setattr(su, "config", {"output_directory": str(tmp_path / "out")})
+
+    release = threading.Event()
+    manager = _manager_with(_HangingProvider(release))
+    manager.call_timeout_seconds = 30.0
+    manager.total_budget_seconds = 30.0
+    monkeypatch.setattr(su, "llm_manager", manager)
+    monkeypatch.setattr(su, "_metadata_stage_budget_seconds", lambda: 0.2)
+    monkeypatch.setattr(su, "_reuse_existing_transcript", lambda *a, **k: "")
+    monkeypatch.setattr(su, "_reuse_existing_transcript_segments", lambda *a, **k: [])
+    monkeypatch.setattr(
+        su,
+        "transcribe_segments",
+        lambda *a, **k: [{"start": 0.0, "end": 5.0, "text": "grace and mercy"}],
+    )
+
+    try:
+        with caplog.at_level(logging.WARNING, logger="sermon_updater"):
+            result = su.process_new_sermon(
+                str(audio_file),
+                speaker_name="Test Speaker",
+                recorded_date="2024-01-01",
+                dry_run=True,
+                skip_audio=True,
+            )
+    finally:
+        release.set()
+
+    assert result["success"] is True
+    assert any(
+        "metadata stage exceeded its budget" in record.message for record in caplog.records
+    )
+    assert result["title"] == "Sermon by Test Speaker"
