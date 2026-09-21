@@ -503,15 +503,27 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
             status_code=422, detail=f"missing required fields: {', '.join(missing)}"
         )
     if body.container_path.strip().startswith("remote:"):
-        from server.api.routers.cloud import resolve_remote_uri
+        from server.api.routers.cloud import (
+            list_remote_names,
+            parse_remote_path,
+            remote_file_listable,
+        )
 
-        resolved = resolve_remote_uri(user.get("id"), body.container_path.strip())
-        if not resolved:
+        ref = body.container_path.strip()
+        parsed = parse_remote_path(ref)
+        if not parsed:
             raise HTTPException(status_code=422, detail="invalid remote path")
-        source_path = resolved
-        original_name = body.container_path.strip().rstrip("/").rsplit("/", 1)[-1]
+        remote_name, sub = parsed
+        if remote_name not in list_remote_names(user.get("id")):
+            raise HTTPException(status_code=404, detail=f"no such remote: {remote_name}")
+        if not sub or not remote_file_listable(user.get("id"), remote_name, sub):
+            raise HTTPException(
+                status_code=422, detail=f"remote file not found: {sub or remote_name}"
+            )
+        original_name = sub.rstrip("/").rsplit("/", 1)[-1]
         ext = original_name.rsplit(".", 1)[-1].lower() if "." in original_name else ""
         info = {"size": None, "size_human": "—", "ext": ext, "kind": _kind_for_ext(ext)}
+        source_path = ref
     else:
         if not body.container_path.strip().startswith("/"):
             raise HTTPException(status_code=422, detail="container_path must be absolute")
