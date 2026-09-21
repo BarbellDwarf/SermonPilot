@@ -18,7 +18,7 @@ import {
   type ServiceStatus,
 } from "../mock/data";
 import { Button, Card, useBriefLoading } from "../components/ui";
-import { api, filesApi, isLive, type ApiEditPlan, type ApiJob, type ApiSermonListItem } from "./client";
+import { api, filesApi, isLive, mediaApi, type ApiEditPlan, type ApiJob, type ApiMediaItem, type ApiSermonListItem } from "./client";
 
 export type LibrarySort = "date" | "title" | "duration";
 
@@ -246,6 +246,80 @@ export function useSermonTranscript(id: string | undefined, enabled: boolean) {
     isLoading: live.isPending,
     error: live.isError ? "The transcript could not be loaded." : null,
   };
+}
+
+export interface SermonMediaData {
+  items: ApiMediaItem[];
+  byKind: Record<string, ApiMediaItem>;
+  primary: string | null;
+  audio: string | null;
+  isLoading: boolean;
+  error: string | null;
+  retry: () => void;
+}
+
+export function useSermonMedia(id: string | undefined, enabled = true): SermonMediaData {
+  const live = useQuery({
+    queryKey: ["sermon-media", id],
+    queryFn: () => mediaApi.list(id ?? ""),
+    enabled: isLive && !!id && enabled,
+    staleTime: 15_000,
+  });
+  const items = live.data?.items ?? [];
+  const byKind = useMemo(
+    () => Object.fromEntries(items.map((item) => [item.kind, item])),
+    [items],
+  );
+  if (!isLive) {
+    return {
+      items: [],
+      byKind: {},
+      primary: null,
+      audio: null,
+      isLoading: false,
+      error: null,
+      retry: () => {},
+    };
+  }
+  return {
+    items,
+    byKind,
+    primary: live.data?.primary ?? null,
+    audio: live.data?.audio ?? null,
+    isLoading: live.isPending,
+    error: live.isError ? "Media previews could not be loaded." : null,
+    retry: () => void live.refetch(),
+  };
+}
+
+export interface TranscriptSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export function useTranscriptSegments(id: string | undefined, enabled: boolean) {
+  const live = useQuery({
+    queryKey: ["sermon-timestamps", id],
+    queryFn: () => mediaApi.fetchJson<TranscriptSegment[]>(id ?? "", "transcript_timestamps"),
+    enabled: isLive && !!id && enabled,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const segments = useMemo<TranscriptSegment[]>(() => {
+    const raw = Array.isArray(live.data) ? live.data : [];
+    return raw
+      .map((segment) => ({
+        start: Number(segment.start) || 0,
+        end: Number(segment.end) || 0,
+        text: String(segment.text ?? "").trim(),
+      }))
+      .filter((segment) => segment.text.length > 0);
+  }, [live.data]);
+  if (!isLive) {
+    return { segments: [] as TranscriptSegment[], isLoading: false };
+  }
+  return { segments, isLoading: live.isPending };
 }
 
 export function useSermonPlan(id: string | undefined) {

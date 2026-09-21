@@ -509,6 +509,42 @@ export const libraryApi = {
   facets: () => send<ApiFacets>("/api/library/facets", "GET"),
 };
 
+export interface ApiMediaItem {
+  kind: string;
+  label: string;
+  available: boolean;
+  content_type: string | null;
+  size: number | null;
+  start_sec?: number;
+  end_sec?: number;
+}
+
+export interface ApiSermonMedia {
+  id: string;
+  items: ApiMediaItem[];
+  primary: string | null;
+  audio: string | null;
+}
+
+export function mediaStreamUrl(sermonId: string, kind: string): string {
+  const base = `${BASE}/api/media/sermons/${encodeURIComponent(sermonId)}/${encodeURIComponent(kind)}`;
+  if (!isLive) return base;
+  const token = getToken();
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
+
+export const mediaApi = {
+  list: (id: string) => send<ApiSermonMedia>(`/api/media/sermons/${encodeURIComponent(id)}`, "GET"),
+  url: mediaStreamUrl,
+  fetchJson: async <T,>(id: string, kind: string): Promise<T> => {
+    const res = await authFetch(
+      `/api/media/sermons/${encodeURIComponent(id)}/${encodeURIComponent(kind)}`,
+    );
+    if (!res.ok) throw new Error(`media ${kind} failed with ${res.status}`);
+    return (await res.json()) as T;
+  },
+};
+
 export interface BrandingItem {
   name: string;
   path: string;
