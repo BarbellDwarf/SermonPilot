@@ -380,6 +380,107 @@ def _cleanup_staged_file(path: str | None, job: Job, keep: bool = False) -> None
         logger.warning("Failed to clean up staged cloud file: %s", exc)
 
 
+def _is_remote_output(value: str | None) -> bool:
+    return bool(value) and str(value).startswith("remote:")
+
+
+def _cloud_output_root() -> Path:
+    """Local staging root for cloud-destined output (deleted after upload)."""
+    override = os.environ.get("SERMONPILOT_CLOUD_OUTPUT_DIR")
+    root = Path(override).expanduser() if override else Path(tempfile.gettempdir()) / "cloud_output"
+    return root
+
+
+def _upload_cloud_output(
+    job: Job, remote_ref: str, local_dir: str, cancel_check: Callable[[], None],
+) -> tuple[str | None, str | None]:
+    """rclone-copy a staging dir to ``<name>:<sub>``; returns (dest, error)."""
+    from server.api.routers.cloud import _config_path, _rclone_exe, parse_remote_path
+
+    user_id = _job_user_id(job)
+    if not user_id:
+        return None, "cloud output requires a user id (none on job parameters)"
+    parsed = parse_remote_path(remote_ref)
+    if parsed is None:
+        return None, f"cloud output failed: invalid remote path {remote_ref}"
+    name, sub = parsed
+    dest = f"{name}:{sub}" if sub else f"{name}:"
+    try:
+        exe = _rclone_exe()
+    except Exception as exc:
+        return None, f"cloud output failed: {exc}"
+    cmd = [
+        exe, "--config", str(_config_path(user_id)),
+        "copy", str(local_dir), dest,
+        "--stats", "1s", "--stats-one-line",
+        "--no-traverse", "--log-level", "INFO",
+    ]
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, bufsize=1,
+        )
+    except OSError as exc:
+        return None, f"cloud output failed: {exc}"
+
+    state = {"last": "", "pct": -1}
+
+    def _read() -> None:
+        for raw in proc.stderr or ():
+            line = raw.strip()
+            if not line:
+                continue
+            state["last"] = line
+            match = re.search(r"(\d{1,3})%", line)
+            if match:
+                try:
+                    pct = min(99, int(match.group(1)))
+                except ValueError:
+                    continue
+                if pct - state["pct"] >= 5 or pct >= 99:
+                    state["pct"] = pct
+                    try:
+                        job.update_progress(90 + pct * 0.09, f"Uploading to cloud ({pct}%)")
+                    except Exception:
+                        pass
+
+    reader = threading.Thread(target=_read, daemon=True)
+    reader.start()
+    try:
+        while proc.poll() is None:
+            cancel_check()
+            time.sleep(0.1)
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+    reader.join(timeout=3)
+    if proc.returncode != 0:
+        detail = state["last"] or f"rclone exited with code {proc.returncode}"
+        return None, f"cloud output failed: {detail}"
+    return dest, None
+
+
+def _branding_base() -> Path:
+    return Path(os.environ.get("SERMONPILOT_BRANDING_DIR", "/data/branding"))
+
+
+def _resolve_branding_card(value: str) -> str | None:
+    """Absolute path of a chosen ending-card image, or None when it is missing."""
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        candidate = _branding_base() / raw
+    try:
+        return str(candidate.resolve()) if candidate.is_file() else None
+    except OSError:
+        return None
+
+
 def _inject_sermon_updater_config(config: dict) -> None:
     """Point the sermon_updater module at this job's config.
 
@@ -691,8 +792,18 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
         form_data = job.parameters.get('form_data') or {}
         config = job.parameters.get('config') or {}
         output_override = job.parameters.get('output_dir')
+        cloud_output: str | None = None
+        cloud_output_dir: str | None = None
         if output_override:
-            config = {**config, 'output_directory': str(output_override)}
+            if _is_remote_output(output_override):
+                cloud_output = str(output_override)
+                cloud_output_dir = str(
+                    _cloud_output_root()
+                    / str(job.parameters.get('sermon_id') or job.id or 'sermon')
+                )
+                config = {**config, 'output_directory': cloud_output_dir}
+            else:
+                config = {**config, 'output_directory': str(output_override)}
         uploaded_file_path = (
             job.parameters.get('uploaded_file_path')
             or form_data.get('uploaded_file_path')
@@ -741,6 +852,22 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             auto_edit_mode = None
         elif auto_edit_enabled is True and auto_edit_mode is None:
             auto_edit_mode = 'interactive'
+
+        if auto_edit_enabled:
+            card = str(form_data.get('logo_path') or '').strip()
+            if card:
+                resolved_card = _resolve_branding_card(card)
+                if resolved_card is None:
+                    job.add_log(f"Ending card image not found: {card}")
+                    return JobResult(
+                        success=False,
+                        message="Ending card image not found",
+                        error="ending card image not found",
+                    )
+                auto_edit_cfg = dict(config.get('auto_edit') or {})
+                auto_edit_cfg['logo_path'] = resolved_card
+                auto_edit_cfg['fade_to_black'] = bool(form_data.get('fade_to_black', True))
+                config = {**config, 'auto_edit': auto_edit_cfg}
 
         # Inject the config into the sermon_updater module so that its
         # module-level constants (api_key, broadcaster_id, LLM manager, etc.)
@@ -807,6 +934,24 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             sermon_id = result.get('sermon_id')
             _stamp_sermon_owner(sermon_id, _job_user_id(job))
             plan_status = result.get('edit_plan_status')
+            if cloud_output and plan_status != 'pending_review':
+                dest, upload_error = _upload_cloud_output(
+                    job, cloud_output, cloud_output_dir or '',
+                    lambda: _raise_if_job_cancelled(job),
+                )
+                if upload_error:
+                    job.add_log(upload_error)
+                    return JobResult(
+                        success=False,
+                        message="Cloud upload failed",
+                        error=upload_error,
+                        data=_trim_result_payload(result),
+                    )
+                result['output_dir'] = dest
+                result['cloud_output'] = dest
+                job.add_log(f"Uploaded output to {dest}")
+                if cloud_output_dir:
+                    shutil.rmtree(cloud_output_dir, ignore_errors=True)
             if plan_status == 'pending_review':
                 job.add_log("Auto-edit cut awaits manual review")
                 return JobResult(
