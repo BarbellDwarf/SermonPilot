@@ -356,8 +356,15 @@ def _stage_cloud_source(
     return str(dest), None
 
 
-def _cleanup_staged_file(path: str | None, job: Job, keep: bool = False) -> None:
-    """Remove a staged cloud download plus its derived siblings, staging-dir-only."""
+def _cleanup_staged_file(
+    path: str | None, job: Job, keep: bool = False, keep_all: bool = False
+) -> None:
+    """Remove a staged cloud download plus its derived siblings, staging-dir-only.
+
+    ``keep`` retains the download itself while still removing derived siblings.
+    ``keep_all`` retains the download and every sibling, for a review pause that
+    still needs the staged source (cleanup deferred to the terminal outcome).
+    """
     if not path:
         return
     try:
@@ -371,10 +378,10 @@ def _cleanup_staged_file(path: str | None, job: Job, keep: bool = False) -> None
             candidate.with_name(f"{candidate.stem}_cleaned.wav"),
         )
         for target in targets:
-            if keep and target == candidate:
+            if keep_all or (keep and target == candidate):
                 continue
             target.unlink(missing_ok=True)
-        if not keep:
+        if not keep and not keep_all:
             job.add_log(f"Removed staged cloud copy {candidate.name}")
     except Exception as exc:
         logger.warning("Failed to clean up staged cloud file: %s", exc)
@@ -782,7 +789,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
         - config: full config dict (used to set globals in sermon_updater)
     """
     processing_temp_dir: str | None = None
-    cleanup_state = {"keep_upload": True, "staged_path": None}
+    cleanup_state = {"keep_upload": True, "staged_path": None, "keep_staged": False}
     try:
         if job.cancelled or job.status == JobStatus.CANCELLED:
             raise JobCancelledError("Job cancelled by user")
@@ -954,6 +961,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
                     shutil.rmtree(cloud_output_dir, ignore_errors=True)
             if plan_status == 'pending_review':
                 job.add_log("Auto-edit cut awaits manual review")
+                cleanup_state["keep_staged"] = True
                 return JobResult(
                     success=True,
                     message=(f"Auto-edit cut awaiting manual review "
@@ -999,7 +1007,10 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             keep_upload=cleanup_state["keep_upload"],
         )
         _cleanup_staged_file(
-            cleanup_state["staged_path"], job, keep=_keep_cloud_staging(),
+            cleanup_state["staged_path"],
+            job,
+            keep=_keep_cloud_staging(),
+            keep_all=cleanup_state["keep_staged"],
         )
 
 
@@ -1692,6 +1703,19 @@ def execute_auto_edit_refine_job(job: Job) -> JobResult:
         )
 
 
+def _finalize_review_media(sermon_id: str | None, outcome: str, job: Job) -> None:
+    """Drop retained review media once its review reaches a terminal outcome."""
+    if not sermon_id:
+        return
+    try:
+        from src.review_media import finalize_review_media_for_sermon
+
+        if finalize_review_media_for_sermon(sermon_id, outcome):
+            job.add_log(f"Review media finalized ({outcome})")
+    except Exception as exc:
+        logger.warning("Review media finalize failed for %s: %s", sermon_id, exc)
+
+
 def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
     """Execute a Library review-panel apply outside the page lifecycle.
 
@@ -1778,6 +1802,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
                 rendered_id = result.get("sermon_id") or ""
                 _stamp_sermon_owner(result.get("sermon_id") or sermon_id, _job_user_id(job))
                 job.add_log(f"Edit rendered locally, not uploaded ({rendered_id})")
+                _finalize_review_media(sermon_id, "approved", job)
                 return JobResult(
                     success=True,
                     message=(
@@ -1791,6 +1816,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
                 f"(edit_plan_status={result.get('edit_plan_status')}); nothing was rendered."
             )
             job.add_log(err)
+            _finalize_review_media(sermon_id, "failed", job)
             return JobResult(
                 success=False,
                 message=f"Edit apply failed: {err}",
@@ -1803,6 +1829,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
             applied_status = result.get("edit_plan_status") or "auto_applied"
             if applied_status == "auto_applied" and bool(result.get("auto_edit_applied")):
                 job.add_log(f"Edit applied and uploaded ({result.get('sermon_id')})")
+                _finalize_review_media(sermon_id, "approved", job)
                 return JobResult(
                     success=True,
                     message=(
@@ -1824,6 +1851,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
 
         err = result.get("error") or "Unknown processing error"
         job.add_log(err)
+        _finalize_review_media(sermon_id, "failed", job)
         return JobResult(
             success=False,
             message=f"Edit apply failed: {err}",

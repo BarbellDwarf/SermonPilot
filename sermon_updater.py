@@ -2396,8 +2396,19 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             review_id = (
                 f"draft_{safe_speaker}_{safe_date}_{safe_title}_{uuid.uuid4().hex[:8]}"
             )
+            from src.review_media import (
+                render_bounded_snippets,
+                resolve_review_media_root,
+                sweep_abandoned_reviews,
+                write_review_marker,
+            )
+
             review_dir = get_sermon_dir(
-                _auto_edit_output_root(), speaker_name, series_title, review_title, review_id
+                resolve_review_media_root(config),
+                speaker_name,
+                series_title,
+                review_title,
+                review_id,
             )
             review_dir.mkdir(parents=True, exist_ok=True)
 
@@ -2409,16 +2420,70 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 Path(final_upload_path).resolve() != processed_path.resolve()
             ):
                 shutil.copy2(final_upload_path, processed_path)
-            original_ext = Path(audio_path).suffix
+
+            original_ext = Path(original_input_path).suffix
             original_path = review_dir / build_output_filename(
                 review_title, series_title, speaker_name, recorded_date, "Original", original_ext
             )
             if (
-                Path(audio_path).exists()
+                Path(original_input_path).exists()
                 and not original_path.exists()
-                and Path(audio_path).resolve() != original_path.resolve()
+                and Path(original_input_path).resolve() != original_path.resolve()
             ):
-                shutil.copy2(audio_path, original_path)
+                shutil.copy2(original_input_path, original_path)
+
+            keeper_path: Path | None = None
+            if keeper_used and Path(audio_path).exists():
+                keeper_path = review_dir / build_output_filename(
+                    review_title,
+                    series_title,
+                    speaker_name,
+                    recorded_date,
+                    "Keeper",
+                    Path(audio_path).suffix or ".mp4",
+                )
+                if (
+                    not keeper_path.exists()
+                    and Path(audio_path).resolve() != keeper_path.resolve()
+                ):
+                    shutil.copy2(audio_path, keeper_path)
+
+            enhanced_path: Path | None = None
+            if (
+                enhanced_audio_path is not None
+                and Path(enhanced_audio_path).exists()
+                and Path(enhanced_audio_path).resolve() != Path(original_input_path).resolve()
+            ):
+                enhanced_path = review_dir / build_output_filename(
+                    review_title,
+                    series_title,
+                    speaker_name,
+                    recorded_date,
+                    "Enhanced",
+                    Path(enhanced_audio_path).suffix,
+                )
+                if Path(enhanced_audio_path).resolve() != enhanced_path.resolve():
+                    shutil.copy2(enhanced_audio_path, enhanced_path)
+
+            transcript_file = get_file_path(review_dir, "transcript")
+            timestamps_file = get_file_path(review_dir, "transcript_timestamps")
+
+            snippet_logo: Path | None = None
+            review_logo_cfg = (
+                auto_edit_cfg.get('logo_path') if isinstance(auto_edit_cfg, dict) else None
+            )
+            if review_logo_cfg and Path(str(review_logo_cfg)).expanduser().exists():
+                snippet_logo = Path(str(review_logo_cfg)).expanduser()
+
+            snippet_files: list[Path] = []
+            snippet_source = keeper_path if keeper_path is not None else original_path
+            if input_is_video and Path(snippet_source).exists():
+                snippet_files = render_bounded_snippets(
+                    snippet_source,
+                    gate_plan,
+                    review_dir / "snippets",
+                    logo_path=snippet_logo,
+                )
 
             metadata = {
                 'sermon_id': review_id,
@@ -2432,7 +2497,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'subtitle': subtitle,
                 'description': review_description,
                 'hashtags': review_hashtags,
-                'original_file': str(audio_path),
+                'original_file': str(original_path),
                 'processed_file': str(processed_path),
                 'is_video': input_is_video,
                 'upload_type': upload_type,
@@ -2440,17 +2505,43 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'has_transcript': bool(transcript),
                 'dry_run': bool(dry_run),
                 'edit_plan_status': 'pending_review',
+                'staged_file': str(original_input_path) if original_input_path else None,
                 "auto_edit": _auto_edit_metadata_block(auto_edit_cfg),
             }
+            if keeper_path is not None:
+                metadata['keeper_file'] = str(keeper_path)
+            if enhanced_path is not None:
+                metadata['enhanced_file'] = str(enhanced_path)
+            if transcript:
+                metadata['transcript_file'] = str(transcript_file)
+                if transcript_segments:
+                    metadata['transcript_timestamps_file'] = str(timestamps_file)
+            for snippet in snippet_files:
+                metadata[snippet.stem] = str(snippet)
             with open(get_file_path(review_dir, "metadata"), 'w') as f:
                 review_json.dump(metadata, f, indent=2)
             if transcript:
-                with open(
-                    get_file_path(review_dir, "transcript"), 'w', encoding='utf-8'
-                ) as f:
+                with open(transcript_file, 'w', encoding='utf-8') as f:
                     f.write(transcript)
                 if transcript_segments:
                     save_transcript_timestamps(review_dir, transcript_segments)
+
+            review_file_paths: dict[str, str] = {
+                'audio': str(processed_path),
+                'metadata': str(get_file_path(review_dir, "metadata")),
+            }
+            if enhanced_path is not None:
+                review_file_paths['enhanced_audio'] = str(enhanced_path)
+            if keeper_path is not None:
+                review_file_paths['keeper_audio'] = str(keeper_path)
+            if input_is_video:
+                review_file_paths['original_video'] = str(original_path)
+            if transcript:
+                review_file_paths['transcript'] = str(transcript_file)
+                if transcript_segments:
+                    review_file_paths['transcript_timestamps'] = str(timestamps_file)
+            for snippet in snippet_files:
+                review_file_paths[snippet.stem] = str(snippet)
 
             try:
                 from ui.database import SermonRepository
@@ -2468,10 +2559,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     'bible_text': bible_text or '',
                     'duration': int(_ffprobe_duration(processed_path) or 0),
                     'status': 'draft',
-                    'file_paths': {
-                        'audio': str(processed_path),
-                        'metadata': str(get_file_path(review_dir, "metadata")),
-                    },
+                    'file_paths': review_file_paths,
                     'content': {
                         'transcript_text': transcript or '',
                         'description': review_description,
@@ -2481,6 +2569,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 console_print("💾 Sermon saved locally for review (status: draft)")
             except Exception as e:
                 logger.warning(f"Failed to save pending review sermon to local database: {e}")
+
+            write_review_marker(review_dir, review_id)
+            try:
+                sweep_abandoned_reviews(config)
+            except Exception as e:
+                logger.warning(f"Review media sweep failed: {e}")
 
             try:
                 _save_edit_plan_row(
