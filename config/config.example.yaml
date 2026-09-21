@@ -109,6 +109,16 @@ audio_normalize: true
 audio_gain_db: 0.5
 audio_target_level_db: -22.0
 
+# Enhancement compute placement
+enhancement:
+  # auto: run DeepFilterNet on CPU when the GPU's total VRAM is below
+  # min_gpu_vram_gb, so whisper keeps the card. cpu: always enhance on CPU
+  # (slower, but leaves the GPU free for transcription). cuda: always enhance
+  # on the GPU (fastest, needs room for enhancement and whisper together).
+  device: "auto"
+  # Total-VRAM floor for device: auto. Below this, enhancement runs on CPU.
+  min_gpu_vram_gb: 12
+
 # Embedding Configuration for RAG System
 embeddings:
   # Primary embedding provider

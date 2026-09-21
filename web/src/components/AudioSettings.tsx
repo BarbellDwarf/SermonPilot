@@ -11,8 +11,15 @@ const METHODS = [
   { id: "none", label: "None", hint: "Skip enhancement." },
 ];
 
+const DEVICES = [
+  { id: "auto", label: "Auto", hint: "Use the GPU unless VRAM is below the threshold, then CPU." },
+  { id: "cpu", label: "CPU", hint: "Slower, but always leaves the GPU free for whisper." },
+  { id: "cuda", label: "GPU (CUDA)", hint: "Fastest; needs room for enhancement and whisper." },
+];
+
 interface AudioState {
   method: string;
+  device: string;
   customRepo: string;
   customFile: string;
   noiseReduction: boolean;
@@ -24,6 +31,7 @@ interface AudioState {
 
 const DEFAULTS: AudioState = {
   method: "deepfilternet",
+  device: "auto",
   customRepo: "",
   customFile: "",
   noiseReduction: true,
@@ -41,7 +49,8 @@ function numError(v: string, min: number, max: number): string | null {
 }
 
 export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
-  const [saved, setSaved] = useUserSettings<AudioState>("settings.audio", DEFAULTS);
+  const [stored, setSaved] = useUserSettings<AudioState>("settings.audio", DEFAULTS);
+  const saved: AudioState = { ...DEFAULTS, ...stored };
   const [cur, setCur] = useState<AudioState>(saved);
   const dirty = isLive && JSON.stringify(cur) !== JSON.stringify(saved);
   const set = <K extends keyof AudioState>(k: K, v: AudioState[K]) =>
@@ -72,6 +81,25 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
           {METHODS.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field
+        label="Enhancement device"
+        htmlFor="aud-device"
+        hint={DEVICES.find((d) => d.id === cur.device)?.hint}
+      >
+        <select
+          id="aud-device"
+          value={cur.device}
+          onChange={(e) => set("device", e.target.value)}
+          className={inputCls}
+        >
+          {DEVICES.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.label}
             </option>
           ))}
         </select>
