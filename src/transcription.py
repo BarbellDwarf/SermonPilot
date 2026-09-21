@@ -12,6 +12,7 @@ All backends return a plain transcript string (or empty string on failure).
 
 import logging
 import os
+import sys
 from typing import Any
 
 import requests
@@ -109,15 +110,59 @@ def _detect_device(preference: str = "auto", allow_rocm: bool = True) -> str:
 
 
 def log_cuda_memory(stage: str) -> None:
-    """Log free/total VRAM for a pipeline stage when CUDA is present."""
+    """Log free/total VRAM and live PyTorch allocations for a pipeline stage."""
     try:
         import torch
 
         if torch.cuda.is_available():
             free, total = torch.cuda.mem_get_info()
-            logger.info("VRAM %s: %.2f/%.2f GB free", stage, free / 1e9, total / 1e9)
+            allocated = torch.cuda.memory_allocated()
+            logger.info(
+                "VRAM %s: %.2f/%.2f GB free, %.2f GB allocated by PyTorch",
+                stage,
+                free / 1e9,
+                total / 1e9,
+                allocated / 1e9,
+            )
     except Exception:
         pass
+
+
+def _allocated_bytes() -> float | None:
+    """Live PyTorch allocation in bytes, or None when CUDA is unmeasurable."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return float(torch.cuda.memory_allocated())
+    except Exception:
+        pass
+    return None
+
+
+def _free_vram_gb() -> float | None:
+    """Free device VRAM in GB, or None when CUDA is unmeasurable."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            free, _total = torch.cuda.mem_get_info()
+            return float(free) / (1024**3)
+    except Exception:
+        pass
+    return None
+
+
+def _total_vram_gb() -> float | None:
+    """Total device VRAM in GB, or None when CUDA is unmeasurable."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return float(torch.cuda.get_device_properties(0).total_memory) / (1024**3)
+    except Exception:
+        pass
+    return None
 
 
 def release_transcription_gpu() -> None:
@@ -134,6 +179,174 @@ def release_transcription_gpu() -> None:
                 torch.cuda.ipc_collect()
     except Exception:
         pass
+
+
+DEFAULT_MIN_GPU_VRAM_GB = 12.0
+_MIN_FREE_VRAM_GB_BEFORE_WHISPER = 3.5
+
+_DF_CACHE_ATTRS = (
+    "_MODEL_CACHE",
+    "_model_cache",
+    "_CACHED_MODEL",
+    "_cached_model",
+    "MODEL_CACHE",
+    "_DF_STATE",
+    "_df_state",
+    "_CACHED_STATE",
+    "_cached_state",
+    "DF_STATE_CACHE",
+)
+_DF_MODULE_NAMES = ("df.enhance", "df.modules", "df.utils", "df")
+
+_last_enhancement_release_bytes: int | None = None
+
+
+def enhancement_settings(config: dict[str, Any] | None) -> tuple[str, float]:
+    """Read ``enhancement.device`` and ``enhancement.min_gpu_vram_gb``.
+
+    Returns ``(device, min_gpu_vram_gb)``. Unknown device values fall back to
+    ``"auto"`` and an unparseable threshold falls back to the 12 GB default, so
+    a malformed config never prevents processing.
+    """
+    raw = (config or {}).get("enhancement")
+    cfg = raw if isinstance(raw, dict) else {}
+    device = str(cfg.get("device", "auto") or "auto").strip().lower()
+    if device not in {"auto", "cpu", "cuda"}:
+        device = "auto"
+    try:
+        min_gb = float(cfg.get("min_gpu_vram_gb", DEFAULT_MIN_GPU_VRAM_GB))
+    except (TypeError, ValueError):
+        min_gb = DEFAULT_MIN_GPU_VRAM_GB
+    return device, min_gb
+
+
+def resolve_enhancement_device(
+    requested: str = "auto",
+    min_gpu_vram_gb: float = DEFAULT_MIN_GPU_VRAM_GB,
+    total_vram_gb: float | None = None,
+) -> str:
+    """Pick the compute device for audio enhancement.
+
+    An explicit ``cpu``/``cuda`` always wins. With ``auto``, DeepFilterNet runs
+    on CPU when the GPU is absent or its total VRAM is below
+    ``min_gpu_vram_gb``: a small card must not lose enhancement to whisper,
+    since CPU enhancement is slower but leaves the GPU free for transcription.
+    """
+    preference = (requested or "auto").strip().lower()
+    if preference == "cpu":
+        return "cpu"
+    if preference in {"cuda", "rocm", "gpu"}:
+        return "cuda"
+    if total_vram_gb is None:
+        total_vram_gb = _total_vram_gb()
+    if total_vram_gb is None:
+        return "cpu"
+    return "cpu" if float(total_vram_gb) < float(min_gpu_vram_gb) else "cuda"
+
+
+def _clear_deepfilternet_cache() -> bool:
+    """Best-effort drop of DeepFilterNet's module-level cached model/state.
+
+    The ``df`` package can retain its loaded model and DF state in module
+    globals, which keeps their tensors live on the GPU even after the caller
+    drops its own handle. Clear the known cache attributes so the following
+    ``gc.collect()`` and ``torch.cuda.empty_cache()`` can reclaim them.
+    """
+    cleared = False
+    for module_name in _DF_MODULE_NAMES:
+        module = sys.modules.get(module_name)
+        if module is None:
+            continue
+        for attr in _DF_CACHE_ATTRS:
+            if hasattr(module, attr):
+                try:
+                    setattr(module, attr, None)
+                    cleared = True
+                except Exception:
+                    pass
+    return cleared
+
+
+def release_enhancement_gpu(processor: Any = None) -> int | None:
+    """Release VRAM held by the audio enhancement stage before transcription.
+
+    Drops the processor's DeepFilterNet handle, clears the ``df`` package's
+    module-level cached model/state, then delegates to
+    ``release_transcription_gpu`` so the caching allocator returns its blocks
+    to the driver. Returns the bytes reclaimed, or None when CUDA memory is not
+    measurable. A zero result is logged as an incomplete release.
+    """
+    global _last_enhancement_release_bytes
+
+    before = _allocated_bytes()
+    if processor is not None:
+        try:
+            processor.release_gpu()
+        except Exception as exc:
+            logger.debug("Enhancement processor release failed: %s", exc)
+    if _clear_deepfilternet_cache():
+        logger.info("Cleared DeepFilterNet module-level model/state cache")
+    release_transcription_gpu()
+    after = _allocated_bytes()
+    log_cuda_memory("after enhancement release")
+
+    if before is None or after is None:
+        _last_enhancement_release_bytes = None
+        return None
+
+    reclaimed = max(int(before - after), 0)
+    _last_enhancement_release_bytes = reclaimed
+    logger.info(
+        "Enhancement GPU release reclaimed %.2f GB (allocated %.2f -> %.2f GB)",
+        reclaimed / 1e9,
+        before / 1e9,
+        after / 1e9,
+    )
+    if before > 0 and reclaimed == 0:
+        logger.warning(
+            "Enhancement GPU release reclaimed nothing; %.2f GB is still allocated "
+            "by PyTorch. Whisper will be guarded before its model load.",
+            after / 1e9,
+        )
+    return reclaimed
+
+
+def guard_transcription_device(
+    device: str,
+    free_vram_gb: float | None = None,
+    reclaimed_bytes: int | None = None,
+) -> str:
+    """Return the device to use for whisper, downgrading to CPU if needed.
+
+    Stays on the requested device unless free VRAM is measurably below the
+    threshold AND the enhancement release reclaimed nothing (an incomplete
+    release means the memory is still held). A completed CPU transcription is
+    better than a failed GPU job, so the fallback is conservative and logged.
+    """
+    if device != "cuda":
+        return device
+    if free_vram_gb is None:
+        free_vram_gb = _free_vram_gb()
+    if free_vram_gb is None or float(free_vram_gb) >= _MIN_FREE_VRAM_GB_BEFORE_WHISPER:
+        return device
+    if reclaimed_bytes is None:
+        reclaimed_bytes = _last_enhancement_release_bytes
+    if reclaimed_bytes is not None and reclaimed_bytes > 0:
+        logger.warning(
+            "Only %.2f GB VRAM free before whisper load, but the enhancement "
+            "release reclaimed %.2f GB; keeping device=%s",
+            float(free_vram_gb),
+            reclaimed_bytes / 1e9,
+            device,
+        )
+        return device
+    logger.warning(
+        "Only %.2f GB VRAM free before whisper load. The audio enhancement stage "
+        "held the GPU and the release reclaimed nothing, so transcription falls "
+        "back to CPU instead of failing the job outright.",
+        float(free_vram_gb),
+    )
+    return "cpu"
 
 
 _VALID_COMPUTE_TYPES = frozenset({"float16", "float32", "int8_float16", "int8", "auto"})
@@ -245,6 +458,7 @@ def _load_whisper_model(model_size: str, device: str):
             "whisper library not installed - install with: pip install openai-whisper"
         ) from e
 
+    log_cuda_memory(f"before whisper load ({device})")
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -263,7 +477,7 @@ def _transcribe_whisper_local_segments(
     language: str | None = None,
 ) -> list[dict[str, float | str]]:
     """Transcribe using the `whisper` library, returning timed segments."""
-    device = _detect_device(device_preference)
+    device = guard_transcription_device(_detect_device(device_preference))
     logger.info("Local Whisper transcription: model=%s, device=%s", model_size, device)
 
     model = _load_whisper_model(model_size, device)
@@ -304,7 +518,7 @@ def _transcribe_whisper_local(
     Returns:
         Transcript text or empty string on error.
     """
-    device = _detect_device(device_preference)
+    device = guard_transcription_device(_detect_device(device_preference))
     logger.info("Local Whisper transcription: model=%s, device=%s", model_size, device)
 
     model = _load_whisper_model(model_size, device)
@@ -346,7 +560,7 @@ def _transcribe_faster_whisper_local(
         logger.warning("faster-whisper library not installed, falling back to standard whisper")
         return _transcribe_whisper_local(audio_path, model_size, device_preference)
 
-    device = _detect_device(device_preference, allow_rocm=False)
+    device = guard_transcription_device(_detect_device(device_preference, allow_rocm=False))
     effective_compute_type = _resolve_compute_type(compute_type, device)
     logger.info(
         "Faster Whisper transcription: model=%s, device=%s, compute_type=%s, language=%s",
@@ -390,7 +604,7 @@ def _transcribe_faster_whisper_local_segments(
         logger.warning("faster-whisper library not installed, falling back to standard whisper")
         return _transcribe_whisper_local_segments(audio_path, model_size, device_preference)
 
-    device = _detect_device(device_preference, allow_rocm=False)
+    device = guard_transcription_device(_detect_device(device_preference, allow_rocm=False))
     effective_compute_type = _resolve_compute_type(compute_type, device)
     logger.info(
         "Faster Whisper transcription: model=%s, device=%s, compute_type=%s, language=%s",

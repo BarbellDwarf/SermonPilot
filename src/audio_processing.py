@@ -68,6 +68,53 @@ except ImportError:
         ClearEnhancer = None
 
 try:
+    from .transcription import (
+        enhancement_settings,
+        log_cuda_memory,
+        resolve_enhancement_device,
+    )
+except ImportError:
+    from transcription import (  # type: ignore[no-redef]
+        enhancement_settings,
+        log_cuda_memory,
+        resolve_enhancement_device,
+    )
+
+_DF_DEVICE_MODULES = ("df.enhance", "df.modules", "df.utils")
+
+
+def _pin_df_device(device: str) -> list[tuple[Any, Any]]:
+    """Temporarily pin DeepFilterNet's ``get_device()`` to ``device``.
+
+    df.get_device() picks CUDA whenever torch.cuda.is_available(), so a small
+    card would run enhancement on the GPU and starve whisper. Patching every
+    module that imported the symbol keeps init and inference on the requested
+    device. CUDA pins are unnecessary (that is already the default).
+    """
+    if device == "cuda":
+        return []
+    target = torch.device(device)
+    pins: list[tuple[Any, Any]] = []
+    for module_name in _DF_DEVICE_MODULES:
+        module = sys.modules.get(module_name)
+        if module is None or not hasattr(module, "get_device"):
+            continue
+        original = module.get_device
+        module.get_device = lambda *_args, _target=target, **_kwargs: _target
+        pins.append((module, original))
+    if pins:
+        logger.info("Pinned DeepFilterNet to device=%s", device)
+    return pins
+
+
+def _unpin_df_device(pins: list[tuple[Any, Any]] | None) -> None:
+    for module, original in pins or []:
+        try:
+            module.get_device = original
+        except Exception:
+            pass
+
+try:
     print(f"PyTorch version: {torch.__version__}")
     is_rocm = getattr(torch.version, "hip", None) is not None or \
               "rocm" in (getattr(torch.version, "cuda", "") or "").lower()
@@ -110,7 +157,11 @@ class AudioProcessor:
         self.enhancement_method = enhancement_method.lower()
         self.config = config or {}
 
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        requested_device, min_gpu_vram_gb = enhancement_settings(self.config)
+        self.device = resolve_enhancement_device(requested_device, min_gpu_vram_gb)
+        if self.device == "cuda" and not torch.cuda.is_available():
+            logger.warning("enhancement.device=cuda requested but CUDA is unavailable; using CPU")
+            self.device = "cpu"
         self.is_rocm = (
             getattr(torch.version, "hip", None) is not None
             or "rocm" in (getattr(torch.version, "cuda", "") or "").lower()
@@ -123,10 +174,15 @@ class AudioProcessor:
                 gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
                 logger.info(f"Using GPU: {gpu_name} ({gpu_memory:.1f} GB)")
         else:
-            logger.info("Using CPU for processing")
+            logger.info(
+                "Using CPU for audio enhancement (device=%s, threshold=%.1f GB)",
+                requested_device,
+                min_gpu_vram_gb,
+            )
 
         self.df_model = None
         self.df_state = None
+        self._df_device_pins: list[tuple[Any, Any]] = []
         self.clear_enhancer = None
         self._models_initialized = False
 
@@ -148,6 +204,8 @@ class AudioProcessor:
         """Drop model references and return cached CUDA memory to the driver."""
         import gc
 
+        _unpin_df_device(getattr(self, "_df_device_pins", []))
+        self._df_device_pins = []
         self.df_model = None
         self.df_state = None
         gc.collect()
@@ -155,6 +213,8 @@ class AudioProcessor:
             import torch
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+                if hasattr(torch.cuda, "ipc_collect"):
+                    torch.cuda.ipc_collect()
         except Exception:
             pass
 
@@ -191,8 +251,8 @@ class AudioProcessor:
         """Initialize DeepFilterNet model."""
         if deepfilternet_available:
             try:
-                device = 'cuda' if torch.cuda.is_available() else 'cpu'
-                logger.info(f"Initializing DeepFilterNet on {device}")
+                logger.info(f"Initializing DeepFilterNet on {self.device}")
+                self._df_device_pins = _pin_df_device(self.device)
 
                 logger.info("Using legacy df package for DeepFilterNet")
 
@@ -203,9 +263,12 @@ class AudioProcessor:
                 else:
                     self.df_model, self.df_state, *_ = init_df()
 
+                log_cuda_memory("after deepfilternet init")
                 logger.info("DeepFilterNet initialized successfully")
             except Exception as e:
                 logger.error(f"Failed to initialize DeepFilterNet: {e}")
+                _unpin_df_device(self._df_device_pins)
+                self._df_device_pins = []
                 self._fallback_to_basic()
         else:
             logger.error("DeepFilterNet not available")

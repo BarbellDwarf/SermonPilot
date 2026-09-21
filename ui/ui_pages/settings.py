@@ -1027,6 +1027,18 @@ def show_audio_settings():
         else:
             st.warning("Enter both a HuggingFace repo and ONNX filename.")
 
+    st.selectbox(
+        "Enhancement Device",
+        options=["auto", "cpu", "cuda"],
+        key="settings_enhancement_device",
+        help=(
+            "auto: use the GPU unless its total VRAM is below the configured "
+            "threshold, then run enhancement on CPU so whisper keeps the card. "
+            "cpu: always enhance on CPU (slower, but leaves the GPU free). "
+            "cuda: always enhance on the GPU."
+        ),
+    )
+
     # Enhancement options
     st.markdown("#### Processing Options")
 
@@ -1696,6 +1708,9 @@ def save_audio_settings():
     if not st.session_state.get('config'):
         st.session_state.config = {}
 
+    enhancement = dict(st.session_state.config.get('enhancement') or {})
+    enhancement['device'] = st.session_state.get('settings_enhancement_device', 'auto')
+
     st.session_state.config.update({
         'audio_enhancement_method': st.session_state.get(
             'settings_enhancement_method', 'deepfilternet'
@@ -1705,6 +1720,7 @@ def save_audio_settings():
         'audio_normalize': st.session_state.get('settings_normalize', True),
         'audio_gain_db': st.session_state.get('settings_gain_db', 0.5),
         'audio_target_level_db': st.session_state.get('settings_target_level_db', -22.0),
+        'enhancement': enhancement,
     })
 
     save_config_to_file(st.session_state.config)
@@ -1776,8 +1792,13 @@ def _init_audio_session_state(config):
     if method not in methods:
         method = methods[0]
 
+    enhancement_device = (config.get('enhancement') or {}).get('device', 'auto')
+    if enhancement_device not in ("auto", "cpu", "cuda"):
+        enhancement_device = "auto"
+
     defaults = {
         "settings_enhancement_method": method,
+        "settings_enhancement_device": enhancement_device,
         "settings_custom_repo": config.get('clear_custom_repo', ''),
         "settings_custom_file": config.get('clear_custom_file', ''),
         "settings_noise_reduction": config.get('audio_noise_reduction', True),
