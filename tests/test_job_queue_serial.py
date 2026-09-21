@@ -93,3 +93,31 @@ def test_back_to_back_jobs_do_not_overlap(queue: JobQueue, monkeypatch: pytest.M
         "start:second",
         "stop:second",
     ]
+
+
+def test_queue_recovers_after_metadata_model_failure(
+    queue: JobQueue, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from src.llm_manager import LLMModelNotFoundError
+
+    order: list[str] = []
+
+    def fake_executor(job: Job) -> JobResult:
+        order.append(job.title)
+        if job.title == "bad":
+            raise LLMModelNotFoundError("llama3", ["glm-5.3-flash:cloud"])
+        return JobResult(success=True, message="done")
+
+    monkeypatch.setattr(queue, "_get_job_executor", lambda job_type: fake_executor)
+
+    first_id = queue.add_job(JobType.VALIDATION, "bad", "metadata job")
+    second_id = queue.add_job(JobType.VALIDATION, "good", "next job")
+
+    queue.start()
+    try:
+        assert _wait_for_terminal_status(queue, first_id) is JobStatus.FAILED
+        assert _wait_for_terminal_status(queue, second_id) is JobStatus.COMPLETED
+    finally:
+        queue.stop()
+
+    assert order == ["bad", "good"]

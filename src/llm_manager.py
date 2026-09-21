@@ -28,6 +28,60 @@ class LLMTimeoutError(TimeoutError):
         self.timeout = timeout
 
 
+class LLMModelNotConfiguredError(ValueError):
+    """Raised when no model can be resolved for an LLM provider.
+
+    Resolution order is: an explicitly configured model for that
+    stage/provider, then the configured primary model for the same provider.
+    When neither exists the provider must not invent one.
+    """
+
+    def __init__(self, provider_type: str, config_key: str):
+        super().__init__(
+            f"No model configured for the '{provider_type}' provider. Set '{config_key}'."
+        )
+        self.provider_type = provider_type
+        self.config_key = config_key
+
+
+class LLMModelNotFoundError(RuntimeError):
+    """Raised when the provider reports the configured model is not installed."""
+
+    def __init__(self, model: str, available_models: list[str] | None = None):
+        message = f"Model '{model}' not found"
+        if available_models:
+            message += f". Available models: {', '.join(available_models)}"
+        super().__init__(message)
+        self.model = model
+        self.available_models = list(available_models or [])
+
+
+def _configured_model(config: dict[str, Any] | None) -> str:
+    """Return the explicit model from a provider config, or an empty string."""
+    model = (config or {}).get('model')
+    return model.strip() if isinstance(model, str) and model.strip() else ''
+
+
+def _resolve_provider_model(
+    provider_config: dict[str, Any] | None,
+    provider_type: str,
+    primary_provider_config: dict[str, Any] | None = None,
+) -> str:
+    """Resolve a model without ever inventing one.
+
+    Explicit model for this provider wins, then the configured primary model
+    for the same provider, then a typed error naming the missing config key.
+    """
+    explicit = _configured_model(provider_config)
+    if explicit:
+        return explicit
+    if isinstance(primary_provider_config, dict):
+        primary_model = _configured_model(primary_provider_config.get(provider_type))
+        if primary_model:
+            return primary_model
+    raise LLMModelNotConfiguredError(provider_type, f"llm.primary.{provider_type}.model")
+
+
 _DEFAULT_CALL_TIMEOUT_SECONDS = 120.0
 _DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
 _DEFAULT_TOTAL_BUDGET_SECONDS = 300.0
@@ -193,10 +247,12 @@ class LLMProvider:
 class OllamaProvider(LLMProvider):
     """Ollama LLM provider."""
 
+    PROVIDER_TYPE = 'ollama'
+
     def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         self.host = config.get('host') or os.environ.get('OLLAMA_HOST') or 'http://localhost:11434'
-        self.model = config.get('model', 'llama3')
+        self.model = _configured_model(config)
         self.api_key = config.get('api_key', '')
         self.temperature = float(config.get('temperature', 0.7))
         self.max_tokens = int(config.get('max_tokens', 2048))
@@ -280,6 +336,8 @@ class OllamaProvider(LLMProvider):
         """Send chat request to Ollama."""
         if not self.ollama:
             raise Exception("Ollama library not available") from None
+        if not self.model:
+            raise LLMModelNotConfiguredError(self.PROVIDER_TYPE, 'llm.primary.ollama.model')
 
         think = bool(self.config.get('think', False))
         try:
@@ -305,9 +363,7 @@ class OllamaProvider(LLMProvider):
                 ("not found" in error_str or "does not exist" in error_str)):
                 available_models = self.list_models()
                 if available_models:
-                    print(f"\nError: Model '{self.model}' not found in Ollama.")
-                    print(f"Available models: {', '.join(available_models)}")
-                    sys.exit(1)
+                    raise LLMModelNotFoundError(self.model, available_models) from e
 
             logger.warning(f"Ollama library failed: {e}. Trying direct HTTP request...")
 
@@ -338,9 +394,7 @@ class OllamaProvider(LLMProvider):
                 # Check if it's a model not found error
                 available_models = self.list_models()
                 if available_models:
-                    print(f"\nError: Model '{self.model}' not found in Ollama.")
-                    print(f"Available models: {', '.join(available_models)}")
-                    sys.exit(1)
+                    raise LLMModelNotFoundError(self.model, available_models) from None
                 else:
                     # If we can't list models, it might be an endpoint issue
                     error_msg = (f"Ollama server appears to be down or unreachable: "
@@ -355,11 +409,12 @@ class OpenAIProvider(LLMProvider):
     """OpenAI-compatible LLM provider (supports xAI, Groq, OpenRouter, etc.)."""
 
     ENV_KEY = 'OPENAI_API_KEY'
+    PROVIDER_TYPE = 'openai'
 
     def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         self.api_key = config.get('api_key') or os.getenv(self.ENV_KEY, '')
-        self.model = config.get('model', 'gpt-3.5-turbo')
+        self.model = _configured_model(config)
         self.base_url = config.get('base_url')
         self.temperature = float(config.get('temperature', 0.7))
         self.max_tokens = int(config.get('max_tokens', 2048))
@@ -399,6 +454,10 @@ class OpenAIProvider(LLMProvider):
 
     def chat(self, messages: list[dict[str, str]]) -> str:
         """Send chat request to OpenAI."""
+        if not self.model:
+            raise LLMModelNotConfiguredError(
+                self.PROVIDER_TYPE, f"llm.primary.{self.PROVIDER_TYPE}.model"
+            )
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -412,9 +471,7 @@ class OpenAIProvider(LLMProvider):
             if "model" in str(e).lower():
                 available_models = self.list_models()
                 if available_models:
-                    print(f"\nError: Model '{self.model}' not found.")
-                    print(f"Available models: {', '.join(available_models)}")
-                    sys.exit(1)
+                    raise LLMModelNotFoundError(self.model, available_models) from e
                 else:
                     # If we can't list models, re-raise as general error for fallback
                     raise Exception("Unable to verify model availability") from e
@@ -433,12 +490,9 @@ class XAIProvider(OpenAIProvider):
     """xAI Grok LLM provider."""
 
     ENV_KEY = 'XAI_API_KEY'
+    PROVIDER_TYPE = 'xai'
 
     def __init__(self, config: dict[str, Any]):
-        # Set default model if not specified
-        if 'model' not in config:
-            config['model'] = 'grok-beta'
-
         # Set xAI API base URL if not specified
         if 'base_url' not in config:
             config['base_url'] = 'https://api.x.ai/v1'
@@ -455,12 +509,9 @@ class GroqProvider(OpenAIProvider):
     """Groq LLM provider."""
 
     ENV_KEY = 'GROQ_API_KEY'
+    PROVIDER_TYPE = 'groq'
 
     def __init__(self, config: dict[str, Any]):
-        # Set default model if not specified
-        if 'model' not in config:
-            config['model'] = 'llama-3.1-70b-versatile'
-
         # Set Groq API base URL if not specified
         if 'base_url' not in config:
             config['base_url'] = 'https://api.groq.com/openai/v1'
@@ -475,10 +526,9 @@ class GroqProvider(OpenAIProvider):
 class OpenRouterProvider(OpenAIProvider):
     """OpenRouter LLM provider."""
 
-    def __init__(self, config: dict[str, Any]):
-        if 'model' not in config:
-            config['model'] = 'openai/gpt-4o-mini'
+    PROVIDER_TYPE = 'openrouter'
 
+    def __init__(self, config: dict[str, Any]):
         if 'base_url' not in config:
             config['base_url'] = 'https://openrouter.ai/api/v1'
 
@@ -497,6 +547,7 @@ class LLMManager:
         self.fallback_providers: list[LLMProvider] = []
         self.validator_provider = None
         self.operation_providers: dict[str, LLMProvider] = {}
+        self._provider_init_errors: list[Exception] = []
 
         llm_config = config.get('llm', {}) if isinstance(config, dict) else {}
         self.call_timeout_seconds = _positive_float(
@@ -521,10 +572,12 @@ class LLMManager:
         try:
             self.primary_provider = self._create_provider(
                 primary_provider_type,
-                primary_config.get(primary_provider_type, {})
+                primary_config.get(primary_provider_type, {}),
+                primary_provider_config=primary_config,
             )
             logger.info(f"Primary LLM provider initialized: {primary_provider_type}")
         except Exception as e:
+            self._provider_init_errors.append(e)
             logger.error(f"Failed to initialize primary provider {primary_provider_type}: {e}")
 
         fallback_config = llm_config.get('fallback', {})
@@ -539,11 +592,13 @@ class LLMManager:
                 try:
                     provider = self._create_provider(
                         fallback_provider_type,
-                        fallback_provider_config
+                        fallback_provider_config,
+                        primary_provider_config=primary_config,
                     )
                     self.fallback_providers.append(provider)
                     logger.info(f"Fallback LLM provider initialized: {fallback_provider_type}")
                 except Exception as e:
+                    self._provider_init_errors.append(e)
                     logger.info(f"Skipping fallback {fallback_provider_type}: {e}")
         else:
             logger.info("Fallback providers disabled in config")
@@ -556,10 +611,12 @@ class LLMManager:
             try:
                 self.validator_provider = self._create_provider(
                     validator_provider_type,
-                    validator_config.get(validator_provider_type, {})
+                    validator_config.get(validator_provider_type, {}),
+                    primary_provider_config=primary_config,
                 )
                 logger.info(f"Validator LLM provider initialized: {validator_provider_type}")
             except Exception as e:
+                self._provider_init_errors.append(e)
                 warning_msg = (
                     f"Failed to initialize validator provider {validator_provider_type}: {e}"
                 )
@@ -578,13 +635,16 @@ class LLMManager:
             }
             try:
                 self.operation_providers[operation_name] = self._create_provider(
-                    override_provider, provider_config.get(override_provider, provider_config)
+                    override_provider,
+                    provider_config.get(override_provider, provider_config),
+                    primary_provider_config=primary_config,
                 )
                 logger.info(
                     f"Operation '{operation_name}' pinned to provider "
                     f"{self._get_provider_name(self.operation_providers[operation_name])}"
                 )
             except Exception as e:
+                self._provider_init_errors.append(e)
                 logger.warning(f"Failed to initialize operation provider for {operation_name}: {e}")
 
     @staticmethod
@@ -603,18 +663,28 @@ class LLMManager:
                 return os.getenv(value[1:], value) or value
         return value
 
-    def _create_provider(self, provider_type: str, provider_config: dict[str, Any]) -> LLMProvider:
-        """Create a provider instance based on type and config."""
+    def _create_provider(
+        self,
+        provider_type: str,
+        provider_config: dict[str, Any],
+        primary_provider_config: dict[str, Any] | None = None,
+    ) -> LLMProvider:
+        """Create a provider instance, resolving its model without inventing one."""
+        resolved_config = dict(provider_config or {})
+        if not _configured_model(resolved_config):
+            resolved_config['model'] = _resolve_provider_model(
+                provider_config, provider_type, primary_provider_config
+            )
         if provider_type == 'ollama':
-            return OllamaProvider(provider_config)
+            return OllamaProvider(resolved_config)
         elif provider_type == 'openai':
-            return OpenAIProvider(provider_config)
+            return OpenAIProvider(resolved_config)
         elif provider_type == 'xai':
-            return XAIProvider(provider_config)
+            return XAIProvider(resolved_config)
         elif provider_type == 'groq':
-            return GroqProvider(provider_config)
+            return GroqProvider(resolved_config)
         elif provider_type == 'openrouter':
-            return OpenRouterProvider(provider_config)
+            return OpenRouterProvider(resolved_config)
         else:
             raise ValueError(f"Unsupported provider type: {provider_type}")
 
@@ -742,14 +812,19 @@ class LLMManager:
 
         Raises:
             LLMTimeoutError: If every attempt exceeded its deadline.
+            LLMModelNotFoundError: If the provider reports the model is not installed.
+            LLMModelNotConfiguredError: If no model can be resolved from config.
             Exception: If both primary and fallback providers fail.
         """
         start_time = time.time()
         deadline = start_time + self.total_budget_seconds
         timed_out = False
+        attempted = False
+        model_not_found: LLMModelNotFoundError | None = None
 
         operation_provider = self.operation_providers.get(operation) if operation else None
         if operation_provider:
+            attempted = True
             try:
                 response = self._run_provider_call(
                     operation_provider, messages, operation, sermon_id, deadline
@@ -764,9 +839,12 @@ class LLMManager:
                 timed_out = True
                 logger.warning("Operation provider for %s timed out: %s", operation, e)
             except Exception as e:
+                if isinstance(e, LLMModelNotFoundError) and model_not_found is None:
+                    model_not_found = e
                 logger.warning("Operation provider for %s failed: %s", operation, e)
 
         if self.primary_provider:
+            attempted = True
             try:
                 response = self._run_provider_call(
                     self.primary_provider, messages, operation, sermon_id, deadline
@@ -779,6 +857,8 @@ class LLMManager:
                 timed_out = True
                 logger.warning("Primary provider timed out: %s", e)
             except Exception as e:
+                if isinstance(e, LLMModelNotFoundError) and model_not_found is None:
+                    model_not_found = e
                 logger.warning("Primary provider failed: %s", e)
 
         for fallback in self.fallback_providers:
@@ -789,6 +869,7 @@ class LLMManager:
                     type(fallback).__name__,
                 )
                 break
+            attempted = True
             try:
                 response = self._run_provider_call(
                     fallback, messages, operation, sermon_id, deadline
@@ -799,8 +880,21 @@ class LLMManager:
                 timed_out = True
                 logger.warning("Fallback provider timed out: %s", e)
             except Exception as e:
+                if isinstance(e, LLMModelNotFoundError) and model_not_found is None:
+                    model_not_found = e
                 logger.error("Fallback provider %s failed: %s", type(fallback).__name__, e)
 
+        if model_not_found is not None:
+            raise model_not_found
+        config_error = next(
+            (
+                error for error in self._provider_init_errors
+                if isinstance(error, LLMModelNotConfiguredError)
+            ),
+            None,
+        )
+        if config_error is not None and not attempted:
+            raise config_error
         if timed_out:
             raise LLMTimeoutError(
                 f"All LLM providers timed out (total budget "
