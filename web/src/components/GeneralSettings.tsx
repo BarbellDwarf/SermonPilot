@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { isLive, outputDirApi } from "../api/client";
+import { useEffect, useState } from "react";
+import { cloudApi, isLive, outputDirApi, type ApiCloudRemote } from "../api/client";
 import { useUserSettings } from "../api/useUserSettings";
-import { Button, Field, SectionCard, Toggle, inputCls } from "./ui";
+import { Button, Chip, Field, SectionCard, Toggle, inputCls } from "./ui";
 import { FileExplorerDialog } from "./FileExplorer";
 
 interface GeneralState {
@@ -26,9 +26,31 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
   const [saved, setSaved] = useUserSettings<GeneralState>("settings.general", DEFAULTS);
   const [cur, setCur] = useState<GeneralState>(saved);
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [cloudOpen, setCloudOpen] = useState(false);
+  const [remotes, setRemotes] = useState<ApiCloudRemote[]>([]);
+  const remoteMatch = /^remote:([A-Za-z0-9._-]{1,64}):(.*)$/.exec(cur.outputDir.trim());
+  const [cloudRemote, setCloudRemote] = useState(remoteMatch?.[1] ?? "");
   const dirty = isLive && JSON.stringify(cur) !== JSON.stringify(saved);
   const set = <K extends keyof GeneralState>(k: K, v: GeneralState[K]) =>
     setCur((c) => ({ ...c, [k]: v }));
+
+  useEffect(() => {
+    if (!isLive) return;
+    void cloudApi
+      .list()
+      .then((r) => setRemotes(r.items))
+      .catch(() => setRemotes([]));
+  }, []);
+
+  const chooseRemote = (name: string) => {
+    setCloudRemote(name);
+    if (name) set("outputDir", `remote:${name}:`);
+  };
+
+  const pickCloudFolder = (path: string) => {
+    const sub = path.replace(/^\/+/, "");
+    set("outputDir", `remote:${cloudRemote}:${sub}`);
+  };
 
   const save = () => {
     const commit = () => {
@@ -75,7 +97,7 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
 
       <h3 className="mt-4 text-sm font-semibold">Output settings</h3>
       <div className="mt-2 grid grid-cols-1 gap-2">
-        <Field label="Output directory" htmlFor="gen-outdir" hint="Directory for processed sermon files. This is your default for new sermons.">
+        <Field label="Output directory" htmlFor="gen-outdir" hint="Local directory or a cloud remote (remote:<name>:<folder>) for processed sermon files. This is your default for new sermons.">
           <div className="flex flex-wrap items-center gap-2">
             <input
               id="gen-outdir"
@@ -85,10 +107,45 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
               autoComplete="off"
             />
             <Button variant="secondary" onClick={() => setBrowseOpen(true)}>
-              Browse…
+              Browse local…
             </Button>
           </div>
         </Field>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <select
+            aria-label="Cloud remote"
+            value={cloudRemote}
+            onChange={(e) => chooseRemote(e.target.value)}
+            className={`${inputCls} min-w-0 flex-1`}
+          >
+            <option value="">Cloud remote…</option>
+            {remotes.map((r) => (
+              <option key={r.name} value={r.name}>
+                {r.name} · {r.provider}
+              </option>
+            ))}
+          </select>
+          <Button
+            variant="secondary"
+            disabled={!cloudRemote}
+            onClick={() => setCloudOpen(true)}
+          >
+            Browse cloud…
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2" aria-live="polite" aria-label="Destination validation">
+          {remoteMatch ? (
+            <>
+              <Chip tone="ok">cloud remote</Chip>
+              <Chip tone="info">{remoteMatch[2] ? `folder: ${remoteMatch[2]}` : "remote root"}</Chip>
+            </>
+          ) : (
+            <>
+              <Chip tone="ok">local folder</Chip>
+              <Chip tone="info">{cur.outputDir || "no path"}</Chip>
+            </>
+          )}
+        </div>
         <Toggle
           checked={cur.saveOriginal}
           onChange={(v) => set("saveOriginal", v)}
@@ -123,6 +180,17 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
         onPickFolder={(p) => set("outputDir", p)}
         onClose={() => setBrowseOpen(false)}
       />
+      {cloudRemote ? (
+        <FileExplorerDialog
+          open={cloudOpen}
+          title="Choose a cloud output folder"
+          mode="cloud"
+          name={cloudRemote}
+          pick="folder"
+          onPickFolder={pickCloudFolder}
+          onClose={() => setCloudOpen(false)}
+        />
+      ) : null}
     </SectionCard>
   );
 }

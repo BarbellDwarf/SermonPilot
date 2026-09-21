@@ -351,13 +351,45 @@ def _resolve_output_path(value: str) -> Path:
 
 
 def resolve_user_output_dir(user: dict) -> Path:
-    """Absolute output root for a user: settings.general.output_dir or the default."""
+    """Absolute output root for a user: settings.general.output_dir or the default.
+
+    A configured cloud reference (``remote:<name>:<sub>``) has no local root, so
+    the local file views fall back to the default directory.
+    """
     with writable_conn() as conn:
         general = get_setting(conn, user["id"], "settings.general")
     configured = ""
     if isinstance(general, dict):
         configured = str(general.get("output_dir") or "").strip()
+    if configured.startswith("remote:"):
+        return _resolve_output_path(_DEFAULT_OUTPUT_DIR)
     return _resolve_output_path(configured or _DEFAULT_OUTPUT_DIR)
+
+
+def _validate_remote_output(value: str, user: dict) -> str | None:
+    """Normalise ``remote:<name>:<sub>`` output refs; raise 422 for unknown remotes."""
+    from server.api.routers.cloud import list_remote_names, parse_remote_path
+
+    parsed = parse_remote_path(value)
+    if parsed is None:
+        return None
+    name, sub = parsed
+    if name not in list_remote_names(user.get("id")):
+        raise HTTPException(status_code=422, detail=f"no such cloud remote: {name}")
+    return f"remote:{name}:{sub}"
+
+
+def validate_output_dir(value: str, user: dict) -> str:
+    """Validate an output destination: a local directory or a cloud remote ref."""
+    raw = (value or "").strip()
+    if not raw:
+        raise HTTPException(status_code=422, detail="output_dir cannot be empty")
+    remote = _validate_remote_output(raw, user)
+    if remote is not None:
+        return remote
+    if raw.startswith("remote:"):
+        raise HTTPException(status_code=422, detail="invalid cloud remote path")
+    return str(validate_output_path(raw))
 
 
 def validate_output_path(value: str) -> Path:
@@ -426,8 +458,7 @@ def get_output_dir(user=Depends(require_user)):
 
 @me_router.put("/output-dir")
 def put_output_dir(body: OutputDirBody, user=Depends(require_user)):
-    validate_output_path(body.output_dir)
-    stored = body.output_dir.strip()
+    stored = validate_output_dir(body.output_dir, user)
     with writable_conn() as conn:
         general = get_setting(conn, user["id"], "settings.general")
         general = dict(general) if isinstance(general, dict) else {}
