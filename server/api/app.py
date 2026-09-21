@@ -20,6 +20,7 @@ from server.api.routers.auth import router as auth_router
 from server.api.routers.cloud import proxy_router as cloud_proxy_router
 from server.api.routers.cloud import router as cloud_router
 from server.api.routers.jobs import router as jobs_router
+from server.api.routers.media import router as media_router
 from server.api.routers.meta import router as meta_router
 from server.api.routers.sermons import library_router as library_router
 from server.api.routers.sermons import router as sermons_router
@@ -71,6 +72,10 @@ def create_app() -> FastAPI:
             path == p or path.startswith(p + "/") for p in PUBLIC_PATHS
         ):
             token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+            if not token and path.startswith("/api/media"):
+                # <audio>/<video> cannot attach an Authorization header; the
+                # media routes accept the session token as a query parameter.
+                token = request.query_params.get("token", "").strip()
             from server.api.accounts import get_session_user, writable_conn
             if not token:
                 return _auth_denied(path)
@@ -100,6 +105,7 @@ def create_app() -> FastAPI:
     app.include_router(sermons_router)
     app.include_router(library_router)
     app.include_router(jobs_router)
+    app.include_router(media_router)
     app.include_router(meta_router)
     app.include_router(userdata_router)
     app.include_router(me_router)

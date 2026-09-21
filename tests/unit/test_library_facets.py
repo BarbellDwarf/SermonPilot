@@ -83,9 +83,14 @@ def test_new_sermon_wires_facets_typeahead():
     web = Path(__file__).resolve().parents[2] / "web" / "src"
     client_src = (web / "api" / "client.ts").read_text(encoding="utf-8")
     page = (web / "pages" / "NewSermon.tsx").read_text(encoding="utf-8")
+    combobox = (web / "components" / "Combobox.tsx").read_text(encoding="utf-8")
     assert "/api/library/facets" in client_src
     assert "libraryApi.facets()" in page
-    assert 'list="ns-speaker-options"' in page
-    assert 'id="ns-speaker-options"' in page
-    assert 'list="ns-series-options"' in page
-    assert 'id="ns-series-options"' in page
+    assert "facetSpeakerOptions" in page
+    assert "facetSeriesOptions" in page
+    assert page.count("<Combobox") == 2
+    assert 'id="ns-speaker"' in page
+    assert 'id="ns-series"' in page
+    assert 'role="combobox"' in combobox
+    assert 'role="listbox"' in combobox
+    assert 'role="option"' in combobox
