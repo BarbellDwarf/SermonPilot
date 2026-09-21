@@ -255,7 +255,7 @@ def initialize_provider_session_state(provider_config, provider_type, key_prefix
             if f'{key_prefix}_ollama_host' not in st.session_state:
                 st.session_state[f'{key_prefix}_ollama_host'] = settings.get('host', 'http://localhost:11434')
             if f'{key_prefix}_ollama_model' not in st.session_state:
-                st.session_state[f'{key_prefix}_ollama_model'] = settings.get('model', 'llama3')
+                st.session_state[f'{key_prefix}_ollama_model'] = settings.get('model', '')
             if f'{key_prefix}_ollama_api_key' not in st.session_state:
                 st.session_state[f'{key_prefix}_ollama_api_key'] = settings.get('api_key', '')
 
@@ -1674,10 +1674,13 @@ def save_provider_settings(provider_config, provider_type, key_prefix):
 
     if provider_type == 'ollama':
         host = st.session_state.get(f'{key_prefix}_ollama_host', 'http://localhost:11434')
-        model = st.session_state.get(f'{key_prefix}_ollama_model', 'llama3')
+        model = st.session_state.get(f'{key_prefix}_ollama_model', '')
         api_key = st.session_state.get(f'{key_prefix}_ollama_api_key', '')
         provider_settings['host'] = host
-        provider_settings['model'] = model
+        if model:
+            provider_settings['model'] = model
+        else:
+            provider_settings.pop('model', None)
         if api_key:
             provider_settings['api_key'] = api_key
 
