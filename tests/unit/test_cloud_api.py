@@ -329,11 +329,10 @@ def test_serve_helper_returns_webdav_url(client, scoped_setup, monkeypatch):
         cloud.resolve_remote_uri(s["a"]["id"], "remote:nope:/a.mp3")
 
 
-def test_server_path_remote_uses_resolver(client, scoped_setup, monkeypatch):
+def test_server_path_remote_keeps_reference(client, scoped_setup, monkeypatch):
     s = scoped_setup
-    monkeypatch.setattr(
-        cloud, "resolve_remote_uri", lambda uid, path: "http://127.0.0.1:9999/talks/a.mp3"
-    )
+    monkeypatch.setattr(cloud, "list_remote_names", lambda uid: ["mine"])
+    monkeypatch.setattr(cloud, "remote_file_listable", lambda uid, name, sub: True)
     body = {
         "container_path": "remote:mine:/talks/a.mp3",
         "title": "Cloud Talk",
@@ -350,5 +349,78 @@ def test_server_path_remote_uses_resolver(client, scoped_setup, monkeypatch):
     ).fetchone()
     conn.close()
     params = json.loads(row[0])
-    assert params["uploaded_file_path"] == "http://127.0.0.1:9999/talks/a.mp3"
+    assert params["uploaded_file_path"] == "remote:mine:/talks/a.mp3"
+    assert params["form_data"]["uploaded_file_path"] == "remote:mine:/talks/a.mp3"
     assert params["user_id"] == s["a"]["id"]
+
+
+def test_server_path_remote_missing_remote_or_file(client, scoped_setup, monkeypatch):
+    s = scoped_setup
+    monkeypatch.setattr(cloud, "list_remote_names", lambda uid: [])
+    missing_remote = {
+        "container_path": "remote:nope:/talks/a.mp3",
+        "title": "T",
+        "speaker": "S",
+        "recorded_date": "2026-09-14",
+    }
+    r = client.post(
+        "/api/sermons/server-path", json=missing_remote, headers=s["a"]["headers"]
+    )
+    assert r.status_code == 404
+
+    monkeypatch.setattr(cloud, "list_remote_names", lambda uid: ["mine"])
+    monkeypatch.setattr(cloud, "remote_file_listable", lambda uid, name, sub: False)
+    missing_file = {
+        "container_path": "remote:mine:/talks/ghost.mp3",
+        "title": "T",
+        "speaker": "S",
+        "recorded_date": "2026-09-14",
+    }
+    r = client.post(
+        "/api/sermons/server-path", json=missing_file, headers=s["a"]["headers"]
+    )
+    assert r.status_code == 422
+
+
+class _CapturingPopen:
+    commands: list = []
+
+    def __init__(self, cmd, **kwargs):
+        self.pid = 4343
+        self.command = list(cmd)
+        _CapturingPopen.commands.append(self.command)
+
+    def poll(self):
+        return None
+
+
+def test_serve_target_keeps_colon_for_root_and_subpath(client, scoped_setup, monkeypatch):
+    s = scoped_setup
+    _CapturingPopen.commands = []
+    monkeypatch.setattr(cloud.shutil, "which", lambda _name: "/usr/bin/rclone")
+    monkeypatch.setattr(cloud.subprocess, "Popen", _CapturingPopen)
+
+    cloud.ensure_remote_serve(s["a"]["id"], "gbc-data", "")
+    cloud.ensure_remote_serve(s["a"]["id"], "gbc-data", "Sermon Audio")
+
+    targets = [cmd[cmd.index("webdav") + 1] for cmd in _CapturingPopen.commands]
+    assert targets == ["gbc-data:", "gbc-data:Sermon Audio"]
+    assert _CapturingPopen.commands[0][3:6] == ["serve", "webdav", "gbc-data:"]
+
+
+def test_stale_serve_key_is_not_reused(client, scoped_setup, monkeypatch):
+    s = scoped_setup
+    uid = s["a"]["id"]
+    legacy_key = f"{cloud._safe_segment(uid)}:gbc-data:"
+    state = cloud._load_serves(uid)
+    state[legacy_key] = {"pid": os.getpid(), "port": 12345}
+    cloud._save_serves(uid, state)
+
+    _CapturingPopen.commands = []
+    monkeypatch.setattr(cloud.shutil, "which", lambda _name: "/usr/bin/rclone")
+    monkeypatch.setattr(cloud.subprocess, "Popen", _CapturingPopen)
+
+    url = cloud.ensure_remote_serve(uid, "gbc-data", "")
+    assert _CapturingPopen.commands, "stale legacy serve must not be reused"
+    assert url.startswith("http://127.0.0.1:")
+    assert not url.endswith(":12345/")

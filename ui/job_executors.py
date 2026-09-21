@@ -10,8 +10,11 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
+import threading
+import time
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
@@ -169,8 +172,12 @@ def _download_url(url: str, dest: Path, job: Job, cancel_check: Callable[[], Non
     dest.parent.mkdir(parents=True, exist_ok=True)
     received = 0
     logged_pct = -1
+    first = True
     with _open_url(url) as resp:
         headers = getattr(resp, "headers", None)
+        content_type = (headers.get("Content-Type") if headers else "") or ""
+        if "text/html" in content_type.lower():
+            raise RuntimeError("server returned an HTML page instead of media")
         raw_length = headers.get("Content-Length") if headers else None
         try:
             total = int(raw_length) if raw_length else 0
@@ -183,6 +190,10 @@ def _download_url(url: str, dest: Path, job: Job, cancel_check: Callable[[], Non
                 chunk = resp.read(_CLOUD_CHUNK_BYTES)
                 if not chunk:
                     break
+                if first:
+                    first = False
+                    if chunk.lstrip()[:1] == b"<":
+                        raise RuntimeError("server returned an HTML page instead of media")
                 out.write(chunk)
                 received += len(chunk)
                 if total:
@@ -197,31 +208,141 @@ def _download_url(url: str, dest: Path, job: Job, cancel_check: Callable[[], Non
     return received
 
 
+def _file_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def _terminate_process(proc: subprocess.Popen) -> None:
+    try:
+        proc.terminate()
+    except Exception:
+        pass
+    try:
+        proc.wait(timeout=10)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def _rclone_copyto(
+    user_id: str,
+    name: str,
+    sub: str,
+    dest: Path,
+    job: Job,
+    cancel_check: Callable[[], None],
+) -> str | None:
+    """Copy one remote file locally with rclone.
+
+    Returns an error string on failure, or None on success. Raises
+    JobCancelledError when cancelled, after terminating the process.
+    """
+    from server.api.routers.cloud import _config_path, _rclone_exe
+
+    exe = _rclone_exe()
+    cfg = _config_path(user_id)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    args = [
+        exe,
+        "copyto",
+        f"{name}:{sub}",
+        str(dest),
+        "--config",
+        str(cfg),
+        "--stats-one-line",
+    ]
+    proc = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    last_line = {"text": ""}
+
+    def _pump() -> None:
+        stream = proc.stdout
+        if stream is None:
+            return
+        for raw in stream:
+            line = raw.strip()
+            if line:
+                last_line["text"] = line
+                job.add_log(line)
+
+    reader = threading.Thread(target=_pump, daemon=True)
+    reader.start()
+    last_size = -1
+    try:
+        while proc.poll() is None:
+            cancel_check()
+            size_now = _file_size(dest)
+            if size_now != last_size:
+                last_size = size_now
+                job.update_progress(
+                    5, f"Fetching from cloud ({size_now // (1024 * 1024)} MB)"
+                )
+            time.sleep(0.5)
+        proc.wait()
+    except JobCancelledError:
+        _terminate_process(proc)
+        raise
+    finally:
+        reader.join(timeout=5)
+
+    if proc.returncode != 0:
+        return f"cloud fetch failed: {last_line['text'] or 'rclone copyto failed'}"
+    if not dest.is_file() or dest.stat().st_size <= 0:
+        return "cloud fetch produced an empty file"
+    return None
+
+
 def _stage_cloud_source(
     job: Job, source: str, cancel_check: Callable[[], None],
 ) -> tuple[str | None, str | None]:
-    """Download an http(s)/remote: source into the local staging dir.
+    """Stage an http(s)/remote: source into the local staging dir.
 
-    Returns (local_path, error). On failure the partial file is removed and the
-    error string is the real reason. Raises JobCancelledError on cancellation.
+    remote: refs are copied directly with rclone (no serve process, no URL);
+    http(s) URLs stay as a fallback download. Returns (local_path, error). On
+    failure the partial file is removed. Raises JobCancelledError on cancellation.
     """
+    form_data = (job.parameters or {}).get("form_data") or {}
+
     if source.startswith("remote:"):
+        from server.api.routers.cloud import parse_remote_path
+
         user_id = _job_user_id(job)
         if not user_id:
             return None, "cloud source requires a user id (none on job parameters)"
-        try:
-            from server.api.routers.cloud import resolve_remote_uri
-
-            source = resolve_remote_uri(user_id, source)
-        except Exception as exc:
-            return None, f"cloud fetch failed: could not resolve remote path: {exc}"
-        if not source:
+        parsed = parse_remote_path(source)
+        if not parsed:
             return None, "cloud fetch failed: invalid remote path"
+        name, sub = parsed
+        if not sub:
+            return None, "cloud fetch failed: remote path has no file"
+        dest = _staging_root() / _safe_staging_name(sub, form_data.get("original_filename"))
+        job.add_log(f"Staging cloud source {name}:{sub} to {dest}")
+        try:
+            error = _rclone_copyto(user_id, name, sub, dest, job, cancel_check)
+        except JobCancelledError:
+            dest.unlink(missing_ok=True)
+            raise
+        except Exception as exc:
+            dest.unlink(missing_ok=True)
+            return None, f"cloud fetch failed: {exc}"
+        if error:
+            dest.unlink(missing_ok=True)
+            return None, error
+        return str(dest), None
 
     if not source.startswith(("http://", "https://")):
         return None, f"cloud fetch failed: unsupported source URL: {source}"
 
-    form_data = (job.parameters or {}).get("form_data") or {}
     dest = _staging_root() / _safe_staging_name(source, form_data.get("original_filename"))
     job.add_log(f"Staging cloud source to {dest}")
     try:
