@@ -101,7 +101,8 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     )
     from cli.parser import CLIParser, confirm
     from core.config import ConfigManager
-    from llm_manager import LLMManager
+    from llm_manager import LLMManager, LLMTimeoutError
+    from llm_manager import _call_with_deadline as _llm_call_with_deadline
     from processing.orchestrator import (
         ArgumentsNormalizer,
         ProcessingOrchestrator,
@@ -240,6 +241,29 @@ def _get_prompt_template(template_name: str, **kwargs) -> tuple[str, str] | None
     except KeyError as e:
         logger.warning("Prompt template '%s' missing key: %s", template_name, e)
     return (system_text, user_text)
+
+
+def _llm_target_label() -> str:
+    """Human-readable identity of the active primary LLM for progress logs."""
+    try:
+        info = llm_manager.get_provider_info() or {}
+    except Exception:
+        return "unknown model"
+    primary = info.get('primary') or {}
+    provider = primary.get('type') or 'unknown'
+    model = primary.get('model') or 'unknown'
+    provider_obj = getattr(llm_manager, 'primary_provider', None)
+    host = getattr(provider_obj, 'host', None) or getattr(provider_obj, 'base_url', None)
+    if host:
+        return f"{provider} model={model} @ {host}"
+    return f"{provider} model={model}"
+
+
+def _log_metadata_timeout(exc: LLMTimeoutError) -> None:
+    logger.warning(
+        "metadata generation timed out after %.0fs; continuing without it",
+        float(getattr(exc, 'timeout', 0.0) or 0.0),
+    )
 
 
 def console_print(message: str, level: str = "info"):
@@ -577,9 +601,13 @@ Guidelines:
                 logger.warning("No validator LLM configured, using primary provider")
                 response = llm_manager.chat([{'role': 'user', 'content': validation_prompt}])
             else:
-                response = llm_manager.validator_provider.chat([
-                    {'role': 'user', 'content': validation_prompt}
-                ])
+                response = _llm_call_with_deadline(
+                    lambda: llm_manager.validator_provider.chat([
+                        {'role': 'user', 'content': validation_prompt}
+                    ]),
+                    float(getattr(llm_manager, 'call_timeout_seconds', 120.0)),
+                    'description_validation',
+                )
 
             # Parse the structured response
             score, is_valid, reason, criteria_met, criteria_failed = (
@@ -1444,6 +1472,8 @@ Generate a compelling sermon title:"""
         logger.debug("Generated title (%d chars): %s", len(title), title)
         return title
 
+    except LLMTimeoutError:
+        raise
     except Exception as e:
         logger.error("Title generation failed: %s", e)
         # Fallback title
@@ -1492,6 +1522,8 @@ Shortened title (max 30 chars):"""
                 "Generated short display title (%d chars): %s", len(short_title), short_title
             )
             return short_title
+    except LLMTimeoutError:
+        raise
     except Exception as e:
         logger.warning("Short title generation failed: %s", e)
 
@@ -1823,7 +1855,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       dry_run: bool = False, skip_transcription: bool = False,
                       skip_audio: bool = False, skip_ai_generation: bool = False,
                       whisper_model: str = "large",
-                      transcription_backend: str = "whisper_local",
+                      transcription_backend: str | None = None,
                       use_clean_audio: bool = False,
                       clean_audio_script: str = (
                           "~/Documents/Repositories/deepfilternet/clean-audio.py"
@@ -2614,19 +2646,24 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             if not title:
                 try:
-                    _report(60, "Generating title...")
+                    _report(60, f"Generating title with {_llm_target_label()}...")
+                    _started = time.time()
                     title = generate_title(
                         transcript=transcript,
                         speaker_name=speaker_name,
                         event_type=event_type,
                         bible_text=bible_text
                     )
+                    _report(62, f"Title generated in {time.time() - _started:.1f}s")
+                except LLMTimeoutError as e:
+                    _log_metadata_timeout(e)
                 except Exception as e:
                     logger.warning("LLM title generation failed: %s", e)
 
             if not description:
                 try:
-                    _report(70, "Generating description...")
+                    _report(70, f"Generating description with {_llm_target_label()}...")
+                    _started = time.time()
                     if force_validation and transcript:
                         _report(70, "Generating description with validation...")
                         validator = DescriptionValidator(config)
@@ -2654,6 +2691,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                             event_type=event_type,
                             speaker_name=speaker_name
                         )
+                    _report(72, f"Description generated in {time.time() - _started:.1f}s")
+                except LLMTimeoutError as e:
+                    _log_metadata_timeout(e)
+                    description = None
                 except Exception as e:
                     logger.warning("LLM description generation failed: %s", e)
                     description = None
@@ -2672,8 +2713,13 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             if not hashtags:
                 try:
-                    _report(80, "Generating hashtags...")
+                    _report(80, f"Generating hashtags with {_llm_target_label()}...")
+                    _started = time.time()
                     hashtags = generate_hashtags(transcript)
+                    _report(82, f"Hashtags generated in {time.time() - _started:.1f}s")
+                except LLMTimeoutError as e:
+                    _log_metadata_timeout(e)
+                    hashtags = None
                 except Exception as e:
                     logger.warning("LLM hashtag generation failed: %s", e)
                     hashtags = None
@@ -2724,6 +2770,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             try:
                 short_display_title = generate_short_display_title(title)
                 console_print(f"Short display title: {short_display_title}")
+            except LLMTimeoutError as e:
+                _log_metadata_timeout(e)
             except Exception as e:
                 logger.warning("Short title generation failed: %s", e)
 
@@ -3986,6 +4034,8 @@ def generate_summary(
 
         logger.debug("Summary generated (%d chars)", len(response))
         return response
+    except LLMTimeoutError:
+        raise
     except Exception as e:  # pragma: no cover
         logger.error("LLM summary generation failed: %s", e)
         return "Summary generation failed"
@@ -4051,6 +4101,8 @@ def verify_hashtags(initial_hashtags: str, original_text: str) -> str:
             logger.warning("No valid hashtags found in verification, using fallback")
             return "#faith #hope #worship #christian #jesus"
 
+    except LLMTimeoutError:
+        raise
     except Exception as e:
         logger.error("Hashtag verification failed: %s", e)
         # Return cleaned version of original hashtags as fallback
@@ -4100,6 +4152,8 @@ def generate_hashtags(text: str) -> str:
             logger.debug("Generated hashtags (no verification): %s", hashtags)
             return hashtags
 
+    except LLMTimeoutError:
+        raise
     except Exception as e:  # pragma: no cover
         logger.error("LLM hashtag generation failed: %s", e)
         return "#faith #hope #worship #christian #jesus"
