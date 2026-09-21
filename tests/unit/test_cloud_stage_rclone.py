@@ -246,3 +246,24 @@ def test_remote_without_user_id_errors_before_spawn(staging, monkeypatch):
     assert "user id" in result.error
     assert procs == []
     assert not seen
+
+
+def test_pending_review_keeps_staged_source_until_terminal(staging, monkeypatch):
+    seen: list = []
+    _stub_process(
+        monkeypatch,
+        seen,
+        {"success": True, "sermon_id": None, "edit_plan_status": "pending_review"},
+    )
+    _install_fake_rclone(
+        monkeypatch, rc=0, write=lambda dest: dest.write_bytes(b"fake mkv bytes")
+    )
+
+    result = execute_sermon_processing_job(
+        _job(_params("remote:cloud-remote:pending.mkv", user_id="user-a"))
+    )
+
+    assert result.success is True
+    staged = staging / "2026-09-20_09-45-58.mkv"
+    assert staged.is_file()
+    assert staged.read_bytes() == b"fake mkv bytes"
