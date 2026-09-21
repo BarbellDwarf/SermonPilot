@@ -1124,9 +1124,9 @@ def show_transcription_settings():
         with col2:
             st.selectbox(
                 "Compute Type",
-                options=["float16", "float32", "int8_float16", "int8"],
+                options=["auto", "float16", "float32", "int8_float16", "int8"],
                 key="settings_trans_compute_type",
-                help="Floating point precision for the model"
+                help="auto: int8 on cpu, float16 on cuda (recommended for 8 GB cards)"
             )
             st.text_input(
                 "Language",
@@ -1202,9 +1202,10 @@ def save_transcription_settings():
         config['transcription'][backend]['device'] = st.session_state.get(
             'settings_trans_device', 'auto'
         )
-        config['transcription'][backend]['compute_type'] = st.session_state.get(
-            'settings_trans_compute_type', 'float16'
+        config['transcription']['compute_type'] = st.session_state.get(
+            'settings_trans_compute_type', 'auto'
         )
+        config['transcription'][backend]['compute_type'] = config['transcription']['compute_type']
         config['transcription'][backend]['language'] = st.session_state.get(
             'settings_trans_language', 'en'
         )
@@ -1801,7 +1802,7 @@ def _init_transcription_session_state(transcription_cfg):
         "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo",
     ]
     device_options = ["auto", "cpu", "cuda"]
-    compute_options = ["float16", "float32", "int8_float16", "int8"]
+    compute_options = ["auto", "float16", "float32", "int8_float16", "int8"]
 
     backend = transcription_cfg.get('backend', 'faster_whisper_local')
     if backend not in backend_options:
@@ -1815,9 +1816,9 @@ def _init_transcription_session_state(transcription_cfg):
     if device not in device_options:
         device = device_options[0]
 
-    compute_type = local_cfg.get('compute_type', 'float16')
+    compute_type = transcription_cfg.get('compute_type') or local_cfg.get('compute_type') or 'auto'
     if compute_type not in compute_options:
-        compute_type = compute_options[0]
+        compute_type = 'auto'
 
     defaults = {
         "settings_trans_backend": backend,
