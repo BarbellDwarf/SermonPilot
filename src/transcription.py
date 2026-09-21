@@ -136,6 +136,84 @@ def release_transcription_gpu() -> None:
         pass
 
 
+_VALID_COMPUTE_TYPES = frozenset({"float16", "float32", "int8_float16", "int8", "auto"})
+_DEFAULT_COMPUTE_TYPE = {"cpu": "int8", "cuda": "float16"}
+_CUDA_FALLBACK_LADDER = ("float16", "int8_float16", "int8")
+
+
+def _resolve_compute_type(requested: Any, device: str) -> str:
+    """Resolve the compute type for a device.
+
+    ``None``, empty, "auto", and unknown values fall through to the device
+    default: int8 on CPU, float16 on CUDA. float16 halves the large-model
+    weight footprint versus float32 and keeps an 8 GB card inside its budget.
+    """
+    if isinstance(requested, str) and requested.strip().lower() in _VALID_COMPUTE_TYPES:
+        requested = requested.strip().lower()
+        if requested != "auto":
+            return requested
+    return _DEFAULT_COMPUTE_TYPE.get(device, "int8")
+
+
+def _is_cuda_out_of_memory(exc: BaseException) -> bool:
+    """True when the failure is CUDA VRAM exhaustion, not a config error."""
+    if type(exc).__name__ in {"OutOfMemoryError", "CudaOutOfMemoryError"}:
+        return True
+    return "out of memory" in str(exc).lower()
+
+
+def _compute_type_ladder(desired: str) -> list[str]:
+    """Desired type first, then the CUDA precision ladder down to int8."""
+    attempts = [desired]
+    for candidate in _CUDA_FALLBACK_LADDER:
+        if candidate not in attempts:
+            attempts.append(candidate)
+    return attempts
+
+
+def _build_whisper_model(model_factory, model_size: str, device: str, compute_type: str) -> Any:
+    """Load a faster-whisper model, walking down the precision ladder on OOM.
+
+    On CPU the ladder collapses to a single attempt. On CUDA, an out-of-memory
+    failure retries with the next lower-precision type in
+    ``_CUDA_FALLBACK_LADDER`` so a full card degrades instead of failing the
+    job. Any non-OOM error (bad compute type, missing weights) surfaces at once.
+    """
+    if device != "cuda":
+        return model_factory(model_size, device=device, compute_type=compute_type)
+
+    attempts = _compute_type_ladder(compute_type)
+    for index, candidate in enumerate(attempts):
+        release_transcription_gpu()
+        log_cuda_memory(f"before whisper load ({candidate})")
+        try:
+            model = model_factory(model_size, device=device, compute_type=candidate)
+            if index > 0:
+                logger.warning(
+                    "Whisper fell back to compute_type=%s after CUDA out-of-memory "
+                    "with %s",
+                    candidate,
+                    attempts[index - 1],
+                )
+            logger.info(
+                "Whisper model loaded: model=%s device=%s compute_type=%s",
+                model_size,
+                device,
+                candidate,
+            )
+            return model
+        except Exception as exc:
+            if not _is_cuda_out_of_memory(exc) or index == len(attempts) - 1:
+                raise
+            logger.warning(
+                "Whisper load on cuda with compute_type=%s ran out of memory (%s); "
+                "retrying with %s",
+                candidate,
+                exc,
+                attempts[index + 1],
+            )
+
+
 def _with_gpu_release(fn):
     """Release cached CUDA memory after a local transcription backend returns.
 
@@ -269,7 +347,7 @@ def _transcribe_faster_whisper_local(
         return _transcribe_whisper_local(audio_path, model_size, device_preference)
 
     device = _detect_device(device_preference, allow_rocm=False)
-    effective_compute_type = compute_type or ("int8" if device == "cpu" else "float32")
+    effective_compute_type = _resolve_compute_type(compute_type, device)
     logger.info(
         "Faster Whisper transcription: model=%s, device=%s, compute_type=%s, language=%s",
         model_size,
@@ -279,7 +357,7 @@ def _transcribe_faster_whisper_local(
     )
 
     try:
-        model = WhisperModel(model_size, device=device, compute_type=effective_compute_type)
+        model = _build_whisper_model(WhisperModel, model_size, device, effective_compute_type)
 
         # Transcribe with VAD filtering for better performance
         segments, info = model.transcribe(
@@ -294,9 +372,7 @@ def _transcribe_faster_whisper_local(
         logger.info("Faster Whisper transcription succeeded (%d characters)", len(transcript))
         return transcript
     except Exception as e:
-        logger.error("Faster Whisper transcription error: %s", e)
-        # Fallback to standard whisper
-        return _transcribe_whisper_local(audio_path, model_size, device_preference)
+        raise TranscriptionError(f"Faster Whisper transcription failed: {e}") from e
 
 
 @_with_gpu_release
@@ -315,7 +391,7 @@ def _transcribe_faster_whisper_local_segments(
         return _transcribe_whisper_local_segments(audio_path, model_size, device_preference)
 
     device = _detect_device(device_preference, allow_rocm=False)
-    effective_compute_type = compute_type or ("int8" if device == "cpu" else "float32")
+    effective_compute_type = _resolve_compute_type(compute_type, device)
     logger.info(
         "Faster Whisper transcription: model=%s, device=%s, compute_type=%s, language=%s",
         model_size,
@@ -325,7 +401,7 @@ def _transcribe_faster_whisper_local_segments(
     )
 
     try:
-        model = WhisperModel(model_size, device=device, compute_type=effective_compute_type)
+        model = _build_whisper_model(WhisperModel, model_size, device, effective_compute_type)
 
         segments, info = model.transcribe(
             audio_path,
@@ -346,8 +422,7 @@ def _transcribe_faster_whisper_local_segments(
         logger.info("Faster Whisper transcription succeeded (%d segments)", len(timed))
         return timed
     except Exception as e:
-        logger.error("Faster Whisper transcription error: %s", e)
-        return _transcribe_whisper_local_segments(audio_path, model_size, device_preference)
+        raise TranscriptionError(f"Faster Whisper transcription failed: {e}") from e
 
 
 def _transcribe_openrouter(
@@ -478,6 +553,18 @@ def _transcribe_openai(
         files["file"].close()
 
 
+def _configured_compute_type(transcription_cfg: dict, faster_cfg: dict[str, Any]) -> Any:
+    """Read transcription.compute_type, falling back to the per-backend key.
+
+    The top-level key is the supported surface (default "auto"). Older configs
+    only carried ``faster_whisper_local.compute_type``, so that stays honoured.
+    """
+    for value in (transcription_cfg.get("compute_type"), faster_cfg.get("compute_type")):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 def _is_cloud_model_override(model_size: str | None) -> bool:
     """True when the caller passed a specific cloud model rather than the
     generic local default ("base"). Cloud backends serve named models, so
@@ -519,7 +606,7 @@ def transcribe(
         device_pref = faster_cfg.get("device", "auto")
         # model_size from CLI overrides config size if provided
         model = model_size or faster_cfg.get("model", "base")
-        compute_type = faster_cfg.get("compute_type")
+        compute_type = _configured_compute_type(transcription_cfg, faster_cfg)
         language = faster_cfg.get("language")
         return _transcribe_faster_whisper_local(
             audio_path, model, device_pref, compute_type=compute_type, language=language
@@ -602,7 +689,7 @@ def transcribe_segments(
         faster_cfg = transcription_cfg.get("faster_whisper_local", {})
         device_pref = faster_cfg.get("device", "auto")
         model = model_size or faster_cfg.get("model", "base")
-        compute_type = faster_cfg.get("compute_type")
+        compute_type = _configured_compute_type(transcription_cfg, faster_cfg)
         language = faster_cfg.get("language")
         return _normalize_segments(
             _transcribe_faster_whisper_local_segments(
