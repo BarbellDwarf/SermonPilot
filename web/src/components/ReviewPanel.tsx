@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import { isLive, writeApi } from "../api/client";
+import { useSermonMedia, type SermonMediaData } from "../api/hooks";
 import type { EditPlan, PlanStatus } from "../mock/data";
 import { formatCut, parseCut } from "../utils/time";
+import { MediaPlayer } from "./MediaPlayer";
 import { Button, Card, Chip, ConfirmDialog } from "./ui";
 
 const planStatusLabel: Record<PlanStatus, string> = {
@@ -20,19 +22,45 @@ const planStatusTone: Record<PlanStatus, string> = {
   superseded: "neutral",
 };
 
-function SnippetCard({ label, atSec, note }: { label: string; atSec: number; note: string }) {
+function CutPreview({
+  label,
+  kind,
+  atSec,
+  note,
+  sermonId,
+  media,
+  onSeek,
+}: {
+  label: string;
+  kind: string;
+  atSec: number;
+  note: string;
+  sermonId: string;
+  media: SermonMediaData;
+  onSeek: (sec: number) => void;
+}) {
+  const item = media.byKind[kind];
+  const available = isLive && !!item?.available;
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-1 rounded-md border border-line bg-ink p-3">
-      <div
-        role="img"
-        aria-label={`${label} preview placeholder at ${formatCut(atSec)}`}
-        className="flex h-20 items-center justify-center gap-2 rounded bg-raised"
-      >
-        <svg viewBox="0 0 24 24" fill="currentColor" className="h-8 w-8 text-muted" aria-hidden="true">
-          <path d="M8 5v14l11-7z" />
-        </svg>
-        <span className="font-mono text-xs text-muted">{formatCut(atSec)}</span>
-      </div>
+      {available ? (
+        <MediaPlayer
+          sermonId={sermonId}
+          kind={kind}
+          contentType={item?.content_type}
+          available
+          label={label}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => onSeek(atSec)}
+          className="flex min-h-[64px] w-full items-center justify-center rounded bg-raised px-2 text-center font-mono text-xs text-muted transition-colors hover:text-mist"
+        >
+          {isLive ? "Snippet not rendered yet" : "Preview available in the live console"} · jump to{" "}
+          {formatCut(atSec)}
+        </button>
+      )}
       <p className="text-xs font-semibold">{label}</p>
       <p className="font-mono text-xs text-muted">{note}</p>
     </div>
@@ -55,6 +83,17 @@ export function ReviewPanel({ plan: initial, sermonId, sermonTitle, onToast }: R
   const [applying, setApplying] = useState(false);
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
+  const media = useSermonMedia(sermonId, isLive);
+  const [seek, setSeek] = useState<{ sec: number; n: number } | null>(null);
+
+  const requestSeek = (sec: number) =>
+    setSeek((previous) => ({ sec, n: (previous?.n ?? 0) + 1 }));
+  const reviewKind = media.byKind["source"]?.available
+    ? "source"
+    : media.byKind["processed"]?.available
+      ? "processed"
+      : "keeper";
+  const reviewItem = media.byKind[reviewKind];
 
   const start = parseCut(startText);
   const end = parseCut(endText);
@@ -154,10 +193,64 @@ export function ReviewPanel({ plan: initial, sermonId, sermonTitle, onToast }: R
           </dl>
         </div>
 
+        <div className="mt-3 rounded-md border border-line bg-ink p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold">Cut preview</p>
+            <div className="flex flex-wrap gap-1">
+              <Button onClick={() => requestSeek(plan.startSec)}>Jump to start</Button>
+              <Button onClick={() => requestSeek(plan.endSec)}>Jump to end</Button>
+            </div>
+          </div>
+          <div className="mt-2">
+            <MediaPlayer
+              sermonId={sermonId}
+              kind={reviewKind}
+              contentType={reviewItem?.content_type}
+              available={isLive && !!reviewItem?.available}
+              emptyMessage={
+                isLive
+                  ? "Preview unavailable until the source media is present."
+                  : "Preview available in the live console."
+              }
+              markers={[
+                { atSec: plan.startSec, label: "Start" },
+                { atSec: plan.endSec, label: "End" },
+              ]}
+              seekToSec={seek?.sec ?? null}
+              seekNonce={seek?.n}
+              label={reviewItem?.label}
+            />
+          </div>
+        </div>
+
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <SnippetCard label="Start cut" atSec={plan.startSec} note={`${formatCut(plan.startSec)} · 10s window`} />
-          <SnippetCard label="End cut" atSec={plan.endSec} note={`${formatCut(plan.endSec)} · 10s window`} />
-          <SnippetCard label="Proposed ending" atSec={plan.endSec} note="ending card · 6s hold" />
+          <CutPreview
+            label="Start cut"
+            kind="snippet_start"
+            atSec={plan.startSec}
+            note={`${formatCut(plan.startSec)} · 10s window`}
+            sermonId={sermonId}
+            media={media}
+            onSeek={requestSeek}
+          />
+          <CutPreview
+            label="End cut"
+            kind="snippet_end"
+            atSec={plan.endSec}
+            note={`${formatCut(plan.endSec)} · 10s window`}
+            sermonId={sermonId}
+            media={media}
+            onSeek={requestSeek}
+          />
+          <CutPreview
+            label="Proposed ending"
+            kind="snippet_ending"
+            atSec={plan.endSec}
+            note="ending card · 6s hold"
+            sermonId={sermonId}
+            media={media}
+            onSeek={requestSeek}
+          />
         </div>
 
         <fieldset className="mt-4">
