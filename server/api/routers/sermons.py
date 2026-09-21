@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -21,11 +22,36 @@ from server.api.scoping import request_user, scope_rows, visible
 
 router = APIRouter(prefix="/api/sermons", tags=["sermons"])
 
+library_router = APIRouter(prefix="/api/library", tags=["library"])
+
 logger = logging.getLogger(__name__)
 
 _TRANSCRIPT_LIMIT = 50_000
 
 _SORT_KEYS = {"date", "title", "duration"}
+
+_FACET_LIMIT = 200
+
+
+def _facet_counts(values: list[str]) -> list[dict[str, Any]]:
+    counts: dict[str, int] = {}
+    for value in values:
+        if not value:
+            continue
+        counts[value] = counts.get(value, 0) + 1
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0].lower()))
+    return [{"name": name, "count": count} for name, count in ordered[:_FACET_LIMIT]]
+
+
+@library_router.get("/facets")
+def library_facets(user=Depends(require_user)) -> dict[str, list[dict[str, Any]]]:
+    repo = get_repository()
+    rows = scope_rows(repo.get_all_sermons(), user, "sermons")
+    return {
+        "speakers": _facet_counts([str(row.get("speaker") or "").strip() for row in rows]),
+        "series": _facet_counts([str(row.get("series_title") or "").strip() for row in rows]),
+        "event_types": _facet_counts([str(row.get("event_type") or "").strip() for row in rows]),
+    }
 
 
 class SermonCreateBody(BaseModel):

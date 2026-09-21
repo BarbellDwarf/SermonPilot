@@ -125,13 +125,17 @@ export function CloudBrowser({
   path,
   onPath,
   onUse,
+  onUseFolder,
+  pick = "file",
   provider,
   attachedDriveId,
 }: {
   name: string;
   path: string;
   onPath: (p: string) => void;
-  onUse: (item: ApiCloudFile) => void;
+  onUse?: (item: ApiCloudFile) => void;
+  onUseFolder?: (path: string) => void;
+  pick?: "file" | "folder";
   provider?: string;
   attachedDriveId?: string;
 }) {
@@ -174,6 +178,11 @@ export function CloudBrowser({
           {drive ? <span className="text-muted"> (shared drive: {drive.name})</span> : null}
         </p>
         <div className="flex flex-wrap gap-2">
+          {pick === "folder" ? (
+            <Button variant="primary" onClick={() => onUseFolder?.(path)}>
+              Use this folder
+            </Button>
+          ) : null}
           {drive ? (
             <Button
               onClick={() => {
@@ -193,8 +202,17 @@ export function CloudBrowser({
         </div>
       </div>
       <p className="mt-1 text-xs text-muted">
-        Pick a file, then choose <span className="font-semibold text-mist">Use this file</span> to
-        start a new sermon with it.
+        {pick === "folder" ? (
+          <>
+            Walk to a folder, then choose{" "}
+            <span className="font-semibold text-mist">Use this folder</span> as the destination.
+          </>
+        ) : (
+          <>
+            Pick a file, then choose <span className="font-semibold text-mist">Use this file</span> to
+            start a new sermon with it.
+          </>
+        )}
       </p>
 
       {isDrive ? (
@@ -285,13 +303,20 @@ export function CloudBrowser({
               <li key={full} className="flex flex-wrap items-center gap-2 py-2">
                 <Chip tone="neutral">{item.type === "directory" ? "folder" : "file"}</Chip>
                 {item.type === "directory" ? (
-                  <button
-                    type="button"
-                    onClick={() => onPath(full)}
-                    className="min-w-0 flex-1 truncate rounded px-1 text-left text-sm hover:text-accent"
-                  >
-                    {item.name}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onPath(full)}
+                      className="min-w-0 flex-1 truncate rounded px-1 text-left text-sm hover:text-accent"
+                    >
+                      {item.name}
+                    </button>
+                    {pick === "folder" ? (
+                      <Button variant="primary" onClick={() => onUseFolder?.(full)}>
+                        Use this folder
+                      </Button>
+                    ) : null}
+                  </>
                 ) : (
                   <>
                     <span className="min-w-0 flex-1 truncate px-1 text-sm">{item.name}</span>
@@ -303,18 +328,20 @@ export function CloudBrowser({
                     ) : (
                       <span className="font-mono text-xs text-muted">{formatSize(item.size)}</span>
                     )}
-                    <Button
-                      variant="primary"
-                      disabled={item.size === 0}
-                      title={
-                        item.size === 0
-                          ? "This file is 0 bytes and cannot be processed"
-                          : undefined
-                      }
-                      onClick={() => onUse({ ...item, path: full })}
-                    >
-                      Use this file
-                    </Button>
+                    {pick === "file" ? (
+                      <Button
+                        variant="primary"
+                        disabled={item.size === 0}
+                        title={
+                          item.size === 0
+                            ? "This file is 0 bytes and cannot be processed"
+                            : undefined
+                        }
+                        onClick={() => onUse?.({ ...item, path: full })}
+                      >
+                        Use this file
+                      </Button>
+                    ) : null}
                   </>
                 )}
               </li>

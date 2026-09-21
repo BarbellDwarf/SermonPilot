@@ -238,8 +238,10 @@ export function FileExplorer(props: FileExplorerProps) {
       <CloudBrowser
         name={props.name ?? ""}
         path={props.path}
+        pick={props.pick}
         onPath={props.onPath}
         onUse={(item) => props.onUseFile?.(item.path)}
+        onUseFolder={(p) => props.onUseFolder?.(p)}
       />
     );
   }

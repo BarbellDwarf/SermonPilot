@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Button,
@@ -15,6 +16,7 @@ import {
   brandingApi,
   cloudApi,
   isLive,
+  libraryApi,
   outputDirApi,
   serverPathApi,
   uploadApi,
@@ -149,6 +151,7 @@ export function NewSermon() {
   const [outputDir, setOutputDir] = useState("processed_sermons");
   const [outputSource, setOutputSource] = useState<"user" | "default">("default");
   const [outputOpen, setOutputOpen] = useState(false);
+  const [outputCloudOpen, setOutputCloudOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const cardInput = useRef<HTMLInputElement>(null);
 
@@ -207,6 +210,17 @@ export function NewSermon() {
       .catch(() => undefined);
   }, []);
 
+  // Speaker / series suggestions from real sermon history (loaded once per visit).
+  const facetsQuery = useQuery({
+    queryKey: ["library", "facets"],
+    queryFn: () => libraryApi.facets(),
+    enabled: isLive,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const facetSpeakerOptions = facetsQuery.data?.speakers ?? [];
+  const facetSeriesOptions = facetsQuery.data?.series ?? [];
+
   const useCloudFile = (item: ApiCloudFile) => {
     setServerPath(`remote:${cloudPick}:${item.path}`);
     setCloudOpen(false);
@@ -217,21 +231,41 @@ export function NewSermon() {
     setLocalOpen(false);
   };
 
-  const pickOutputDir = (path: string) => {
-    setOutputOpen(false);
-    setOutputDir(path);
+  const saveOutputDir = (next: string) => {
+    setOutputDir(next);
     setOutputSource("user");
     if (!isLive) {
       showToast("Output location updated (mock).");
       return;
     }
     void outputDirApi
-      .put(path)
+      .put(next)
       .then((r) => {
         setOutputDir(r.output_dir);
         showToast("Output location saved as your default.");
       })
       .catch((e) => showToast(`Could not save output location: ${(e as Error).message}`));
+  };
+
+  const pickOutputDir = (path: string) => {
+    setOutputOpen(false);
+    saveOutputDir(path);
+  };
+
+  const outputRemoteMatch = /^remote:([A-Za-z0-9._-]{1,64}):(.*)$/.exec(outputDir.trim());
+  const outputIsCloud = Boolean(outputRemoteMatch);
+  const outputRemote = outputRemoteMatch?.[1] ?? "";
+  const outputSub = outputRemoteMatch?.[2] ?? "";
+
+  const chooseOutputRemote = (name: string) => {
+    if (!name) return;
+    saveOutputDir(`remote:${name}:`);
+  };
+
+  const pickCloudOutput = (path: string) => {
+    setOutputCloudOpen(false);
+    const sub = path.replace(/^\/+/, "");
+    saveOutputDir(`remote:${outputRemote}:${sub}`);
   };
 
   const remotePath = /^remote:[A-Za-z0-9._-]{1,64}:.+$/.test(serverPath.trim());
@@ -648,19 +682,92 @@ export function NewSermon() {
       <details className="rounded-md border border-line bg-ink p-3">
         <summary className="cursor-pointer text-xs font-semibold text-muted">Output location</summary>
         <p className="mt-2 text-sm">
-          Writes to <span className="font-mono text-mist">{outputDir}</span>{" "}
+          {outputIsCloud ? "Cloud" : "Local"}:{" "}
+          <span className="font-mono text-mist">{outputDir}</span>{" "}
           <span className="text-xs text-muted">
             ({outputSource === "user" ? "your default" : "default"})
           </span>
         </p>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button variant="secondary" onClick={() => setOutputOpen(true)}>
-            Change output location
-          </Button>
+        <div className="mt-2 flex flex-wrap items-center gap-2" aria-live="polite" aria-label="Destination validation">
+          {outputIsCloud ? (
+            <>
+              <Chip tone={outputRemote ? "ok" : "neutral"}>
+                {outputRemote ? "cloud remote" : "no remote"}
+              </Chip>
+              <Chip tone={outputRemote ? "info" : "neutral"}>
+                {outputSub ? `folder: ${outputSub}` : "remote root"}
+              </Chip>
+            </>
+          ) : (
+            <>
+              <Chip tone="ok">local folder</Chip>
+              <Chip tone="info">{outputDir || "no path"}</Chip>
+            </>
+          )}
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div>
+            <label htmlFor="output-mode" className="text-xs font-semibold text-muted">
+              Destination
+            </label>
+            <select
+              id="output-mode"
+              value={outputIsCloud ? "cloud" : "local"}
+              onChange={(e) => {
+                if (e.target.value === "local") {
+                  saveOutputDir("processed_sermons");
+                } else if (cloudRemotes[0]) {
+                  chooseOutputRemote(cloudRemotes[0].name);
+                }
+              }}
+              className={inputCls}
+            >
+              <option value="local">Local folder</option>
+              <option value="cloud" disabled={cloudRemotes.length === 0}>
+                Cloud folder
+              </option>
+            </select>
+          </div>
+          {outputIsCloud ? (
+            <div>
+              <label htmlFor="output-remote" className="text-xs font-semibold text-muted">
+                Cloud remote
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  id="output-remote"
+                  value={outputRemote}
+                  onChange={(e) => chooseOutputRemote(e.target.value)}
+                  className={`${inputCls} min-w-0 flex-1`}
+                >
+                  <option value="">Choose a remote…</option>
+                  {cloudRemotes.map((r) => (
+                    <option key={r.name} value={r.name}>
+                      {r.name} · {r.provider}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  variant="secondary"
+                  onClick={() => setOutputCloudOpen(true)}
+                  disabled={!outputRemote}
+                >
+                  Browse cloud
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-end">
+              <Button variant="secondary" onClick={() => setOutputOpen(true)}>
+                Change local folder
+              </Button>
+            </div>
+          )}
         </div>
         <p className="mt-1 text-xs text-muted">
-          Changing this saves it as your default for future sermons. This run is queued with the
-          location chosen here.
+          {outputIsCloud
+            ? "Processed files are staged locally, uploaded to the cloud folder with rclone, then the staging copy is removed."
+            : "Changing this saves it as your default for future sermons. This run is queued with the location chosen here."}
         </p>
       </details>
 
@@ -670,13 +777,23 @@ export function NewSermon() {
             <input id="ns-title" value={meta.title} onChange={set("title")} placeholder="Sample teaching title" className={inputCls} />
           </Field>
           <Field label="Speaker (required)" htmlFor="ns-speaker">
-            <input id="ns-speaker" value={meta.speaker} onChange={set("speaker")} placeholder="Speaker name" autoComplete="off" className={inputCls} />
+            <input id="ns-speaker" list="ns-speaker-options" value={meta.speaker} onChange={set("speaker")} placeholder="Speaker name" autoComplete="off" className={inputCls} />
+            <datalist id="ns-speaker-options">
+              {facetSpeakerOptions.map((f) => (
+                <option key={f.name} value={f.name} />
+              ))}
+            </datalist>
           </Field>
           <Field label="Date (required)" htmlFor="ns-date">
             <input id="ns-date" type="date" value={meta.date} onChange={set("date")} className={inputCls} />
           </Field>
           <Field label="Series" htmlFor="ns-series">
-            <input id="ns-series" value={meta.series} onChange={set("series")} placeholder="Sample Series A" className={inputCls} />
+            <input id="ns-series" list="ns-series-options" value={meta.series} onChange={set("series")} placeholder="Sample Series A" autoComplete="off" className={inputCls} />
+            <datalist id="ns-series-options">
+              {facetSeriesOptions.map((f) => (
+                <option key={f.name} value={f.name} />
+              ))}
+            </datalist>
           </Field>
           <Field label="Event type" htmlFor="ns-event">
             <select id="ns-event" value={meta.eventType} onChange={set("eventType")} className={inputCls}>
@@ -861,6 +978,17 @@ export function NewSermon() {
         onPickFolder={pickOutputDir}
         onClose={() => setOutputOpen(false)}
       />
+      {outputRemote ? (
+        <FileExplorerDialog
+          open={outputCloudOpen}
+          title="Choose a cloud output folder"
+          mode="cloud"
+          name={outputRemote}
+          pick="folder"
+          onPickFolder={pickCloudOutput}
+          onClose={() => setOutputCloudOpen(false)}
+        />
+      ) : null}
 
       <ConfirmDialog
         open={confirmReset}

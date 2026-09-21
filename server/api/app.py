@@ -21,6 +21,7 @@ from server.api.routers.cloud import proxy_router as cloud_proxy_router
 from server.api.routers.cloud import router as cloud_router
 from server.api.routers.jobs import router as jobs_router
 from server.api.routers.meta import router as meta_router
+from server.api.routers.sermons import library_router as library_router
 from server.api.routers.sermons import router as sermons_router
 from server.api.routers.status import router as status_router
 from server.api.routers.userdata import (
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
             content={"detail": {"needs_bootstrap": not bootstrapped, "message": "authentication required"}},  # noqa: E501
         )
     app.include_router(sermons_router)
+    app.include_router(library_router)
     app.include_router(jobs_router)
     app.include_router(meta_router)
     app.include_router(userdata_router)
