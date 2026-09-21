@@ -204,7 +204,13 @@ metadata_processing:
 # config_cache. Keep the ${VAR} placeholders here; short or empty values are
 # treated as unset and never sent to an endpoint.
 transcription:
-  backend: faster_whisper_local  # Options: whisper_local, faster_whisper_local, whisper_openai, whisper_openrouter
+  # Backend precedence: an explicit value here (or a caller/CLI override) always
+  # wins. Leave this unset or set it to "auto" to pick automatically: when the
+  # optional faster-whisper (CTranslate2) package is importable the lighter,
+  # lower-VRAM faster_whisper_local path is used; otherwise the code falls back
+  # to whisper_local (openai-whisper, which runs fp16 on CUDA and drops to CPU
+  # on a CUDA out-of-memory).
+  backend: faster_whisper_local  # Options: auto, whisper_local, faster_whisper_local, whisper_openai, whisper_openrouter
   # Compute type for local Whisper. auto = int8 on cpu, float16 on cuda (an
   # 8 GB card cannot hold a float32 large model). Pin one of the explicit
   # values to override; cuda loads still step down the ladder on OOM.

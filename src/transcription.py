@@ -109,8 +109,27 @@ def _detect_device(preference: str = "auto", allow_rocm: bool = True) -> str:
     return "cpu"
 
 
+def _ensure_info_logging() -> None:
+    """Make this module's INFO records visible without a root logger config.
+
+    The Streamlit worker never calls logging.basicConfig, so the root logger
+    sits at WARNING with no handler and INFO stage logs (VRAM numbers) vanish.
+    Pin this module's logger to INFO and attach a stderr handler only when the
+    root logger has none, so CLI/verbose configurations keep their formatting.
+    """
+    if logger.level == logging.NOTSET or logger.level > logging.INFO:
+        logger.setLevel(logging.INFO)
+    if any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
+        return
+    if not logging.getLogger().handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+        logger.addHandler(handler)
+
+
 def log_cuda_memory(stage: str) -> None:
     """Log free/total VRAM and live PyTorch allocations for a pipeline stage."""
+    _ensure_info_logging()
     try:
         import torch
 
@@ -448,8 +467,16 @@ def _with_gpu_release(fn):
 
 
 def _load_whisper_model(model_size: str, device: str):
-    """Load an openai-whisper model, raising TranscriptionError on failure."""
+    """Load an openai-whisper model, raising TranscriptionError on failure.
+
+    openai-whisper is the PyTorch implementation and loads float32 weights by
+    default. On CUDA the model is converted to half precision, which halves the
+    weight footprint and lets a large model fit an 8 GB card. A CUDA OOM during
+    the load retries once on CPU; any other error surfaces immediately.
+    """
     import warnings
+
+    _ensure_info_logging()
 
     try:
         import whisper
@@ -462,11 +489,43 @@ def _load_whisper_model(model_size: str, device: str):
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            return whisper.load_model(model_size, device=device)
+            model = whisper.load_model(model_size, device=device)
     except Exception as e:
-        raise TranscriptionError(
-            f"Failed to load Whisper model {model_size} on {device}: {e}"
-        ) from e
+        if device == "cuda" and _is_cuda_out_of_memory(e):
+            free_gb = _free_vram_gb()
+            free_text = f"{free_gb:.2f} GB free" if free_gb is not None else "free VRAM unknown"
+            logger.warning(
+                "whisper %s could not fit on the GPU (%s); retrying on CPU",
+                model_size,
+                free_text,
+            )
+            release_transcription_gpu()
+            device = "cpu"
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    model = whisper.load_model(model_size, device="cpu")
+            except Exception as cpu_exc:
+                raise TranscriptionError(
+                    f"Failed to load Whisper model {model_size} on cpu: {cpu_exc}"
+                ) from cpu_exc
+        else:
+            raise TranscriptionError(
+                f"Failed to load Whisper model {model_size} on {device}: {e}"
+            ) from e
+
+    dtype = "float32"
+    if device == "cuda":
+        try:
+            model = model.half()
+            dtype = "float16"
+        except Exception as exc:
+            logger.warning("Could not convert whisper model to fp16, staying float32: %s", exc)
+    logger.info(
+        "Whisper model loaded: model=%s device=%s dtype=%s", model_size, device, dtype
+    )
+    log_cuda_memory("after whisper load")
+    return model
 
 
 @_with_gpu_release
@@ -779,6 +838,39 @@ def _configured_compute_type(transcription_cfg: dict, faster_cfg: dict[str, Any]
     return None
 
 
+def _faster_whisper_available() -> bool:
+    """True when the optional faster-whisper (CTranslate2) package is importable."""
+    try:
+        import faster_whisper  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _resolve_backend(backend_value: Any, backend_override: str | None) -> str:
+    """Resolve the local/cloud backend, preferring faster-whisper when asked to auto-pick.
+
+    An explicit backend (config value or caller override) always wins. An unset
+    or "auto" backend chooses faster_whisper_local when CTranslate2 is
+    importable: it runs int8/float16 in roughly a third of the memory of the
+    float32 PyTorch path. Without faster-whisper, openai-whisper is kept.
+    """
+    requested = backend_override or backend_value
+    if isinstance(requested, str) and requested.strip() and requested.strip().lower() != "auto":
+        return requested
+    if _faster_whisper_available():
+        logger.info(
+            "transcription backend unset/auto; using faster_whisper_local (CTranslate2) "
+            "because faster-whisper is available"
+        )
+        return "faster_whisper_local"
+    logger.info(
+        "transcription backend unset/auto; using whisper_local because faster-whisper "
+        "is not installed"
+    )
+    return "whisper_local"
+
+
 def _is_cloud_model_override(model_size: str | None) -> bool:
     """True when the caller passed a specific cloud model rather than the
     generic local default ("base"). Cloud backends serve named models, so
@@ -807,7 +899,7 @@ def transcribe(
     """
     cfg = config or {}
     transcription_cfg = cfg.get("transcription", {})
-    backend = backend_override or transcription_cfg.get("backend", "whisper_local")
+    backend = _resolve_backend(transcription_cfg.get("backend"), backend_override)
 
     if backend == "whisper_local":
         local_cfg = transcription_cfg.get("whisper_local", {})
@@ -889,7 +981,7 @@ def transcribe_segments(
     """
     cfg = config or {}
     transcription_cfg = cfg.get("transcription", {})
-    backend = backend_override or transcription_cfg.get("backend", "whisper_local")
+    backend = _resolve_backend(transcription_cfg.get("backend"), backend_override)
 
     if backend == "whisper_local":
         local_cfg = transcription_cfg.get("whisper_local", {})
