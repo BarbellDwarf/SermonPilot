@@ -107,7 +107,12 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
         ProcessingOrchestrator,
         SermonFilter,
     )
-    from transcription import TranscriptionError, transcribe_segments
+    from transcription import (
+        TranscriptionError,
+        log_cuda_memory,
+        release_enhancement_gpu,
+        transcribe_segments,
+    )
     try:
         sys.path.insert(0, str(Path(__file__).parent / "ui"))
         from database import SermonRepository
@@ -2065,7 +2070,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     enhancement_method=(
                         enhancement_method
                         or config.get('audio_enhancement_method', 'deepfilternet')
-                    )
+                    ),
+                    config=config,
                 )
                 if enhancement_method == "custom" and custom_repo and custom_file:
                     processor.config['clear_custom_repo'] = custom_repo
@@ -2082,6 +2088,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     enhanced_audio_path = audio_path
                 else:
                     _report(30, "Audio enhancement complete")
+                    log_cuda_memory("after audio enhancement")
                 try:
                     processor.release_gpu()
                     del processor
@@ -2249,6 +2256,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     original_input_path, speaker_name, series_title, title, config
                 )
             else:
+                release_enhancement_gpu()
                 _report(35, f"Starting transcription ({whisper_model} model)...")
                 try:
                     transcript_segments = transcribe_segments(
