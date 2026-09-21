@@ -494,6 +494,21 @@ export const cloudApi = {
     ),
 };
 
+export interface ApiFacet {
+  name: string;
+  count: number;
+}
+
+export interface ApiFacets {
+  speakers: ApiFacet[];
+  series: ApiFacet[];
+  event_types: ApiFacet[];
+}
+
+export const libraryApi = {
+  facets: () => send<ApiFacets>("/api/library/facets", "GET"),
+};
+
 export interface BrandingItem {
   name: string;
   path: string;

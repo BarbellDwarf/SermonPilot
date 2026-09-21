@@ -11,9 +11,11 @@ job that completed between the two clicks.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import secrets
+import shutil
 import sqlite3
 import time
 from datetime import datetime, timedelta
@@ -27,6 +29,8 @@ from server.api.routers.auth import require_user
 from server.api.scoping import visible
 
 router = APIRouter(prefix="/api", tags=["write"])
+
+logger = logging.getLogger(__name__)
 
 _ACTIVE_STATUSES = ("queued", "running")
 
@@ -122,12 +126,12 @@ def _save_draft_sermon(
 
 def _output_dir_for(user: dict, requested: str) -> str:
     """Resolve the per-run output override, falling back to the user's default."""
-    from server.api.routers.userdata import resolve_user_output_dir, validate_output_path
+    from server.api.routers.userdata import resolve_user_output_dir, validate_output_dir
 
     raw = (requested or "").strip()
     if not raw:
         return str(resolve_user_output_dir(user))
-    return str(validate_output_path(raw))
+    return validate_output_dir(raw, user)
 
 
 def _enqueue_sermon_processing(
@@ -589,13 +593,47 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
 
 @router.get("/branding")
 def list_branding(user=Depends(require_user)) -> dict[str, Any]:
-    user_dir = _branding_base() / _safe_user_segment(user.get("id"))
+    base = _branding_base()
+    user_dir = base / _safe_user_segment(user.get("id"))
+    user_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        os.chmod(user_dir, 0o700)
+    except OSError:
+        pass
+    _adopt_legacy_branding(base, user_dir)
     items: list[dict[str, Any]] = []
     if user_dir.is_dir():
         for entry in sorted(user_dir.iterdir()):
             if entry.is_file() and entry.suffix.lower().lstrip(".") in _BRANDING_EXTENSIONS:
                 items.append({"name": entry.name, "path": f"{user_dir.name}/{entry.name}"})
     return {"items": items}
+
+
+def _adopt_legacy_branding(base: Path, user_dir: Path) -> None:
+    """One-time, idempotent move of flat-root cards into the listing user's dir."""
+    if not base.is_dir():
+        return
+    adopted = 0
+    for entry in sorted(base.iterdir()):
+        if not entry.is_file():
+            continue
+        if entry.suffix.lower().lstrip(".") not in _BRANDING_EXTENSIONS:
+            continue
+        dest = user_dir / entry.name
+        if dest.exists():
+            stem, suffix = entry.stem, entry.suffix
+            counter = 1
+            while (user_dir / f"{stem}-{counter}{suffix}").exists():
+                counter += 1
+            dest = user_dir / f"{stem}-{counter}{suffix}"
+        try:
+            shutil.move(str(entry), str(dest))
+        except OSError as exc:
+            logger.warning("Could not adopt legacy branding file %s: %s", entry.name, exc)
+            continue
+        adopted += 1
+    if adopted:
+        logger.info("Adopted %d legacy branding file(s) into %s", adopted, user_dir.name)
 
 
 @router.post("/branding", status_code=201)
