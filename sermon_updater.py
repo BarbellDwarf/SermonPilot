@@ -101,7 +101,12 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     )
     from cli.parser import CLIParser, confirm
     from core.config import ConfigManager
-    from llm_manager import LLMManager, LLMTimeoutError
+    from llm_manager import (
+        LLMManager,
+        LLMModelNotConfiguredError,
+        LLMModelNotFoundError,
+        LLMTimeoutError,
+    )
     from llm_manager import _call_with_deadline as _llm_call_with_deadline
     from processing.orchestrator import (
         ArgumentsNormalizer,
@@ -264,6 +269,43 @@ def _log_metadata_timeout(exc: LLMTimeoutError) -> None:
         "metadata generation timed out after %.0fs; continuing without it",
         float(getattr(exc, 'timeout', 0.0) or 0.0),
     )
+
+
+def _log_metadata_model_missing(exc: LLMModelNotFoundError) -> None:
+    model = getattr(exc, 'model', 'unknown')
+    available = getattr(exc, 'available_models', None)
+    if available:
+        logger.warning(
+            "metadata skipped: model '%s' is not available. Available models: %s",
+            model,
+            ", ".join(available),
+        )
+    else:
+        logger.warning(
+            "metadata skipped: model '%s' is not available; continuing without it", model
+        )
+
+
+_DEFAULT_METADATA_STAGE_BUDGET_SECONDS = 900.0
+
+
+def _metadata_stage_budget_seconds() -> float:
+    """Wall-clock budget for the whole metadata stage (title, description, hashtags)."""
+    llm_config = config.get('llm', {}) if isinstance(config, dict) else {}
+    return float(
+        _positive_setting(
+            llm_config.get('metadata_stage_budget_seconds'),
+            _DEFAULT_METADATA_STAGE_BUDGET_SECONDS,
+        )
+    )
+
+
+def _positive_setting(value, default: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
 
 
 def console_print(message: str, level: str = "info"):
@@ -1472,7 +1514,7 @@ Generate a compelling sermon title:"""
         logger.debug("Generated title (%d chars): %s", len(title), title)
         return title
 
-    except LLMTimeoutError:
+    except (LLMTimeoutError, LLMModelNotFoundError, LLMModelNotConfiguredError):
         raise
     except Exception as e:
         logger.error("Title generation failed: %s", e)
@@ -1522,7 +1564,7 @@ Shortened title (max 30 chars):"""
                 "Generated short display title (%d chars): %s", len(short_title), short_title
             )
             return short_title
-    except LLMTimeoutError:
+    except (LLMTimeoutError, LLMModelNotFoundError, LLMModelNotConfiguredError):
         raise
     except Exception as e:
         logger.warning("Short title generation failed: %s", e)
@@ -2644,85 +2686,130 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         if transcript and not skip_ai_generation:
             console_print("Generating metadata from transcript...")
 
-            if not title:
-                try:
-                    _report(60, f"Generating title with {_llm_target_label()}...")
-                    _started = time.time()
-                    title = generate_title(
-                        transcript=transcript,
-                        speaker_name=speaker_name,
-                        event_type=event_type,
-                        bible_text=bible_text
-                    )
-                    _report(62, f"Title generated in {time.time() - _started:.1f}s")
-                except LLMTimeoutError as e:
-                    _log_metadata_timeout(e)
-                except Exception as e:
-                    logger.warning("LLM title generation failed: %s", e)
+            def _generate_metadata_stage():
+                stage_title = title
+                stage_description = description
+                stage_hashtags = hashtags
 
-            if not description:
-                try:
-                    _report(70, f"Generating description with {_llm_target_label()}...")
-                    _started = time.time()
-                    if force_validation and transcript:
-                        _report(70, "Generating description with validation...")
-                        validator = DescriptionValidator(config)
-                        description, validation_info = generate_validated_summary(
-                            transcript,
+                if not stage_title:
+                    try:
+                        _report(60, f"Generating title with {_llm_target_label()}...")
+                        _started = time.time()
+                        stage_title = generate_title(
+                            transcript=transcript,
+                            speaker_name=speaker_name,
                             event_type=event_type,
-                            speaker_name=speaker_name
+                            bible_text=bible_text
                         )
-                        is_valid, reason, score, _, _ = validator.validate_description(
-                            description, {'sermon_id': None}
-                        )
-                        if not is_valid:
-                            logger.warning(
-                                "Generated description failed validation (%s); "
-                                "regenerating without validation as fallback", reason,
-                            )
-                            description = generate_summary(
+                        _report(62, f"Title generated in {time.time() - _started:.1f}s")
+                    except LLMModelNotFoundError as e:
+                        _log_metadata_model_missing(e)
+                    except LLMModelNotConfiguredError as e:
+                        logger.warning("metadata skipped: %s", e)
+                    except LLMTimeoutError as e:
+                        _log_metadata_timeout(e)
+                    except Exception as e:
+                        logger.warning("LLM title generation failed: %s", e)
+
+                if not stage_description:
+                    try:
+                        _report(70, f"Generating description with {_llm_target_label()}...")
+                        _started = time.time()
+                        if force_validation and transcript:
+                            _report(70, "Generating description with validation...")
+                            validator = DescriptionValidator(config)
+                            stage_description, validation_info = generate_validated_summary(
                                 transcript,
                                 event_type=event_type,
                                 speaker_name=speaker_name
                             )
-                    else:
-                        description = generate_summary(
-                            transcript,
-                            event_type=event_type,
-                            speaker_name=speaker_name
+                            is_valid, reason, score, _, _ = validator.validate_description(
+                                stage_description, {'sermon_id': None}
+                            )
+                            if not is_valid:
+                                logger.warning(
+                                    "Generated description failed validation (%s); "
+                                    "regenerating without validation as fallback", reason,
+                                )
+                                stage_description = generate_summary(
+                                    transcript,
+                                    event_type=event_type,
+                                    speaker_name=speaker_name
+                                )
+                        else:
+                            stage_description = generate_summary(
+                                transcript,
+                                event_type=event_type,
+                                speaker_name=speaker_name
+                            )
+                        _report(72, f"Description generated in {time.time() - _started:.1f}s")
+                    except LLMModelNotFoundError as e:
+                        _log_metadata_model_missing(e)
+                        stage_description = None
+                    except LLMModelNotConfiguredError as e:
+                        logger.warning("metadata skipped: %s", e)
+                        stage_description = None
+                    except LLMTimeoutError as e:
+                        _log_metadata_timeout(e)
+                        stage_description = None
+                    except Exception as e:
+                        logger.warning("LLM description generation failed: %s", e)
+                        stage_description = None
+
+                    if stage_description:
+                        logger.info(
+                            "Description ready (%d chars); stored in "
+                            "sermons.description and sermon_content.description",
+                            len(stage_description),
                         )
-                    _report(72, f"Description generated in {time.time() - _started:.1f}s")
-                except LLMTimeoutError as e:
-                    _log_metadata_timeout(e)
-                    description = None
-                except Exception as e:
-                    logger.warning("LLM description generation failed: %s", e)
-                    description = None
+                    else:
+                        logger.warning(
+                            "Description generation returned nothing; "
+                            "the template fallback will be used"
+                        )
 
-                if description:
-                    logger.info(
-                        "Description ready (%d chars); stored in "
-                        "sermons.description and sermon_content.description",
-                        len(description),
-                    )
-                else:
-                    logger.warning(
-                        "Description generation returned nothing; "
-                        "the template fallback will be used"
-                    )
+                if not stage_hashtags:
+                    try:
+                        _report(80, f"Generating hashtags with {_llm_target_label()}...")
+                        _started = time.time()
+                        stage_hashtags = generate_hashtags(transcript)
+                        _report(82, f"Hashtags generated in {time.time() - _started:.1f}s")
+                    except LLMModelNotFoundError as e:
+                        _log_metadata_model_missing(e)
+                        stage_hashtags = None
+                    except LLMModelNotConfiguredError as e:
+                        logger.warning("metadata skipped: %s", e)
+                        stage_hashtags = None
+                    except LLMTimeoutError as e:
+                        _log_metadata_timeout(e)
+                        stage_hashtags = None
+                    except Exception as e:
+                        logger.warning("LLM hashtag generation failed: %s", e)
+                        stage_hashtags = None
 
-            if not hashtags:
-                try:
-                    _report(80, f"Generating hashtags with {_llm_target_label()}...")
-                    _started = time.time()
-                    hashtags = generate_hashtags(transcript)
-                    _report(82, f"Hashtags generated in {time.time() - _started:.1f}s")
-                except LLMTimeoutError as e:
-                    _log_metadata_timeout(e)
-                    hashtags = None
-                except Exception as e:
-                    logger.warning("LLM hashtag generation failed: %s", e)
-                    hashtags = None
+                return stage_title, stage_description, stage_hashtags
+
+            try:
+                title, description, hashtags = _llm_call_with_deadline(
+                    _generate_metadata_stage,
+                    _metadata_stage_budget_seconds(),
+                    "metadata-stage",
+                )
+            except LLMTimeoutError:
+                logger.warning(
+                    "metadata stage exceeded its budget; continuing without metadata"
+                )
+            except LLMModelNotFoundError as e:
+                _log_metadata_model_missing(e)
+                title = description = hashtags = None
+            except LLMModelNotConfiguredError as e:
+                logger.warning(
+                    "metadata stage skipped: %s; continuing without metadata", e
+                )
+                title = description = hashtags = None
+            except Exception as e:
+                logger.warning("metadata stage failed (%s); continuing without metadata", e)
+                title = description = hashtags = None
         elif skip_ai_generation:
             console_print("Skipping AI metadata generation")
         else:
@@ -4034,7 +4121,7 @@ def generate_summary(
 
         logger.debug("Summary generated (%d chars)", len(response))
         return response
-    except LLMTimeoutError:
+    except (LLMTimeoutError, LLMModelNotFoundError, LLMModelNotConfiguredError):
         raise
     except Exception as e:  # pragma: no cover
         logger.error("LLM summary generation failed: %s", e)
@@ -4101,7 +4188,7 @@ def verify_hashtags(initial_hashtags: str, original_text: str) -> str:
             logger.warning("No valid hashtags found in verification, using fallback")
             return "#faith #hope #worship #christian #jesus"
 
-    except LLMTimeoutError:
+    except (LLMTimeoutError, LLMModelNotFoundError, LLMModelNotConfiguredError):
         raise
     except Exception as e:
         logger.error("Hashtag verification failed: %s", e)
@@ -4152,7 +4239,7 @@ def generate_hashtags(text: str) -> str:
             logger.debug("Generated hashtags (no verification): %s", hashtags)
             return hashtags
 
-    except LLMTimeoutError:
+    except (LLMTimeoutError, LLMModelNotFoundError, LLMModelNotConfiguredError):
         raise
     except Exception as e:  # pragma: no cover
         logger.error("LLM hashtag generation failed: %s", e)
