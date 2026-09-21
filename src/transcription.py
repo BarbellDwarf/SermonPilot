@@ -469,10 +469,12 @@ def _with_gpu_release(fn):
 def _load_whisper_model(model_size: str, device: str):
     """Load an openai-whisper model, raising TranscriptionError on failure.
 
-    openai-whisper is the PyTorch implementation and loads float32 weights by
-    default. On CUDA the model is converted to half precision, which halves the
-    weight footprint and lets a large model fit an 8 GB card. A CUDA OOM during
-    the load retries once on CPU; any other error surfaces immediately.
+    openai-whisper loads float32 weights by default. Loading straight onto CUDA
+    allocates that float32 copy on the device first, which spikes a large model
+    past an 8 GB card before any conversion happens. So the model is loaded on
+    CPU, converted to half precision, and only then moved to CUDA: the GPU only
+    ever sees the fp16 weights. If even the fp16 move runs out of memory the
+    CPU model is kept, with the reason logged.
     """
     import warnings
 
@@ -485,42 +487,62 @@ def _load_whisper_model(model_size: str, device: str):
             "whisper library not installed - install with: pip install openai-whisper"
         ) from e
 
-    log_cuda_memory(f"before whisper load ({device})")
+    log_cuda_memory(f"before whisper load ({device}, cpu weights)")
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            model = whisper.load_model(model_size, device=device)
+            model = whisper.load_model(model_size, device="cpu")
     except Exception as e:
-        if device == "cuda" and _is_cuda_out_of_memory(e):
+        raise TranscriptionError(
+            f"Failed to load Whisper model {model_size} on cpu: {e}"
+        ) from e
+
+    if device != "cuda":
+        logger.info(
+            "Whisper model loaded: model=%s device=cpu dtype=float32", model_size
+        )
+        return model
+
+    dtype = "float32"
+    try:
+        model = model.half()
+        dtype = "float16"
+    except Exception as exc:
+        logger.warning("Could not convert whisper model to fp16, staying float32: %s", exc)
+
+    log_cuda_memory(f"before whisper move to {device} ({dtype})")
+    try:
+        model = model.to(device)
+    except Exception as e:
+        if _is_cuda_out_of_memory(e):
             free_gb = _free_vram_gb()
             free_text = f"{free_gb:.2f} GB free" if free_gb is not None else "free VRAM unknown"
             logger.warning(
-                "whisper %s could not fit on the GPU (%s); retrying on CPU",
+                "whisper %s could not fit on the GPU in %s (%s); keeping the CPU model",
                 model_size,
+                dtype,
                 free_text,
             )
             release_transcription_gpu()
-            device = "cpu"
             try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    model = whisper.load_model(model_size, device="cpu")
-            except Exception as cpu_exc:
-                raise TranscriptionError(
-                    f"Failed to load Whisper model {model_size} on cpu: {cpu_exc}"
-                ) from cpu_exc
-        else:
-            raise TranscriptionError(
-                f"Failed to load Whisper model {model_size} on {device}: {e}"
-            ) from e
+                model = model.to("cpu")
+            except Exception as exc:
+                logger.warning("Could not move whisper model back to CPU: %s", exc)
+            if dtype == "float16":
+                try:
+                    model = model.float()
+                except Exception as exc:
+                    logger.warning("Could not restore fp32 weights on CPU: %s", exc)
+            logger.info(
+                "Whisper model loaded: model=%s device=cpu dtype=float32 "
+                "(fp16 GPU move ran out of memory)",
+                model_size,
+            )
+            return model
+        raise TranscriptionError(
+            f"Failed to load Whisper model {model_size} on {device}: {e}"
+        ) from e
 
-    dtype = "float32"
-    if device == "cuda":
-        try:
-            model = model.half()
-            dtype = "float16"
-        except Exception as exc:
-            logger.warning("Could not convert whisper model to fp16, staying float32: %s", exc)
     logger.info(
         "Whisper model loaded: model=%s device=%s dtype=%s", model_size, device, dtype
     )

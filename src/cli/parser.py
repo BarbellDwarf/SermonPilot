@@ -89,9 +89,11 @@ class CLIParser:
                                choices=['tiny', 'base', 'small', 'medium', 'large'],
                                help='Whisper model size for local transcription (default: base)')
         new_sermon.add_argument('--transcription-backend', dest='transcription_backend',
-                               default='whisper_local',
-                               choices=['whisper_local', 'whisper_openai', 'whisper_openrouter'],
-                               help='Transcription backend (default: whisper_local)')
+                               default=None,
+                               choices=['auto', 'whisper_local', 'faster_whisper_local',
+                                        'whisper_openai', 'whisper_openrouter'],
+                               help='Transcription backend (default: config/auto, '
+                                    'prefers faster-whisper when available)')
         new_sermon.add_argument('--auto-edit', dest='auto_edit', action='store_true',
                                 help='Run auto-edit cut detection with the review gate')
         new_sermon.add_argument('--auto-edit-mode', dest='auto_edit_mode', default=None,
