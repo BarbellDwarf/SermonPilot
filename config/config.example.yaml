@@ -195,12 +195,16 @@ metadata_processing:
 # treated as unset and never sent to an endpoint.
 transcription:
   backend: faster_whisper_local  # Options: whisper_local, faster_whisper_local, whisper_openai, whisper_openrouter
+  # Compute type for local Whisper. auto = int8 on cpu, float16 on cuda (an
+  # 8 GB card cannot hold a float32 large model). Pin one of the explicit
+  # values to override; cuda loads still step down the ladder on OOM.
+  compute_type: auto  # Options: auto, float16, int8_float16, int8, float32
   whisper_local:
     device: auto  # Options: auto, cpu, cuda
     language: en  # Language code (en, es, fr, etc.) or None for auto-detection
     model: base  # Options: tiny, base, small, medium, large (or ${WHISPER_MODEL})
   faster_whisper_local:
-    compute_type: float16  # Options: float16, int8, int8_float16, int8_uint8, int16, float32
+    compute_type: auto  # Legacy per-backend override; transcription.compute_type wins
     device: auto  # Options: auto, cpu, cuda
     language: en  # Language code (en, es, fr, etc.) or None for auto-detection
     model: base  # Options: tiny, base, small, medium, large (or ${WHISPER_MODEL})
