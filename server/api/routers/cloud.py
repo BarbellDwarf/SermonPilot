@@ -708,10 +708,19 @@ async def rclone_auth_proxy(session_key: str, path: str, request: Request) -> Re
 
 _SERVE_LOCK = threading.Lock()
 _SERVES: dict[str, dict[str, Any]] = {}
+# v2: root targets must keep the trailing colon ("<name>:"); the old builder
+# stripped it and rclone then treated the value as a local path. Bumping the
+# key version means a persisted serve built the old way is never reused.
+_SERVE_KEY_VERSION = "v2"
 
 
 def _serve_key(user_id: str | None, name: str, path: str) -> str:
-    return f"{_safe_segment(user_id)}:{name}:{path}"
+    return f"{_SERVE_KEY_VERSION}:{_safe_segment(user_id)}:{name}:{path}"
+
+
+def _serve_target(name: str, path: str) -> str:
+    sub = (path or "").strip("/")
+    return f"{name}:{sub}" if sub else f"{name}:"
 
 
 def _serve_state_path(user_id: str | None) -> Path:
@@ -766,7 +775,7 @@ def ensure_remote_serve(user_id: str | None, name: str, path: str = "") -> str:
         exe = _rclone_exe()
         cfg = _config_path(user_id)
         port = _free_port()
-        target = f"{name}:{path}".rstrip(":")
+        target = _serve_target(name, path)
         proc = subprocess.Popen(
             [exe, "--config", str(cfg), "serve", "webdav", target, "--addr", f"127.0.0.1:{port}"],
             stdout=subprocess.DEVNULL,
@@ -789,6 +798,23 @@ def parse_remote_path(container_path: str) -> tuple[str, str] | None:
     if not name:
         return None
     return name, sub.strip("/")
+
+
+def remote_file_listable(user_id: str | None, name: str, sub: str) -> bool:
+    """True when rclone can list the exact remote file path."""
+    sub = (sub or "").strip("/")
+    if not sub:
+        return False
+    proc = _run(
+        user_id,
+        "lsf",
+        f"{name}:{sub}",
+        "--max-depth",
+        "1",
+        check=False,
+        timeout=120,
+    )
+    return proc.returncode == 0 and bool((proc.stdout or "").strip())
 
 
 def resolve_remote_uri(user_id: str | None, container_path: str) -> str | None:
