@@ -13,6 +13,7 @@ All backends return a plain transcript string (or empty string on failure).
 import logging
 import os
 import sys
+from collections.abc import Callable
 from typing import Any
 
 import requests
@@ -556,8 +557,15 @@ def _transcribe_whisper_local_segments(
     model_size: str,
     device_preference: str = "auto",
     language: str | None = None,
+    cancel_check: Callable[[], None] | None = None,
 ) -> list[dict[str, float | str]]:
-    """Transcribe using the `whisper` library, returning timed segments."""
+    """Transcribe using the `whisper` library, returning timed segments.
+
+    ``cancel_check`` is polled once per decoded segment. A single segment
+    decode and the model load are the only uninterruptible steps, so the
+    worst-case delay between a cancel request and the raise is one segment
+    decode; the queue's cancel bound is asserted in the job queue tests.
+    """
     device = guard_transcription_device(_detect_device(device_preference))
     logger.info("Local Whisper transcription: model=%s, device=%s", model_size, device)
 
@@ -566,20 +574,21 @@ def _transcribe_whisper_local_segments(
     try:
         transcribe_kwargs = {"language": language} if language else {}
         result = model.transcribe(audio_path, **transcribe_kwargs)
-        raw = result.get("segments") or []
-        segments = [
-            {
+    except Exception as e:
+        raise TranscriptionError(f"Local transcription error: {e}") from e
+
+    segments = []
+    for seg in result.get("segments") or []:
+        if cancel_check is not None:
+            cancel_check()
+        if isinstance(seg, dict):
+            segments.append({
                 "start": float(seg.get("start", 0.0)),
                 "end": float(seg.get("end", 0.0)),
                 "text": str(seg.get("text", "")).strip(),
-            }
-            for seg in raw
-            if isinstance(seg, dict)
-        ]
-        logger.info("Local transcription succeeded (%d segments)", len(segments))
-        return segments
-    except Exception as e:
-        raise TranscriptionError(f"Local transcription error: {e}") from e
+            })
+    logger.info("Local transcription succeeded (%d segments)", len(segments))
+    return segments
 
 
 @_with_gpu_release
@@ -677,13 +686,22 @@ def _transcribe_faster_whisper_local_segments(
     device_preference: str = "auto",
     compute_type: str | None = None,
     language: str | None = None,
+    cancel_check: Callable[[], None] | None = None,
 ) -> list[dict[str, float | str]]:
-    """Transcribe using faster-whisper, returning timed segments."""
+    """Transcribe using faster-whisper, returning timed segments.
+
+    ``cancel_check`` is polled once per decoded segment, and the check sits
+    outside the model-call try/except so a cancellation is never wrapped as a
+    TranscriptionError. One CTranslate2 segment decode and the model load are
+    not interruptible; that is the documented worst-case cancel delay.
+    """
     try:
         from faster_whisper import WhisperModel
     except ImportError:
         logger.warning("faster-whisper library not installed, falling back to standard whisper")
-        return _transcribe_whisper_local_segments(audio_path, model_size, device_preference)
+        return _transcribe_whisper_local_segments(
+            audio_path, model_size, device_preference, cancel_check=cancel_check
+        )
 
     device = guard_transcription_device(_detect_device(device_preference, allow_rocm=False))
     effective_compute_type = _resolve_compute_type(compute_type, device)
@@ -705,19 +723,22 @@ def _transcribe_faster_whisper_local_segments(
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 500},
         )
+    except Exception as e:
+        raise TranscriptionError(f"Faster Whisper transcription failed: {e}") from e
 
-        timed = [
+    timed = []
+    for segment in segments:
+        if cancel_check is not None:
+            cancel_check()
+        timed.append(
             {
                 "start": float(segment.start),
                 "end": float(segment.end),
                 "text": str(segment.text).strip(),
             }
-            for segment in segments
-        ]
-        logger.info("Faster Whisper transcription succeeded (%d segments)", len(timed))
-        return timed
-    except Exception as e:
-        raise TranscriptionError(f"Faster Whisper transcription failed: {e}") from e
+        )
+    logger.info("Faster Whisper transcription succeeded (%d segments)", len(timed))
+    return timed
 
 
 def _transcribe_openrouter(
@@ -995,11 +1016,13 @@ def transcribe_segments(
     config: dict[str, Any] = None,
     backend_override: str | None = None,
     progress_callback=None,
+    cancel_check: Callable[[], None] | None = None,
 ) -> list[dict[str, float | str]]:
     """High-level transcription dispatcher returning timed segments.
 
     Mirrors transcribe() for backend selection. Backends without timestamp
-    support return an empty list.
+    support return an empty list. ``cancel_check`` is polled between decoded
+    segments by the local backends; the configured backend is never overridden.
     """
     cfg = config or {}
     transcription_cfg = cfg.get("transcription", {})
@@ -1011,7 +1034,9 @@ def transcribe_segments(
         language = local_cfg.get("language")
         model = model_size or local_cfg.get("model", "base")
         return _normalize_segments(
-            _transcribe_whisper_local_segments(audio_path, model, device_pref, language=language)
+            _transcribe_whisper_local_segments(
+                audio_path, model, device_pref, language=language, cancel_check=cancel_check
+            )
         )
     elif backend == "faster_whisper_local":
         faster_cfg = transcription_cfg.get("faster_whisper_local", {})
@@ -1021,7 +1046,12 @@ def transcribe_segments(
         language = faster_cfg.get("language")
         return _normalize_segments(
             _transcribe_faster_whisper_local_segments(
-                audio_path, model, device_pref, compute_type=compute_type, language=language
+                audio_path,
+                model,
+                device_pref,
+                compute_type=compute_type,
+                language=language,
+                cancel_check=cancel_check,
             )
         )
     elif backend == "whisper_openrouter":
