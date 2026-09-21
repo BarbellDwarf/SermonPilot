@@ -48,6 +48,22 @@ _RESULT_FIELDS = frozenset({'success', 'message', 'data', 'error'})
 # Terminal jobs older than this are pruned from memory and the database
 JOB_RETENTION_DAYS = 30
 
+# Debounced persistence: a running job writes progress/logs at most once per
+# this interval so high-frequency callbacks do not hammer SQLite. The queue
+# flusher and every explicit terminal write bypass the window.
+JOB_PERSIST_MIN_INTERVAL_SECONDS = 2.0
+# The persistence flusher wakes this often and writes dirty jobs whose debounce
+# window elapsed, so a separate sqlite connection observes a running job's
+# progress and logs within ~5 seconds.
+JOB_PERSIST_POLL_INTERVAL_SECONDS = 0.5
+# Chunked executors poll the cancel check at least once per chunk. This is the
+# documented worst-case delay between a cancel request and the worker noticing
+# it when loop iterations sleep no longer than this value. The only longer case
+# is a single uninterruptible native call (one CTranslate2 decode, one ffmpeg
+# or DeepFilterNet call, one HTTP upload request); that delay is bounded by the
+# call's own timeout, not by this poll interval.
+JOB_CANCEL_POLL_INTERVAL_SECONDS = 1.0
+
 
 def _is_secret_key(key: str) -> bool:
     """Return True if a parameter key should never be persisted."""
@@ -153,17 +169,46 @@ class Job:
     def __post_init__(self):
         if self.logs is None:
             self.logs = []
+        # Transient persistence coordination. These are plain instance
+        # attributes rather than dataclass fields so Job.to_dict() and the
+        # persisted background_jobs schema stay unchanged.
+        self._on_update: Callable[[Job], None] | None = None
+        self._dirty = False
+        self._force_persist = False
+        self._last_persist_at = 0.0
 
     def add_log(self, message: str):
-        """Add a log message to the job"""
+        """Append a log line and notify the persister."""
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.logs.append(f"[{timestamp}] {message}")
+        self._notify_update()
 
     def update_progress(self, progress: float, message: str = ""):
-        """Update job progress"""
+        """Update job progress and notify the persister."""
         self.progress = max(0, min(100, progress))
         if message:
             self.add_log(message)
+        else:
+            self._notify_update()
+
+    def request_persist(self):
+        """Force an immediate write, e.g. before a long blocking stage.
+
+        Debounced updates would otherwise leave the last log line invisible
+        for the whole duration of a multi-minute call.
+        """
+        self._force_persist = True
+        self._notify_update()
+
+    def _notify_update(self):
+        """Invoke the queue's persistence hook when one is registered."""
+        hook = self._on_update
+        if hook is None:
+            return
+        try:
+            hook(self)
+        except Exception:
+            logger.debug("Job update hook failed for %s", self.id, exc_info=True)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert job to dictionary for storage/serialization"""
@@ -244,6 +289,9 @@ class JobQueue:
         self._running = False
         self._shutdown_event = threading.Event()
         self._resource_wait_logged_at = 0.0
+        self._persist_lock = threading.Lock()
+        self._persist_wake = threading.Event()
+        self._persister: threading.Thread | None = None
 
         # Initialize database connection
         self._init_database()
@@ -307,6 +355,12 @@ class JobQueue:
             )
             worker.start()
             self._workers.append(worker)
+
+        # Flush debounced job state while workers are blocked in a stage.
+        self._persister = threading.Thread(
+            target=self._persist_loop, name="JobPersister", daemon=True
+        )
+        self._persister.start()
 
         logger.info(f"Job queue started with {self.max_workers} workers")
 
@@ -390,6 +444,11 @@ class JobQueue:
 
         self._running = False
         self._shutdown_event.set()
+        self._persist_wake.set()
+
+        if self._persister is not None:
+            self._persister.join(timeout=5.0)
+            self._persister = None
 
         # Wait for workers to finish
         for worker in self._workers:
@@ -556,11 +615,70 @@ class JobQueue:
                     continue
 
                 # Execute the job
-                self._execute_job(job)
+                try:
+                    self._execute_job(job)
+                except BaseException as e:
+                    logger.exception("Unhandled exception executing job %s", job.id)
+                    self._force_fail_job(job, e)
 
             except Exception as e:
                 logger.error(f"Worker error: {e}")
                 time.sleep(1.0)
+
+    def _persist_loop(self):
+        """Flush debounced job state while workers are blocked executing."""
+        while not self._shutdown_event.is_set():
+            self._persist_wake.wait(timeout=JOB_PERSIST_POLL_INTERVAL_SECONDS)
+            self._persist_wake.clear()
+            try:
+                self._flush_dirty_jobs()
+            except Exception as e:
+                logger.error(f"Job persistence flush failed: {e}")
+
+    def _flush_dirty_jobs(self):
+        """Write running jobs whose debounce window has elapsed."""
+        now = time.monotonic()
+        with self._queue_lock:
+            ready = [
+                job for job in self._jobs.values()
+                if getattr(job, "_dirty", False)
+                and (
+                    job._force_persist
+                    or now - job._last_persist_at >= JOB_PERSIST_MIN_INTERVAL_SECONDS
+                )
+            ]
+        for job in ready:
+            job._dirty = False
+            job._force_persist = False
+            job._last_persist_at = now
+            self._save_job_to_db(job)
+
+    def _on_job_update(self, job: Job):
+        """Persistence hook registered by _execute_job for the running job."""
+        if job._force_persist:
+            job._force_persist = False
+            job._dirty = False
+            job._last_persist_at = time.monotonic()
+            self._save_job_to_db(job)
+            return
+        job._dirty = True
+        self._persist_wake.set()
+
+    def _force_fail_job(self, job: Job, exc: BaseException):
+        """Guarantee a terminal FAILED state when an executor escapes its guard."""
+        job._on_update = None
+        with self._queue_lock:
+            if job.status in _TERMINAL_JOB_STATUSES:
+                return
+            job.status = JobStatus.FAILED
+            job.completed_at = datetime.now()
+            if job.result is None:
+                job.result = JobResult(
+                    success=False, message="Job execution failed", error=str(exc)
+                )
+            job.add_log(f"Job failed with unhandled exception: {exc}")
+        self._save_job_to_db(job)
+        logger.error("Job %s failed with unhandled exception: %s", job.id, exc)
 
     def _resources_available(self) -> bool:
         """Return True when RAM (and VRAM, if present) headroom can take a job.
@@ -648,6 +766,7 @@ class JobQueue:
 
     def _execute_job(self, job: Job):
         """Execute a specific job"""
+        job._on_update = self._on_job_update
         try:
             if job.cancelled or job.status == JobStatus.CANCELLED:
                 job.add_log("Job was cancelled before execution")
@@ -663,6 +782,7 @@ class JobQueue:
 
             # Execute the job
             result = executor(job)
+            job._on_update = None
 
             with self._queue_lock:
                 if job.cancelled or job.status == JobStatus.CANCELLED:
@@ -683,11 +803,13 @@ class JobQueue:
                 job.completed_at = datetime.now()
 
         except JobCancelledError:
+            job._on_update = None
             with self._queue_lock:
                 self._mark_cancelled(job)
             job.add_log("Job cancelled by user")
 
         except MemoryError as e:
+            job._on_update = None
             with self._queue_lock:
                 job.status = JobStatus.FAILED
                 job.result = JobResult(
@@ -704,6 +826,7 @@ class JobQueue:
             logger.error("Job %s ran out of memory", job.id)
 
         except Exception as e:
+            job._on_update = None
             with self._queue_lock:
                 if job.cancelled or job.status == JobStatus.CANCELLED:
                     job.add_log(f"Job cancelled: {e}")
@@ -720,6 +843,9 @@ class JobQueue:
             logger.error(f"Job {job.id} failed: {e}")
 
         finally:
+            job._on_update = None
+            job._dirty = False
+            job._force_persist = False
             self._save_job_to_db(job)
 
     def _get_job_executor(self, job_type: JobType) -> Callable | None:
@@ -733,58 +859,62 @@ class JobQueue:
             return
 
         try:
-            with self.db.get_connection() as conn:
-                parameters_json = (
-                    json.dumps(_strip_secrets(job.parameters)) if job.parameters else None
-                )
-                has_owner = _ensure_user_id_column(conn)
-                user_id = job.user_id
-                if has_owner and user_id is None:
-                    try:
-                        existing = conn.execute(
-                            "SELECT user_id FROM background_jobs WHERE id = ?", (job.id,)
-                        ).fetchone()
-                        if existing is not None:
-                            user_id = existing["user_id"]
-                    except Exception:
-                        pass
-                if has_owner:
-                    conn.execute("""
-                        INSERT OR REPLACE INTO background_jobs (
-                            id, type, title, description, status, progress,
-                            parameters, result, logs, created_at, started_at,
-                            completed_at, can_cancel, can_retry, priority, user_id
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        job.id, job.type.value, job.title, job.description,
-                        job.status.value, job.progress,
-                        parameters_json,
-                        json.dumps(_result_for_persistence(job.result)) if job.result else None,
-                        json.dumps(job.logs) if job.logs else None,
-                        job.created_at.isoformat() if job.created_at else None,
-                        job.started_at.isoformat() if job.started_at else None,
-                        job.completed_at.isoformat() if job.completed_at else None,
-                        job.can_cancel, job.can_retry, job.priority, user_id
-                    ))
-                else:
-                    conn.execute("""
-                        INSERT OR REPLACE INTO background_jobs (
-                            id, type, title, description, status, progress,
-                            parameters, result, logs, created_at, started_at,
-                            completed_at, can_cancel, can_retry, priority
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        job.id, job.type.value, job.title, job.description,
-                        job.status.value, job.progress,
-                        parameters_json,
-                        json.dumps(_result_for_persistence(job.result)) if job.result else None,
-                        json.dumps(job.logs) if job.logs else None,
-                        job.created_at.isoformat() if job.created_at else None,
-                        job.started_at.isoformat() if job.started_at else None,
-                        job.completed_at.isoformat() if job.completed_at else None,
-                        job.can_cancel, job.can_retry, job.priority
-                    ))
-                conn.commit()
+            # Serialize writes so a debounced flush can never overwrite a newer
+            # terminal state with a stale RUNNING row.
+            with self._persist_lock:
+                logs = list(job.logs or [])
+                with self.db.get_connection() as conn:
+                    parameters_json = (
+                        json.dumps(_strip_secrets(job.parameters)) if job.parameters else None
+                    )
+                    has_owner = _ensure_user_id_column(conn)
+                    user_id = job.user_id
+                    if has_owner and user_id is None:
+                        try:
+                            existing = conn.execute(
+                                "SELECT user_id FROM background_jobs WHERE id = ?", (job.id,)
+                            ).fetchone()
+                            if existing is not None:
+                                user_id = existing["user_id"]
+                        except Exception:
+                            pass
+                    if has_owner:
+                        conn.execute("""
+                            INSERT OR REPLACE INTO background_jobs (
+                                id, type, title, description, status, progress,
+                                parameters, result, logs, created_at, started_at,
+                                completed_at, can_cancel, can_retry, priority, user_id
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            job.id, job.type.value, job.title, job.description,
+                            job.status.value, job.progress,
+                            parameters_json,
+                            json.dumps(_result_for_persistence(job.result)) if job.result else None,
+                            json.dumps(logs) if logs else None,
+                            job.created_at.isoformat() if job.created_at else None,
+                            job.started_at.isoformat() if job.started_at else None,
+                            job.completed_at.isoformat() if job.completed_at else None,
+                            job.can_cancel, job.can_retry, job.priority, user_id
+                        ))
+                    else:
+                        conn.execute("""
+                            INSERT OR REPLACE INTO background_jobs (
+                                id, type, title, description, status, progress,
+                                parameters, result, logs, created_at, started_at,
+                                completed_at, can_cancel, can_retry, priority
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            job.id, job.type.value, job.title, job.description,
+                            job.status.value, job.progress,
+                            parameters_json,
+                            json.dumps(_result_for_persistence(job.result)) if job.result else None,
+                            json.dumps(logs) if logs else None,
+                            job.created_at.isoformat() if job.created_at else None,
+                            job.started_at.isoformat() if job.started_at else None,
+                            job.completed_at.isoformat() if job.completed_at else None,
+                            job.can_cancel, job.can_retry, job.priority
+                        ))
+                    conn.commit()
         except Exception as e:
             logger.error(f"Failed to save job {job.id} to database: {e}")
             job.add_log(f"Failed to save job to database: {e}")
