@@ -311,6 +311,72 @@ export const settingsApi = {
     send<{ key: string; value: unknown }>(`/api/me/settings/${encodeURIComponent(key)}`, "PUT", { value }),
 };
 
+export type LlmRole = "primary" | "fallback" | "validator";
+export type LlmRouteRole = "metadata" | "validation" | "transcription_assist" | "fallback";
+
+export interface ApiLlmSlot {
+  role: LlmRole;
+  enabled: boolean;
+  provider: string;
+  preset: string;
+  model: string;
+  endpoint: string;
+  numCtx: string;
+  maxTokens: string;
+  temperature: string;
+  hasKey: boolean;
+  maskedKey: string;
+}
+
+export interface ApiLlmRouting {
+  metadata: LlmRole;
+  validation: LlmRole;
+  transcription_assist: LlmRole;
+  fallback: LlmRole;
+}
+
+export interface ApiLlmConfig {
+  primary: ApiLlmSlot;
+  fallback: ApiLlmSlot;
+  validator: ApiLlmSlot;
+  routing: ApiLlmRouting;
+}
+
+export interface ApiLlmTestResult {
+  ok: boolean;
+  latency_ms: number;
+  model_echo: string | null;
+  error: string | null;
+}
+
+export interface ApiLlmSlotUpdate {
+  enabled?: boolean;
+  provider?: string;
+  model?: string;
+  endpoint?: string;
+  numCtx?: string;
+  maxTokens?: string;
+  temperature?: string;
+  apiKey?: string;
+}
+
+export interface ApiLlmConfigUpdate {
+  primary?: ApiLlmSlotUpdate;
+  fallback?: ApiLlmSlotUpdate;
+  validator?: ApiLlmSlotUpdate;
+  routing?: Partial<Record<LlmRouteRole, LlmRole>>;
+}
+
+export const llmConfigApi = {
+  get: () => send<ApiLlmConfig>("/api/llm/config", "GET"),
+  put: (body: ApiLlmConfigUpdate) => send<ApiLlmConfig>("/api/llm/config", "PUT", body),
+  test: (role: LlmRole, timeoutSeconds?: number) =>
+    send<ApiLlmTestResult>("/api/llm/test-connection", "POST", {
+      role,
+      ...(timeoutSeconds === undefined ? {} : { timeout_seconds: timeoutSeconds }),
+    }),
+};
+
 export const meApi = {
   patch: (body: { display_name?: string; email?: string }) =>
     send<AuthUser>("/api/me", "PATCH", body),
