@@ -129,6 +129,22 @@ def test_sermonaudio_credentials_seed_db_from_env(fresh_db, clear_config_env, mo
     assert stored["broadcaster_id"] == "env-broadcaster"
 
 
+def test_sermonaudio_key_seeds_missing_path_in_existing_db(
+    fresh_db, clear_config_env, monkeypatch
+):
+    fresh_db.save_config({"dry_run": True})
+    env_key = "placeholder-existing-db-key"
+    monkeypatch.setenv("SERMONAUDIO_API_KEY", env_key)
+
+    config, sources = resolve_config_with_sources(fresh_db)
+
+    assert sources["api_key"] == "SERMONAUDIO_API_KEY"
+    assert len(config["api_key"]) == len(env_key)
+    stored = fresh_db.load_config()
+    assert stored["dry_run"] is True
+    assert len(stored["api_key"]) == len(env_key)
+
+
 def test_sermonaudio_env_still_wins_and_db_value_is_intact(
     fresh_db, clear_config_env, monkeypatch
 ):
