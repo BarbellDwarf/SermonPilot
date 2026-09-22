@@ -505,9 +505,11 @@ async def upload_sermon(
         )
     except HTTPException:
         try:
-            dest.unlink()
-        except OSError:
-            pass
+            from src.safe_delete import trash_local
+
+            trash_local(dest, reason="upload_draft_save_failed", stage="upload")
+        except Exception:
+            logger.warning("Could not release rejected upload %s", dest)
         raise
 
     resolved_logo = (logo_path or auto_edit_logo_path).strip()

@@ -227,6 +227,7 @@ def test_engine_status_notes_are_not_rejection_notes() -> None:
 
 
 def test_rerender_replaces_stale_snippets_from_retained_media(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SERMONPILOT_TRASH_DIR", str(tmp_path / "_trash"))
     review = tmp_path / "review"
     snippets = review / "snippets"
     snippets.mkdir(parents=True)
@@ -260,6 +261,7 @@ def test_rerender_replaces_stale_snippets_from_retained_media(tmp_path, monkeypa
 
 
 def test_rerender_clears_stale_snippets_when_unavailable(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("SERMONPILOT_TRASH_DIR", str(tmp_path / "_trash"))
     review = tmp_path / "review"
     snippets = review / "snippets"
     snippets.mkdir(parents=True)
@@ -274,4 +276,5 @@ def test_rerender_clears_stale_snippets_when_unavailable(tmp_path, monkeypatch) 
     )
 
     assert not snippets.exists()
+    assert list((tmp_path / "_trash").rglob("start.mp4"))
     render.assert_not_called()

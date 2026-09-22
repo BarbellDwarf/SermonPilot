@@ -437,16 +437,31 @@ def _save_notes(sermon_id, notes):
 
 
 def _batch_delete(sermon_ids):
-    """Delete multiple sermons — actual deletion, confirmation handled in display_sermon_list"""
+    """Delete multiple sermons, moving their media to a recoverable trash area."""
+    from src.safe_delete import trash_sermon_media
     from ui.database import SermonRepository
     repo = SermonRepository()
     count = 0
+    trash_paths = []
     for sid in sermon_ids:
+        sermon = repo.get_sermon(sid) or {}
+        paths = sermon.get('file_paths', sermon.get('files', {})) or {}
+        values = (
+            [str(value) for value in paths.values() if value]
+            if isinstance(paths, dict) else []
+        )
         if repo.delete_sermon(sid):
             count += 1
+            for record in trash_sermon_media(values, sermon_id=sid):
+                trash_paths.append(record.destination)
     st.session_state.selected_sermon_ids = []
     st.session_state.selected_sermon = None
-    _set_feedback(f"Deleted {count} sermons")
+    if trash_paths:
+        _set_feedback(
+            f"Deleted {count} sermons. Media is recoverable at {trash_paths[0]}"
+        )
+    else:
+        _set_feedback(f"Deleted {count} sermons")
     st.rerun()
 
 
@@ -2154,18 +2169,30 @@ def display_sermon_details(sermon):
         st.warning(f"Edit review panel unavailable: {e}")
 
     if st.session_state.get('confirm_delete_sermon') == sermon['id']:
-        st.warning("Are you sure you want to delete this sermon? This cannot be undone.")
+        st.warning(
+            "Delete this sermon? The record is removed and its media moves to a "
+            "recoverable trash area."
+        )
         c1, c2 = st.columns([1, 5])
         with c1:
             if st.button("Yes, delete", type="primary", key=f"confirm_del_{sermon['id']}"):
+                from src.safe_delete import trash_sermon_media
                 from ui.database import SermonRepository
                 repo = SermonRepository()
                 if repo.delete_sermon(sermon['id']):
-                    file_paths = sermon.get('file_paths', sermon.get('files', {}))
-                    for _ftype, fpath in file_paths.items():
-                        if fpath and Path(fpath).exists():
-                            Path(fpath).unlink(missing_ok=True)
-                    _set_feedback("Sermon deleted")
+                    file_paths = sermon.get('file_paths', sermon.get('files', {})) or {}
+                    values = (
+                        [str(value) for value in file_paths.values() if value]
+                        if isinstance(file_paths, dict) else []
+                    )
+                    records = trash_sermon_media(values, sermon_id=sermon['id'])
+                    destinations = [record.destination for record in records]
+                    if destinations:
+                        _set_feedback(
+                            f"Sermon deleted. Media is recoverable at {destinations[0]}"
+                        )
+                    else:
+                        _set_feedback("Sermon deleted")
                     st.session_state.selected_sermon = None
                     st.session_state.confirm_delete_sermon = None
                     st.rerun()

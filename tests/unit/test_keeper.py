@@ -237,6 +237,43 @@ class TestShouldDeleteOriginal:
             is True
         )
 
+    def test_trash_original_moves_instead_of_unlinking(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SERMONPILOT_TRASH_DIR", str(tmp_path / "trash"))
+        monkeypatch.setattr(auto_edit, "verify_keeper", lambda s, k: True)
+        src, keep = self.setup_keeper(tmp_path)
+
+        record = auto_edit.trash_original_after_edit(
+            src,
+            keep,
+            make_config(delete_original=True),
+            True,
+            sermon_id="sermon-1",
+            stage="post_publish",
+        )
+
+        assert record is not None
+        assert record.reason == "auto_edit_keeper_replaced_original"
+        assert not src.exists()
+        moved = Path(record.destination)
+        assert moved.is_file()
+        assert moved.read_bytes() == b"x" * 2_000_000
+
+    def test_trash_original_keeps_source_when_gates_fail(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("SERMONPILOT_TRASH_DIR", str(tmp_path / "trash"))
+        monkeypatch.setattr(auto_edit, "verify_keeper", lambda s, k: True)
+        src, keep = self.setup_keeper(tmp_path)
+
+        record = auto_edit.trash_original_after_edit(
+            src, keep, make_config(delete_original=False), True
+        )
+
+        assert record is None
+        assert src.is_file()
+
 
 @pytest.mark.heavy
 class TestRealTranscode:
