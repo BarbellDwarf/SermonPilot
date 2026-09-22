@@ -114,6 +114,25 @@ def test_finalize_discarded_removes_review_dir(tmp_path, monkeypatch):
     assert not staged.exists()
 
 
+def test_finalize_discarded_moves_review_media_to_trash(tmp_path, monkeypatch):
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    monkeypatch.setenv("SERMONPILOT_CLOUD_STAGING_DIR", str(staging))
+    monkeypatch.setenv("SERMONPILOT_TRASH_DIR", str(tmp_path / "trash"))
+    staged = staging / "source.mkv"
+    staged.write_bytes(b"staged")
+
+    review_dir = _review_dir(tmp_path / "reviews", "review-recoverable")
+    _seed_review(review_dir, staged)
+
+    assert finalize_review_media(review_dir, "discarded") is True
+    assert not review_dir.exists()
+    moved = list((tmp_path / "trash").rglob("Sermon - Original.mp4"))
+    assert len(moved) == 1
+    assert moved[0].read_bytes() == b"original"
+    assert not staged.exists()
+
+
 def test_finalize_refuses_untagged_directory(tmp_path, monkeypatch):
     monkeypatch.setenv("SERMONPILOT_CLOUD_STAGING_DIR", str(tmp_path / "staging"))
     plain = tmp_path / "output" / "Sermon - Original.mp4"
