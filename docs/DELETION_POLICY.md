@@ -120,3 +120,11 @@ them is not a media loss:
 
 Config backup rotation in `src/config_management/backup_manager.py` sits outside
 the media scope of this policy.
+
+## Boundaries
+
+Re-rendering writes over its own output file in place. The policy covers delete
+operations, so replacing a previous render is not routed through the trash root.
+A re-edit that supersedes a retained original is not an in-place overwrite:
+`trash_original_after_edit` moves the original into trash before the edited
+result takes its place.
