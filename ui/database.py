@@ -15,7 +15,23 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from src.sermon_identity import identity_key
+
 logger = logging.getLogger(__name__)
+
+_MEDIA_SUFFIXES = frozenset(
+    {
+        ".mp3", ".wav", ".m4a", ".flac", ".ogg", ".mpa",
+        ".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi",
+    }
+)
+
+
+def _is_media_path(path: Any) -> bool:
+    try:
+        return bool(path) and Path(str(path)).suffix.lower() in _MEDIA_SUFFIXES
+    except (TypeError, ValueError):
+        return False
 
 
 def _resolve_database_url(db_path: str) -> str:
@@ -391,6 +407,11 @@ class SermonDatabase:
             """)
 
             conn.commit()
+
+        try:
+            SermonRepository(self).dedupe_sermons()
+        except Exception as exc:
+            logger.warning("Sermon identity dedupe skipped: %s", exc)
 
     @contextmanager
     def get_connection(self):
@@ -893,6 +914,295 @@ class SermonRepository:
                 WHERE sermon_id = ?
             """, (sermon_id,)).fetchall()
             return [dict(row) for row in rows]
+
+    def _identity_score(self, conn: sqlite3.Connection, sermon_id: str) -> dict[str, Any]:
+        file_rows = conn.execute(
+            "SELECT file_type, file_path FROM sermon_files WHERE sermon_id = ?",
+            (sermon_id,),
+        ).fetchall()
+        existing_media = 0
+        for row in file_rows:
+            path = str(row['file_path'] or '')
+            if _is_media_path(path):
+                try:
+                    if Path(path).exists():
+                        existing_media += 1
+                except OSError:
+                    pass
+        max_revision = conn.execute(
+            "SELECT MAX(revision) FROM edit_plans WHERE sermon_id = ?", (sermon_id,)
+        ).fetchone()[0] or 0
+        upload_row = conn.execute(
+            "SELECT sermonaudio_id FROM upload_info WHERE sermon_id = ?", (sermon_id,)
+        ).fetchone()
+        remote_id = (upload_row['sermonaudio_id'] if upload_row else None) or None
+        content_row = conn.execute(
+            "SELECT transcript_text FROM sermon_content WHERE sermon_id = ?", (sermon_id,)
+        ).fetchone()
+        transcript_length = len(str(content_row['transcript_text'] or '')) if content_row else 0
+        sermon_row = conn.execute(
+            "SELECT status, notes FROM sermons WHERE id = ?", (sermon_id,)
+        ).fetchone()
+        status = (sermon_row['status'] if sermon_row else '') or ''
+        notes = (sermon_row['notes'] if sermon_row else '') or ''
+
+        score = min(existing_media, 50)
+        if existing_media:
+            score += 1000
+        score += min(len(file_rows), 50)
+        if remote_id:
+            score += 300
+        if status == 'processed':
+            score += 200
+        elif status == 'draft':
+            score += 25
+        score += min(int(max_revision), 100) * 10
+        score += min(transcript_length // 200, 100)
+        if notes:
+            score += 5
+        return {
+            "score": score,
+            "media_files": existing_media,
+            "max_revision": int(max_revision),
+            "remote_id": str(remote_id) if remote_id else None,
+            "status": status,
+            "notes": notes,
+        }
+
+    def _fold_sermon(
+        self, conn: sqlite3.Connection, survivor_id: str, loser_id: str
+    ) -> None:
+        survivor_files = {
+            row['file_type']: row
+            for row in conn.execute(
+                "SELECT file_type, file_path, file_size FROM sermon_files WHERE sermon_id = ?",
+                (survivor_id,),
+            ).fetchall()
+        }
+        for row in conn.execute(
+            "SELECT file_type, file_path, file_size FROM sermon_files WHERE sermon_id = ?",
+            (loser_id,),
+        ).fetchall():
+            existing = survivor_files.get(row['file_type'])
+            keep = existing is None or not existing['file_path']
+            if keep:
+                conn.execute("""
+                    INSERT OR REPLACE INTO sermon_files
+                    (sermon_id, file_type, file_path, file_size)
+                    VALUES (?, ?, ?, ?)
+                """, (survivor_id, row['file_type'], row['file_path'], row['file_size']))
+                survivor_files[row['file_type']] = row
+
+        survivor_content = conn.execute(
+            "SELECT * FROM sermon_content WHERE sermon_id = ?", (survivor_id,)
+        ).fetchone()
+        loser_content = conn.execute(
+            "SELECT * FROM sermon_content WHERE sermon_id = ?", (loser_id,)
+        ).fetchone()
+        if loser_content is not None:
+            sc = dict(survivor_content) if survivor_content is not None else {}
+            lc = dict(loser_content)
+
+            def richest(field: str) -> Any:
+                left, right = sc.get(field), lc.get(field)
+                if not left:
+                    return right
+                if not right:
+                    return left
+                return left if len(str(left)) >= len(str(right)) else right
+
+            merged = {
+                field: richest(field)
+                for field in ('transcript_text', 'description', 'hashtags', 'key_topics', 'summary')
+            }
+            if survivor_content is None:
+                conn.execute("""
+                    INSERT OR REPLACE INTO sermon_content
+                    (sermon_id, transcript_text, description, hashtags, key_topics, summary)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    survivor_id, merged['transcript_text'], merged['description'],
+                    merged['hashtags'], merged['key_topics'], merged['summary'],
+                ))
+            else:
+                conn.execute("""
+                    UPDATE sermon_content
+                    SET transcript_text = ?, description = ?, hashtags = ?,
+                        key_topics = ?, summary = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE sermon_id = ?
+                """, (
+                    merged['transcript_text'], merged['description'], merged['hashtags'],
+                    merged['key_topics'], merged['summary'], survivor_id,
+                ))
+
+        survivor_proc = conn.execute(
+            "SELECT 1 FROM processing_info WHERE sermon_id = ?", (survivor_id,)
+        ).fetchone()
+        if survivor_proc is None:
+            conn.execute("""
+                INSERT OR REPLACE INTO processing_info
+                (sermon_id, enhancement_method, noise_reduction_applied,
+                 normalization_applied, qa_normalization_applied, qa_segments_count,
+                 processing_duration, quality_score, processing_logs, processed_at)
+                SELECT ?, enhancement_method, noise_reduction_applied,
+                       normalization_applied, qa_normalization_applied, qa_segments_count,
+                       processing_duration, quality_score, processing_logs, processed_at
+                FROM processing_info WHERE sermon_id = ?
+            """, (survivor_id, loser_id))
+
+        survivor_upload = conn.execute(
+            "SELECT sermonaudio_id FROM upload_info WHERE sermon_id = ?", (survivor_id,)
+        ).fetchone()
+        if survivor_upload is None or not survivor_upload['sermonaudio_id']:
+            conn.execute("""
+                INSERT OR REPLACE INTO upload_info
+                (sermon_id, sermonaudio_id, upload_date, upload_status, upload_message)
+                SELECT ?, sermonaudio_id, upload_date, upload_status, upload_message
+                FROM upload_info WHERE sermon_id = ?
+            """, (survivor_id, loser_id))
+
+        max_revision = conn.execute(
+            "SELECT MAX(revision) FROM edit_plans WHERE sermon_id = ?", (survivor_id,)
+        ).fetchone()[0] or 0
+        loser_plans = conn.execute(
+            "SELECT * FROM edit_plans WHERE sermon_id = ? ORDER BY revision", (loser_id,)
+        ).fetchall()
+        for plan in loser_plans:
+            plan_dict = dict(plan)
+            max_revision += 1
+            columns = [
+                column for column in plan_dict
+                if column not in ('id', 'sermon_id', 'revision')
+            ]
+            placeholders = ", ".join("?" for _ in columns)
+            conn.execute(
+                f"INSERT INTO edit_plans (sermon_id, revision, {', '.join(columns)}) "
+                f"VALUES (?, ?, {placeholders})",
+                [survivor_id, max_revision, *[plan_dict[c] for c in columns]],
+            )
+        conn.execute("""
+            UPDATE edit_plans SET status = 'superseded'
+            WHERE sermon_id = ? AND revision < ?
+              AND status NOT IN ('superseded', 'reverted')
+        """, (survivor_id, max_revision))
+
+        survivor_row = conn.execute(
+            "SELECT notes, user_id, status FROM sermons WHERE id = ?", (survivor_id,)
+        ).fetchone()
+        survivor_notes = (survivor_row['notes'] if survivor_row else '') or ''
+        loser_row = conn.execute(
+            "SELECT notes, user_id, status FROM sermons WHERE id = ?", (loser_id,)
+        ).fetchone()
+        loser_notes = (loser_row['notes'] if loser_row else '') or ''
+        if loser_row is not None:
+            if (not survivor_row or not survivor_row['user_id']) and loser_row['user_id']:
+                conn.execute(
+                    "UPDATE sermons SET user_id = ? WHERE id = ?",
+                    (loser_row['user_id'], survivor_id),
+                )
+            if (loser_row['status'] or '') == 'processed' and (
+                not survivor_row or (survivor_row['status'] or '') != 'processed'
+            ):
+                conn.execute(
+                    "UPDATE sermons SET status = 'processed', "
+                    "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (survivor_id,),
+                )
+        if loser_notes and loser_notes not in survivor_notes:
+            combined = (f"{survivor_notes}\n{loser_notes}").strip()
+            conn.execute(
+                "UPDATE sermons SET notes = ? WHERE id = ?", (combined, survivor_id)
+            )
+
+        for table in ('processing_status', 'llm_api_usage', 'manual_review'):
+            conn.execute(
+                f"UPDATE {table} SET sermon_id = ? WHERE sermon_id = ?",
+                (survivor_id, loser_id),
+            )
+        survivor_validation = conn.execute(
+            "SELECT 1 FROM validation_results WHERE sermon_id = ?", (survivor_id,)
+        ).fetchone()
+        if survivor_validation is None:
+            conn.execute(
+                "UPDATE OR REPLACE validation_results SET sermon_id = ? WHERE sermon_id = ?",
+                (survivor_id, loser_id),
+            )
+
+        for table in (
+            'sermon_content', 'processing_info', 'sermon_files', 'upload_info',
+            'edit_plans', 'processing_status', 'validation_results', 'manual_review',
+            'llm_api_usage',
+        ):
+            conn.execute(f"DELETE FROM {table} WHERE sermon_id = ?", (loser_id,))
+        conn.execute("DELETE FROM sermon_search WHERE sermon_id = ?", (loser_id,))
+        conn.execute("DELETE FROM sermons WHERE id = ?", (loser_id,))
+        self._rebuild_fts_row(conn, survivor_id)
+
+    def dedupe_sermons(self) -> dict[str, Any]:
+        """Collapse sermon rows that share one normalized identity.
+
+        Keeps the richest row per identity (media on disk first, then the
+        highest edit-plan revision), folds unique plans, media paths, notes
+        and logs onto it, then deletes the rest. Idempotent: a second run
+        finds no group with more than one member and reports no merges.
+        """
+        summary: dict[str, Any] = {"groups": 0, "merged": []}
+        with self.db.get_connection() as conn:
+            rows = [dict(row) for row in conn.execute("SELECT * FROM sermons").fetchall()]
+            groups: dict[str, list[dict[str, Any]]] = {}
+            for row in rows:
+                key = identity_key(
+                    row.get('speaker'), row.get('recorded_date'), row.get('title')
+                )
+                groups.setdefault(key, []).append(row)
+
+            for key, members in groups.items():
+                if len(members) < 2:
+                    continue
+                stats = {
+                    member['id']: self._identity_score(conn, member['id'])
+                    for member in members
+                }
+                remote_ids = {
+                    stats[member['id']]['remote_id']
+                    for member in members
+                    if stats[member['id']]['remote_id']
+                }
+                if len(remote_ids) > 1:
+                    logger.info(
+                        "Sermon dedupe skipped identity %s: distinct remote ids %s",
+                        key, sorted(remote_ids),
+                    )
+                    continue
+                survivor = max(
+                    members,
+                    key=lambda member: (
+                        stats[member['id']]['score'],
+                        stats[member['id']]['max_revision'],
+                        str(member.get('updated_at') or ''),
+                        str(member['id']),
+                    ),
+                )
+                removed: list[str] = []
+                for member in members:
+                    loser_id = member['id']
+                    if loser_id == survivor['id']:
+                        continue
+                    self._fold_sermon(conn, survivor['id'], loser_id)
+                    removed.append(loser_id)
+                    logger.info(
+                        "Sermon identity merge: kept %s (identity=%s, media_files=%s, "
+                        "revision=%s, remote_id=%s), removed %s",
+                        survivor['id'], key,
+                        stats[survivor['id']]['media_files'],
+                        stats[survivor['id']]['max_revision'],
+                        stats[survivor['id']]['remote_id'] or 'none',
+                        loser_id,
+                    )
+                conn.commit()
+                summary["groups"] += 1
+                summary["merged"].append({"kept": survivor['id'], "removed": removed})
+        return summary
 
     def save_edit_plan_revision(self, sermon_id: str, plan: dict[str, Any]) -> int:
         with self.db.get_connection() as conn:
