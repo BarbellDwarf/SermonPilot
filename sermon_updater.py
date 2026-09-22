@@ -4091,7 +4091,7 @@ def publish_dry_run_sermon(dry_run_id: str, publish: bool = True) -> dict[str, A
                 for table in (
                     'sermon_content', 'processing_info', 'sermon_files',
                     'upload_info', 'processing_status', 'validation_results',
-                    'manual_review', 'llm_api_usage',
+                    'manual_review', 'llm_api_usage', 'edit_plans',
                 ):
                     try:
                         conn.execute(

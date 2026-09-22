@@ -18,6 +18,7 @@ class _FakeDb:
 
     def __init__(self) -> None:
         self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
         self.conn.executescript(
             """
             CREATE TABLE sermons (
@@ -40,6 +41,15 @@ class _FakeDb:
             CREATE TABLE processing_info (sermon_id TEXT);
             CREATE TABLE upload_info (sermon_id TEXT);
             CREATE TABLE processing_status (sermon_id TEXT);
+            CREATE TABLE edit_plans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sermon_id TEXT NOT NULL,
+                revision INTEGER NOT NULL,
+                proposed_start REAL,
+                proposed_end REAL,
+                status TEXT DEFAULT 'pending_review',
+                UNIQUE(sermon_id, revision)
+            );
             """
         )
 
@@ -112,6 +122,39 @@ def test_publish_dry_run_sermon_creates_and_uploads(tmp_path: Path, monkeypatch)
         "SELECT COUNT(*) FROM sermons WHERE id = ?", ("draft_test",)
     ).fetchone()[0]
     assert draft_count == 0
+
+
+def test_publish_dry_run_carries_edit_plans(tmp_path: Path, monkeypatch) -> None:
+    audio_file = tmp_path / "sermon.mp3"
+    audio_file.write_bytes(b"fake audio bytes")
+
+    import ui.database as db
+
+    fake_repo = _fake_repo(audio_file)
+    fake_repo.db.conn.execute(
+        "INSERT INTO sermons (id, title, status) VALUES (?, ?, ?)",
+        ("draft_test", "Test Title", "draft"),
+    )
+    fake_repo.db.conn.execute(
+        "INSERT INTO edit_plans (sermon_id, revision, proposed_start, proposed_end, status)"
+        " VALUES (?, ?, ?, ?, ?)",
+        ("draft_test", 1, 1.5, 900.0, "pending_review"),
+    )
+    fake_repo.db.conn.commit()
+    monkeypatch.setattr(db, "SermonRepository", lambda: fake_repo)
+    monkeypatch.setattr(su, "config", {"output_directory": str(tmp_path / "output")})
+    monkeypatch.setattr(su, "resolve_speaker_id", lambda name: None)
+    monkeypatch.setattr(su, "create_new_sermon_api", lambda **kwargs: "12345")
+    monkeypatch.setattr(su, "upload_media_file", lambda *args, **kwargs: True)
+    monkeypatch.setattr(su, "find_sermon_dir", lambda *args, **kwargs: None)
+
+    result = su.publish_dry_run_sermon("draft_test")
+
+    assert result["success"] is True
+    carried = fake_repo.db.conn.execute(
+        "SELECT sermon_id, revision, proposed_start, status FROM edit_plans"
+    ).fetchall()
+    assert [tuple(row) for row in carried] == [("12345", 1, 1.5, "pending_review")]
 
 
 def test_publish_dry_run_sermon_create_failure(tmp_path: Path, monkeypatch) -> None:
