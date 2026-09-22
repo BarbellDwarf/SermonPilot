@@ -1188,8 +1188,13 @@ class SermonRepository:
                     self._fold_sermon(conn, survivor['id'], loser_id)
                     removed.append(loser_id)
                     logger.info(
-                        "Sermon identity merge: kept %s (%s), removed %s",
-                        survivor['id'], key, loser_id,
+                        "Sermon identity merge: kept %s (identity=%s, media_files=%s, "
+                        "revision=%s, remote_id=%s), removed %s",
+                        survivor['id'], key,
+                        stats[survivor['id']]['media_files'],
+                        stats[survivor['id']]['max_revision'],
+                        stats[survivor['id']]['remote_id'] or 'none',
+                        loser_id,
                     )
                 conn.commit()
                 summary["groups"] += 1

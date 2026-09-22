@@ -65,6 +65,8 @@ Key tables: `sermons` (id TEXT PK, title, speaker, recorded_date, status TEXT DE
 
 **Status values:** `'pending'`, `'processed'` (uploaded to SermonAudio), `'draft'` (dry run -- saved locally only), `'error'`.
 
+**Sermon identity:** ids are deterministic, derived from normalised speaker + recorded date + title + source fingerprint (`src/sermon_identity.py`). Every creation path computes the same id for the same sermon, and re-runs carry the existing id so they upsert. `SermonDatabase.init_database()` runs an idempotent `dedupe_sermons()` migration that folds duplicate rows at startup. See `docs/SERMON_IDENTITY.md`.
+
 ## Processing Pipeline (`process_new_sermon`)
 
 1. Clean audio (optional clean-audio.py) -> 2. Enhance audio (DeepFilterNet/Clear) -> 3. Mux video (if input is video) -> 4. Transcribe (Whisper/faster-whisper) -> 5. Generate metadata (LLM: title, description, hashtags) -> 6. **Dry run check** (early return if `dry_run=True`) -> 7. Create on SermonAudio API -> 8. Upload media -> 9. Save to filesystem + database
