@@ -82,12 +82,13 @@ def _seed(
     repo: SermonRepository,
     review: dict,
     *,
+    title: str | None = "Stored Title",
     description: str | None = "Stored description",
     hashtags: str | None = "#stored",
 ) -> int:
     repo.save_sermon({
         "id": SID,
-        "title": "Stored Title",
+        "title": title or "",
         "speaker": "Test Speaker",
         "recorded_date": "2024-01-01",
         "status": "draft",
@@ -214,6 +215,20 @@ def test_apply_generates_only_the_empty_fields(repo, review, pipeline, tmp_path)
     assert pipeline["title"] == 0
     assert pipeline["summary"] == 1
     assert pipeline["hashtags"] == 1
+
+
+def test_apply_generates_a_missing_title_only(repo, review, pipeline, tmp_path) -> None:
+    metadata = json.loads(Path(review["metadata"]).read_text(encoding="utf-8"))
+    metadata.pop("title", None)
+    Path(review["metadata"]).write_text(json.dumps(metadata), encoding="utf-8")
+    plan_id = _seed(repo, review, title=None)
+
+    result = _apply(repo, plan_id, tmp_path)
+
+    assert result["success"] is True
+    assert pipeline["title"] == 1
+    assert pipeline["summary"] == 0
+    assert pipeline["hashtags"] == 0
 
 
 def test_apply_skips_keeper_transcode_and_enhancement(repo, review, pipeline, tmp_path) -> None:
