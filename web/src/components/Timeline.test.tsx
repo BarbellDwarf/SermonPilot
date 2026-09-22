@@ -1,0 +1,155 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+import { Timeline, timelinePercent, timelineSpan } from "./Timeline";
+
+const clips = [
+  { id: "snippet_start", label: "Start cut", startSec: 0, endSec: 18.5 },
+  { id: "snippet_end", label: "End cut", startSec: 2412.3, endSec: 2432.3 },
+  { id: "snippet_ending", label: "Proposed ending", startSec: 2482.3, endSec: 2512.3 },
+];
+
+function baseProps() {
+  return {
+    durationSec: 2512.3,
+    startSec: 8.5,
+    endSec: 2512.3,
+    offsetSec: 0.4,
+    endingSec: 2512.3,
+    clips,
+  };
+}
+
+describe("Timeline", () => {
+  it("derives region positions from the plan seconds", () => {
+    render(<Timeline {...baseProps()} />);
+
+    const keep = screen.getByTestId("timeline-region-keep");
+    expect(keep.getAttribute("data-start-sec")).toBe("8.5");
+    expect(keep.getAttribute("data-end-sec")).toBe("2512.3");
+    expect(parseFloat(keep.style.left)).toBeCloseTo((8.5 / 2512.3) * 100, 4);
+    expect(parseFloat(keep.style.width)).toBeCloseTo(((2512.3 - 8.5) / 2512.3) * 100, 4);
+
+    const before = screen.getByTestId("timeline-region-cut-before");
+    expect(parseFloat(before.style.width)).toBeCloseTo((8.5 / 2512.3) * 100, 4);
+
+    const ending = screen.getByTestId("timeline-region-ending");
+    expect(parseFloat(ending.style.left)).toBeCloseTo(100, 4);
+
+    const tick = screen.getByTestId("timeline-clip-snippet_start");
+    expect(tick.getAttribute("data-start-sec")).toBe("0");
+    expect(tick.getAttribute("data-end-sec")).toBe("18.5");
+  });
+
+  it("moves the start marker when the start seconds change", () => {
+    const { rerender } = render(<Timeline {...baseProps()} />);
+    const before = screen.getByTestId("timeline-region-keep").style.left;
+
+    rerender(<Timeline {...baseProps()} startSec={900} />);
+    const after = screen.getByTestId("timeline-region-keep").style.left;
+    expect(after).not.toBe(before);
+    expect(parseFloat(after)).toBeCloseTo((900 / 2512.3) * 100, 4);
+    expect(screen.getByTestId("timeline-handle-start").getAttribute("aria-valuenow")).toBe("900");
+  });
+
+  it("emits a seek with the region time when a region is clicked", async () => {
+    const user = userEvent.setup();
+    const onSeek = vi.fn();
+    render(<Timeline {...baseProps()} onSeek={onSeek} />);
+
+    await user.click(screen.getByTestId("timeline-region-keep"));
+    expect(onSeek).toHaveBeenCalledWith(8.5, "keep");
+
+    await user.click(screen.getByTestId("timeline-clip-snippet_end"));
+    expect(onSeek).toHaveBeenCalledWith(2412.3, "snippet_end");
+  });
+
+  it("plays a clip window from its region chip", async () => {
+    const user = userEvent.setup();
+    const onPlayRegion = vi.fn();
+    render(<Timeline {...baseProps()} onPlayRegion={onPlayRegion} />);
+
+    await user.click(screen.getByTestId("timeline-clip-snippet_ending"));
+    expect(onPlayRegion).toHaveBeenCalledWith("snippet_ending", 2482.3, 2512.3);
+  });
+
+  it("nudges the selected handle with the arrow keys", async () => {
+    const user = userEvent.setup();
+    const onChangeStart = vi.fn();
+    const onChangeEnd = vi.fn();
+    render(<Timeline {...baseProps()} onChangeStart={onChangeStart} onChangeEnd={onChangeEnd} />);
+
+    const start = screen.getByTestId("timeline-handle-start");
+    start.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(onChangeStart).toHaveBeenCalledWith(9.5);
+
+    await user.keyboard("{Shift>}{ArrowRight}{/Shift}");
+    expect(onChangeStart).toHaveBeenCalledWith(18.5);
+
+    const end = screen.getByTestId("timeline-handle-end");
+    end.focus();
+    await user.keyboard("{ArrowLeft}");
+    expect(onChangeEnd).toHaveBeenCalledWith(2511.3);
+  });
+
+  it("does not let a handle nudge cross the other handle", async () => {
+    const user = userEvent.setup();
+    const onChangeStart = vi.fn();
+    render(<Timeline {...baseProps()} startSec={20} endSec={20.5} onChangeStart={onChangeStart} />);
+
+    screen.getByTestId("timeline-handle-start").focus();
+    await user.keyboard("{ArrowRight}");
+    expect(onChangeStart).toHaveBeenCalledWith(20.4);
+  });
+
+  it("exposes slider semantics on both handles", () => {
+    render(<Timeline {...baseProps()} />);
+    const start = screen.getByRole("slider", { name: "Keep start" });
+    const end = screen.getByRole("slider", { name: "Keep end" });
+    expect(start.getAttribute("aria-valuenow")).toBe("8.5");
+    expect(end.getAttribute("aria-valuenow")).toBe("2512.3");
+    expect(start.getAttribute("aria-valuemax")).toBe("2512.3");
+  });
+
+  it("map helpers clamp to the span", () => {
+    expect(timelineSpan(100, 90, 95, clips)).toBe(2512.3);
+    expect(timelinePercent(-5, 100)).toBe(0);
+    expect(timelinePercent(150, 100)).toBe(100);
+    expect(timelinePercent(50, 100)).toBe(50);
+  });
+
+  it("maps a pointer drag to a new start second", () => {
+    const onChangeStart = vi.fn();
+    render(<Timeline {...baseProps()} startSec={100} endSec={1000} onChangeStart={onChangeStart} />);
+
+    const track = screen.getByTestId("timeline-track");
+    vi.spyOn(track, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 56,
+      width: 1000,
+      height: 56,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    const handle = screen.getByTestId("timeline-handle-start");
+    fireEvent.pointerDown(handle, { pointerId: 1, clientX: 100 });
+    fireEvent.pointerMove(track, { pointerId: 1, clientX: 400 });
+    expect(onChangeStart).toHaveBeenCalled();
+    const calls = onChangeStart.mock.calls;
+    const last = calls[calls.length - 1]?.[0] as number;
+    expect(last).toBeGreaterThan(900);
+    expect(last).toBeLessThan(1000);
+    fireEvent.pointerUp(track);
+  });
+
+  it("keeps vertical panning available on the track", () => {
+    render(<Timeline {...baseProps()} />);
+    const track = screen.getByTestId("timeline-track");
+    expect(track.className).toContain("touch-pan-y");
+  });
+});
