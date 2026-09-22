@@ -26,6 +26,15 @@ _MEDIA_SUFFIXES = frozenset(
     }
 )
 
+SERMON_LIFECYCLE_STATUSES = (
+    "draft",
+    "pending_review",
+    "applied",
+    "rendered",
+    "uploaded",
+    "failed",
+)
+
 
 def _is_media_path(path: Any) -> bool:
     try:
@@ -192,6 +201,11 @@ class SermonDatabase:
                 pass
             try:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_sermons_user_id ON sermons(user_id)")
+            except Exception:
+                pass
+
+            try:
+                conn.execute("ALTER TABLE sermons ADD COLUMN edit_status TEXT")
             except Exception:
                 pass
 
@@ -1100,11 +1114,11 @@ class SermonRepository:
         """, (survivor_id, max_revision))
 
         survivor_row = conn.execute(
-            "SELECT notes, user_id, status FROM sermons WHERE id = ?", (survivor_id,)
+            "SELECT notes, user_id, status, edit_status FROM sermons WHERE id = ?", (survivor_id,)
         ).fetchone()
         survivor_notes = (survivor_row['notes'] if survivor_row else '') or ''
         loser_row = conn.execute(
-            "SELECT notes, user_id, status FROM sermons WHERE id = ?", (loser_id,)
+            "SELECT notes, user_id, status, edit_status FROM sermons WHERE id = ?", (loser_id,)
         ).fetchone()
         loser_notes = (loser_row['notes'] if loser_row else '') or ''
         if loser_row is not None:
@@ -1120,6 +1134,14 @@ class SermonRepository:
                     "UPDATE sermons SET status = 'processed', "
                     "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                     (survivor_id,),
+                )
+            if (
+                (not survivor_row or not survivor_row['edit_status'])
+                and loser_row['edit_status']
+            ):
+                conn.execute(
+                    "UPDATE sermons SET edit_status = ? WHERE id = ?",
+                    (loser_row['edit_status'], survivor_id),
                 )
         if loser_notes and loser_notes not in survivor_notes:
             combined = (f"{survivor_notes}\n{loser_notes}").strip()
@@ -1434,8 +1456,8 @@ class SermonRepository:
                     INSERT INTO sermons
                     (id, title, subtitle, speaker, recorded_date, event_type, bible_text,
                      series_title, scripture_reference, description, duration, status,
-                     created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                     edit_status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         title = excluded.title,
                         subtitle = excluded.subtitle,
@@ -1448,6 +1470,7 @@ class SermonRepository:
                         description = excluded.description,
                         duration = excluded.duration,
                         status = excluded.status,
+                        edit_status = COALESCE(excluded.edit_status, sermons.edit_status),
                         updated_at = excluded.updated_at
                 """, (
                     sermon_data.get('id'),
@@ -1462,6 +1485,7 @@ class SermonRepository:
                     sermon_data.get('description'),
                     sermon_data.get('duration'),
                     sermon_data.get('status', 'processed'),
+                    sermon_data.get('edit_status'),
                     utcnow()
                 ))
 
@@ -1704,14 +1728,39 @@ class SermonRepository:
             logger.error(f"Failed to update sermon {sermon_id}: {e}")
             return False
 
+    def update_sermon_edit_status(self, sermon_id: str, status: str) -> bool:
+        """Advance one sermon row through the edit lifecycle in place.
+
+        Values: ``draft``, ``pending_review``, ``applied``, ``rendered``,
+        ``uploaded`` or ``failed``. Returns False for an unknown status or a
+        missing row so a caller never invents a lifecycle state.
+        """
+        if status not in SERMON_LIFECYCLE_STATUSES:
+            return False
+        with self.db.get_connection() as conn:
+            cursor = conn.execute(
+                "UPDATE sermons SET edit_status = ?, updated_at = ? WHERE id = ?",
+                (status, utcnow(), sermon_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_sermon_edit_status(self, sermon_id: str) -> str | None:
+        """Current lifecycle status for a sermon row, or None when unset."""
+        with self.db.get_connection() as conn:
+            row = conn.execute(
+                "SELECT edit_status FROM sermons WHERE id = ?", (sermon_id,)
+            ).fetchone()
+            return row['edit_status'] if row else None
+
     def get_all_sermons(self, filters: dict[str, Any] | None = None,
                        limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
         """Get all sermons with optional filtering"""
         with self.db.get_connection() as conn:
             query = """
                 SELECT s.id, s.title, s.subtitle, s.speaker, s.recorded_date, s.event_type,
-                       s.bible_text, s.duration, s.status, s.created_at, s.updated_at,
-                       s.series_title, s.scripture_reference, s.church_name,
+                       s.bible_text, s.duration, s.status, s.edit_status, s.created_at,
+                       s.updated_at, s.series_title, s.scripture_reference, s.church_name,
                        s.is_favorite, s.notes,
                        pi.enhancement_method,
                        ui.upload_status,
