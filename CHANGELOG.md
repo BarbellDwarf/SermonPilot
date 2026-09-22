@@ -11,12 +11,17 @@ One sermon is one database record.
 - Sermon ids are deterministic on every creation path: the normalised speaker, recorded date and title plus a source fingerprint, so a re-run updates the existing row instead of inserting a duplicate
 - Re-runs, re-renders and refine loops carry the existing sermon id through the job and apply flow, preserving edit plans, revisions, media and notes
 - Library shows one row per sermon
+- Applying an approved edit updates that row in place and advances a lifecycle status instead of creating a second record
+- Apply reuses the retained keeper, enhanced audio, transcript and stored metadata; the LLM runs only for empty title, description or hashtags
+- Re-edits resolve the retained full-length source, so a previous render never becomes the next render's input
+- Retained-artifact pointers carry into the render metadata, so a later re-edit keeps reusing them
 
 ### Added
 
 - `src/sermon_identity.py`: identity normalisation, sampled content fingerprint and id derivation
 - One-time idempotent migration at startup that groups rows by identity, keeps the richest row per group, folds unique plans, media, content and notes onto it, and logs every merge; groups with distinct SermonAudio ids are skipped
 - `docs/SERMON_IDENTITY.md` guide
+- `sermons.edit_status` column tracking `draft`, `pending_review`, `applied`, `rendered`, `uploaded` and `failed` alongside the existing status values
 
 ## v1.7.0 (2026-09-12)
 
