@@ -76,7 +76,7 @@ def _show_upload_section():
     with path_tab:
         st.caption(
             "Recommended for raw multi-GB recordings: drop the file into the watched "
-            "folder on Tower (/mnt/user/docker-data/sermonpilot/raw_ingest via SMB share) "
+            "folder on the host (a mounted share, e.g. /data/raw_ingest) "
             "and paste its path here. No browser upload, no memory cost."
         )
         path_input = st.text_input(

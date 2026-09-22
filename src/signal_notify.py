@@ -3,7 +3,7 @@
 Talks to the self-hosted signal-cli-rest-api gateway using its ``v2/send``
 shape. Configuration comes from the environment only:
 
-  INGEST_SIGNAL_URL         gateway base URL (default http://192.0.2.22:8080)
+  INGEST_SIGNAL_URL         gateway base URL (default http://localhost:8080)
   INGEST_SIGNAL_SENDER      sending account number or group id
   INGEST_SIGNAL_RECIPIENTS  comma/space separated recipient numbers or group ids
 
@@ -23,7 +23,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GATEWAY_URL = "http://192.0.2.22:8080"
+DEFAULT_GATEWAY_URL = "http://localhost:8080"
 DEFAULT_TIMEOUT = 10.0
 
 _PLACEHOLDER_RE = re.compile(r"^\$\{[^}]+\}$")
