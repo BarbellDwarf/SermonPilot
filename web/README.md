@@ -126,18 +126,18 @@ increment lands.
 New Sermon is not wired yet (read-only era): creation arrives with the
 write-path increment, at which point `user_id` is stamped from the session.
 
-## Roadmap: resumable/interruptible uploads (logged Sep 16, River)
+## Roadmap: resumable/interruptible uploads (logged Sep 16)
 Multiparty (chunked) uploads for the web console so large sermon files can be PAUSED and RESUMED across interruptions (browser restart, network drop, machine reboot). Server-side session keeps received chunk offsets; client resumes by querying state. Applies to Browser Upload path in New Sermon; Server Path ingest already handles huge files today. NOT started — design when the write-path phase lands.
 
-## Roadmap: per-user cloud storage mounts (logged Sep 16, River)
-Connect cloud storage (Google Drive, Dropbox, OneDrive, and S3-class all at v1 — including Backblaze B2) through the UI to a USER ACCOUNT: OAuth connect flow, files save to the user's mounted drive alongside SermonAudio upload. Builds on the existing host-side rclone Drive ingest design (W1-W5, v1.8.0) — that one is Tower-host-level (single mount, detect-and-notify); this is per-user in-app mounts at the accounts (P5) phase. NOT started.
+## Roadmap: per-user cloud storage mounts (logged Sep 16)
+Connect cloud storage (Google Drive, Dropbox, OneDrive, and S3-class all at v1 — including Backblaze B2) through the UI to a USER ACCOUNT: OAuth connect flow, files save to the user's mounted drive alongside SermonAudio upload. Builds on the existing host-side rclone Drive ingest design (W1-W5, v1.8.0) — that one is host-level (single mount, detect-and-notify); this is per-user in-app mounts at the accounts (P5) phase. NOT started.
 
-## Roadmap: scripture overlay + audio disclaimer (logged Sep 16, River)
+## Roadmap: scripture overlay + audio disclaimer (logged Sep 16)
 1. SCRIPTURE OVERLAY (automated): when the speaker reads Scripture, fade to a text card showing the exact passage being read (verse lookup via a Bible API — midvash-class or offline public-domain text), paged for long passages, then fade back to the speaker. Builds on existing transcript timestamps + logo-card overlay windows (xfade machinery in auto_edit). Needs: reading-segment detection (LLM + timestamps), verse matching (fuzzy match transcript text -> reference), text-card renderer, review-gate UI for proposed overlays.
 2. AUDIO DISCLAIMER INTRO (optional per-sermon): optional pre-roll text card ('audio issues during recording...') rendered like the ending card — form option in New Sermon, persisted per sermon, rendered at render time.
 NOT started — design at the write-path/render phase.
 
-## P5f Files API scoping decision (Sep 17, River-approved default)
+## P5f Files API scoping decision (Sep 17, operator-approved default)
 /api/me/files lists/downloads ONLY from the user's own configured output directory
 (settings.general.output_dir, default processed_sermons). Path-traversal blocked
 (resolve + prefix check, 400 on escape). Admin user management UI is admin-only
@@ -201,17 +201,18 @@ Cutover stays a one-line nginx move: upstream `127.0.0.1:8501` (Streamlit)
 
 ## Front-door cutover (P6c, prepared — NOT switched)
 
-sermon.moraclan.us currently proxies to Streamlit :8501 via nginx (CT 111).
+Your domain currently proxies to Streamlit :8501 via the reverse proxy.
 Cutover is a two-step manual operation:
 
-1. River flips `web_console_ready: true` in the LIVE settings database (the
-   Streamlit System settings page writes it; the value is read from
+1. The operator flips `web_console_ready: true` in the LIVE settings database
+   (the legacy UI System settings page writes it; the value is read from
    `config_cache.app_config`). The console reports it at
    `GET /api/meta/retirement` → `{"streamlit_ready": true}` (public, no auth),
    and Settings → System shows the state in a read-only admin-only banner.
-2. Operator edits the nginx vhost `sermon.moraclan.us.conf`: move the upstream
-   from `127.0.0.1:8501` (Streamlit) to `127.0.0.1:8504` (FastAPI bridge, which
-   serves the console bundle + `/api/*`), then `nginx -t && nginx -s reload`.
+2. The operator edits the reverse-proxy vhost for your domain: move the
+   upstream from `127.0.0.1:8501` (Streamlit) to `127.0.0.1:8504` (FastAPI
+   bridge, which serves the console bundle + `/api/*`), then
+   `nginx -t && nginx -s reload`.
    Keep these directives on the location block:
    - websocket headers (`proxy_http_version 1.1`, `Upgrade` + `Connection`
      maps) — the console polls over HTTP but future live tails use WS;
@@ -223,6 +224,6 @@ Rollback: flip `web_console_ready` back to false and restore the 8501 upstream.
 Nothing in this repo switches traffic on its own.
 
 ## v1.8.0 kickoff (Sep 18) — starts after v1.7.0 ships
-Scope: CA2-CA5 cleanup + CA6-CA12 reviews/removals + W1-W5 Drive ingest + Streamlit retirement (River: 'get rid of streamlit interface, that will be for 1.8.0 with the other changes').
+Scope: CA2-CA5 cleanup + CA6-CA12 reviews/removals + W1-W5 Drive ingest + Streamlit retirement (operator: 'get rid of streamlit interface, that will be for 1.8.0 with the other changes').
 Sequencing (per #252): CA10 PI-scrub -> CA11 analytics-removal -> CA2/3/4/5 -> CA6-9 -> W1 (host-side, parallel) -> W2-5. CA1 audit done (264 open, findings posted).
-Coding lane: opencode on ub-1 (muse-spark default; union-alpha = fallback, NOT ZDR per River Sep 17).
+Coding lane: on the build host (default model; fallback model, not ZDR).

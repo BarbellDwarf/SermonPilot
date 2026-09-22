@@ -14,7 +14,7 @@ FIXED_MTIME = "2026-09-20 10:11:12"
 def make_settings(**overrides) -> ingest_watcher.WatcherSettings:
     block = {
         "enabled": True,
-        "remote": "gbc-data",
+        "remote": "cloud-remote",
         "user_id": "admin",
         "poll_interval_seconds": 60,
         "stability_window_seconds": 300,
@@ -195,7 +195,7 @@ def test_list_remote_files_command(monkeypatch, tmp_path):
     monkeypatch.setenv("SERMONPILOT_RCLONE_DIR", str(tmp_path / "rclone"))
     config = tmp_path / "rclone" / "admin" / "config"
     config.parent.mkdir(parents=True)
-    config.write_text("[gbc-data]\ntype=drive\n", encoding="utf-8")
+    config.write_text("[cloud-remote]\ntype=drive\n", encoding="utf-8")
     monkeypatch.setattr(ingest_watcher.shutil, "which", lambda name: "/usr/bin/rclone")
 
     captured: dict = {}
@@ -209,13 +209,13 @@ def test_list_remote_files_command(monkeypatch, tmp_path):
         captured["args"] = args
         return _Proc()
 
-    settings = make_settings(remote="gbc-data", user_id="admin", watch_subpath="Sermon Audio/")
+    settings = make_settings(remote="cloud-remote", user_id="admin", watch_subpath="Sermon Audio/")
     files = ingest_watcher.list_remote_files(settings, runner=runner)
 
     args = captured["args"]
     assert args[:3] == ["/usr/bin/rclone", "--config", str(config)]
     assert "lsf" in args
-    assert "gbc-data:Sermon Audio/" in args
+    assert "cloud-remote:Sermon Audio/" in args
     assert "--recursive" in args
     assert args[args.index("--format") + 1] == "stp"
     assert [file.path for file in files] == ["sub/a.mkv"]
@@ -225,7 +225,7 @@ def test_list_remote_files_failure_raises(monkeypatch, tmp_path):
     monkeypatch.setenv("SERMONPILOT_RCLONE_DIR", str(tmp_path / "rclone"))
     config = tmp_path / "rclone" / "admin" / "config"
     config.parent.mkdir(parents=True)
-    config.write_text("[gbc-data]\ntype=drive\n", encoding="utf-8")
+    config.write_text("[cloud-remote]\ntype=drive\n", encoding="utf-8")
     monkeypatch.setattr(ingest_watcher.shutil, "which", lambda name: "/usr/bin/rclone")
 
     class _Proc:
@@ -233,7 +233,7 @@ def test_list_remote_files_failure_raises(monkeypatch, tmp_path):
         stdout = ""
         stderr = "connection reset"
 
-    settings = make_settings(remote="gbc-data", user_id="admin")
+    settings = make_settings(remote="cloud-remote", user_id="admin")
     with pytest.raises(RuntimeError, match="connection reset"):
         ingest_watcher.list_remote_files(settings, runner=lambda *a, **k: _Proc())
 
@@ -241,7 +241,7 @@ def test_list_remote_files_failure_raises(monkeypatch, tmp_path):
 def test_missing_rclone_config_raises(monkeypatch, tmp_path):
     monkeypatch.setenv("SERMONPILOT_RCLONE_DIR", str(tmp_path / "rclone"))
     monkeypatch.setattr(ingest_watcher.shutil, "which", lambda name: "/usr/bin/rclone")
-    settings = make_settings(remote="gbc-data", user_id="nobody")
+    settings = make_settings(remote="cloud-remote", user_id="nobody")
     with pytest.raises(RuntimeError, match="config not found"):
         ingest_watcher.list_remote_files(settings, runner=lambda *a, **k: None)
 

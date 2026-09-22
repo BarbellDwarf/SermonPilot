@@ -206,7 +206,7 @@ def test_placeholder_and_dummy_keys_still_resolve_to_unset() -> None:
         "http://127.0.0.1:8780/v1/",
         "http://localhost:8780/v1/",
         "http://[::1]:8780/v1/",
-        "http://studio.local:8780/v1/",
+        "http://example.local:8780/v1/",
     ],
 )
 def test_private_endpoints_are_detected(base_url: str) -> None:
