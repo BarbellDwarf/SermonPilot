@@ -278,16 +278,13 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
                     "- Start directly with the description."
                 )
 
-                description = llm.chat([{'role': 'user', 'content': desc_prompt}])
+                raw_description = llm.chat([{'role': 'user', 'content': desc_prompt}])
                 from src.llm_manager import extract_final_answer
+                from src.metadata_cleanup import clean_description
 
-                description = extract_final_answer(description)
-
-                description = re.sub(
-                    r'^(Okay|Alright|Let me|I\'ll|I need to|Here[^:]*:|Sure[^:]*:).*?\n',
-                    '', description, flags=re.IGNORECASE | re.MULTILINE,
+                description = clean_description(
+                    extract_final_answer(raw_description) or raw_description
                 )
-                description = description.strip()
 
                 if len(description) > 1600:
                     from src.llm_manager import trim_to_sentence
@@ -306,7 +303,9 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
                     f"Text:\n{transcript[:3000]}\n\nHashtags:"
                 )
                 hashtags_raw = llm.chat([{'role': 'user', 'content': hashtag_prompt}])
-                hashtags = ' '.join(hashtags_raw.replace(',', ' ').split())[:150]
+                from src.metadata_cleanup import clean_hashtags
+
+                hashtags = clean_hashtags(hashtags_raw)
 
         # Save to database
         with st.spinner("Saving to database..."):
