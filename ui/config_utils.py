@@ -424,8 +424,10 @@ def _seed_database_from_env(db) -> dict[str, Any] | None:
     something to seed: a built-in variant template or at least one mapped
     non-secret environment variable. A fresh container started with only a
     .env file persists its settings on first load, with variant-appropriate
-    choices already in place. Secrets stay in the environment and are not
-    copied here. Idempotent: once app_config exists, this never writes again.
+    choices already in place. Large provider secrets stay in the environment;
+    SermonAudio credentials are seeded so the database can own them, with an
+    exported variable still winning while it is set. Idempotent: once
+    app_config exists, this never writes again.
     """
     active_vars = [
         var
@@ -628,15 +630,19 @@ def _config_sources(
     """Map each dotted leaf path to its winning source.
 
     A path supplied by the environment reports the variable name; otherwise
-    a saved value reports 'db'; everything else reports 'default'.
+    a saved value reports 'db'; everything else reports 'default'. Every path
+    named by ENV_CONFIG_MAP is present, so a mapped credential that is set
+    nowhere still reports 'default' rather than being absent.
     """
     env_paths: dict[str, str] = {}
-    for env_var, config_paths in ENV_CONFIG_MAP.items():
-        if os.environ.get(env_var):
-            for config_path in config_paths:
-                env_paths[".".join(config_path)] = env_var
-    db_leaves = _flatten_leaves(db_layer)
     sources: dict[str, str] = {}
+    for env_var, config_paths in ENV_CONFIG_MAP.items():
+        for config_path in config_paths:
+            dotted = ".".join(config_path)
+            sources.setdefault(dotted, "default")
+            if os.environ.get(env_var):
+                env_paths[dotted] = env_var
+    db_leaves = _flatten_leaves(db_layer)
     for path in _flatten_leaves(config):
         if path in env_paths:
             sources[path] = env_paths[path]
