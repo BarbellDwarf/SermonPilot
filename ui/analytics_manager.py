@@ -471,13 +471,11 @@ def get_analytics_manager(config: dict[str, Any] | None = None) -> AnalyticsMana
 
     if _analytics_manager is None:
         if config is None:
-            # Load default config
             try:
-                import yaml
-                with open('config.yaml') as f:
-                    config = yaml.safe_load(f)
-            except FileNotFoundError:
-                config = {}
+                from ui.config_utils import resolve_config
+            except ImportError:
+                from config_utils import resolve_config
+            config = resolve_config()
 
         _analytics_manager = AnalyticsManager(config)
 
