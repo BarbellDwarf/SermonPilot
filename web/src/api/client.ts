@@ -55,6 +55,8 @@ export interface ApiEditPlan {
   end_sec: number | null;
   offset_sec: number;
   detection_status: string;
+  reasoning: string;
+  notes: string;
 }
 
 export interface ApiSermonPlan {
@@ -418,9 +420,33 @@ export const backupApi = {
 export const writeApi = {
   applyPlan: (id: string, body: { start: number; end: number; audio_offset: number; render_only: boolean; re_detect?: boolean }) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/plan/apply`, "POST", body),
+  refinePlan: (id: string, notes: string) =>
+    send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/plan/refine`, "POST", { notes }),
+  reDetectPlan: (id: string) =>
+    send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/plan/re-detect`, "POST"),
   uploadNow: (id: string) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/upload`, "POST"),
   cancelJob: (id: string) => send<{ cancelled: boolean; job_id: string }>(`/api/jobs/${encodeURIComponent(id)}/cancel`, "POST"),
+};
+
+export interface ApiPromptTemplate {
+  enabled: boolean;
+  system: string;
+  user: string;
+}
+
+export interface ApiPromptsConfig {
+  templates: Record<string, ApiPromptTemplate>;
+  defaults: Record<string, ApiPromptTemplate>;
+}
+
+export interface ApiPromptsUpdate {
+  templates: Record<string, Partial<ApiPromptTemplate>>;
+}
+
+export const promptsApi = {
+  get: () => send<ApiPromptsConfig>("/api/prompts/config", "GET"),
+  put: (body: ApiPromptsUpdate) => send<ApiPromptsConfig>("/api/prompts/config", "PUT", body),
 };
 
 export interface SermonUploadResult {
