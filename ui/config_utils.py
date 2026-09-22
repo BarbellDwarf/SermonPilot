@@ -20,49 +20,35 @@ import yaml
 try:
     from src.core.config import (
         ENV_CONFIG_MAP,
+        SECRET_ENV_VARS,
+        ConfigValueError,
         apply_env_overrides,
+        coerce_value,
+        env_var_for_path,
         expand_env_value,
     )
 except ImportError:  # src dir placed directly on sys.path
     from core.config import (  # type: ignore[no-redef]
         ENV_CONFIG_MAP,
+        SECRET_ENV_VARS,
+        ConfigValueError,
         apply_env_overrides,
+        coerce_value,
+        env_var_for_path,
         expand_env_value,
     )
 
 # Get project root for config path
 project_root = Path(__file__).parent.parent
 
-API_KEY_ENV_BY_PATH = {
-    "api_key": "SERMONAUDIO_API_KEY",
-    "transcription.whisper_openai.api_key": "OPENAI_API_KEY",
-    "transcription.whisper_openrouter.api_key": "OPENROUTER_API_KEY",
-    "embeddings.primary.openai.api_key": "OPENAI_API_KEY",
-}
-
-_PROVIDER_ENV_BY_NAME = {
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-    "xai": "XAI_API_KEY",
-    "google": "GOOGLE_API_KEY",
-    "groq": "GROQ_API_KEY",
-    "openrouter": "OPENROUTER_API_KEY",
-}
-
 
 def _env_var_for_key_path(dotted_path: str) -> str | None:
-    """Return the env var backing a dotted ``*.api_key`` path, if known."""
-    if dotted_path in API_KEY_ENV_BY_PATH:
-        return API_KEY_ENV_BY_PATH[dotted_path]
-    parts = dotted_path.split(".")
-    if len(parts) >= 2 and parts[-1] == "api_key":
-        if len(parts) >= 5 and parts[0] == "llm" and parts[1] == "operations":
-            provider = parts[-2]
-            if provider == "openai":
-                return "AUTO_EDIT_LLM_API_KEY"
-            return _PROVIDER_ENV_BY_NAME.get(provider)
-        return _PROVIDER_ENV_BY_NAME.get(parts[-2])
-    return None
+    """Return the env var backing a dotted ``*.api_key`` path, if known.
+
+    Delegates to src.core.config so ENV_CONFIG_MAP stays the single
+    enumeration; no second copy of the env -> path table lives here.
+    """
+    return env_var_for_path(dotted_path)
 
 
 def _is_env_placeholder(value: object) -> bool:
@@ -137,43 +123,6 @@ def _set_dotted(config: dict, dotted_path: str, value: object) -> None:
             node[part] = child
         node = child
     node[parts[-1]] = value
-
-
-def _iter_key_paths(config: object, prefix: str = "") -> list[str]:
-    paths: list[str] = []
-    if isinstance(config, dict):
-        for key, value in config.items():
-            dotted = f"{prefix}.{key}" if prefix else str(key)
-            if key == "api_key":
-                paths.append(dotted)
-            else:
-                paths.extend(_iter_key_paths(value, dotted))
-    elif isinstance(config, list):
-        for index, item in enumerate(config):
-            paths.extend(_iter_key_paths(item, f"{prefix}[{index}]"))
-    return paths
-
-
-def _apply_db_keys(loaded: dict, db_config: dict) -> dict:
-    """Overlay DB-cached keys onto a file-loaded config in memory.
-
-    Precedence is environment > DB cache > file. Env wins are already
-    applied by the config loader; here a DB value fills in only when
-    the loaded value is missing (empty or an unresolved placeholder)
-    and the corresponding env var is not set. The file on disk is
-    never touched.
-    """
-    merged = loaded
-    for dotted in _iter_key_paths(db_config):
-        env_var = _env_var_for_key_path(dotted)
-        if env_var and os.getenv(env_var):
-            continue
-        db_value = _get_dotted(db_config, dotted)
-        if not isinstance(db_value, str) or _is_missing_key_value(db_value):
-            continue
-        if _is_missing_key_value(_get_dotted(merged, dotted)):
-            _set_dotted(merged, dotted, db_value)
-    return merged
 
 
 logger = logging.getLogger(__name__)
@@ -381,10 +330,11 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 
 def _load_file_layer() -> dict[str, Any]:
-    """Load the optional explicit config file layer ($SA_UPDATER_CONFIG).
+    """Read an explicit config file for the one-time legacy import only.
 
-    Only the path pointed at by SA_UPDATER_CONFIG is honored; config.yaml is
-    never required and never read for resolution.
+    The path pointed at by SA_UPDATER_CONFIG is imported into the settings
+    database once when the database is empty. It is never a resolution layer:
+    no config file is required and none is read at runtime once migrated.
     """
     config_path = os.environ.get("SA_UPDATER_CONFIG")
     if not config_path or not Path(config_path).exists():
@@ -393,7 +343,7 @@ def _load_file_layer() -> dict[str, Any]:
         with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except (OSError, yaml.YAMLError) as exc:
-        logger.warning("Failed to load config file %s: %s", config_path, exc)
+        logger.warning("Failed to read config file for legacy import: %s", exc)
         return {}
 
 
@@ -445,24 +395,32 @@ def _variant_template_layer() -> dict[str, Any]:
 
 def _seed_database_from_env(db) -> dict[str, Any] | None:
     """Seed an empty config_cache once from defaults plus the variant template
-    plus env overrides.
+    plus config-like env overrides.
 
     Only runs when the database has never stored a config, and when there is
-    something to seed: at least one mapped environment variable or a built-in
-    variant template. A fresh container started with only a .env file persists
-    its settings on first load, with variant-appropriate choices already in
-    place. Idempotent: once app_config exists, this never writes again.
+    something to seed: a built-in variant template or at least one mapped
+    non-secret environment variable. A fresh container started with only a
+    .env file persists its settings on first load, with variant-appropriate
+    choices already in place. Secrets stay in the environment and are not
+    copied here. Idempotent: once app_config exists, this never writes again.
     """
-    active_vars = [var for var in ENV_CONFIG_MAP if os.environ.get(var)]
+    active_vars = [
+        var
+        for var in ENV_CONFIG_MAP
+        if os.environ.get(var) and var not in SECRET_ENV_VARS
+    ]
     template_layer = _variant_template_layer()
     if not active_vars and not template_layer:
         return None
     base = copy.deepcopy(BUILTIN_DEFAULTS)
     if template_layer:
         _deep_merge(base, template_layer)
-    seeded = apply_env_overrides(base)
+    config_like_env = {
+        var: os.environ[var] for var in active_vars if os.environ.get(var)
+    }
+    apply_env_overrides(base, environ=config_like_env)
     try:
-        db.save_config(seeded)
+        db.save_config(base)
         db.save_config_meta({
             "seeded_at": datetime.datetime.now(datetime.UTC).isoformat(),
             "version": CONFIG_SEED_VERSION,
@@ -471,38 +429,80 @@ def _seed_database_from_env(db) -> dict[str, Any] | None:
         })
     except Exception as exc:
         logger.warning("Could not persist env seeding to the settings database: %s", exc)
-        return seeded
+        return base
     logger.info(
         "Seeded settings database from environment variables and variant template: %s",
         ", ".join(active_vars) or "no env vars",
     )
+    return base
+
+
+def _seed_mapped_env_paths_into_db(db, db_layer: dict[str, Any]) -> list[str]:
+    """Copy config-like env values into the database once, per missing path.
+
+    For every mapped variable that is not a deploy-time secret, when the
+    database has no value at that path and the environment supplies one, the
+    coerced value is written to the settings database and logged. Removing the
+    variable later therefore changes nothing. Idempotent: a path that already
+    holds a value is left alone, so a second resolve writes nothing.
+    """
+    changed = False
+    seeded: list[str] = []
+    for env_var, config_paths in ENV_CONFIG_MAP.items():
+        if env_var in SECRET_ENV_VARS:
+            continue
+        value = os.environ.get(env_var)
+        if not value:
+            continue
+        for config_path in config_paths:
+            dotted = ".".join(config_path)
+            if not _is_missing_key_value(_get_dotted(db_layer, dotted)):
+                continue
+            try:
+                coerced = coerce_value(tuple(config_path), value, env_var)
+            except ConfigValueError as exc:
+                logger.warning("%s", exc)
+                continue
+            _set_dotted(db_layer, dotted, coerced)
+            seeded.append(dotted)
+            changed = True
+    if changed:
+        try:
+            db.save_config(db_layer)
+        except Exception as exc:
+            logger.warning("Could not persist seeded environment settings: %s", exc)
+            return []
+        logger.info(
+            "Seeded settings database from environment variables: %s",
+            ", ".join(seeded),
+        )
     return seeded
 
 
-def _migrate_legacy_config_yaml(db) -> None:
-    """Import config.yaml into the settings database once, for existing installs.
+def _import_legacy_config_once(db, file_layer: dict[str, Any]) -> None:
+    """Import a config file into the settings database once, for existing installs.
 
-    Config resolution no longer reads config.yaml (ticket #201 demoted it to
-    an explicit import/export artifact). This carries hand-tuned settings from
-    pre-existing local installs across that change. Skipped when
-    $SA_UPDATER_CONFIG is set (the test harness owns the file layer) and when
-    the database already holds a config or a seed marker.
+    Resolution never reads a config file. This carries hand-tuned settings
+    across the change from a legacy file: ``$SA_UPDATER_CONFIG`` when set,
+    otherwise ``config.yaml`` in the project root. Runs only when the database
+    holds nothing at all, and never blocks or warns at runtime once migrated.
     """
-    if os.environ.get("SA_UPDATER_CONFIG"):
-        return
     try:
         if db.load_config_meta() or db.load_config():
             return
-        legacy = project_root / "config.yaml"
-        if not legacy.exists():
-            return
-        migrated = yaml.safe_load(legacy.read_text()) or {}
-        if not isinstance(migrated, dict) or not migrated:
+        migrated = file_layer or {}
+        if not migrated:
+            legacy = project_root / "config.yaml"
+            if not legacy.exists():
+                return
+            data = yaml.safe_load(legacy.read_text(encoding="utf-8"))
+            migrated = data if isinstance(data, dict) else {}
+        if not migrated:
             return
         db.save_config(migrated)
-        logger.info("Imported legacy config.yaml into the settings database")
+        logger.info("Imported legacy configuration file into the settings database")
     except Exception as exc:
-        logger.warning("Legacy config.yaml import skipped: %s", exc)
+        logger.warning("Legacy configuration import skipped: %s", exc)
 
 
 def _open_database():
@@ -511,15 +511,18 @@ def _open_database():
     return SermonDatabase()
 
 
-def _resolve_layers(db=None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Resolve config layers and return (config, db_layer, file_layer).
+def _resolve_layers(db=None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Resolve config layers and return (config, db_layer).
 
     Precedence, lowest to highest:
       1. Built-in defaults.
-      2. Optional file layer: $SA_UPDATER_CONFIG when that file exists.
-      3. SQLite config_cache (app_config row). On a fresh database with
-         environment variables present, the env-derived config is seeded into
-         the database once (see _seed_database_from_env).
+      2. Optional variant template (Docker image flavor), used to seed a fresh
+         database only.
+      3. SQLite config_cache (app_config row). A config file is never required;
+         a legacy file is imported into the database once (see
+         _import_legacy_config_once), and config-like environment values are
+         copied in once for paths the database does not yet hold (see
+         _seed_mapped_env_paths_into_db).
       4. Environment overrides for mapped keys: env always wins over the
          database because it is operator intent for the running process.
       5. ${VAR} / ${VAR:-default} expansion of remaining string values.
@@ -527,7 +530,7 @@ def _resolve_layers(db=None) -> tuple[dict[str, Any], dict[str, Any], dict[str, 
     DATABASE_URL, APP_PASSWORD, and ENVIRONMENT are infra-only variables
     consumed directly from the environment and never enter the config dict.
     """
-    file_layer = _load_file_layer()
+    legacy_file_layer = _load_file_layer()
     try:
         from dotenv import load_dotenv
 
@@ -547,37 +550,40 @@ def _resolve_layers(db=None) -> tuple[dict[str, Any], dict[str, Any], dict[str, 
             logger.warning("Failed to read settings database: %s", exc)
             db_layer = None
         if db_layer is None:
-            _migrate_legacy_config_yaml(db)
+            _import_legacy_config_once(db, legacy_file_layer)
             db_layer = db.load_config()
             if db_layer is None:
-                db_layer = _seed_database_from_env(db) or {}
+                db_layer = _seed_database_from_env(db)
+            if db_layer is None:
+                db_layer = {}
+        _seed_mapped_env_paths_into_db(db, db_layer)
 
     config = copy.deepcopy(BUILTIN_DEFAULTS)
     template_layer = _variant_template_layer()
     if template_layer:
         _deep_merge(config, template_layer)
-    if file_layer:
-        _deep_merge(config, file_layer)
     if db_layer:
         _deep_merge(config, db_layer)
     _expand_env_placeholders(config)
     apply_env_overrides(config)
-    return config, db_layer or {}, file_layer
+    return config, db_layer or {}
 
 
 def resolve_config(db=None) -> dict[str, Any]:
     """Resolve the effective configuration; see _resolve_layers for precedence."""
-    config, _, _ = _resolve_layers(db)
+    config, _ = _resolve_layers(db)
     return config
 
 
 def resolve_config_with_sources(db=None) -> tuple[dict[str, Any], dict[str, str]]:
     """Resolve the effective configuration and map each leaf path to its source.
 
-    Source is one of 'env', 'file', 'db', or 'default'.
+    Source is the winning environment variable name, or 'db' for a saved
+    value, or 'default' for a built-in. The Settings UI uses this to tell the
+    user which variable is overriding their saved value.
     """
-    config, db_layer, file_layer = _resolve_layers(db)
-    return config, _config_sources(config, db_layer, file_layer)
+    config, db_layer = _resolve_layers(db)
+    return config, _config_sources(config, db_layer)
 
 
 def _flatten_leaves(value: Any, prefix: str = "") -> dict[str, Any]:
@@ -595,22 +601,22 @@ def _flatten_leaves(value: Any, prefix: str = "") -> dict[str, Any]:
 def _config_sources(
     config: dict[str, Any],
     db_layer: dict[str, Any],
-    file_layer: dict[str, Any],
 ) -> dict[str, str]:
-    """Map each dotted leaf path of a resolved config to env/file/db/default."""
-    env_paths: set[str] = set()
+    """Map each dotted leaf path to its winning source.
+
+    A path supplied by the environment reports the variable name; otherwise
+    a saved value reports 'db'; everything else reports 'default'.
+    """
+    env_paths: dict[str, str] = {}
     for env_var, config_paths in ENV_CONFIG_MAP.items():
         if os.environ.get(env_var):
             for config_path in config_paths:
-                env_paths.add(".".join(config_path))
+                env_paths[".".join(config_path)] = env_var
     db_leaves = _flatten_leaves(db_layer)
-    file_leaves = _flatten_leaves(file_layer)
     sources: dict[str, str] = {}
     for path in _flatten_leaves(config):
         if path in env_paths:
-            sources[path] = "env"
-        elif path in file_leaves:
-            sources[path] = "file"
+            sources[path] = env_paths[path]
         elif path in db_leaves:
             sources[path] = "db"
         else:
@@ -621,13 +627,13 @@ def _config_sources(
 def load_config_from_file():
     """Resolve the effective configuration (database, env overrides, defaults).
 
-    config.yaml is never required: resolution reads the settings database,
+    No config file is required: resolution reads the settings database,
     applies environment overrides, and falls back to built-in defaults.
     See resolve_config / _resolve_layers for the exact precedence.
     """
     try:
-        config, db_layer, file_layer = _resolve_layers()
-        sources = _config_sources(config, db_layer, file_layer)
+        config, db_layer = _resolve_layers()
+        sources = _config_sources(config, db_layer)
     except Exception as e:
         logger.error("Failed to load configuration: %s", e)
         try:
@@ -667,35 +673,24 @@ def _find_plaintext_api_keys(config: dict) -> list[str]:
 
 def _env_var_for_path(path: str) -> str | None:
     """Return the environment variable that maps to a dotted config path."""
-    from core.config import ENV_CONFIG_MAP
-
-    for env_var, config_paths in ENV_CONFIG_MAP.items():
-        for config_path in config_paths:
-            if ".".join(config_path) == path:
-                return env_var
-    return None
+    return env_var_for_path(path)
 
 
 def _warn_plaintext_api_keys(
     config: dict[str, Any] | None = None, sources: dict[str, str] | None = None
 ) -> None:
-    """Warn when an API key is stored in plaintext.
+    """Warn when an API key is stored in plaintext in the settings database.
 
-    The resolver calls this with the effective config and its sources.
-    Called with no arguments it inspects config.yaml on disk, which is the
-    console's pre-resolution path.
+    The resolver calls this with the effective config and its sources; paths
+    supplied by the environment are exempt because the secret lives there.
     """
     if config is None:
-        config_path = project_root / "config.yaml"
-        try:
-            with open(config_path, encoding="utf-8") as f:
-                config = yaml.safe_load(f) or {}
-        except (OSError, yaml.YAMLError):
-            return
-        sources = None
+        return
     plaintext_keys = _find_plaintext_api_keys(config)
     if sources is not None:
-        plaintext_keys = [path for path in plaintext_keys if sources.get(path) != "env"]
+        plaintext_keys = [
+            path for path in plaintext_keys if sources.get(path, "default") in ("db", "default")
+        ]
     if not plaintext_keys:
         return
     suggestions = []
@@ -703,9 +698,9 @@ def _warn_plaintext_api_keys(
         env_var = _env_var_for_key_path(path)
         suggestions.append(f"{path} -> {env_var}" if env_var else path)
     message = (
-        "API keys are stored in plaintext in config.yaml "
+        "API keys are stored in plaintext in the settings database "
         f"({', '.join(suggestions)}). "
-        "Set the listed environment variables to keep them out of the file and database."
+        "Set the listed environment variables to keep them out of the database."
     )
     logger.warning(message)
     try:
@@ -741,12 +736,11 @@ def reload_configuration():
 
 
 def save_config_to_file(config):
-    """Save configuration to config.yaml file and database, then reload in session.
+    """Persist configuration to the settings database, plus a YAML export.
 
-    The file copy is sanitized: every ``api_key`` leaf is stored as its
-    ``${VAR}`` placeholder so literals never land in config.yaml. The
-    database keeps the full dict (user-typed keys are allowed there) and
-    is overlaid in memory on load, with environment variables winning.
+    The database is authoritative and is what resolution reads. The YAML copy
+    is an export artifact only. It is sanitized: every ``api_key`` leaf is
+    stored as its ``${VAR}`` placeholder so literals never land in the export.
     """
     try:
         config_path = project_root / "config.yaml"
@@ -756,7 +750,7 @@ def save_config_to_file(config):
                 _sanitize_config_for_file(config), f, default_flow_style=False, sort_keys=True
             )
 
-        # Also save to database so settings survive config.yaml loss (Docker, git, etc.)
+        # Save to the database: this is the layer resolution reads.
         try:
             from ui.database import SermonDatabase
 
@@ -765,7 +759,7 @@ def save_config_to_file(config):
         except Exception:
             pass  # DB save is best-effort
 
-        # Reload the configuration from file to ensure consistency
+        # Reload the effective configuration from the database.
         try:
             reload_configuration()
         except Exception:
@@ -774,7 +768,7 @@ def save_config_to_file(config):
         try:
             import streamlit as st
 
-            st.info(f"Configuration saved to {config_path}")
+            st.info("Configuration saved to the settings database (YAML export updated).")
         except Exception:
             pass  # Not in Streamlit context
 

@@ -26,12 +26,11 @@ A modern Streamlit web interface for the SermonAudio AI audio processing pipelin
 
 ## Running the Web UI
 
-1. Ensure you have a valid `config.yaml` in the project root:
-   ```bash
-   cd ..
-   cp config/config.example.yaml config.yaml
-   # Edit config.yaml with your settings
-   ```
+1. No config file is required. Settings live in the SQLite settings database
+   and are edited in the Settings page. Config-like environment variables are
+   seeded into the database once on first launch; a pre-database `config.yaml`
+   is imported once if the database is empty. See the configuration section of
+   the main `README.md`.
 
 2. Start the Streamlit application from the repo root:
    ```bash
@@ -78,12 +77,13 @@ ui/
 
 The web UI integrates with the existing CLI functionality by:
 - Importing and using existing modules (`sermon_updater.py`, `audio_processing.py`, `llm_manager.py`)
-- Sharing the same configuration system (`config.yaml`)
+- Sharing the same configuration system (settings database plus environment overrides)
 - Providing a web wrapper around CLI functions
 
 ## Configuration
 
-The web UI uses the same configuration as the CLI tool. Key settings:
+The web UI uses the same configuration as the CLI tool, resolved from the
+settings database with environment overrides. Key settings:
 
 - **SermonAudio API**: API key and broadcaster ID
 - **LLM Providers**: OpenAI/Ollama configuration for primary and fallback
@@ -137,7 +137,7 @@ The UI is optimized for performance through:
 ### Common Issues
 
 1. **"Module not found" errors**: Ensure all dependencies are installed
-2. **Configuration errors**: Check `config.yaml` syntax and required fields
+2. **Configuration errors**: Check the Settings page and any environment variables named in the error
 3. **LLM connection issues**: Verify provider settings and network connectivity
 4. **Audio processing failures**: Check audio file formats and enhancement method availability
 

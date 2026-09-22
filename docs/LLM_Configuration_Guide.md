@@ -31,12 +31,13 @@ an OpenAI-compatible endpoint.
 ## Where settings live
 
 Settings are stored in the SQLite settings database and resolved as:
-built-in defaults, an optional file layer (`SA_UPDATER_CONFIG`), the stored
-settings, then environment variables (env wins for the running process).
+built-in defaults, an optional per-variant template (fresh database only), the
+stored settings, then environment variables (env wins for the running process).
 There is no required config file. Practical consequences:
 
 - Set `OPENAI_API_KEY` or `LLM_PROVIDER` etc. in `.env` and the first launch
-  seeds them into the database; they survive restarts.
+  seeds config-like values into the database; they survive restarts. Deploy-time
+  secrets such as `OPENAI_API_KEY` stay in the environment.
 - Change providers any time in the web UI Settings page.
 - The Settings page's Import/Export tab writes the current settings to YAML
   and restores from an uploaded YAML file. A pre-existing `config.yaml` from
@@ -255,5 +256,6 @@ For custom endpoints, the provider info shows the base URL, e.g.
 - Flat legacy keys (`llm_provider`, `ollama_host`, `ollama_model`,
   `openai_api_key`, `openai_model`) are converted to the structured `llm`
   block when they appear in a loaded file.
-- An existing `config.yaml` from a pre-database install is imported into the
-  settings database once, automatically, on first resolution.
+- An existing `config.yaml` (or the file named by `SA_UPDATER_CONFIG`) from a
+  pre-database install is imported into the settings database once,
+  automatically, on first resolution and only while the database is empty.

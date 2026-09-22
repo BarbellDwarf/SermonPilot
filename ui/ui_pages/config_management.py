@@ -30,11 +30,13 @@ except ImportError as e:
 
 SECRET_KEY_HINTS = ("key", "password", "token", "secret")
 SOURCE_DESCRIPTIONS = {
-    "env": "process environment (overrides saved settings)",
-    "file": "config file layer",
     "db": "settings database",
     "default": "built-in default",
 }
+ENV_SOURCE_NOTE = (
+    "An environment variable name means that variable supplied the value and "
+    "overrides the saved setting."
+)
 
 
 def _flatten_config_leaves(value, prefix: str = "") -> list[tuple[str, object]]:
@@ -102,11 +104,9 @@ def show_effective_config() -> None:
         st.info("No configuration values resolved yet.")
 
     st.caption(
-        "Sources: "
-        + "; ".join(
-            f"{name} = {description}" for name, description in SOURCE_DESCRIPTIONS.items()
-        )
-        + ". Environment variables always override saved settings for mapped keys."
+        "Sources: a value is either a saved setting (db), a built-in default, "
+        "or the name of the environment variable that is overriding it. "
+        + ENV_SOURCE_NOTE
     )
 
     st.download_button(

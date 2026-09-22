@@ -204,8 +204,9 @@ Cutover stays a one-line nginx move: upstream `127.0.0.1:8501` (Streamlit)
 sermon.moraclan.us currently proxies to Streamlit :8501 via nginx (CT 111).
 Cutover is a two-step manual operation:
 
-1. River flips `web_console_ready: true` in the LIVE server config
-   (`SA_UPDATER_CONFIG` file or `config.yaml`). The console reports it at
+1. River flips `web_console_ready: true` in the LIVE settings database (the
+   Streamlit System settings page writes it; the value is read from
+   `config_cache.app_config`). The console reports it at
    `GET /api/meta/retirement` → `{"streamlit_ready": true}` (public, no auth),
    and Settings → System shows the state in a read-only admin-only banner.
 2. Operator edits the nginx vhost `sermon.moraclan.us.conf`: move the upstream

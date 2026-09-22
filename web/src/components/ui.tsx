@@ -45,6 +45,19 @@ export function Chip({ tone = "neutral", children }: { tone?: keyof typeof chipT
   );
 }
 
+export function EnvSourceBadge({ source }: { source: string | undefined }) {
+  if (!source || source === "db" || source === "default") return null;
+  return (
+    <span
+      className="inline-flex min-h-[28px] max-w-full items-center gap-1 rounded-full border border-info px-2.5 font-mono text-xs text-info"
+      title={`This value is supplied by the ${source} environment variable and overrides the saved setting while it is set.`}
+    >
+      <span aria-hidden="true">env</span>
+      <span className="truncate">{source}</span>
+    </span>
+  );
+}
+
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return <div className={`rounded-lg border border-line bg-surface p-4 ${className}`}>{children}</div>;
 }

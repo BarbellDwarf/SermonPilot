@@ -95,7 +95,7 @@ See `.env.example` for the complete list of available environment variables. Key
 - `DRY_RUN`, `DEBUG`, `VERBOSE`, `HASHTAG_VERIFICATION`, `QA_NORMALIZATION_ENABLED`
 
 #### Config Plumbing
-- `SA_UPDATER_CONFIG` - explicit config file path (absolute preferred)
+- `SA_UPDATER_CONFIG` - file for the one-time legacy import into an empty settings database (absolute preferred)
 - `DATABASE_URL` - SQLite database path / URL
 
 The full override table lives in code at `src/core/config.py`
@@ -110,12 +110,11 @@ and `ui/ui_pages/new_sermon_enhanced.py`
 
 - Keys may live in **environment variables** (preferred) or the **DB
   `config_cache`** (UI-saved settings). They must **never** be literals
-  in `config.yaml`.
-- `config.yaml` / `config/config.example.yaml` hold `${VAR}` placeholders;
-  the loader substitutes them and env overrides win. The Settings UI
-  writes placeholders back to the file while keeping user-typed keys in
-  the DB, overlaid in memory with precedence
-  environment > DB cache > file.
+  in a file.
+- `config/config.example.yaml` holds `${VAR}` placeholders; the loader
+  substitutes them and env overrides win over the DB. The Settings UI keeps
+  user-typed keys in the DB, and any YAML export replaces them with
+  `${VAR}` placeholders. Precedence is environment > DB > built-in default.
 - Empty, whitespace-only, unresolved `${VAR}`, or obviously-invalid short
   values (for example a stray few-character string in
   `transcription.whisper_openai.api_key`) are treated as unset and are

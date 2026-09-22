@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { isLive } from "../api/client";
-import { useUserSettings } from "../api/useUserSettings";
+import { fieldValue, useConfigSection } from "../api/useConfigSection";
 import { Button, ConfirmDialog, Field, SectionCard, Toggle, inputCls } from "./ui";
 
 interface TemplateDraft {
@@ -47,18 +47,60 @@ function defaults(): Record<TaskKey, TemplateDraft> {
   return d;
 }
 
+function mergeTemplates(raw: unknown): Record<TaskKey, TemplateDraft> {
+  const merged = defaults();
+  if (raw && typeof raw === "object") {
+    const record = raw as Record<string, unknown>;
+    for (const t of TASKS) {
+      const value = record[t.key];
+      if (value && typeof value === "object") {
+        const draft = value as Record<string, unknown>;
+        merged[t.key] = {
+          enabled: typeof draft.enabled === "boolean" ? draft.enabled : merged[t.key].enabled,
+          system: typeof draft.system === "string" ? draft.system : merged[t.key].system,
+          user: typeof draft.user === "string" ? draft.user : merged[t.key].user,
+        };
+      }
+    }
+  }
+  return merged;
+}
+
+const FALLBACK: Record<string, unknown> = { prompt_templates: null };
+
 export function PromptTemplatesSection({ show }: { show: (m: string) => void }) {
-  const [saved, setSaved] = useUserSettings<Record<TaskKey, TemplateDraft>>("settings.prompts", defaults());
+  const { fields, save } = useConfigSection("prompts", FALLBACK);
+  const saved = useMemo(
+    () => mergeTemplates(fieldValue(fields, "prompt_templates", null)),
+    [fields],
+  );
+  const savedKey = JSON.stringify(saved);
   const [cur, setCur] = useState<Record<TaskKey, TemplateDraft>>(saved);
   const [pendingReset, setPendingReset] = useState<TaskKey | null>(null);
-  const dirty = isLive && JSON.stringify(cur) !== JSON.stringify(saved);
+
+  useEffect(() => {
+    setCur(saved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedKey]);
+
+  const dirty = JSON.stringify(cur) !== savedKey;
   const setTask = (k: TaskKey, patch: Partial<TemplateDraft>) =>
     setCur((c) => ({ ...c, [k]: { ...c[k], ...patch } }));
+
+  const onSave = () => {
+    void save({ prompt_templates: cur })
+      .then(() => show(isLive ? "Prompt templates saved." : "Prompt templates saved (mock)."))
+      .catch((e) => show(`Could not save: ${(e as Error).message}`));
+  };
 
   return (
     <SectionCard
       title="Prompt Templates"
-      sub="Per-task instructions sent to the LLM (mock). Use {variable} placeholders for dynamic content."
+      sub={
+        isLive
+          ? "Per-task instructions sent to the LLM. Saved here is what the pipeline resolves. Use {variable} placeholders for dynamic content."
+          : "Per-task instructions sent to the LLM (mock). Use {variable} placeholders for dynamic content."
+      }
     >
       <div className="flex flex-col gap-2">
         {TASKS.map((t) => {
@@ -117,15 +159,7 @@ export function PromptTemplatesSection({ show }: { show: (m: string) => void }) 
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button
-          variant="primary"
-          disabled={!dirty}
-          onClick={() => {
-            setSaved(cur);
-            setCur(cur);
-            show(isLive ? "Prompt templates saved." : "Prompt templates saved (mock).");
-          }}
-        >
+        <Button variant="primary" disabled={!dirty} onClick={onSave}>
           Save
         </Button>
         {!dirty ? (
@@ -150,7 +184,7 @@ export function PromptTemplatesSection({ show }: { show: (m: string) => void }) 
           if (pendingReset) {
             const fresh = defaults()[pendingReset];
             setTask(pendingReset, fresh);
-            show(`Template reset (mock): ${pendingReset}.`);
+            show(`Template reset: ${pendingReset}. Save to keep it.`);
           }
           setPendingReset(null);
         }}

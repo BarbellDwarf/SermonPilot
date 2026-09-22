@@ -511,8 +511,8 @@ def get_api_headers() -> dict[str, str]:
     key = SERMON_AUDIO_API_KEY or os.environ.get('SERMONAUDIO_API_KEY', '')
     if not key:
         raise ValueError(
-            "SermonAudio API key is not configured. Set 'api_key' in config.yaml "
-            "or the SERMONAUDIO_API_KEY environment variable."
+            "SermonAudio API key is not configured. Save it in Settings under "
+            "SermonAudio Accounts, or set the SERMONAUDIO_API_KEY environment variable."
         )
     return {'X-Api-Key': key, 'Content-Type': 'application/json'}
 
