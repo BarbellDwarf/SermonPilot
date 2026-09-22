@@ -158,3 +158,32 @@ def test_sources_endpoint_reports_no_values(client, scoped_setup, clean_env):
     sources = response.json()["sources"]
     assert isinstance(sources, dict)
     assert sources.get("llm.primary.ollama.host") == "default"
+
+
+def test_embeddings_surface_is_gone_from_the_console_config(
+    client, scoped_setup, clean_env
+):
+    from server.api.routers.app_config import SECTIONS
+
+    assert "embeddings" not in SECTIONS
+    assert not any(
+        path == "embeddings" or path.startswith("embeddings.")
+        for paths in SECTIONS.values()
+        for path in paths
+    )
+
+    headers = scoped_setup["a"]["headers"]
+    response = client.get("/api/config/sections/embeddings", headers=headers)
+    assert response.status_code == 404
+
+
+def test_embeddings_env_overrides_are_gone():
+    from src.core.config import ENV_CONFIG_MAP
+
+    assert "EMBEDDING_PROVIDER" not in ENV_CONFIG_MAP
+    assert "EMBEDDING_MODEL" not in ENV_CONFIG_MAP
+    assert not any(
+        path[:1] == ["embeddings"]
+        for paths in ENV_CONFIG_MAP.values()
+        for path in paths
+    )

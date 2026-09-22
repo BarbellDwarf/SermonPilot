@@ -22,7 +22,6 @@ ENV_CONFIG_MAP: dict[str, list[list[str]]] = {
         ['llm', 'fallback', 'openai', 'api_key'],
         ['llm', 'validator', 'openai', 'api_key'],
         ['transcription', 'whisper_openai', 'api_key'],
-        ['embeddings', 'primary', 'openai', 'api_key'],
     ],
     'ANTHROPIC_API_KEY': [
         ['llm', 'primary', 'anthropic', 'api_key'],
@@ -79,8 +78,6 @@ ENV_CONFIG_MAP: dict[str, list[list[str]]] = {
     'VERBOSE': [['verbose']],
     'DRY_RUN': [['dry_run']],
     'HASHTAG_VERIFICATION': [['hashtag_verification']],
-    'EMBEDDING_PROVIDER': [['embeddings', 'primary', 'provider']],
-    'EMBEDDING_MODEL': [['embeddings', 'primary', 'model']],
 }
 
 ENV_NUMERIC_PATHS: dict[tuple[str, ...], type] = {

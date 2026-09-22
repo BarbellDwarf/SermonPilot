@@ -62,7 +62,6 @@ class ConfigMigrationManager:
             ('llm', 'Language Model Configuration'),
             ('audio', 'Audio Processing Configuration'),
             ('database', 'Database Configuration'),
-            ('embeddings', 'Embedding Model Configuration'),
             ('system', 'System and Debug Configuration'),
             ('web_ui', 'Web Interface Configuration'),
             ('metadata', 'Metadata Processing Configuration'),
@@ -168,8 +167,6 @@ class ConfigMigrationManager:
             return 'llm'
         elif key_path.startswith('audio'):
             return 'audio'
-        elif key_path.startswith('embeddings'):
-            return 'embeddings'
         elif key_path.startswith('web_ui'):
             return 'web_ui'
         elif key_path.startswith('metadata_processing'):
