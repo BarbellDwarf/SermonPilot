@@ -249,6 +249,44 @@ def get_sermon_transcript(request: Request, sermon_id: str) -> TranscriptOut:
     )
 
 
+class SermonUpdateBody(BaseModel):
+    title: str | None = None
+    speaker: str | None = None
+    series_title: str | None = None
+    recorded_date: str | None = None
+    description: str | None = None
+
+
+@router.patch("/{sermon_id}", response_model=SermonDetailOut)
+def update_sermon(
+    request: Request, sermon_id: str, body: SermonUpdateBody
+) -> SermonDetailOut:
+    user = request_user(request)
+    from server.api.accounts import get_db_path
+    from ui.database import SermonDatabase, SermonRepository
+
+    repo = SermonRepository(SermonDatabase(db_path=get_db_path()))
+    sermon = repo.get_sermon(sermon_id)
+    if sermon is None or not visible(sermon.get("user_id"), user):
+        raise HTTPException(status_code=404, detail="sermon not found")
+    updates: dict[str, Any] = {}
+    if body.title is not None:
+        updates["title"] = body.title.strip() or "Untitled"
+    if body.speaker is not None:
+        updates["speaker"] = body.speaker.strip()
+    if body.series_title is not None:
+        updates["series_title"] = body.series_title.strip()
+    if body.recorded_date is not None:
+        updates["recorded_date"] = body.recorded_date.strip()
+    if body.description is not None:
+        updates["description"] = body.description.strip()
+    if not updates:
+        raise HTTPException(status_code=422, detail="no fields to update")
+    if not repo.update_sermon_metadata(sermon_id, updates):
+        raise HTTPException(status_code=500, detail="could not update sermon")
+    return get_sermon(request, sermon_id)
+
+
 def _remove_sermon_dirs(sermon_id: str, file_paths: list[str]) -> None:
     from pathlib import Path
 
