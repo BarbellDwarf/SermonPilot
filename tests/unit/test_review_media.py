@@ -201,6 +201,67 @@ def test_sweep_enforces_total_size_cap_oldest_first(tmp_path, monkeypatch):
     assert newest.is_dir()
 
 
+def test_sweep_keeps_a_lone_review_larger_than_the_cap(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("SERMONPILOT_REVIEW_MEDIA_DIR", str(tmp_path / "reviews"))
+    monkeypatch.setenv("SERMONPILOT_REVIEW_RETENTION_DAYS", "0")
+    monkeypatch.setenv("SERMONPILOT_REVIEW_RETENTION_MAX_GB", "0.000001")
+
+    only = _review_dir(tmp_path / "reviews", "only-review")
+    _seed_review(only)
+    (only / "bulk.bin").write_bytes(b"x" * 4096)
+
+    with caplog.at_level("WARNING"):
+        result = sweep_abandoned_reviews({"output_directory": str(tmp_path / "out")})
+
+    assert only.is_dir()
+    assert (only / "bulk.bin").is_file()
+    assert str(only) not in result["removed"]
+    assert result["kept"] == 1
+    warnings = [record.getMessage() for record in caplog.records if record.levelname == "WARNING"]
+    assert any("size cap" in message for message in warnings), warnings
+
+
+def test_sweep_never_discards_the_protected_current_review(tmp_path, monkeypatch):
+    monkeypatch.setenv("SERMONPILOT_REVIEW_MEDIA_DIR", str(tmp_path / "reviews"))
+    monkeypatch.setenv("SERMONPILOT_REVIEW_RETENTION_DAYS", "0")
+    monkeypatch.setenv("SERMONPILOT_REVIEW_RETENTION_MAX_GB", "0.000006")
+
+    older = _review_dir(tmp_path / "reviews", "older")
+    _seed_review(older)
+    (older / "bulk.bin").write_bytes(b"x" * 4096)
+    os.utime(older / MARKER_FILENAME, (1, 1))
+
+    current = _review_dir(tmp_path / "reviews", "current")
+    _seed_review(current)
+    (current / "bulk.bin").write_bytes(b"x" * 4096)
+    os.utime(current / MARKER_FILENAME, (2, 2))
+
+    result = sweep_abandoned_reviews(
+        {"output_directory": str(tmp_path / "out")}, protect_dir=current
+    )
+
+    assert str(current) not in result["removed"]
+    assert current.is_dir()
+    assert (current / "bulk.bin").is_file()
+
+
+def test_sweep_protects_current_review_from_the_age_cap(tmp_path, monkeypatch):
+    monkeypatch.setenv("SERMONPILOT_REVIEW_MEDIA_DIR", str(tmp_path / "reviews"))
+    monkeypatch.setenv("SERMONPILOT_REVIEW_RETENTION_DAYS", "1")
+    monkeypatch.setenv("SERMONPILOT_REVIEW_RETENTION_MAX_GB", "0")
+
+    current = _review_dir(tmp_path / "reviews", "current")
+    _seed_review(current)
+    os.utime(current / MARKER_FILENAME, (1, 1))
+
+    result = sweep_abandoned_reviews(
+        {"output_directory": str(tmp_path / "out")}, protect_dir=current
+    )
+
+    assert str(current) not in result["removed"]
+    assert current.is_dir()
+
+
 def test_retention_summary_exposes_bounds(tmp_path, monkeypatch):
     monkeypatch.setenv("SERMONPILOT_REVIEW_MEDIA_DIR", str(tmp_path / "reviews"))
     summary = retention_summary({})
