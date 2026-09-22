@@ -38,6 +38,11 @@ except ImportError:  # Streamlit entrypoint runs from /app (top-level imports)
 from ui.config_utils import default_cache_root  # noqa: E402
 from ui.job_queue import JobType as _CanonicalJobType  # noqa: E402
 
+try:  # noqa: E402 - src package import (project root on sys.path)
+    from src.safe_delete import trash_local
+except ImportError:  # src dir placed directly on sys.path
+    from safe_delete import trash_local  # type: ignore[no-redef]
+
 
 def _canon(job_type):
     if isinstance(job_type, _CanonicalJobType):
@@ -96,12 +101,13 @@ def _raise_if_job_cancelled(job: Job) -> None:
 def _cleanup_job_files(config: dict, uploaded_file_path: str | None,
                        processing_dir: str | None, job: Job,
                        keep_upload: bool = False) -> None:
-    """Delete the job's uploaded copy and per-job processing dir if still present.
+    """Move the job's uploaded copy into trash and drop the per-job processing dir.
 
-    Only files inside the configured upload_dir are removed so a path pointing
-    at real user media can never be deleted. Safe to run more than once.
+    Only files inside the configured upload_dir are moved so a path pointing at
+    real user media can never be touched. The uploaded media is moved, never
+    unlinked, so a delete is recoverable. Safe to run more than once.
     keep_upload=True retains the original uploaded copy (job failed or was
-    cancelled: a retry re-processes it) while still removing the derived
+    cancelled: a retry re-processes it) while still moving the derived
     _enhanced/_cleaned siblings so a retry never reuses stale artifacts.
     """
     try:
@@ -120,9 +126,16 @@ def _cleanup_job_files(config: dict, uploaded_file_path: str | None,
                     continue
                 if keep_upload and path == candidate:
                     continue
-                path.unlink(missing_ok=True)
-                job.add_log(f"Removed uploaded copy {path.name}")
-                logger.info("Removed uploaded copy %s", path)
+                record = trash_local(
+                    path,
+                    reason="job_upload_released",
+                    job_id=getattr(job, "id", None),
+                    stage="job_cleanup",
+                )
+                if record is None:
+                    continue
+                job.add_log(f"Moved uploaded copy {path.name} to trash")
+                logger.info("Moved uploaded copy %s to trash", path)
         if processing_dir:
             shutil.rmtree(processing_dir, ignore_errors=True)
     except Exception as e:
@@ -362,9 +375,12 @@ def _stage_cloud_source(
 def _cleanup_staged_file(
     path: str | None, job: Job, keep: bool = False, keep_all: bool = False
 ) -> None:
-    """Remove a staged cloud download plus its derived siblings, staging-dir-only.
+    """Move a staged cloud download plus its derived siblings to trash.
 
-    ``keep`` retains the download itself while still removing derived siblings.
+    Staging-dir-only: a path outside the staging root is never touched. The
+    staged copy is local; the cloud original stays in place. It is moved, never
+    unlinked, so even a cleanup mistake is recoverable.
+    ``keep`` retains the download itself while still moving derived siblings.
     ``keep_all`` retains the download and every sibling, for a review pause that
     still needs the staged source (cleanup deferred to the terminal outcome).
     """
@@ -380,12 +396,19 @@ def _cleanup_staged_file(
             candidate.with_name(f"{candidate.stem}_enhanced{candidate.suffix}"),
             candidate.with_name(f"{candidate.stem}_cleaned.wav"),
         )
+        moved = False
         for target in targets:
             if keep_all or (keep and target == candidate):
                 continue
-            target.unlink(missing_ok=True)
-        if not keep and not keep_all:
-            job.add_log(f"Removed staged cloud copy {candidate.name}")
+            record = trash_local(
+                target,
+                reason="staged_cloud_source_released",
+                job_id=getattr(job, "id", None),
+                stage="cloud_ingest_cleanup",
+            )
+            moved = moved or record is not None
+        if moved and not keep and not keep_all:
+            job.add_log(f"Moved staged cloud copy {candidate.name} to trash")
     except Exception as exc:
         logger.warning("Failed to clean up staged cloud file: %s", exc)
 
@@ -1046,7 +1069,12 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
                 result['cloud_output'] = dest
                 job.add_log(f"Uploaded output to {dest}")
                 if cloud_output_dir:
-                    shutil.rmtree(cloud_output_dir, ignore_errors=True)
+                    trash_local(
+                        cloud_output_dir,
+                        reason="cloud_output_staging_uploaded",
+                        job_id=getattr(job, "id", None),
+                        stage="cloud_output",
+                    )
             if plan_status == 'pending_review':
                 job.add_log("Auto-edit cut awaits manual review")
                 cleanup_state["keep_staged"] = True

@@ -147,6 +147,21 @@ def test_staged_file_removed_after_successful_run(staging, monkeypatch):
     assert list(staging.iterdir()) == []
 
 
+def test_staged_file_is_moved_to_trash_not_unlinked(staging, tmp_path, monkeypatch):
+    monkeypatch.setenv("SERMONPILOT_TRASH_DIR", str(tmp_path / "trash"))
+    seen: list[str] = []
+    _stub_process(monkeypatch, seen)
+    payload = b"x" * 4096
+    monkeypatch.setattr(job_executors, "_open_url", lambda url: _FakeResponse(payload))
+
+    execute_sermon_processing_job(_job(_params("http://127.0.0.1:9999/talks/a.wav")))
+
+    assert list(staging.iterdir()) == []
+    moved = list((tmp_path / "trash").rglob("a.wav"))
+    assert len(moved) == 1
+    assert moved[0].read_bytes() == payload
+
+
 def test_cancel_mid_download_cleans_partial(staging, monkeypatch):
     seen: list[str] = []
     _stub_process(monkeypatch, seen)
