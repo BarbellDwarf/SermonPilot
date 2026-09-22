@@ -72,6 +72,7 @@ ENV_CONFIG_MAP: dict[str, list[list[str]]] = {
     'AUDIO_TARGET_LEVEL': [['audio_target_level_db']],
     'AUDIO_GAIN_DB': [['audio_gain_db']],
     'OUTPUT_DIRECTORY': [['output_directory']],
+    'SERMONPILOT_REVIEW_MEDIA_DIR': [['review_media_directory']],
     'SAVE_TRANSCRIPT': [['save_transcript']],
     'SAVE_ORIGINAL_AUDIO': [['save_original_audio']],
     'DEBUG': [['debug']],
