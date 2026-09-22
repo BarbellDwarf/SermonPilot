@@ -34,6 +34,7 @@ auto_edit:
   auto_confidence_threshold: 0.8   # clamped to <= 0.99
   qa_margin_seconds: 3.0
   min_sermon_seconds: 600
+  max_transcript_chars: 24000  # optional; default follows the smallest configured model context
   require_review: true         # legacy: true == interactive when mode absent
   logo_path: ''
   logo_hold: 3.0
@@ -54,6 +55,7 @@ auto_edit:
 | `auto_confidence_threshold` | `0.8` | Minimum LLM confidence for auto mode (clamped to 0.99) |
 | `qa_margin_seconds` | `3.0` | Padding left around the Q&A boundary |
 | `min_sermon_seconds` | `600` | Plans that would leave less than this fail validation and go to review |
+| `max_transcript_chars` | derived | Character budget for the detection prompt. When absent it follows the smallest `num_ctx` across the provider chain, minus room for the reply; the middle of longer transcripts is elided and the head and tail are kept, since the opening and the Q&A sit at the two ends |
 | `require_review` | `true` | Legacy flag: `true` behaves as `interactive` when `mode` is absent |
 | `logo_path` | `''` | Image shown on the end card; empty disables the card |
 | `logo_hold` | `3.0` | Seconds the logo card stays on screen |
@@ -85,7 +87,7 @@ llm:
         extra_headers: {}  # optional; some gateways need a routing/session header
 ```
 
-If the pin fails to initialize or errors at call time, detection falls back to the global chain. Detection retries up to 3 times on empty or unusable model output, then returns a `needs_review` plan.
+If the pin fails to initialize or errors at call time, detection falls back to the global chain. Detection retries up to 3 times on empty, timed-out, or unusable model output. If every attempt fails, the plan comes back with `detection_status: unavailable` and zeroed cut points (`start` and `end` both `0`), never a whole-video fallback that looks like a real proposal. The failure is logged with the provider, prompt size, elapsed time, and a scrubbed preview of the raw response, and surfaced in the Streamlit review panel and the web console.
 
 ## Pipeline
 
@@ -107,7 +109,7 @@ The form's section writes per-run overrides into the job config; with the checkb
 | Mode | Behavior |
 |------|----------|
 | `interactive` | Processing stops at `pending_review`. The sermon is saved as a draft so it shows in the Library, and you finish it from the review panel. |
-| `auto` | Applies immediately only when all of these hold: `needs_review` is false, confidence is at or above `auto_confidence_threshold`, and `validate_plan` finds no problems. A `needs_review` plan bypasses the threshold check unconditionally and always goes to review. |
+| `auto` | Applies immediately only when all of these hold: `detection_status` is `ok`, `needs_review` is false, confidence is at or above `auto_confidence_threshold`, and `validate_plan` finds no problems. A `needs_review` plan bypasses the threshold check unconditionally and always goes to review. An unavailable detection never applies; it is saved for manual review. |
 
 If `apply_edit` itself fails, the plan is flagged for review and the sermon lands in the same pending state rather than dying.
 
@@ -116,6 +118,7 @@ If `apply_edit` itself fails, the plan is flagged for review and the sermon land
 Open the sermon in the Library and expand the review panel:
 
 - Badges show the plan status and confidence
+- When detection was unavailable, an error banner replaces the proposal (and the web panel hides the proposed-cuts block) so you set the numbers by hand or regenerate
 - Start and end timestamp inputs at 0.1s resolution, validated live against the plan rules (problems are listed inline)
 - The LLM's evidence quote from the transcript
 - Approve applies the plan and continues the pipeline
