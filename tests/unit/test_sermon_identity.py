@@ -166,6 +166,71 @@ def test_migration_collapses_duplicates_and_is_idempotent(tmp_path: Path):
     assert len(repo.get_all_sermons()) == 1
 
 
+def test_fold_keeps_survivor_file_record(tmp_path: Path):
+    from ui.database import SermonDatabase, SermonRepository
+
+    staged = tmp_path / "staged.mp3"
+    staged.write_bytes(TINY_MP3)
+    canonical = tmp_path / "canonical.mp3"
+    repo = SermonRepository(SermonDatabase(db_path=str(tmp_path / "fold.db")))
+    repo.save_sermon({
+        "id": "surv",
+        "title": "T",
+        "speaker": "S",
+        "recorded_date": "2026-09-20",
+        "file_paths": {"audio": str(canonical)},
+    })
+    repo.save_sermon({
+        "id": "lose",
+        "title": "T",
+        "speaker": "S",
+        "recorded_date": "2026-09-20",
+        "file_paths": {"audio": str(staged)},
+    })
+
+    with repo.db.get_connection() as conn:
+        repo._fold_sermon(conn, "surv", "lose")
+        conn.commit()
+
+    files = {row["file_type"]: row["file_path"] for row in repo.get_sermon_files("surv")}
+    assert files["audio"] == str(canonical)
+    assert repo.get_sermon_files("lose") == []
+
+
+def test_migration_carries_processed_status(tmp_path: Path):
+    from ui.database import SermonDatabase, SermonRepository
+
+    media = tmp_path / "render.mp3"
+    media.write_bytes(TINY_MP3)
+    repo = SermonRepository(SermonDatabase(db_path=str(tmp_path / "status.db")))
+    repo.save_sermon({
+        "id": "draft_rich",
+        "title": "Grace",
+        "speaker": "Pastor A",
+        "recorded_date": "2026-09-20",
+        "status": "draft",
+        "file_paths": {"audio": str(media)},
+    })
+    repo.save_sermon({
+        "id": "published",
+        "title": "Grace",
+        "speaker": "Pastor A",
+        "recorded_date": "2026-09-20",
+        "status": "processed",
+        "upload_info": {"sermonaudio_id": "999", "upload_status": "completed"},
+    })
+
+    summary = repo.dedupe_sermons()
+
+    assert summary["groups"] == 1
+    rows = repo.get_all_sermons()
+    assert len(rows) == 1
+    assert rows[0]["id"] == "draft_rich"
+    kept = repo.get_sermon("draft_rich")
+    assert kept["status"] == "processed"
+    assert kept["upload_info"]["sermonaudio_id"] == "999"
+
+
 def test_apply_reuses_existing_sermon_id():
     from ui.auto_edit_apply import _build_apply_kwargs
 

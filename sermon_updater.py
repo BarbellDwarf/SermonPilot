@@ -3193,7 +3193,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 speaker_name,
                 recorded_date,
                 title or 'Untitled',
-                audio_path,
+                original_input_path,
                 existing_sermon_id,
             )
             result['sermon_id'] = sermon_id
@@ -3385,7 +3385,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     speaker_name,
                     recorded_date,
                     title or 'Untitled',
-                    audio_path,
+                    original_input_path,
                     existing_sermon_id,
                 )
                 output_root = Path(config.get('output_directory', 'processed_sermons'))
