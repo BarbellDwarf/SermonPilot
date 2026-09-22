@@ -1872,6 +1872,27 @@ def _find_existing_processed_sermon_id(title: str | None, speaker_name: str | No
     return None
 
 
+def _resolve_identity_id(
+    speaker_name: str | None,
+    recorded_date: str | None,
+    title: str | None,
+    source_path: str | Path | None,
+    existing_sermon_id: str | None = None,
+) -> str:
+    """Deterministic id for a local record, or the caller's existing id.
+
+    Passing ``existing_sermon_id`` is how a render or re-run updates the
+    record it came from rather than minting a second one.
+    """
+    if existing_sermon_id:
+        return str(existing_sermon_id)
+    from src.sermon_identity import derive_sermon_id, source_fingerprint
+
+    return derive_sermon_id(
+        speaker_name, recorded_date, title, source_fingerprint(source_path)
+    )
+
+
 def _remote_sermon_exists(sermon_id: str) -> bool:
     """Check a candidate reuse id still exists on SermonAudio.
 
@@ -2038,7 +2059,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       edit_plan_file: str | None = None,
                       audio_offset: float | None = None,
                       cancel_check: Callable[[], None] | None = None,
-                      publish: bool = True) -> dict:
+                      publish: bool = True,
+                      existing_sermon_id: str | None = None) -> dict:
     """Process a new sermon from audio file with automatic metadata generation.
 
     Args:
@@ -2513,26 +2535,19 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
         def _persist_auto_edit_pending_review() -> dict:
             import json as review_json
-            import re as review_re
             import shutil
-            import uuid
 
             from src.sermon_paths import build_output_filename
 
             review_title = title or f"Sermon by {speaker_name}"
             review_description = description or ''
             review_hashtags = hashtags or ''
-            safe_title = (
-                review_re.sub(r'[^a-zA-Z0-9]+', '_', review_title.strip().lower())[:40]
-            )
-            safe_speaker = (
-                review_re.sub(
-                    r'[^a-zA-Z0-9]+', '_', (speaker_name or 'Unknown').strip().lower()
-                )[:20]
-            )
-            safe_date = (recorded_date or 'nodate').replace('-', '')
-            review_id = (
-                f"draft_{safe_speaker}_{safe_date}_{safe_title}_{uuid.uuid4().hex[:8]}"
+            review_id = _resolve_identity_id(
+                speaker_name,
+                recorded_date,
+                review_title,
+                original_input_path or audio_path,
+                existing_sermon_id,
             )
             from src.review_media import (
                 render_bounded_snippets,
@@ -3174,14 +3189,13 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             )
 
             # Save dry run results for visibility in the Library page
-            import re
-            import uuid
-            safe_title = re.sub(r'[^a-zA-Z0-9]+', '_', (title or 'Untitled').strip().lower())[:40]
-            safe_speaker = re.sub(
-                r'[^a-zA-Z0-9]+', '_', (speaker_name or 'Unknown').strip().lower()
-            )[:20]
-            safe_date = (recorded_date or 'nodate').replace('-', '')
-            sermon_id = f"draft_{safe_speaker}_{safe_date}_{safe_title}_{uuid.uuid4().hex[:8]}"
+            sermon_id = _resolve_identity_id(
+                speaker_name,
+                recorded_date,
+                title or 'Untitled',
+                original_input_path,
+                existing_sermon_id,
+            )
             result['sermon_id'] = sermon_id
 
 
@@ -3363,22 +3377,16 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             # API create so a failed create loses no work.
             try:
                 import json as _json
-                import re as _re
                 import shutil as _shutil
-                import uuid as _uuid
 
                 from src.sermon_paths import build_output_filename
 
-                safe_title = _re.sub(
-                    r'[^a-zA-Z0-9]+', '_', (title or 'Untitled').strip().lower()
-                )[:40]
-                safe_speaker = _re.sub(
-                    r'[^a-zA-Z0-9]+', '_', (speaker_name or 'Unknown').strip().lower()
-                )[:20]
-                safe_date = (recorded_date or 'nodate').replace('-', '')
-                recovery_draft_id = (
-                    f"draft_{safe_speaker}_{safe_date}_{safe_title}_"
-                    f"{_uuid.uuid4().hex[:8]}"
+                recovery_draft_id = _resolve_identity_id(
+                    speaker_name,
+                    recorded_date,
+                    title or 'Untitled',
+                    original_input_path,
+                    existing_sermon_id,
                 )
                 output_root = Path(config.get('output_directory', 'processed_sermons'))
                 if not output_root.is_absolute():
@@ -4055,10 +4063,35 @@ def publish_dry_run_sermon(dry_run_id: str, publish: bool = True) -> dict[str, A
                         [new_sermon_id] + [carried.get(c) for c in insert_cols],
                     )
                 conn.execute("DELETE FROM sermon_search WHERE sermon_id = ?", (dry_run_id,))
+                try:
+                    max_plan_revision = conn.execute(
+                        "SELECT MAX(revision) FROM edit_plans WHERE sermon_id = ?",
+                        (new_sermon_id,),
+                    ).fetchone()[0] or 0
+                    for plan in conn.execute(
+                        "SELECT * FROM edit_plans WHERE sermon_id = ? ORDER BY revision",
+                        (dry_run_id,),
+                    ).fetchall():
+                        plan_dict = dict(plan)
+                        max_plan_revision += 1
+                        plan_columns = [
+                            column for column in plan_dict
+                            if column not in ('id', 'sermon_id', 'revision')
+                        ]
+                        plan_placeholders = ", ".join("?" for _ in plan_columns)
+                        conn.execute(
+                            f"INSERT INTO edit_plans "
+                            f"(sermon_id, revision, {', '.join(plan_columns)}) "
+                            f"VALUES (?, ?, {plan_placeholders})",
+                            [new_sermon_id, max_plan_revision]
+                            + [plan_dict[c] for c in plan_columns],
+                        )
+                except Exception as plan_err:
+                    logger.debug("Edit plan carry-over skipped: %s", plan_err)
                 for table in (
                     'sermon_content', 'processing_info', 'sermon_files',
                     'upload_info', 'processing_status', 'validation_results',
-                    'manual_review', 'llm_api_usage',
+                    'manual_review', 'llm_api_usage', 'edit_plans',
                 ):
                     try:
                         conn.execute(

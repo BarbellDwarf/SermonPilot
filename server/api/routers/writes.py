@@ -14,7 +14,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import secrets
 import shutil
 import sqlite3
 import time
@@ -486,11 +485,19 @@ async def upload_sermon(
     finally:
         await file.close()
 
-    sermon_id = f"s-{secrets.token_hex(8)}"
+    from src.sermon_identity import derive_sermon_id, source_fingerprint
+
+    resolved_title = title.strip() or original or "Untitled"
+    sermon_id = derive_sermon_id(
+        speaker.strip(),
+        recorded_date.strip(),
+        resolved_title,
+        source_fingerprint(dest),
+    )
     try:
         _save_draft_sermon(
             sermon_id=sermon_id,
-            title=title.strip() or original or "Untitled",
+            title=resolved_title,
             speaker=speaker.strip(),
             recorded_date=recorded_date.strip(),
             series_title=series_title.strip(),
@@ -511,7 +518,7 @@ async def upload_sermon(
         sermon_id=sermon_id,
         source_path=str(dest),
         original_name=original,
-        title=title.strip() or original or "Untitled",
+        title=resolved_title,
         speaker=speaker.strip(),
         recorded_date=recorded_date.strip(),
         event_type=event_type.strip() or "Sunday Service",
@@ -622,7 +629,19 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
     if body.auto_edit_mode not in (None, "interactive", "auto"):
         raise HTTPException(status_code=422, detail="auto_edit_mode must be interactive or auto")
 
-    sermon_id = f"s-{secrets.token_hex(8)}"
+    from src.sermon_identity import derive_sermon_id, source_fingerprint
+
+    if body.container_path.strip().startswith("remote:"):
+        fingerprint = source_fingerprint(
+            remote_ref=body.container_path.strip(),
+            original_name=original_name,
+            size=info["size"],
+        )
+    else:
+        fingerprint = source_fingerprint(source_path)
+    sermon_id = derive_sermon_id(
+        body.speaker, body.recorded_date, body.title, fingerprint
+    )
     _save_draft_sermon(
         sermon_id=sermon_id,
         title=body.title,
