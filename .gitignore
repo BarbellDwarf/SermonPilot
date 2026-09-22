@@ -19,8 +19,6 @@ test_output/
 test_*/
 *.db # Database files
 api_cache/
-analytics_cache/
-analytics_vector_db/
 .playwright-mcp/ 
 
 # Standalone summary / informational docs (keep local, don't push to GitHub)
@@ -110,10 +108,8 @@ htmlcov/
 sermon_processor.db
 sermon_config.db
 *.bin
-/analytics_*/*
 *.sqlite3
 *.sqlite
-analytics_vector_db/chroma.sqlite3
 
 
 # Docker

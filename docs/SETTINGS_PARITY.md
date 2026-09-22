@@ -1,6 +1,7 @@
 # Settings parity: Streamlit UI to web console
 
-The Streamlit settings page (`ui/ui_pages/settings.py`) had eight tabs. The web
+The Streamlit settings page (`ui/ui_pages/settings.py`) had eight tabs before
+the embeddings removal, leaving seven. The web
 console (`web/src/pages/Settings.tsx`) is the replacement front end. This
 document maps every legacy control to its console home, and names what was
 deliberately dropped.
@@ -85,13 +86,16 @@ surface, not migrations.
 
 ## Deliberate removals
 
-- **Embeddings and RAG.** The legacy Embeddings tab configured
-  `embeddings.primary.*` and a fallback list for the analytics RAG system. The
-  console exposes no embedding section. The config paths and
-  `EMBEDDING_PROVIDER` / `EMBEDDING_MODEL` environment variables still resolve
-  for any code that reads them, but no UI writes them. Treat the tab as
-  retired; see `docs/EMBEDDING_PROVIDERS.md` and `docs/RAG_SYSTEM.md` for the
-  underlying feature.
+- **Embeddings and RAG (owner decision, feature removed).** The legacy
+  Embeddings tab configured `embeddings.primary.*` and a fallback list for the
+  analytics RAG system. The feature was removed in full: the modules
+  (`ui/embedding_manager.py`, `ui/rag_system.py`, `ui/analytics_chat.py`), the
+  Streamlit tab, the Analytics chat interface, the `embeddings` and
+  `rag_system` config blocks, the `EMBEDDING_PROVIDER` / `EMBEDDING_MODEL`
+  environment variables, the `chromadb` and `sentence-transformers`
+  dependencies, and the `analytics_cache` / `analytics_vector_db` data
+  directories. There is no console section to map to because the surface is
+  gone, not deferred.
 - **YAML config file import/export in the UI.** The console backup is a JSON
   full-data backup, not a `config.yaml` round trip. The legacy one-time import
   of an existing `config.yaml` into an empty database still happens at

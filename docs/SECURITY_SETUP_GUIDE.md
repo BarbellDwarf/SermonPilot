@@ -76,7 +76,7 @@ See `.env.example` for the complete list of available environment variables. Key
 - `SERMONAUDIO_BROADCASTER_ID` - Your broadcaster ID
 
 #### LLM Providers (Configure at least one)
-- `OPENAI_API_KEY` - OpenAI GPT models (also backs `transcription.whisper_openai` and OpenAI embeddings)
+- `OPENAI_API_KEY` - OpenAI GPT models (also backs `transcription.whisper_openai`)
 - `XAI_API_KEY` - xAI Grok models
 - `GROQ_API_KEY` - Groq fast inference
 - `OPENROUTER_API_KEY` - OpenRouter models (also backs `transcription.whisper_openrouter`)
@@ -87,7 +87,6 @@ See `.env.example` for the complete list of available environment variables. Key
 #### Model Pins (optional, override config without editing files)
 - `LLM_PROVIDER`, `OPENAI_MODEL`, `ANTHROPIC_MODEL`, `XAI_MODEL`, `GOOGLE_MODEL`, `GROQ_MODEL`, `OPENROUTER_MODEL`
 - `OLLAMA_MODEL`, `WHISPER_MODEL`, `TRANSCRIPTION_BACKEND`
-- `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`
 
 #### Audio / Output / Behavior (optional overrides)
 - `AUDIO_ENHANCEMENT_METHOD`, `AUDIO_NOISE_REDUCTION`, `AUDIO_NORMALIZE`, `AUDIO_TARGET_LEVEL`, `AUDIO_GAIN_DB`

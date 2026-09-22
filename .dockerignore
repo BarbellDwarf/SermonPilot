@@ -48,8 +48,6 @@ test_output/
 test_*/
 *.db
 api_cache/
-analytics_cache/
-analytics_vector_db/
 
 # Documentation and plans
 docs/*
