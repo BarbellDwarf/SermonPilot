@@ -276,6 +276,19 @@ def test_builtin_prompt_templates_always_resolve(fresh_db, clear_config_env):
     expected = {"title", "short_title", "description", "hashtags", "hashtag_verification"}
     assert expected <= set(templates)
     assert templates["description"]["user"]
+    assert templates["cut_detection"]["user"]
+    assert '{"start": <seconds>' in templates["cut_detection"]["user"]
+
+
+def test_cut_detection_template_db_override_wins(fresh_db, clear_config_env):
+    fresh_db.save_config(
+        {"prompt_templates": {"cut_detection": {"enabled": True, "user": "DB OVERRIDE"}}}
+    )
+
+    config = resolve_config(fresh_db)
+
+    assert config["prompt_templates"]["cut_detection"]["user"] == "DB OVERRIDE"
+    assert config["prompt_templates"]["cut_detection"]["system"]
 
 
 def test_load_config_safely_uses_resolution(fresh_db, clear_config_env, monkeypatch):

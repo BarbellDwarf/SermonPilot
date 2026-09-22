@@ -38,6 +38,17 @@ except ImportError:  # src dir placed directly on sys.path
         expand_env_value,
     )
 
+try:
+    from src.auto_edit import (
+        DEFAULT_DETECTION_SYSTEM_PROMPT,
+        DEFAULT_DETECTION_USER_PROMPT,
+    )
+except ImportError:  # src dir placed directly on sys.path
+    from auto_edit import (  # type: ignore[no-redef]
+        DEFAULT_DETECTION_SYSTEM_PROMPT,
+        DEFAULT_DETECTION_USER_PROMPT,
+    )
+
 # Get project root for config path
 project_root = Path(__file__).parent.parent
 
@@ -224,6 +235,11 @@ BUILTIN_PROMPT_TEMPLATES: dict[str, Any] = {
             "Hashtag input to verify:\n{initial_hashtags}\n\n"
             "Valid hashtags only:"
         ),
+    },
+    "cut_detection": {
+        "enabled": True,
+        "system": DEFAULT_DETECTION_SYSTEM_PROMPT,
+        "user": DEFAULT_DETECTION_USER_PROMPT,
     },
 }
 
