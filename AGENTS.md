@@ -34,14 +34,21 @@ sermon_processor.db          -- SQLite database (UI persistence + settings confi
 ### Configuration resolution (no required config.yaml)
 
 `ui/config_utils.resolve_config()` is the single resolution path. Layers,
-lowest to highest: built-in defaults; optional file layer at `$SA_UPDATER_CONFIG`;
-the SQLite `config_cache` row (an empty database is seeded once from env vars,
-and a legacy `config.yaml` is imported once for existing installs); then
-`ENV_CONFIG_MAP` env overrides (`src/core/config.py`), which always win;
-then `${VAR}` / `${VAR:-default}` expansion. `config.yaml` itself is never
-read for resolution: it is a UI export/import artifact only. Docker images
-carry per-variant templates under `config/templates/` (selected by the
+lowest to highest: built-in defaults; the per-variant template (fresh database
+only); the SQLite `config_cache` row; then `ENV_CONFIG_MAP` env overrides
+(`src/core/config.py`), which always win; then `${VAR}` / `${VAR:-default}`
+expansion. No config file is read at run time. A config file is imported into
+the database once, only when the database is empty: `$SA_UPDATER_CONFIG` if set,
+otherwise a legacy `config.yaml`. On a fresh database, config-like (non-secret)
+env vars are written to `config_cache` once, per missing path; deploy-time
+secrets (`SECRET_ENV_VARS`) stay in the environment. Docker images carry
+per-variant templates under `config/templates/` (selected by the
 `SERMONPILOT_VARIANT` env the Dockerfile sets, surfaced at startup).
+
+`resolve_config_with_sources()` reports each leaf's winning source as the
+environment variable name, `db`, or `default` (no `file` source). The console
+Settings sections read and write the same `config_cache.app_config` through
+`server/api/routers/app_config.py`; see `docs/SETTINGS_PARITY.md`.
 
 ## Key Conventions
 

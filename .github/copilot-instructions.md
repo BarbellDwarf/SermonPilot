@@ -27,8 +27,11 @@ Transcription → LLM Summary/Hashtags → Upload Back → Analytics & Insights
 
 ### Configuration-Driven Everything
 
-- `config.yaml` is the single source of truth. It supports `${VAR}` and
-  `${VAR:-default}` environment substitution.
+- The SQLite settings database (`config_cache.app_config`) is the single
+  source of truth. Resolution is defaults, optional per-variant template,
+  the database, env overrides (`src/core/config.py::ENV_CONFIG_MAP`), then
+  `${VAR}` / `${VAR:-default}` substitution. No config file is required; a
+  legacy `config.yaml` is imported into the database once.
 - `audio_enhancement_method` is a flat top-level key (values:
   `deepfilternet`, `clear-studio`, `clear-natural`, `custom`, `none`).
   Related keys: `clear_custom_repo`,
@@ -207,8 +210,8 @@ setup examples.
 
 ## Key Files for Understanding Context
 
-- `config.yaml` - all runtime configuration (gitignored; see
-  `config/config.example.yaml`)
+- `sermon_processor.db` - settings database; `config_cache.app_config` holds
+  runtime configuration (see `config/config.example.yaml` for the key list)
 - `streamlit_app.py` - web UI entry point
 - `sermon_updater.py` - CLI engine (`process_new_sermon` at line 1348)
 - `src/cli/parser.py` - CLI argument definitions
