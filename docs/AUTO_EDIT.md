@@ -131,6 +131,19 @@ Open the sermon in the Library and expand the review panel:
 
 Each re-detection creates a new revision; older rows stay but are superseded, and the notes history is visible in the panel.
 
+### Web console
+
+The Library review panel exposes the same loop as background jobs, so a long detection never blocks the page:
+
+- **Reject with notes** sends the new note plus every note from earlier rejections, in revision order, together with the previous proposal. The detector re-proposes start and end, and the result is saved as a new revision. The old revision is superseded, and the panel lists each note next to the revision it produced.
+- **Re-detect from scratch** starts a clean revision with no notes and no previous proposal. Earlier revisions stay in the history.
+
+Both buttons enqueue a job and reuse the retained review media, so neither re-runs enhancement or transcription. Preview clips are re-rendered from the retained keeper or original; a failed detection clears them and shows the `unavailable` banner.
+
+### Prompt templates
+
+The cut-detection prompt comes from `prompt_templates.cut_detection`, resolved like the rest of the config (built-in default, then the file layer, then the settings database, then env). Settings > Prompt Templates in the web console reads and writes that block through `/api/prompts/config`. An unset, disabled, or blank template falls back to the built-in prompt, and an edit applies to the next detection.
+
 ## Re-edit semantics
 
 Re-edits always re-encode from the retained original (or keeper copy), never from the previous edited output, so quality never compounds. Each revision is a new row in `edit_plans`; older rows stay but are marked superseded.
