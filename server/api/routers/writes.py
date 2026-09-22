@@ -134,6 +134,22 @@ def _output_dir_for(user: dict, requested: str) -> str:
     return validate_output_dir(raw, user)
 
 
+def _resolved_job_config() -> dict[str, Any]:
+    """Attach the resolved application config to API-enqueued jobs.
+
+    The worker runs in the same install, so the API and worker should agree on
+    the effective config (file + database + env). The executor still resolves
+    when a job carries none, so this is an agreement pass, not the only path.
+    """
+    try:
+        from ui.config_utils import resolve_config
+
+        return resolve_config() or {}
+    except Exception as exc:
+        logger.warning("Could not resolve app config when enqueuing job: %s", exc)
+        return {}
+
+
 def _enqueue_sermon_processing(
     *,
     sermon_id: str,
@@ -189,7 +205,7 @@ def _enqueue_sermon_processing(
         parameters={
             "sermon_id": sermon_id,
             "form_data": form_data,
-            "config": {},
+            "config": _resolved_job_config(),
             "processing_type": "new_sermon",
             "uploaded_file_path": source_path,
             "auto_edit_enabled": bool(auto_edit_enabled),
@@ -284,6 +300,7 @@ def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(r
             "render_only": body.render_only,
             "re_detect": body.re_detect,
             "plan_id": body.plan_id,
+            "config": _resolved_job_config(),
         },
         user_id=user.get("id"),
     )
