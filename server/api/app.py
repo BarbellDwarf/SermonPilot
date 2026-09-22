@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from server.api.accounts import migrate
+from server.api.routers.app_config import router as app_config_router
 from server.api.routers.auth import router as auth_router
 from server.api.routers.cloud import proxy_router as cloud_proxy_router
 from server.api.routers.cloud import router as cloud_router
@@ -113,6 +114,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_backup_router)
     app.include_router(writes_router)
     app.include_router(llm_config_router)
+    app.include_router(app_config_router)
     app.include_router(files_router)
     app.include_router(explore_router)
     app.include_router(cloud_router)
