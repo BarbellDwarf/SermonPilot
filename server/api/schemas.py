@@ -60,6 +60,7 @@ class EditPlanOut(BaseModel):
     start_sec: float | None = None
     end_sec: float | None = None
     offset_sec: float = 0.0
+    detection_status: str = "ok"
 
 
 class SermonPlanOut(BaseModel):

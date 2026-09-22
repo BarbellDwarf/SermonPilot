@@ -62,6 +62,7 @@ export function toEditPlan(p: ApiEditPlan): EditPlan {
     startSec: p.start_sec ?? 0,
     endSec: p.end_sec ?? 0,
     offsetSec: p.offset_sec,
+    detectionStatus: p.detection_status === "unavailable" ? "unavailable" : "ok",
   };
 }
 
