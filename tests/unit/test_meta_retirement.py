@@ -12,9 +12,9 @@ def test_retirement_defaults_false_and_needs_no_auth(client):
 
 
 def test_retirement_reads_web_console_ready_key(client, tmp_path, monkeypatch):
-    cfg = tmp_path / "live.yaml"
-    cfg.write_text("api_key: x\nbroadcaster_id: y\nweb_console_ready: true\n")
-    monkeypatch.setenv("SA_UPDATER_CONFIG", str(cfg))
+    from ui.database import SermonDatabase
+
+    SermonDatabase().save_config({"web_console_ready": True})
     assert client.get("/api/meta/retirement").json() == {"streamlit_ready": True}
 
 

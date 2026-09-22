@@ -64,25 +64,59 @@ def test_defaults_fill_missing_layers(fresh_db, clear_config_env):
     assert config["llm"]["primary"]["provider"] == "ollama"
 
 
-def test_first_run_seeding_persists_env_once(fresh_db, clear_config_env, monkeypatch):
-    monkeypatch.setenv("SERMONAUDIO_API_KEY", "env-seed-key")
-    monkeypatch.setenv("OPENAI_API_KEY", "env-openai-key")
+def test_config_like_env_seeds_db_once_and_is_idempotent(
+    fresh_db, clear_config_env, monkeypatch
+):
+    monkeypatch.setenv("OLLAMA_HOST", "http://seeded-ollama:11434")
+    calls: list[dict] = []
+    original = fresh_db.save_config
+
+    def counting_save(config):
+        calls.append(config)
+        return original(config)
+
+    monkeypatch.setattr(fresh_db, "save_config", counting_save)
 
     config = resolve_config(fresh_db)
 
-    assert config["api_key"] == "env-seed-key"
-    assert config["llm"]["primary"]["openai"]["api_key"] == "env-openai-key"
-    assert fresh_db.load_config() is not None
+    assert config["llm"]["primary"]["ollama"]["host"] == "http://seeded-ollama:11434"
+    stored = fresh_db.load_config()
+    assert stored["llm"]["primary"]["ollama"]["host"] == "http://seeded-ollama:11434"
     meta = fresh_db.load_config_meta()
-    assert meta is not None
-    assert meta["version"] == config_utils.CONFIG_SEED_VERSION
-    assert "SERMONAUDIO_API_KEY" in meta["env_vars"]
+    assert "OLLAMA_HOST" in meta["env_vars"]
+    writes_after_first = len(calls)
+    assert writes_after_first >= 1
+
+    second = resolve_config(fresh_db)
+    assert second["llm"]["primary"]["ollama"]["host"] == "http://seeded-ollama:11434"
+    assert len(calls) == writes_after_first
+
+
+def test_config_like_env_value_survives_env_removal(fresh_db, clear_config_env, monkeypatch):
+    monkeypatch.setenv("OUTPUT_DIRECTORY", "seeded-output")
+    resolve_config(fresh_db)
+
+    monkeypatch.delenv("OUTPUT_DIRECTORY", raising=False)
+    second = resolve_config(fresh_db)
+
+    assert second["output_directory"] == "seeded-output"
+
+
+def test_secrets_stay_in_environment_and_never_reach_db(
+    fresh_db, clear_config_env, monkeypatch
+):
+    monkeypatch.setenv("SERMONAUDIO_API_KEY", "env-secret-key")
+
+    config = resolve_config(fresh_db)
+
+    assert config["api_key"] == "env-secret-key"
+    stored = fresh_db.load_config()
+    assert stored is None or "api_key" not in stored
 
     monkeypatch.delenv("SERMONAUDIO_API_KEY", raising=False)
     second = resolve_config(fresh_db)
 
-    assert second["api_key"] == "env-seed-key"
-    assert fresh_db.load_config_meta() == meta
+    assert second.get("api_key") != "env-secret-key"
 
 
 def test_no_seeding_without_env_vars(fresh_db, clear_config_env, monkeypatch):
@@ -277,7 +311,7 @@ def test_placeholder_expansion_in_db_values(fresh_db, clear_config_env, monkeypa
     assert second["llm"]["primary"]["openai"]["api_key"] == "${OPENAI_API_KEY}"
 
 
-def test_sources_report_env_db_and_default(fresh_db, clear_config_env, monkeypatch):
+def test_sources_report_env_var_name_db_and_default(fresh_db, clear_config_env, monkeypatch):
     fresh_db.save_config(
         {"broadcaster_id": "db-broadcaster", "llm": {"primary": {"model_tag": "from-db"}}}
     )
@@ -286,9 +320,50 @@ def test_sources_report_env_db_and_default(fresh_db, clear_config_env, monkeypat
     config, sources = resolve_config_with_sources(fresh_db)
 
     assert config["broadcaster_id"] == "env-broadcaster"
-    assert sources["broadcaster_id"] == "env"
+    assert sources["broadcaster_id"] == "SERMONAUDIO_BROADCASTER_ID"
     assert sources["llm.primary.model_tag"] == "db"
     assert sources["llm.primary.ollama.host"] == "default"
+
+
+def test_normalisation_error_names_path_source_and_length_only(fresh_db, clear_config_env):
+    from src.core.config import ConfigValueError, coerce_value
+
+    with pytest.raises(ConfigValueError) as excinfo:
+        coerce_value(("audio_gain_db",), "very-loud", "AUDIO_GAIN_DB")
+
+    message = str(excinfo.value)
+    assert "audio_gain_db" in message
+    assert "AUDIO_GAIN_DB" in message
+    assert "9 characters" in message
+    assert "very-loud" not in message
+
+
+def test_bad_env_numeric_value_logs_source_and_length(
+    fresh_db, clear_config_env, monkeypatch, caplog
+):
+    monkeypatch.setenv("AUDIO_GAIN_DB", "much-too-loud")
+
+    with caplog.at_level(logging.WARNING, logger="ui.config_utils"):
+        config = resolve_config(fresh_db)
+
+    assert config.get("audio_gain_db") != "much-too-loud"
+    assert any(
+        "audio_gain_db" in record.message and "AUDIO_GAIN_DB" in record.message
+        for record in caplog.records
+    )
+
+
+def test_resolves_with_no_config_file_present(fresh_db, clear_config_env, monkeypatch, tmp_path):
+    monkeypatch.delenv("SA_UPDATER_CONFIG", raising=False)
+    monkeypatch.delenv("SERMONPILOT_VARIANT", raising=False)
+    monkeypatch.setattr(config_utils, "project_root", tmp_path)
+    assert not (tmp_path / "config.yaml").exists()
+
+    config = load_config_from_file()
+
+    assert isinstance(config, dict)
+    assert config["llm"]["primary"]["provider"] == "ollama"
+    assert fresh_db.load_config() is None
 
 
 class _LogSpy:
@@ -334,7 +409,7 @@ def test_success_deletes_upload_and_derived(tmp_path):
     assert not (upload_dir / "1788307151352_sermon.mp4").exists()
 
 
-def test_file_layer_loses_to_db(fresh_db, clear_config_env, monkeypatch, tmp_path):
+def test_legacy_file_never_overrides_db(fresh_db, clear_config_env, monkeypatch, tmp_path):
     cfg_file = tmp_path / "override.yaml"
     cfg_file.write_text(yaml.safe_dump({"audio_gain_db": 9.9}))
     monkeypatch.setenv("SA_UPDATER_CONFIG", str(cfg_file))
