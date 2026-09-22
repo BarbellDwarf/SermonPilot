@@ -2060,7 +2060,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       audio_offset: float | None = None,
                       cancel_check: Callable[[], None] | None = None,
                       publish: bool = True,
-                      existing_sermon_id: str | None = None) -> dict:
+                      existing_sermon_id: str | None = None,
+                      reuse_transcript: str | None = None,
+                      reuse_transcript_segments: list | None = None) -> dict:
     """Process a new sermon from audio file with automatic metadata generation.
 
     Args:
@@ -2083,6 +2085,13 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         cancel_check: Optional zero-argument callable invoked at cancellation
             checkpoints (before the remote create and before the local save).
             Any exception it raises is converted to ProcessingCancelledError.
+        existing_sermon_id: When set, every save upserts this row instead of
+            deriving a new deterministic id.
+        reuse_transcript: A transcript retained from an earlier review pass.
+            When provided the transcription model is not run; an empty string
+            is a valid retained transcript.
+        reuse_transcript_segments: Timestamped segments for the reused
+            transcript, persisted alongside it.
 
     Returns:
         Dict with keys: success, sermon_id, title, description, hashtags,
@@ -2475,7 +2484,21 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         # Step 2: Transcribe audio for metadata generation
         transcript = ""
         transcript_segments: list[dict[str, float | str]] = []
-        if (not title or not description or not hashtags) and not skip_transcription:
+        if reuse_transcript is not None:
+            # Apply/re-render path: the review step already transcribed this
+            # sermon, so reuse the retained transcript instead of re-running
+            # the model.
+            transcript = reuse_transcript
+            transcript_segments = list(reuse_transcript_segments or [])
+            console_print(
+                f"Reusing retained transcript ({len(transcript)} characters)"
+            )
+            logger.info(
+                "Reusing retained transcript for apply (%d characters)",
+                len(transcript),
+            )
+            _report(55, f"Reusing retained transcript ({len(transcript)} characters)")
+        elif (not title or not description or not hashtags) and not skip_transcription:
             transcript = _reuse_existing_transcript(
                 original_input_path, speaker_name, series_title, title, config
             )
@@ -2728,6 +2751,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     'bible_text': bible_text or '',
                     'duration': int(_ffprobe_duration(playable_media) or 0),
                     'status': 'draft',
+                    'edit_status': 'pending_review',
                     'file_paths': review_file_paths,
                     'content': {
                         'transcript_text': transcript or '',
@@ -2994,6 +3018,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
                 if not stage_title:
                     try:
+                        logger.info(
+                            "Metadata field 'title' is empty; generating from transcript"
+                        )
                         _report(60, f"Generating title with {_llm_target_label()}...")
                         _started = time.time()
                         stage_title = generate_title(
@@ -3014,6 +3041,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
                 if not stage_description:
                     try:
+                        logger.info(
+                            "Metadata field 'description' is empty; "
+                            "generating from transcript"
+                        )
                         _report(70, f"Generating description with {_llm_target_label()}...")
                         _started = time.time()
                         if force_validation and transcript:
@@ -3071,6 +3102,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
                 if not stage_hashtags:
                     try:
+                        logger.info(
+                            "Metadata field 'hashtags' is empty; "
+                            "generating from transcript"
+                        )
                         _report(80, f"Generating hashtags with {_llm_target_label()}...")
                         _started = time.time()
                         stage_hashtags = generate_hashtags(transcript)
@@ -3321,6 +3356,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     'bible_text': bible_text or '',
                     'duration': duration,
                     'status': 'draft',
+                    'edit_status': 'rendered' if auto_edit_state else None,
                     'file_paths': {
                         'audio': str(final_output_path),
                         'metadata': str(get_file_path(output_dir, "metadata")),
@@ -3973,6 +4009,7 @@ def publish_dry_run_sermon(dry_run_id: str, publish: bool = True) -> dict[str, A
                     'description': description,
                     'duration': duration,
                     'status': 'processed' if upload_success else 'error',
+                    'edit_status': 'uploaded' if upload_success else 'failed',
                     'updated_at': dt.datetime.now(),
                 }
                 original_created_at = sermon_data.get('created_at')
