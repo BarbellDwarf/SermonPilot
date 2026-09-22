@@ -61,6 +61,8 @@ class EditPlanOut(BaseModel):
     end_sec: float | None = None
     offset_sec: float = 0.0
     detection_status: str = "ok"
+    reasoning: str = ""
+    notes: str = ""
 
 
 class SermonPlanOut(BaseModel):
