@@ -8,7 +8,14 @@ from unittest.mock import Mock
 import pytest
 
 import src.llm_manager as llm_manager_module
-from src.auto_edit import EditPlan, build_detection_prompt, detect_cut_points, validate_plan
+from src.auto_edit import (
+    EditPlan,
+    _resolve_transcript_char_budget,
+    build_detection_prompt,
+    detect_cut_points,
+    render_review_snippets,
+    validate_plan,
+)
 from src.llm_manager import LLMManager
 
 CANNED_JSON = json.dumps(
@@ -119,15 +126,16 @@ class TestDetectCutPoints:
         assert "Only the second class please" in user_content
         assert "fallback" in user_content
 
-    def test_malformed_json_falls_back(self):
+    def test_malformed_json_is_unavailable(self):
         manager = FakeLLMManager("sorry, I cannot answer that in JSON")
         plan = detect_cut_points(SEGMENTS, manager, CONFIG, duration=3700.0)
         assert plan.start == 0.0
-        assert plan.end == 3700.0
+        assert plan.end == 0.0
         assert plan.needs_review is True
         assert plan.confidence == 0.0
+        assert plan.detection_status == "unavailable"
 
-    def test_out_of_range_values_fall_back(self):
+    def test_out_of_range_values_are_unavailable(self):
         manager = FakeLLMManager(
             json.dumps(
                 {
@@ -142,7 +150,8 @@ class TestDetectCutPoints:
         )
         plan = detect_cut_points(SEGMENTS, manager, CONFIG, duration=3700.0)
         assert plan.needs_review is True
-        assert plan.end == 3700.0
+        assert plan.end == 0.0
+        assert plan.detection_status == "unavailable"
 
     def test_end_clamped_to_duration(self):
         manager = FakeLLMManager(
@@ -176,22 +185,25 @@ class TestDetectCutPoints:
         plan = detect_cut_points(SEGMENTS, manager, CONFIG, duration=3700.0)
         assert plan.needs_review is True
 
-    def test_empty_segments_full_length_plan(self):
+    def test_empty_segments_yields_unavailable_plan(self):
         manager = FakeLLMManager(CANNED_JSON)
         plan = detect_cut_points([], manager, CONFIG, duration=3600.0)
         assert plan.start == 0.0
-        assert plan.end == 3600.0
+        assert plan.end == 0.0
         assert plan.needs_review is True
+        assert plan.detection_status == "unavailable"
         assert manager.calls == []
 
     def test_empty_segments_no_duration(self):
         plan = detect_cut_points([], FakeLLMManager(""), CONFIG, duration=None)
         assert plan.end == 0.0
         assert plan.needs_review is True
+        assert plan.detection_status == "unavailable"
 
     def test_defaults_used_when_no_config(self):
         plan = detect_cut_points([], FakeLLMManager(""), None, duration=100.0)
         assert plan.needs_review is True
+        assert plan.detection_status == "unavailable"
 
 
 class TestDetectCutPointsRetries:
@@ -210,13 +222,14 @@ class TestDetectCutPointsRetries:
         assert plan.needs_review is False
         assert len(manager.calls) == 3
 
-    def test_exhausts_three_attempts_then_falls_back(self):
+    def test_exhausts_three_attempts_then_unavailable(self):
         manager = SequenceLLMManager(["", "garbage", "also garbage"])
         plan = detect_cut_points(SEGMENTS, manager, CONFIG, duration=3700.0)
         assert plan.start == 0.0
-        assert plan.end == 3700.0
+        assert plan.end == 0.0
         assert plan.needs_review is True
         assert plan.confidence == 0.0
+        assert plan.detection_status == "unavailable"
         assert len(manager.calls) == 3
 
     def test_sanity_check_failure_retried_and_exhausted(self):
@@ -240,6 +253,104 @@ class TestDetectCutPointsRetries:
         assert plan.start == 245.0
         assert plan.needs_review is False
         assert len(manager.calls) == 3
+
+
+class TestDetectionFailureIsExplicit:
+    def test_whitespace_only_responses_are_unavailable(self):
+        manager = SequenceLLMManager(["", "   \n", "\t"])
+        plan = detect_cut_points(SEGMENTS, manager, CONFIG, duration=3308.3)
+        assert plan.detection_status == "unavailable"
+        assert plan.end == 0.0
+        assert not (plan.start == 0.0 and plan.end == 3308.3)
+        assert plan.needs_review is True
+        assert len(manager.calls) == 3
+
+    def test_timeout_is_unavailable_not_whole_file(self):
+        class TimeoutManager:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def chat(self, messages, operation="", sermon_id=None) -> str:
+                self.calls += 1
+                raise TimeoutError("auto_edit timed out after 120s")
+
+        manager = TimeoutManager()
+        plan = detect_cut_points(SEGMENTS, manager, CONFIG, duration=3308.3)
+        assert plan.detection_status == "unavailable"
+        assert plan.end == 0.0
+        assert manager.calls == 3
+        assert "timed out" in plan.reasoning
+
+    def test_unavailable_plan_renders_no_snippets(self, tmp_path):
+        plan = EditPlan(start=0.0, end=0.0, detection_status="unavailable")
+        snippets = render_review_snippets(
+            tmp_path / "missing.mp4", plan, tmp_path / "snippets"
+        )
+        assert snippets == []
+        assert not (tmp_path / "snippets").exists()
+
+    def test_reasoning_wrapped_json_still_parses(self):
+        wrapped = (
+            'The requested shape is {"start": <seconds>, "end": <seconds>} '
+            "but here is the answer:\n" + CANNED_JSON + "\nDone."
+        )
+        manager = FakeLLMManager(wrapped)
+        plan = detect_cut_points(SEGMENTS, manager, CONFIG, duration=3700.0)
+        assert plan.detection_status == "ok"
+        assert plan.start == 245.0
+        assert plan.end == 3612.0
+        assert plan.needs_review is False
+
+
+def _large_segments(count: int = 200) -> list[dict[str, Any]]:
+    return [
+        {"start": float(i), "end": float(i) + 1.0, "text": f"synthetic line {i} " + "x" * 40}
+        for i in range(count)
+    ]
+
+
+class TestOversizedTranscript:
+    def test_build_detection_prompt_elides_middle(self):
+        prompt = build_detection_prompt(_large_segments(), max_transcript_chars=2000)
+        assert "middle of the transcript elided" in prompt
+        assert "synthetic line 0" in prompt
+        assert "synthetic line 199" in prompt
+        assert "synthetic line 100" not in prompt
+
+    def test_detect_cut_points_bounds_the_prompt(self):
+        manager = FakeLLMManager(CANNED_JSON)
+        config = {
+            "auto_edit": {
+                "qa_margin_seconds": 3.0,
+                "min_sermon_seconds": 0,
+                "max_transcript_chars": 2000,
+            }
+        }
+        plan = detect_cut_points(_large_segments(), manager, config, duration=3700.0)
+        sent = manager.calls[0]["messages"][1]["content"]
+        assert "middle of the transcript elided" in sent
+        assert len(sent) < 4000
+        assert plan.detection_status == "ok"
+
+    def test_budget_follows_the_smallest_context(self):
+        class Provider:
+            def __init__(self, num_ctx: int) -> None:
+                self.num_ctx = num_ctx
+
+        class Manager:
+            primary_provider = Provider(32768)
+            fallback_providers = [Provider(8192)]
+            validator_provider = None
+            operation_providers: dict[str, Any] = {}
+
+        budget = _resolve_transcript_char_budget({}, Manager())
+        assert budget == int((8192 - 2048) * 3.5)
+
+    def test_explicit_budget_wins(self):
+        budget = _resolve_transcript_char_budget(
+            {"auto_edit": {"max_transcript_chars": 12345}}, object()
+        )
+        assert budget == 12345
 
 
 class TestValidatePlan:

@@ -112,6 +112,7 @@ export function ReviewPanel({ plan: initial, sermonId, sermonTitle, onToast }: R
       ? "processed"
       : "keeper";
   const reviewItem = media.byKind[reviewKind];
+  const detectionFailed = plan.detectionStatus === "unavailable";
 
   const start = parseCut(startText);
   const end = parseCut(endText);
@@ -197,19 +198,32 @@ export function ReviewPanel({ plan: initial, sermonId, sermonTitle, onToast }: R
           <span className="font-mono text-xs text-muted">confidence {plan.confidence}%</span>
           <Chip tone={plan.qa === "Pass" ? "ok" : "warn"}>QA: {plan.qa}</Chip>
         </div>
-        <p className="mt-2 max-w-prose text-sm text-muted">{plan.evidence}</p>
+        {detectionFailed ? (
+          <div
+            role="alert"
+            className="mt-2 rounded-md border border-danger bg-ink p-3 text-sm text-danger"
+          >
+            <span className="font-semibold">Cut detection failed.</span> No usable cut
+            points were returned, so there is no proposal to review. Enter the start
+            and end below, or re-run detection.
+          </div>
+        ) : (
+          <p className="mt-2 max-w-prose text-sm text-muted">{plan.evidence}</p>
+        )}
         {history.length > 0 ? (
           <p className="mt-1 font-mono text-xs text-muted">{history.join(" · ")}</p>
         ) : null}
 
-        <div className="mt-3 rounded-md border border-line bg-ink p-3">
-          <p className="text-sm font-semibold">Proposed cuts</p>
-          <dl className="mt-1 grid grid-cols-1 gap-1 font-mono text-xs text-muted sm:grid-cols-3">
-            <div><dt className="inline">start </dt><dd className="inline text-mist">{formatCut(plan.startSec)}</dd></div>
-            <div><dt className="inline">end </dt><dd className="inline text-mist">{formatCut(plan.endSec)}</dd></div>
-            <div><dt className="inline">offset </dt><dd className="inline text-mist">{plan.offsetSec >= 0 ? "+" : ""}{plan.offsetSec.toFixed(1)}s</dd></div>
-          </dl>
-        </div>
+        {detectionFailed ? null : (
+          <div className="mt-3 rounded-md border border-line bg-ink p-3">
+            <p className="text-sm font-semibold">Proposed cuts</p>
+            <dl className="mt-1 grid grid-cols-1 gap-1 font-mono text-xs text-muted sm:grid-cols-3">
+              <div><dt className="inline">start </dt><dd className="inline text-mist">{formatCut(plan.startSec)}</dd></div>
+              <div><dt className="inline">end </dt><dd className="inline text-mist">{formatCut(plan.endSec)}</dd></div>
+              <div><dt className="inline">offset </dt><dd className="inline text-mist">{plan.offsetSec >= 0 ? "+" : ""}{plan.offsetSec.toFixed(1)}s</dd></div>
+            </dl>
+          </div>
+        )}
 
         <div className="mt-3 rounded-md border border-line bg-ink p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
