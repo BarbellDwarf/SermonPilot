@@ -322,6 +322,22 @@ def sweep_stale_job_files(config: dict | None = None, max_age_hours: float = 24.
         except OSError:
             continue
 
+    try:
+        from src.safe_delete import sweep_trash
+    except ImportError:  # src dir placed directly on sys.path
+        from safe_delete import sweep_trash  # type: ignore[no-redef]
+
+    try:
+        result = sweep_trash(config)
+        if result.get("removed"):
+            logger.info(
+                "Trash sweep removed %d item(s), %d kept",
+                len(result["removed"]),
+                result.get("kept", 0),
+            )
+    except Exception as exc:  # trash maintenance must never break startup
+        logger.warning("Trash sweep skipped: %s", exc)
+
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Merge override into base in place; nested dicts merge, other values replace."""

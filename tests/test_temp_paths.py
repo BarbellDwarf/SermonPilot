@@ -145,3 +145,29 @@ def test_sweep_never_touches_output_directory(tmp_path):
 
     assert stale_sermon.exists()
     assert stale_nested.exists()
+
+
+def test_sweep_stale_job_files_sweeps_expired_trash(tmp_path, monkeypatch):
+    monkeypatch.delenv("SERMONPILOT_TRASH_RETENTION_DAYS", raising=False)
+    monkeypatch.delenv("SERMONPILOT_TRASH_DIR", raising=False)
+
+    trash_root = tmp_path / "_trash"
+    expired = trash_root / "2020-01-01" / "1000-expired"
+    expired.mkdir(parents=True)
+    (expired / "sermon.mp3").write_bytes(b"x")
+    recent = trash_root / "2999-01-01" / "2000-recent"
+    recent.mkdir(parents=True)
+    (recent / "sermon.mp3").write_bytes(b"x")
+
+    old_time = time.time() - 90 * 86400
+    os.utime(expired, (old_time, old_time))
+
+    sweep_stale_job_files({
+        'trash_directory': str(trash_root),
+        'upload_dir': str(tmp_path / "uploads"),
+        'processing_temp_dir': str(tmp_path / "processing"),
+        'output_directory': str(tmp_path / "out"),
+    })
+
+    assert not expired.exists()
+    assert (recent / "sermon.mp3").exists()
