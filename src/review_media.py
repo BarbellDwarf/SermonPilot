@@ -26,8 +26,11 @@ back to the application's default ``processed_sermons`` tree so the media API's
 allowed roots can still see it.
 
 Retention is bounded. Reviews older than ``$SERMONPILOT_REVIEW_RETENTION_DAYS``
-(default 7) or beyond ``$SERMONPILOT_REVIEW_RETENTION_MAX_GB`` (default 8 GiB)
-are swept by :func:`sweep_abandoned_reviews`. Snippet clips are capped by
+(default 7) or beyond ``$SERMONPILOT_REVIEW_RETENTION_MAX_GB`` (default 32 GiB)
+are swept by :func:`sweep_abandoned_reviews`. One ordinary 55-minute service
+retains roughly 10 GB (a multi-GB keeper plus its render), so the size cap has
+to clear a single normal review before it can bound anything; the sweep also
+never discards the review it was called for. Snippet clips are capped by
 ``$SERMONPILOT_REVIEW_SNIPPET_MAX_MB`` (default 64 MiB); the clip length is
 bounded by construction at :data:`SNIPPET_MAX_SECONDS`.
 """
@@ -80,8 +83,13 @@ def review_retention_days() -> float:
 
 
 def review_retention_max_bytes() -> int:
-    """Total review media size cap in bytes (0 disables the size cap)."""
-    gigabytes = _env_float("SERMONPILOT_REVIEW_RETENTION_MAX_GB", 8.0)
+    """Total review media size cap in bytes (0 disables the size cap).
+
+    The 32 GiB default leaves room for an ordinary 55-minute service
+    (~10 GB across keeper, enhanced audio and render) plus one or two older
+    reviews, while a single review is never deleted just to satisfy the cap.
+    """
+    gigabytes = _env_float("SERMONPILOT_REVIEW_RETENTION_MAX_GB", 32.0)
     return max(0, int(gigabytes * 1024**3))
 
 
@@ -328,12 +336,50 @@ def _dir_size(path: Path) -> int:
     return total
 
 
+def human_size(num_bytes: int | float) -> str:
+    """Format a byte count for a log line (e.g. ``4.16 GB``)."""
+    size = float(num_bytes)
+    if size < 1024:
+        return f"{int(size)} B"
+    for unit in ("KB", "MB", "GB", "TB"):
+        size /= 1024.0
+        if size < 1024 or unit == "TB":
+            return f"{size:.2f} {unit}"
+    return f"{size:.2f} TB"
+
+
+def retained_artifact_line(kind: str, path: Path | str) -> str:
+    """One-line summary of a retained review artifact: kind, path and size."""
+    candidate = Path(path)
+    try:
+        size = human_size(candidate.stat().st_size)
+    except OSError:
+        size = "size unavailable"
+    return f"Retained review media: {kind} {candidate} ({size})"
+
+
+def _same_path(left: Path, right: Path | str | None) -> bool:
+    if right is None:
+        return False
+    try:
+        return left.resolve() == Path(right).resolve()
+    except (OSError, RuntimeError):
+        return False
+
+
 def sweep_abandoned_reviews(
     config: dict[str, Any] | None = None,
     repo: Any = None,
     now: float | None = None,
+    protect_dir: Path | str | None = None,
 ) -> dict[str, Any]:
     """Drop review media past the age or total-size cap.
+
+    ``protect_dir`` is the review that was just written (or restored) and is
+    never discarded, whatever the caps say: deleting the media a user is about
+    to review is never the right outcome. A size cap also never removes the
+    last remaining review, so a single review larger than the cap survives and
+    a warning names its size against the cap.
 
     Returns ``{"removed": [...], "kept": int, "bytes": int}``. Safe to run
     repeatedly; only marked review directories are considered.
@@ -359,7 +405,18 @@ def sweep_abandoned_reviews(
     removed: list[str] = []
     kept: list[dict[str, Any]] = []
     for entry in entries:
+        if _same_path(entry["dir"], protect_dir):
+            logger.info("Kept current review media (protected): %s", entry["dir"])
+            kept.append(entry)
+            continue
+        age_days = (now_ts - entry["mtime"]) / 86400.0
         if max_age_seconds > 0 and now_ts - entry["mtime"] > max_age_seconds:
+            logger.info(
+                "Removing review media %s: age %.1f days over %.1f-day cap",
+                entry["dir"],
+                age_days,
+                max_age_seconds / 86400.0,
+            )
             finalize_review_media(entry["dir"], "discarded")
             removed.append(str(entry["dir"]))
             continue
@@ -368,14 +425,43 @@ def sweep_abandoned_reviews(
     total = sum(entry["size"] for entry in kept)
     if max_bytes > 0:
         remaining: list[dict[str, Any]] = []
+        survivors = len(kept)
         for entry in kept:
-            if total > max_bytes:
+            protected = _same_path(entry["dir"], protect_dir)
+            if total > max_bytes and not protected and survivors > 1:
+                logger.info(
+                    "Removing review media %s: %s over %s size cap (oldest first)",
+                    entry["dir"],
+                    human_size(total),
+                    human_size(max_bytes),
+                )
                 finalize_review_media(entry["dir"], "discarded")
                 removed.append(str(entry["dir"]))
                 total -= entry["size"]
+                survivors -= 1
                 continue
+            if total > max_bytes and protected:
+                logger.info(
+                    "Keeping current review media despite %s size cap: %s (%s)",
+                    human_size(max_bytes),
+                    entry["dir"],
+                    human_size(entry["size"]),
+                )
             remaining.append(entry)
         kept = remaining
+
+    if max_bytes > 0 and total > max_bytes:
+        largest = max(kept, key=lambda entry: entry["size"]) if kept else None
+        logger.warning(
+            "Review media over size cap: %d review(s) retained at %s against a %s cap. "
+            "Keeping %s (%s) instead of deleting the only review; a user is about to "
+            "review it.",
+            len(kept),
+            human_size(total),
+            human_size(max_bytes),
+            largest["dir"] if largest is not None else "no review",
+            human_size(largest["size"]) if largest is not None else "n/a",
+        )
 
     return {"removed": removed, "kept": len(kept), "bytes": total}
 
