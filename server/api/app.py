@@ -20,6 +20,7 @@ from server.api.routers.auth import router as auth_router
 from server.api.routers.cloud import proxy_router as cloud_proxy_router
 from server.api.routers.cloud import router as cloud_router
 from server.api.routers.jobs import router as jobs_router
+from server.api.routers.llm_config import router as llm_config_router
 from server.api.routers.media import router as media_router
 from server.api.routers.meta import router as meta_router
 from server.api.routers.sermons import library_router as library_router
@@ -111,6 +112,7 @@ def create_app() -> FastAPI:
     app.include_router(me_router)
     app.include_router(admin_backup_router)
     app.include_router(writes_router)
+    app.include_router(llm_config_router)
     app.include_router(files_router)
     app.include_router(explore_router)
     app.include_router(cloud_router)
