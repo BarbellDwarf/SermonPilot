@@ -255,18 +255,6 @@ BUILTIN_DEFAULTS: dict[str, Any] = {
             "ollama": {"host": "http://localhost:11434"},
         },
     },
-    "embeddings": {
-        "primary": {
-            "provider": "sentence_transformers",
-            "model": "all-MiniLM-L6-v2",
-            "dimensions": 384,
-            "ollama": {
-                "host": "http://localhost:11434",
-                "model": "nomic-embed-text",
-                "auto_download": True,
-            },
-        },
-    },
     "prompt_templates": BUILTIN_PROMPT_TEMPLATES,
 }
 

@@ -119,41 +119,6 @@ enhancement:
   # Total-VRAM floor for device: auto. Below this, enhancement runs on CPU.
   min_gpu_vram_gb: 12
 
-# Embedding Configuration for RAG System
-embeddings:
-  # Primary embedding provider
-  primary:
-    provider: "sentence_transformers"  # Options: "sentence_transformers", "openai", "ollama"
-    model: "all-MiniLM-L6-v2"  # Model name for the provider
-    dimensions: 384  # Embedding dimensions (auto-detected for most models)
-    
-    # Provider-specific configurations
-    sentence_transformers:
-      model: "all-MiniLM-L6-v2"  # Options: all-MiniLM-L6-v2, all-mpnet-base-v2, all-distilroberta-v1
-      # All sentence-transformer models run locally
-    
-    openai:
-      api_key: "${OPENAI_API_KEY}"  # OpenAI API key
-      model: "text-embedding-3-small"  # Options: text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002
-      base_url: "https://api.openai.com/v1"  # Custom endpoint for other providers
-    
-    ollama:
-      host: "http://localhost:11434"  # Ollama server host
-      model: "nomic-embed-text"  # Options: nomic-embed-text, mxbai-embed-large, snowflake-arctic-embed:*
-      auto_download: true  # Pull the model on first use
-  
-  # Fallback embedding providers (tried in order if primary fails)
-  fallback:
-    - provider: "sentence_transformers"
-      model: "all-MiniLM-L6-v2"
-    # Hash-based fallback is automatically added as final option
-
-# Analytics / RAG System
-# ChromaDB persistence directory for the Analytics chat; a relative path
-# resolves against the project root. See docs/RAG_SYSTEM.md.
-rag_system:
-  vector_db_path: "analytics_vector_db"
-
 # Processing Options
 dry_run: false  # Set to true to preview changes without updating
 debug: false    # Set to true to enable verbose debug output
