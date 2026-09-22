@@ -72,6 +72,8 @@ ENV_CONFIG_MAP: dict[str, list[list[str]]] = {
     'AUDIO_GAIN_DB': [['audio_gain_db']],
     'OUTPUT_DIRECTORY': [['output_directory']],
     'SERMONPILOT_REVIEW_MEDIA_DIR': [['review_media_directory']],
+    'SERMONPILOT_TRASH_DIR': [['trash_directory']],
+    'SERMONPILOT_TRASH_RETENTION_DAYS': [['trash_retention_days']],
     'SAVE_TRANSCRIPT': [['save_transcript']],
     'SAVE_ORIGINAL_AUDIO': [['save_original_audio']],
     'DEBUG': [['debug']],
@@ -85,6 +87,7 @@ ENV_NUMERIC_PATHS: dict[tuple[str, ...], type] = {
     ('audio_target_level_db',): float,
     ('audio_noise_reduction',): float,
     ('audio_normalize',): float,
+    ('trash_retention_days',): float,
 }
 
 # Deploy-time secrets: the owner keeps these in the environment, and they are
