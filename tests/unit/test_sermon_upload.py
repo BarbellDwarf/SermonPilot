@@ -83,6 +83,33 @@ def test_upload_requires_metadata(client, scoped_setup, tmp_path, monkeypatch):
     assert r.status_code == 422
 
 
+def test_upload_moves_file_to_trash_when_draft_save_fails(
+    client, scoped_setup, tmp_path, monkeypatch
+):
+    from fastapi import HTTPException
+
+    from server.api.routers import writes
+
+    s = scoped_setup
+    ingest = tmp_path / "raw_ingest"
+    trash = tmp_path / "trash"
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(ingest))
+    monkeypatch.setenv("SERMONPILOT_TRASH_DIR", str(trash))
+
+    def fail_save(**kwargs):
+        raise HTTPException(status_code=500, detail="could not save sermon")
+
+    monkeypatch.setattr(writes, "_save_draft_sermon", fail_save)
+
+    r = _post_upload(client, s["a"]["headers"])
+    assert r.status_code == 500
+
+    user_dir = ingest / s["a"]["id"]
+    assert not list(user_dir.iterdir())
+    moved = list(trash.rglob("*sample-talk.mp3"))
+    assert len(moved) == 1
+
+
 def test_upload_needs_auth(client, scoped_setup, tmp_path, monkeypatch):
     monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path / "raw"))
     r = _post_upload(client, {})
