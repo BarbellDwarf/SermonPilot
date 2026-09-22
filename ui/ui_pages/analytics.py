@@ -12,12 +12,6 @@ import streamlit as st
 
 from ui.ui_state import managed_expander
 
-# Import the new analytics chat interface
-try:
-    from ui.analytics_chat import render_analytics_chat_tab  # noqa: F401
-    ANALYTICS_CHAT_AVAILABLE = True
-except ImportError:
-    ANALYTICS_CHAT_AVAILABLE = False
 
 def show_analytics():
     """Main analytics interface"""
@@ -28,21 +22,13 @@ def show_analytics():
         return
 
     # Analytics tabs
-    if ANALYTICS_CHAT_AVAILABLE:
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "Processing Metrics",
-            "Content Analysis",
-            "Cost Tracking",
-            "Performance",
-            "SermonAudio Analytics"
-        ])
-    else:
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "Processing Metrics",
-            "Content Analysis",
-            "Cost Tracking",
-            "Performance"
-        ])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "Processing Metrics",
+        "Content Analysis",
+        "Cost Tracking",
+        "Performance",
+        "SermonAudio Analytics"
+    ])
 
     with tab1:
         show_processing_metrics()
@@ -56,23 +42,9 @@ def show_analytics():
     with tab4:
         show_performance_metrics()
 
-    # SermonAudio Analytics tab (if available)
-    if ANALYTICS_CHAT_AVAILABLE:
-        with tab5:
-            st.markdown("### SermonAudio Analytics")
-
-            # Create sub-tabs for different views
-            data_tab, chat_tab = st.tabs(["Data View", "Chat Interface"])
-
-            with data_tab:
-                show_sermonaudio_data_view()
-
-            with chat_tab:
-                # Pass configuration to the chat interface
-                from ui.analytics_chat import AnalyticsChatInterface
-                chat_interface = AnalyticsChatInterface(config=st.session_state.config)
-                chat_interface.render_chat_interface()
-                chat_interface.render_chat_settings()
+    with tab5:
+        st.markdown("### SermonAudio Analytics")
+        show_sermonaudio_data_view()
 
 def show_processing_metrics():
     """Processing statistics and success rates"""

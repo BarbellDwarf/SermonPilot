@@ -88,8 +88,7 @@ SERMONPILOT_TAG=cpu docker compose up -d
 ### Alternative Stack (bare metal)
 
 - **Application**: Streamlit served by the Streamlit server (no WSGI layer)
-- **Database**: SQLite (`sermon_processor.db`) for the UI and settings;
-  ChromaDB for the analytics vector store
+- **Database**: SQLite (`sermon_processor.db`) for the UI and settings
 - **Monitoring**: system metrics collected by `ui/performance_monitor.py`
 
 ### Environment Setup
@@ -112,7 +111,7 @@ HOST_BIND=0.0.0.0
 ```
 
 Any setting that the env map covers (`TRANSCRIPTION_BACKEND`,
-`AUDIO_ENHANCEMENT_METHOD`, `OUTPUT_DIRECTORY`, `EMBEDDING_PROVIDER`, ...)
+`AUDIO_ENHANCEMENT_METHOD`, `OUTPUT_DIRECTORY`, ...)
 can be set the same way; see the Configuration section of the README for the
 full list. Values you do not set fall back to what is stored in the settings
 database, then to built-in defaults.

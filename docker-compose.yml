@@ -24,7 +24,6 @@
 #   Audio: AUDIO_ENHANCEMENT_METHOD, AUDIO_NOISE_REDUCTION, AUDIO_NORMALIZE,
 #     AUDIO_TARGET_LEVEL, AUDIO_GAIN_DB, QA_NORMALIZATION_ENABLED
 #   Output: OUTPUT_DIRECTORY, SAVE_TRANSCRIPT, SAVE_ORIGINAL_AUDIO
-#   Embeddings: EMBEDDING_PROVIDER, EMBEDDING_MODEL
 #   Processing: DEBUG, VERBOSE, DRY_RUN, HASHTAG_VERIFICATION
 #   Runtime: DATABASE_URL (default sqlite:///data/sermon_processor.db,
 #     resolved to /data/sermon_processor.db inside the container),
