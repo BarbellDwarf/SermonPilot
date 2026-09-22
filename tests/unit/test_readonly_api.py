@@ -209,6 +209,7 @@ def test_sermon_plan_shape(client: TestClient) -> None:
     assert plan["start_sec"] == 8.5
     assert plan["end_sec"] == 2512.3
     assert plan["offset_sec"] == 0.4
+    assert plan["detection_status"] == "ok"
     assert plan["evidence"] == "Silence gate at both ends."
     assert len(body["history"]) == 1
     empty = client.get("/api/sermons/s-02/plan").json()

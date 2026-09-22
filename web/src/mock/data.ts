@@ -92,6 +92,8 @@ export const librarySermons: LibrarySermon[] = [
 
 export type PlanStatus = "draft" | "pending_review" | "applied_local" | "processed" | "superseded";
 
+export type DetectionStatus = "ok" | "unavailable";
+
 export interface EditPlan {
   sermonId: string;
   status: PlanStatus;
@@ -103,6 +105,7 @@ export interface EditPlan {
   startSec: number;
   endSec: number;
   offsetSec: number;
+  detectionStatus: DetectionStatus;
 }
 
 export const editPlans: Record<string, EditPlan> = {
@@ -117,6 +120,7 @@ export const editPlans: Record<string, EditPlan> = {
     startSec: 8.5,
     endSec: 2512.3,
     offsetSec: 0.4,
+    detectionStatus: "ok",
   },
   "s-04": {
     sermonId: "s-04",
@@ -129,6 +133,7 @@ export const editPlans: Record<string, EditPlan> = {
     startSec: 12.0,
     endSec: 2650.0,
     offsetSec: -0.3,
+    detectionStatus: "ok",
   },
 };
 

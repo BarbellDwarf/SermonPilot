@@ -54,6 +54,7 @@ export interface ApiEditPlan {
   start_sec: number | null;
   end_sec: number | null;
   offset_sec: number;
+  detection_status: string;
 }
 
 export interface ApiSermonPlan {
