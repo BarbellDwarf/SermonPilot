@@ -1517,7 +1517,6 @@ def _clear_settings_widget_keys():
         "settings_save_original_audio", "settings_save_transcript",
         "primary_provider", "fallback_enabled", "fallback_provider",
         "validator_enabled", "validator_provider",
-        "primary_embedding_provider",
         "settings_enhancement_method", "settings_custom_repo", "settings_custom_file",
         "settings_noise_reduction", "settings_amplify",
         "settings_normalize", "settings_gain_db", "settings_target_level_db",
@@ -1535,8 +1534,6 @@ def _clear_settings_widget_keys():
         for suffix in (
             "ollama_host", "ollama_model", "ollama_api_key",
             "openai_preset", "openai_key", "openai_url", "openai_model",
-                "st_model", "openai_embedding_key", "openai_embedding_url",
-            "openai_embedding_model", "ollama_embedding_host", "ollama_embedding_model",
         ):
             keys.append(f"{prefix}{suffix}")
     for name in (
