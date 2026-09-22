@@ -1031,3 +1031,31 @@ def should_delete_original(
     if not verify_keeper(source, keeper):
         return False
     return has_applied_plan
+
+
+def trash_original_after_edit(
+    source: Path,
+    keeper: Path,
+    config: dict[str, Any],
+    has_applied_plan: bool,
+    **trash_kwargs: Any,
+) -> Any:
+    """Move the original into trash when every delete-original gate passes.
+
+    ``should_delete_original`` stays the pure predicate; this is the only
+    supported way to act on it, so replacing the original is always a
+    recoverable move rather than an unlink. Returns the trash record, or
+    ``None`` when the gates say to keep the original.
+    """
+    if not should_delete_original(source, keeper, config, has_applied_plan):
+        return None
+    try:
+        from src.safe_delete import trash_local
+    except ImportError:  # src dir placed directly on sys.path
+        from safe_delete import trash_local  # type: ignore[no-redef]
+
+    return trash_local(
+        source,
+        reason="auto_edit_keeper_replaced_original",
+        **trash_kwargs,
+    )

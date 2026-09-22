@@ -96,7 +96,7 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
         EditPlan,
         apply_edit,
         detect_cut_points,
-        should_delete_original,
+        trash_original_after_edit,
         validate_plan,
     )
     from cli.parser import CLIParser, confirm
@@ -3764,15 +3764,17 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 edit_original = Path(auto_edit_state['source_path'])
                 edit_keeper = audio_path if keeper_used else edit_original
                 try:
-                    if should_delete_original(
-                        edit_original, edit_keeper, config, has_applied_plan=True
-                    ):
-                        edit_original.unlink()
+                    record = trash_original_after_edit(
+                        edit_original, edit_keeper, config, True,
+                        sermon_id=sermon_id, stage="post_publish",
+                    )
+                    if record is not None:
                         console_print(
-                            f"Deleted original after applied edit: {edit_original.name}"
+                            f"Moved original to trash after applied edit: "
+                            f"{record.destination}"
                         )
                 except Exception as e:
-                    logger.warning("Original deletion after auto edit failed: %s", e)
+                    logger.warning("Original removal after auto edit failed: %s", e)
 
             _report(100, f"Done - sermon {sermon_id} created and uploaded")
             result['success'] = True
@@ -4154,8 +4156,19 @@ def publish_dry_run_sermon(dry_run_id: str, publish: bool = True) -> dict[str, A
             )
             if old_output_dir != new_output_dir:
                 import shutil
+
                 shutil.copytree(str(old_output_dir), str(new_output_dir), dirs_exist_ok=True)
-                shutil.rmtree(str(old_output_dir))
+                try:
+                    from src.safe_delete import trash_local
+                except ImportError:
+                    from safe_delete import trash_local
+
+                trash_local(
+                    str(old_output_dir),
+                    reason="dry_run_publish_superseded",
+                    sermon_id=new_sermon_id,
+                    stage="publish_dry_run",
+                )
 
         if upload_success:
             console_print(f"Dry run sermon published as: {new_sermon_id}")
