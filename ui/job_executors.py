@@ -5,6 +5,7 @@ Contains the actual execution logic for different types of background jobs.
 Each executor is responsible for performing the work and updating job progress.
 """
 
+import copy
 import json
 import logging
 import os
@@ -506,6 +507,99 @@ def _inject_sermon_updater_config(config: dict) -> None:
         logger.warning("Failed to refresh sermon_updater runtime config: %s", e)
 
 
+def _merge_config_layers(base: dict, override: dict) -> dict:
+    """Return a new config with override merged on top of base.
+
+    Nested dicts merge key by key, so a partial job config (say, only
+    ``llm.primary.ollama.model``) keeps every resolved value it does not
+    mention. Scalars and lists replace. Neither input is mutated.
+    """
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_config_layers(merged[key], value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
+
+
+def _primary_llm_model(config: dict) -> tuple[str, str | None]:
+    """Return the dotted key and model for the config's primary LLM provider."""
+    llm = config.get('llm') if isinstance(config, dict) else None
+    primary = llm.get('primary') if isinstance(llm, dict) else None
+    if not isinstance(primary, dict):
+        return 'llm.primary.ollama.model', None
+    provider = primary.get('provider') or 'ollama'
+    provider_config = primary.get(provider)
+    model = provider_config.get('model') if isinstance(provider_config, dict) else None
+    if isinstance(model, str):
+        model = model.strip() or None
+    return f'llm.primary.{provider}.model', model
+
+
+def _log_job_llm_source(
+    job: Job,
+    job_config: dict,
+    resolved_config: dict,
+    effective_config: dict,
+) -> None:
+    """Record which config layer supplied the LLM model for this job.
+
+    A stage that ends up without a usable model should never be a mystery:
+    this names the effective provider/model and its source, or, when the
+    effective model is missing but a layer has one, both layers so the
+    overriding empty value is obvious next to the resulting
+    'No model configured' error.
+    """
+    effective_key, effective_model = _primary_llm_model(effective_config)
+    if effective_model:
+        _, job_model = _primary_llm_model(job_config)
+        source = 'job' if job_model else 'resolved app config'
+        logger.info(
+            "Job %s LLM model %s=%s (source: %s)",
+            job.id, effective_key, effective_model, source,
+        )
+        return
+    resolved_key, resolved_model = _primary_llm_model(resolved_config)
+    if resolved_model:
+        logger.warning(
+            "Job %s has no usable LLM model although the resolved app config "
+            "provides %s=%s: the effective %s is unset, so a job-provided value "
+            "overrode the resolved model. The stage will fail with "
+            "'No model configured'.",
+            job.id, resolved_key, resolved_model, effective_key,
+        )
+    else:
+        logger.warning(
+            "Job %s has no usable LLM model: neither the job config nor the "
+            "resolved app config sets %s.",
+            job.id, effective_key,
+        )
+
+
+def resolve_job_config(job: Job) -> dict[str, Any]:
+    """Effective config for a job: the resolved app config with job values on top.
+
+    Jobs enqueued through the API carry an empty config and jobs enqueued from
+    the UI can carry a stale one, so the executor resolves the application
+    configuration itself (file + database + env) and merges the job's config
+    over it. A job-provided value always wins; resolved values fill the gaps.
+    """
+    parameters = job.parameters or {}
+    raw_job_config = parameters.get('config')
+    job_config = raw_job_config if isinstance(raw_job_config, dict) else {}
+    resolved_config: dict = {}
+    try:
+        from ui.config_utils import resolve_config
+
+        resolved_config = resolve_config() or {}
+    except Exception as exc:
+        logger.warning("Could not resolve app config for job %s: %s", job.id, exc)
+    effective_config = _merge_config_layers(resolved_config, job_config)
+    _log_job_llm_source(job, job_config, resolved_config, effective_config)
+    return effective_config
+
+
 def execute_validation_job(job: Job) -> JobResult:
     """Execute a validation job"""
     try:
@@ -552,20 +646,8 @@ def execute_validation_job(job: Job) -> JobResult:
                     progress, f"Validating sermon {sermon_id} ({i+1}/{len(sermon_ids)})"
                 )
 
-                # Get configuration from job parameters first, then resolve
-                config = job.parameters.get('config', {})
-                if not config:
-                    job.add_log("No config in job parameters, resolving configuration...")
-                    try:
-                        from ui.config_utils import load_config_from_file
-
-                        config = load_config_from_file()
-                    except Exception as e:
-                        job.add_log(f"Failed to resolve configuration: {e}")
-                        raise ValueError(
-                            f"No configuration available in job parameters and "
-                            f"resolution failed: {e}"
-                        ) from e
+                # Effective config: job-provided values over the resolved app config.
+                config = resolve_job_config(job)
 
                 if not config:
                     raise ValueError("No configuration available")
@@ -799,7 +881,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
         job.update_progress(5, "Initializing sermon processing...")
 
         form_data = job.parameters.get('form_data') or {}
-        config = job.parameters.get('config') or {}
+        config = resolve_job_config(job)
         output_override = job.parameters.get('output_dir')
         cloud_output: str | None = None
         cloud_output_dir: str | None = None
@@ -1008,7 +1090,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             or (parameters.get('form_data') or {}).get('uploaded_file_path')
         )
         _cleanup_job_files(
-            parameters.get('config') or {}, uploaded_file_path, processing_temp_dir, job,
+            resolve_job_config(job), uploaded_file_path, processing_temp_dir, job,
             keep_upload=cleanup_state["keep_upload"],
         )
         _cleanup_staged_file(
@@ -1040,7 +1122,7 @@ def execute_auto_edit_job(job: Job) -> JobResult:
         job.update_progress(5, "Initializing auto-edit processing...")
 
         form_data = job.parameters.get('form_data') or {}
-        config = job.parameters.get('config') or {}
+        config = resolve_job_config(job)
         audio_file = job.parameters.get('audio_file') or form_data.get('audio_file')
 
         if not audio_file:
@@ -1187,7 +1269,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
             )
 
         actions = job.parameters.get('actions', {})
-        config = job.parameters.get('config', {})
+        config = resolve_job_config(job)
 
         if not config:
             return JobResult(
@@ -1341,7 +1423,7 @@ def execute_metadata_update_job(job: Job) -> JobResult:
     try:
         sermon_ids = job.parameters.get('sermon_ids', [])
         actions = job.parameters.get('actions', {})
-        config = job.parameters.get('config', {})
+        config = resolve_job_config(job)
 
         if not sermon_ids:
             return JobResult(
@@ -1451,7 +1533,7 @@ def execute_auto_edit_apply_job(job: Job) -> JobResult:
         logo_path = job.parameters.get('logo_path')
         re_edit = bool(job.parameters.get('re_edit', False))
         form_data = job.parameters.get('form_data') or {}
-        config = job.parameters.get('config') or {}
+        config = resolve_job_config(job)
         audio_file = job.parameters.get('audio_file') or form_data.get('audio_file')
 
         if not sermon_id or not plan_id:
@@ -1660,7 +1742,7 @@ def execute_auto_edit_refine_job(job: Job) -> JobResult:
 
         sermon_id = job.parameters.get('sermon_id')
         notes = job.parameters.get('notes') or ''
-        config = job.parameters.get('config') or {}
+        config = resolve_job_config(job)
 
         if not sermon_id:
             return JobResult(
@@ -1747,7 +1829,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
         render_only = bool(params.get("render_only", False))
         re_detect = bool(params.get("re_detect", False))
         plan_id = params.get("plan_id")
-        config = params.get("config") or {}
+        config = resolve_job_config(job)
 
         if not sermon_id:
             return JobResult(
