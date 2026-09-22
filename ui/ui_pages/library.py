@@ -1147,6 +1147,8 @@ def _cached_edit_snippets(
 
 
 def _render_edit_snippets(sermon: dict[str, Any], plan: dict[str, Any], repo: Any) -> None:
+    if (plan.get("detection_status") or "ok") != "ok":
+        return
     media_path = _resolve_edit_media_path(sermon, repo)
     if not media_path:
         return
@@ -1478,6 +1480,16 @@ def show_edit_review_panel(sermon: dict[str, Any]) -> None:
         f"(revision {plan.get('revision', 1)} of {len(history)})"
     )
     with st.container():
+        detection_status = plan.get("detection_status") or "ok"
+        if detection_status != "ok":
+            st.error(
+                "Cut detection failed: no usable cut points were returned. "
+                "Set the start and end manually below, or re-run detection."
+            )
+            detector_detail = plan.get("reasoning") or ""
+            if detector_detail:
+                st.caption(f"Detector detail: {detector_detail}")
+
         if status == "auto_applied":
             st.warning(
                 f"This edit was applied automatically (confidence {confidence:.2f}). "
