@@ -932,6 +932,11 @@ class SermonRepository:
         max_revision = conn.execute(
             "SELECT MAX(revision) FROM edit_plans WHERE sermon_id = ?", (sermon_id,)
         ).fetchone()[0] or 0
+        plan_status_row = conn.execute(
+            "SELECT status FROM edit_plans WHERE sermon_id = ? ORDER BY revision DESC LIMIT 1",
+            (sermon_id,),
+        ).fetchone()
+        plan_status = (plan_status_row['status'] if plan_status_row else '') or ''
         upload_row = conn.execute(
             "SELECT sermonaudio_id FROM upload_info WHERE sermon_id = ?", (sermon_id,)
         ).fetchone()
@@ -952,6 +957,13 @@ class SermonRepository:
         score += min(len(file_rows), 50)
         if remote_id:
             score += 300
+        applied_plan_states = {'applied', 'applied_local', 'auto_applied', 'rendered'}
+        if plan_status in applied_plan_states:
+            # The row the owner has already finalised (it carries the rendered
+            # output) must survive a fold: the retained review media of the
+            # other rows can be folded onto it, but its render slot cannot be
+            # recovered once lost.
+            score += 400
         if status == 'processed':
             score += 200
         elif status == 'draft':
@@ -966,6 +978,7 @@ class SermonRepository:
             "max_revision": int(max_revision),
             "remote_id": str(remote_id) if remote_id else None,
             "status": status,
+            "plan_status": plan_status,
             "notes": notes,
         }
 
