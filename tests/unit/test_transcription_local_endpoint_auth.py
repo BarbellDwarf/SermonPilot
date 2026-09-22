@@ -105,6 +105,27 @@ def test_private_base_url_uses_a_valid_key_when_present(
     assert calls[0]["headers"]["Authorization"] == "Bearer sk-valid-key-1234567890"
 
 
+def test_private_base_url_segments_without_a_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls = _capture_post(
+        monkeypatch,
+        {
+            "segments": [
+                {"start": 0.0, "end": 1.5, "text": " hello"},
+                {"start": 1.5, "end": 3.0, "text": " world"},
+            ]
+        },
+    )
+
+    result = tr.transcribe_segments(
+        _audio_file(tmp_path), config=_openai_config("http://10.0.0.5:8780/v1/")
+    )
+
+    assert [segment["text"] for segment in result] == ["hello", "world"]
+    assert "Authorization" not in calls[0]["headers"]
+
+
 def test_public_base_url_unusable_key_names_env_source(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("WHISPER_OPENAI_API_KEY", "abc")
     called: list[object] = []
