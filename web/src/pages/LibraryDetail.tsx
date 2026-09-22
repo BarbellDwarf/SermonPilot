@@ -30,7 +30,7 @@ export function LibraryDetail() {
   const [copied, setCopied] = useState(false);
 
   const { data: detail, isLoading, error, retry } = useSermonDetail(id);
-  const { plan, isLoading: planLoading, error: planError, retry: retryPlan } = useSermonPlan(id);
+  const { plan, history: planHistory, isLoading: planLoading, error: planError, retry: retryPlan } = useSermonPlan(id);
   const media = useSermonMedia(id, isLive && !deleted);
   const transcript = useSermonTranscript(id, transcriptOpen);
   const userFiles = useUserFiles(isLive && !!detail && (detail?.files.length ?? 0) > 0);
@@ -313,7 +313,7 @@ export function LibraryDetail() {
       ) : planError ? (
         <QueryError message={planError} onRetry={retryPlan} />
       ) : plan ? (
-        <ReviewPanel plan={plan} sermonId={id ?? sermon.id} sermonTitle={sermon.title} onToast={showToast} />
+        <ReviewPanel plan={plan} history={planHistory} onRefresh={retryPlan} sermonId={id ?? sermon.id} sermonTitle={sermon.title} onToast={showToast} />
       ) : (
         <section aria-labelledby="review-none-h">
           <h2 id="review-none-h" className="mb-2 text-lg font-semibold">Review auto-edit plan</h2>

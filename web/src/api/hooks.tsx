@@ -63,6 +63,8 @@ export function toEditPlan(p: ApiEditPlan): EditPlan {
     endSec: p.end_sec ?? 0,
     offsetSec: p.offset_sec,
     detectionStatus: p.detection_status === "unavailable" ? "unavailable" : "ok",
+    reasoning: p.reasoning ?? "",
+    notes: p.notes ?? "",
   };
 }
 
@@ -333,10 +335,17 @@ export function useSermonPlan(id: string | undefined) {
   const mockPlan = id ? editPlans[id] : undefined;
 
   if (!isLive) {
-    return { plan: mockPlan, isLoading: false, error: null as string | null, retry: () => {} };
+    return {
+      plan: mockPlan,
+      history: mockPlan ? [mockPlan] : ([] as EditPlan[]),
+      isLoading: false,
+      error: null as string | null,
+      retry: () => {},
+    };
   }
   return {
     plan: live.data?.plan ? toEditPlan(live.data.plan) : undefined,
+    history: (live.data?.history ?? []).map(toEditPlan),
     isLoading: live.isPending,
     error: live.isError ? "The auto-edit plan could not be loaded." : null,
     retry: () => void live.refetch(),
