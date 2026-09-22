@@ -5,6 +5,31 @@ import { sermonStatusLabel, sermonStatusTone } from "./Library";
 import { Button, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast, buttonClass } from "../components/ui";
 import { QueryError, useSermonDetail, useSermonMedia, useSermonPlan, useSermonTranscript } from "../api/hooks";
 import { api, isLive, writeApi } from "../api/client";
+import type { ApiTrashRecord } from "../api/client";
+
+export function describeDeleteOutcome(records: ApiTrashRecord[]): string {
+  const localMoved = records.filter((r) => r.mode === "local" && r.moved);
+  const remoteMoved = records.filter((r) => r.mode === "remote" && r.moved);
+  const remoteKept = records.filter((r) => r.mode === "remote-kept");
+  const localKept = records.filter((r) => r.mode === "local" && !r.moved);
+  const parts: string[] = [];
+  if (localMoved.length > 0) {
+    parts.push(`Local media moved to trash at ${localMoved[0].destination}.`);
+  }
+  if (remoteMoved.length > 0) {
+    parts.push(`Cloud media moved to trash at ${remoteMoved[0].destination}.`);
+  }
+  if (remoteKept.length > 0) {
+    parts.push("Cloud media stayed recoverable on its remote.");
+  }
+  if (localKept.length > 0) {
+    parts.push("Local media could not be moved and was left in place.");
+  }
+  if (parts.length === 0) {
+    parts.push("No media was destroyed.");
+  }
+  return parts.join(" ");
+}
 
 export function LibraryDetail() {
   const { id } = useParams();
@@ -12,6 +37,7 @@ export function LibraryDetail() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleted, setDeleted] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [trash, setTrash] = useState<ApiTrashRecord[]>([]);
   const [pushing, setPushing] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -71,7 +97,7 @@ export function LibraryDetail() {
           title="Teaching deleted"
           body={
             isLive
-              ? `“${sermon.title}” was removed from the database. This cannot be undone.`
+              ? `“${sermon.title}” was removed from the database. ${describeDeleteOutcome(trash)}`
               : `“${sermon.title}” was removed from this mock list. Nothing was uploaded or lost.`
           }
           action={
@@ -93,9 +119,10 @@ export function LibraryDetail() {
     setDeleting(true);
     void api
       .deleteSermon(id)
-      .then(() => {
+      .then((result) => {
         setDeleting(false);
         setConfirmDelete(false);
+        setTrash(result?.trash ?? []);
         setDeleted(true);
       })
       .catch((e) => {
@@ -230,7 +257,7 @@ export function LibraryDetail() {
         title={`Delete “${sermon.title}”?`}
         body={
           isLive
-            ? `“${sermon.title}” by ${sermon.speaker} will be permanently removed from the database. This cannot be undone.`
+            ? `“${sermon.title}” by ${sermon.speaker} will be removed from the database. Local media moves to trash and cloud media stays recoverable.`
             : `“${sermon.title}” by ${sermon.speaker} will be removed from this mock list. This cannot be undone.`
         }
         confirmLabel="Delete"
