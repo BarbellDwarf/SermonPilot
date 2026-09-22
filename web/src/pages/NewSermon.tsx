@@ -358,7 +358,7 @@ export function NewSermon() {
   const start = () => {
     if (!valid || starting) return;
     if (!isLive) {
-      showToast("Demo mode: nothing was sent and no job was queued.");
+      showToast("Demo mode: nothing was sent.");
       return;
     }
     setStarting(true);
