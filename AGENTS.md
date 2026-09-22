@@ -24,6 +24,7 @@ src/
 |-- audio_processing.py       -- Audio enhancement
 |-- transcription.py          -- Whisper transcription (whisper-local default; faster-whisper; cloud backends)
 |-- llm_manager.py            -- LLM provider abstraction
+|-- safe_delete.py            -- Single deletion policy: trash instead of unlink
 |-- core/config.py            -- ENV_CONFIG_MAP, env override + ${VAR} expansion helpers
 `-- processing/orchestrator.py -- Options dataclass
 config/templates/{cuda,rocm,cpu}.yaml -- Per-Docker-variant config templates (import/export artifacts)
@@ -66,6 +67,8 @@ Key tables: `sermons` (id TEXT PK, title, speaker, recorded_date, status TEXT DE
 **Status values:** `'pending'`, `'processed'` (uploaded to SermonAudio), `'draft'` (dry run -- saved locally only), `'error'`.
 
 **Sermon identity:** ids are deterministic, derived from normalised speaker + recorded date + title + source fingerprint (`src/sermon_identity.py`). Every creation path computes the same id for the same sermon, and re-runs carry the existing id so they upsert. `SermonDatabase.init_database()` runs an idempotent `dedupe_sermons()` migration that folds duplicate rows at startup. See `docs/SERMON_IDENTITY.md`.
+
+**Deletion policy:** every media delete is a move. Local media goes to `<data>/_trash/<date>/<item>/`, and cloud media stays on its remote (`rclone moveto`, never `purge`). All deletes route through `src/safe_delete.py`; the trash sweep runs at startup with a 30-day default. See `docs/DELETION_POLICY.md`.
 
 ## Processing Pipeline (`process_new_sermon`)
 
