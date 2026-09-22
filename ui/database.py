@@ -984,12 +984,7 @@ class SermonRepository:
             (loser_id,),
         ).fetchall():
             existing = survivor_files.get(row['file_type'])
-            if existing is None:
-                keep = True
-            else:
-                survivor_path = str(existing['file_path'] or '')
-                loser_path = str(row['file_path'] or '')
-                keep = not Path(survivor_path).exists() and Path(loser_path).exists()
+            keep = existing is None or not existing['file_path']
             if keep:
                 conn.execute("""
                     INSERT OR REPLACE INTO sermon_files
@@ -1092,11 +1087,11 @@ class SermonRepository:
         """, (survivor_id, max_revision))
 
         survivor_row = conn.execute(
-            "SELECT notes, user_id FROM sermons WHERE id = ?", (survivor_id,)
+            "SELECT notes, user_id, status FROM sermons WHERE id = ?", (survivor_id,)
         ).fetchone()
         survivor_notes = (survivor_row['notes'] if survivor_row else '') or ''
         loser_row = conn.execute(
-            "SELECT notes, user_id FROM sermons WHERE id = ?", (loser_id,)
+            "SELECT notes, user_id, status FROM sermons WHERE id = ?", (loser_id,)
         ).fetchone()
         loser_notes = (loser_row['notes'] if loser_row else '') or ''
         if loser_row is not None:
@@ -1104,6 +1099,14 @@ class SermonRepository:
                 conn.execute(
                     "UPDATE sermons SET user_id = ? WHERE id = ?",
                     (loser_row['user_id'], survivor_id),
+                )
+            if (loser_row['status'] or '') == 'processed' and (
+                not survivor_row or (survivor_row['status'] or '') != 'processed'
+            ):
+                conn.execute(
+                    "UPDATE sermons SET status = 'processed', "
+                    "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (survivor_id,),
                 )
         if loser_notes and loser_notes not in survivor_notes:
             combined = (f"{survivor_notes}\n{loser_notes}").strip()

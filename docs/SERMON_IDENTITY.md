@@ -102,12 +102,14 @@ For each group with more than one member:
    plan revision, then transcript length, then notes. The survivor is the
    highest score, with ties broken by revision, then the newest `updated_at`,
    then the id.
-3. **Fold each loser** into the survivor in `_fold_sermon`: file rows (keeping
-   whichever path exists on disk), content fields (the longest value per
-   field), processing info, upload info, notes (appended when unique), the
-   `user_id` when the survivor has none, and edit plans. Loser plans are
-   renumbered above the survivor's highest revision, and older revisions are
-   marked `superseded`.
+3. **Fold each loser** into the survivor in `_fold_sermon`: file rows (only
+   for file types the survivor has no path for, so a recorded path is never
+   replaced by a loser's path), content fields (the longest value per field),
+   processing info, upload info, notes (appended when unique), the `user_id`
+   when the survivor has none, and edit plans. Loser plans are renumbered
+   above the survivor's highest revision, and older revisions are marked
+   `superseded`. When a folded row was `processed`, the survivor is promoted
+   to `processed` so a published sermon is never downgraded to a draft.
 4. **Delete the loser rows** from every child table and the main table, then
    rebuild the search row.
 
