@@ -1,0 +1,225 @@
+"""Supervised external commands with cooperative cancellation.
+
+The job queue cancels cooperatively: a running executor polls a cancel hook
+(``ui.job_executors._raise_if_job_cancelled``, wrapped inside the pipeline by
+``process_new_sermon``'s ``_check_cancelled``) and stops. ``subprocess.run``
+blocks until the child exits, so a cancel during a long ffmpeg encode, an
+rclone copy or an audio preprocessing script left the child running and the
+single worker blocked until it finished on its own.
+
+:func:`run_supervised` starts the child with :class:`subprocess.Popen` and
+polls the hook every ``poll_interval`` seconds. On cancel it asks the child to
+stop (``terminate``), waits a short grace period, then kills it, moves any
+partial output named in ``partial_paths`` into the trash area per
+``src/safe_delete.py``, and re-raises the hook's exception so the job goes
+terminal as cancelled. If the child ignores ``terminate`` the hard kill is the
+fallback, so the worker is never left blocked.
+
+When no cancel hook is supplied the call is a plain ``subprocess.run``. The
+CLI and one-shot renders keep their existing behaviour, and code that patches
+``subprocess.run`` is unaffected.
+"""
+
+from __future__ import annotations
+
+import logging
+import subprocess
+import threading
+import time
+from collections.abc import Callable, Sequence
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_POLL_INTERVAL_SECONDS = 2.0
+DEFAULT_TERMINATE_GRACE_SECONDS = 10.0
+
+_TRASH_META_KEYS = ("sermon_id", "job_id", "stage", "config")
+
+
+def terminate_process(
+    proc: subprocess.Popen, grace_seconds: float = DEFAULT_TERMINATE_GRACE_SECONDS
+) -> bool:
+    """Stop a child process, escalating from terminate to kill.
+
+    Returns True when the process had to be hard-killed, False when it exited
+    after ``terminate`` (or had already exited). Never raises.
+    """
+    if proc.poll() is not None:
+        return False
+    try:
+        proc.terminate()
+    except Exception:
+        pass
+    try:
+        proc.wait(timeout=grace_seconds)
+        return False
+    except Exception:
+        pass
+    try:
+        proc.kill()
+    except Exception:
+        pass
+    try:
+        proc.wait(timeout=5.0)
+    except Exception:
+        pass
+    return True
+
+
+def _drain(stream: Any, sink: list) -> None:
+    try:
+        while True:
+            chunk = stream.read(65536)
+            if not chunk:
+                break
+            sink.append(chunk)
+    except Exception:
+        pass
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
+
+
+def _trash_partials(
+    partial_paths: Sequence[str | Path] | None,
+    reason: str,
+    meta: dict[str, Any] | None,
+) -> None:
+    if not partial_paths:
+        return
+    try:
+        from src.safe_delete import trash_local
+    except ImportError:  # src dir placed directly on sys.path
+        from safe_delete import trash_local  # type: ignore[no-redef]
+
+    kwargs = {key: (meta or {}).get(key) for key in _TRASH_META_KEYS if (meta or {}).get(key)}
+    for raw in partial_paths:
+        if not raw:
+            continue
+        candidate = Path(str(raw))
+        try:
+            if not candidate.exists() and not candidate.is_symlink():
+                continue
+        except OSError:
+            continue
+        try:
+            trash_local(candidate, reason=reason, **kwargs)
+        except Exception as exc:
+            logger.warning("Could not move partial output %s to trash: %s", candidate, exc)
+
+
+def _emit(log: Callable[[str], None] | None, message: str) -> None:
+    logger.info("%s", message)
+    if log is None:
+        return
+    try:
+        log(message)
+    except Exception:
+        logger.debug("Cancel log callback failed", exc_info=True)
+
+
+def run_supervised(
+    cmd: Sequence[str],
+    *,
+    cancel_check: Callable[[], None] | None = None,
+    step: str | None = None,
+    poll_interval: float = DEFAULT_POLL_INTERVAL_SECONDS,
+    terminate_grace: float = DEFAULT_TERMINATE_GRACE_SECONDS,
+    timeout: float | None = None,
+    capture_output: bool = False,
+    text: bool = False,
+    check: bool = False,
+    log: Callable[[str], None] | None = None,
+    partial_paths: Sequence[str | Path] | None = None,
+    partial_reason: str = "cancelled_process_partial",
+    partial_meta: dict[str, Any] | None = None,
+    cwd: str | Path | None = None,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
+    """Run ``cmd``, polling ``cancel_check`` and stopping the child on cancel.
+
+    Without ``cancel_check`` this defers to :func:`subprocess.run`, so callers
+    that never had a cancel hook keep their exact behaviour. With a hook, the
+    child is supervised and the hook's exception is re-raised after the child
+    is stopped. ``partial_paths`` are moved into the trash root on cancel.
+    """
+    if cancel_check is None and not partial_paths:
+        return subprocess.run(
+            cmd,
+            capture_output=capture_output,
+            text=text,
+            check=check,
+            timeout=timeout,
+            cwd=cwd,
+            env=env,
+        )
+
+    label = step or (Path(str(cmd[0])).name if cmd else "command")
+    stdout_pipe = subprocess.PIPE if capture_output else None
+    stderr_pipe = subprocess.PIPE if capture_output else None
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=stdout_pipe,
+        stderr=stderr_pipe,
+        text=text,
+        cwd=cwd,
+        env=env,
+    )
+
+    out_chunks: list = []
+    err_chunks: list = []
+    readers: list[threading.Thread] = []
+    if capture_output:
+        for stream, sink in ((proc.stdout, out_chunks), (proc.stderr, err_chunks)):
+            if stream is None:
+                continue
+            thread = threading.Thread(target=_drain, args=(stream, sink), daemon=True)
+            thread.start()
+            readers.append(thread)
+
+    started = time.monotonic()
+    timed_out = False
+    while proc.poll() is None:
+        if timeout is not None and time.monotonic() - started > timeout:
+            timed_out = True
+            break
+        if cancel_check is not None:
+            try:
+                cancel_check()
+            except BaseException as exc:  # re-raised verbatim after the child stops
+                stop_started = time.monotonic()
+                _emit(log, f"Cancel requested - stopping {label}")
+                hard_killed = terminate_process(proc, terminate_grace)
+                for thread in readers:
+                    thread.join(timeout=5.0)
+                _trash_partials(partial_paths, partial_reason, partial_meta)
+                elapsed = time.monotonic() - stop_started
+                suffix = " (hard kill)" if hard_killed else ""
+                _emit(log, f"Cancelled during {label} (stopped after {elapsed:.0f}s){suffix}")
+                raise exc
+        time.sleep(max(poll_interval, 0.0))
+
+    if timed_out:
+        terminate_process(proc, terminate_grace)
+        for thread in readers:
+            thread.join(timeout=5.0)
+        stdout = "".join(out_chunks) if text else b"".join(out_chunks)
+        stderr = "".join(err_chunks) if text else b"".join(err_chunks)
+        raise subprocess.TimeoutExpired(cmd, timeout, output=stdout, stderr=stderr)
+
+    proc.wait()
+    for thread in readers:
+        thread.join(timeout=5.0)
+    stdout = "".join(out_chunks) if text else b"".join(out_chunks)
+    stderr = "".join(err_chunks) if text else b"".join(err_chunks)
+    completed = subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+    if check and proc.returncode != 0:
+        raise subprocess.CalledProcessError(
+            proc.returncode, cmd, output=stdout, stderr=stderr
+        )
+    return completed
