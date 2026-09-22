@@ -93,8 +93,6 @@ COPY --chown=sermonapp:sermonapp . /app/
 COPY --from=web-builder --chown=sermonapp:sermonapp /web/dist /app/web/dist
 
 RUN mkdir -p /app/processed_sermons \
-             /app/analytics_cache \
-             /app/analytics_vector_db \
              /app/api_cache \
              /app/logs \
              /app/config_backups && \

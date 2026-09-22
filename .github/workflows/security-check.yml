@@ -110,7 +110,7 @@ jobs:
 
     - name: Check for known vulnerabilities (lockfile)
       # Audit the authoritative dev lock. See osv-scanner.toml for the
-      # documented exceptions (chromadb latest-with-no-fix).
+      # documented exceptions.
       run: |
         echo "Checking the lockfile for known vulnerabilities..."
         ./osv-scanner scan --lockfile uv.lock

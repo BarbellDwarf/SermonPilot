@@ -18,7 +18,7 @@ UI:
    OpenAI-compatible, Anthropic, xAI, Google, Groq, OpenRouter) with
    primary/fallback/validator providers.
 5. **`streamlit_app.py`** - Streamlit web UI. Page components live in
-   `ui/ui_pages/`; analytics, RAG, and job infrastructure live in `ui/`.
+   `ui/ui_pages/`; analytics and job infrastructure live in `ui/`.
 
 **Key Data Flow**: SermonAudio API → Audio Download → AI Enhancement →
 Transcription → LLM Summary/Hashtags → Upload Back → Analytics & Insights
