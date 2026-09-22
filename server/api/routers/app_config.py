@@ -73,6 +73,10 @@ SECTIONS: dict[str, dict[str, str]] = {
     "prompts": {
         "prompt_templates": "json",
     },
+    "sermonaudio": {
+        "api_key": "secret",
+        "broadcaster_id": "str",
+    },
 }
 
 
