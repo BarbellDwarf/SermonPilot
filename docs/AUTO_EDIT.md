@@ -148,6 +148,8 @@ The cut-detection prompt comes from `prompt_templates.cut_detection`, resolved l
 
 Re-edits always re-encode from the retained original (or keeper copy), never from the previous edited output, so quality never compounds. Each revision is a new row in `edit_plans`; older rows stay but are marked superseded.
 
+Applying an approved edit updates the same sermon record in place and advances its `edit_status`: `pending_review` when the review pass saves the draft, `applied` while the render runs, then `rendered` for a local render or `uploaded` once it reaches SermonAudio, and `failed` when a stage gives out. The apply reuses the retained keeper, enhanced audio, transcript and stored metadata, so the LLM runs only for an empty title, description or hashtags. The retained-artifact pointers carry into the render metadata, which keeps them reachable on the next re-edit.
+
 ## Keeper policy
 
 The keeper runs before anything else. Sources under `min_source_gb` pass through untouched. Larger sources are re-encoded at CRF 20, which lands around 20-30% of the original size for multi-GB raw recordings. Audio goes out as AAC at 160k. The output is integrity-checked against the source; a failed check keeps the original and processing continues with it.
