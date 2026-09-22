@@ -246,7 +246,11 @@ def test_delete_sermon_owner_admin_and_foreign(client, scoped_setup):
     )
     r = client.delete("/api/sermons/s-a", headers=s["a"]["headers"])
     assert r.status_code == 200, r.text
-    assert r.json() == {"deleted": True, "id": "s-a"}
+    body = r.json()
+    assert body["deleted"] is True
+    assert body["id"] == "s-a"
+    assert body["recoverable"] is True
+    assert body["trash"] == []
     assert (
         client.get("/api/sermons/s-a", headers=s["a"]["headers"]).status_code == 404
     )
@@ -258,6 +262,49 @@ def test_delete_sermon_owner_admin_and_foreign(client, scoped_setup):
     assert legacy.status_code == 404
     admin = client.delete("/api/sermons/s-null", headers=s["admin_headers"])
     assert admin.status_code == 200, admin.text
+
+
+def test_delete_sermon_moves_local_media_to_trash_and_keeps_cloud(
+    client, scoped_setup, tmp_path, monkeypatch
+):
+    from server.api.routers import sermons as sermons_router
+
+    monkeypatch.setenv("SERMONPILOT_TRASH_DIR", str(tmp_path / "trash"))
+    output_root = tmp_path / "output"
+    monkeypatch.setattr(sermons_router, "_resolve_output_root", lambda: output_root)
+    s = scoped_setup
+
+    local_dir = output_root / "Speaker A" / "No Series" / "Talk - No Series - Speaker A"
+    local_dir.mkdir(parents=True)
+    local_file = local_dir / "audio.mp3"
+    local_file.write_bytes(b"audio bytes")
+
+    conn = sqlite3.connect(get_db_path())
+    conn.execute(
+        "INSERT INTO sermon_files (sermon_id, file_type, file_path) VALUES (?, ?, ?)",
+        ("s-a", "audio", str(local_file)),
+    )
+    conn.execute(
+        "INSERT INTO sermon_files (sermon_id, file_type, file_path) VALUES (?, ?, ?)",
+        ("s-a", "original", "remote:gdrive:talks/example/service.mp4"),
+    )
+    conn.commit()
+    conn.close()
+
+    r = client.delete("/api/sermons/s-a", headers=s["a"]["headers"])
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["recoverable"] is True
+    modes = {record["mode"] for record in body["trash"]}
+    assert "local" in modes
+    assert "remote-kept" in modes
+    assert not local_file.exists()
+    moved = list((tmp_path / "trash").rglob("audio.mp3"))
+    assert len(moved) == 1
+    assert moved[0].read_bytes() == b"audio bytes"
+    kept = next(record for record in body["trash"] if record["mode"] == "remote-kept")
+    assert kept["destination"] == "remote:gdrive:talks/example/service.mp4"
+    assert kept["recoverable"] is True
 
 
 def test_sermon_transcript_and_truncation(client, scoped_setup):

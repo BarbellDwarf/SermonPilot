@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -287,12 +288,17 @@ def update_sermon(
     return get_sermon(request, sermon_id)
 
 
-def _remove_sermon_dirs(sermon_id: str, file_paths: list[str]) -> None:
-    from pathlib import Path
-
+def _resolve_output_root() -> Path:
+    base = Path(__file__).resolve().parent.parent.parent
+    root = base / "processed_sermons"
+    configured = ""
     try:
-        base = Path(__file__).resolve().parent.parent.parent
-        root = base / "processed_sermons"
+        from ui.config_utils import resolve_config
+
+        configured = str((resolve_config() or {}).get("output_directory") or "").strip()
+    except Exception as exc:
+        logger.warning("Could not resolve output_directory: %s", exc)
+    if not configured:
         try:
             import yaml
 
@@ -300,30 +306,56 @@ def _remove_sermon_dirs(sermon_id: str, file_paths: list[str]) -> None:
             if cfg_path.exists():
                 cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
                 configured = str(cfg.get("output_directory") or "").strip()
-                if configured:
-                    candidate = Path(configured)
-                    root = candidate if candidate.is_absolute() else base / candidate
         except Exception as exc:
-            logger.warning("Could not resolve output_directory for %s: %s", sermon_id, exc)
-        root = root.resolve()
-        seen: set[str] = set()
-        for raw in file_paths:
-            try:
-                parent = Path(raw).expanduser().resolve().parent
-            except (OSError, RuntimeError):
-                continue
-            if str(parent) in seen or parent == root or root not in parent.parents:
-                continue
-            seen.add(str(parent))
-            try:
-                import shutil
+            logger.warning("Could not read legacy output_directory: %s", exc)
+    if configured:
+        candidate = Path(configured)
+        root = candidate if candidate.is_absolute() else base / candidate
+    return root
 
-                shutil.rmtree(parent)
-                logger.info("Removed sermon directory %s for %s", parent, sermon_id)
-            except OSError as exc:
-                logger.warning("Could not remove sermon directory %s: %s", parent, exc)
-    except Exception as exc:
-        logger.warning("Sermon directory cleanup failed for %s: %s", sermon_id, exc)
+
+def _remove_sermon_media(sermon_id: str, file_paths: list[str]) -> list[dict]:
+    """Move a sermon's media to trash; never unlink and never touch a cloud object.
+
+    Directories are only moved when they sit under the configured output root,
+    so a file path pointing at unrelated user media is left alone. A cloud
+    reference is reported as recoverable where it already lives.
+    """
+    from src.safe_delete import is_remote_reference, keep_remote_media, trash_local
+
+    records: list[dict] = []
+    root = _resolve_output_root().resolve()
+    seen: set[str] = set()
+    for raw in file_paths or []:
+        value = str(raw or "").strip()
+        if not value:
+            continue
+        if is_remote_reference(value):
+            records.append(
+                keep_remote_media(
+                    value,
+                    reason="sermon_deleted",
+                    sermon_id=sermon_id,
+                    stage="library_delete",
+                ).to_dict()
+            )
+            continue
+        try:
+            parent = Path(value).expanduser().resolve().parent
+        except (OSError, RuntimeError):
+            continue
+        if str(parent) in seen or parent == root or root not in parent.parents:
+            continue
+        seen.add(str(parent))
+        record = trash_local(
+            parent,
+            reason="sermon_deleted",
+            sermon_id=sermon_id,
+            stage="library_delete",
+        )
+        if record is not None:
+            records.append(record.to_dict())
+    return records
 
 
 @router.delete("/{sermon_id}")
@@ -338,7 +370,7 @@ def delete_sermon(sermon_id: str, user=Depends(require_user)) -> dict:
     files = repo.get_sermon_files(sermon_id)
     if not repo.delete_sermon(sermon_id):
         raise HTTPException(status_code=500, detail="could not delete sermon")
-    _remove_sermon_dirs(
+    trash = _remove_sermon_media(
         sermon_id, [str(item.get("file_path") or "") for item in files if item.get("file_path")]
     )
-    return {"deleted": True, "id": sermon_id}
+    return {"deleted": True, "id": sermon_id, "recoverable": True, "trash": trash}
