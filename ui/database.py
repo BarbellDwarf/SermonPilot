@@ -301,6 +301,7 @@ class SermonDatabase:
                     evidence TEXT,
                     qa_judgment TEXT,
                     reasoning TEXT,
+                    detection_status TEXT DEFAULT 'ok',
                     status TEXT DEFAULT 'pending_review',
                     source_path TEXT,
                     applied_media_id TEXT,
@@ -320,6 +321,13 @@ class SermonDatabase:
             try:
                 conn.execute(
                     "ALTER TABLE edit_plans ADD COLUMN audio_offset REAL DEFAULT 0.0"
+                )
+            except Exception:
+                pass  # Column already exists
+
+            try:
+                conn.execute(
+                    "ALTER TABLE edit_plans ADD COLUMN detection_status TEXT DEFAULT 'ok'"
                 )
             except Exception:
                 pass  # Column already exists
@@ -903,8 +911,9 @@ class SermonRepository:
                 INSERT INTO edit_plans (
                     sermon_id, revision, proposed_start, proposed_end,
                     final_start, final_end, audio_offset, confidence, needs_review, evidence,
-                    qa_judgment, reasoning, status, source_path, applied_media_id, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    qa_judgment, reasoning, detection_status, status, source_path,
+                    applied_media_id, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 sermon_id,
                 next_revision,
@@ -918,6 +927,7 @@ class SermonRepository:
                 plan.get('evidence'),
                 plan.get('qa_judgment'),
                 plan.get('reasoning'),
+                plan.get('detection_status', 'ok'),
                 plan.get('status', 'pending_review'),
                 plan.get('source_path'),
                 plan.get('applied_media_id'),

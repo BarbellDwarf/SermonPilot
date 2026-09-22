@@ -1219,7 +1219,7 @@ def _verify_mux_av_sync(path: str | Path, tolerance: float = 0.2) -> list[str]:
 _EDIT_PLAN_FILE_KEYS = {
     'start', 'end', 'fade_in', 'logo_hold', 'fade_to_black',
     'confidence', 'needs_review', 'evidence', 'qa_judgment', 'reasoning',
-    'audio_offset',
+    'audio_offset', 'detection_status',
 }
 
 
@@ -1241,6 +1241,7 @@ def _load_edit_plan_from_file(path: str | Path) -> EditPlan:
         qa_judgment=str(fields.get('qa_judgment', 'cut')),
         reasoning=str(fields.get('reasoning', '')),
         audio_offset=float(fields.get('audio_offset', 0.0)),
+        detection_status=str(fields.get('detection_status', 'ok')),
     )
 
 
@@ -1335,13 +1336,14 @@ def refine_edit_plan(sermon_id: str, notes: str = "", config: dict | None = None
             'evidence': plan.evidence,
             'qa_judgment': plan.qa_judgment,
             'reasoning': plan.reasoning,
+            'detection_status': plan.detection_status,
             'status': 'pending_review',
             'source_path': source_path or None,
             'notes': combined_notes,
         })
 
         result.update({
-            'success': True,
+            'success': plan.detection_status == 'ok',
             'start': plan.start,
             'end': plan.end,
             'confidence': plan.confidence,
@@ -1349,9 +1351,15 @@ def refine_edit_plan(sermon_id: str, notes: str = "", config: dict | None = None
             'evidence': plan.evidence,
             'qa_judgment': plan.qa_judgment,
             'reasoning': plan.reasoning,
+            'detection_status': plan.detection_status,
             'notes': combined_notes,
             'duration': duration,
         })
+        if plan.detection_status != 'ok':
+            result['error'] = (
+                "Cut detection failed; no usable cut points were returned. "
+                "Set the cuts manually or re-run detection."
+            )
     except Exception as e:
         logger.exception("Edit plan refinement failed for %s", sermon_id)
         result['error'] = str(e)
@@ -2702,6 +2710,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'qa_judgment': plan.qa_judgment,
                 'reasoning': plan.reasoning,
                 'audio_offset': float(plan.audio_offset or 0.0),
+                'detection_status': plan.detection_status,
                 'status': status,
                 'source_path': source_path,
                 'notes': notes,
@@ -2747,8 +2756,21 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             confidence_threshold = _auto_edit_confidence_threshold(auto_edit_cfg)
             min_sermon_seconds = float(auto_edit_cfg.get('min_sermon_seconds', 600))
 
+            if gate_plan.detection_status != 'ok':
+                detail = gate_plan.reasoning or "no usable cut points returned"
+                logger.error(
+                    "Auto-edit cut detection failed for %s: %s",
+                    edit_source,
+                    detail,
+                )
+                console_print(
+                    "⚠️  Cut detection failed; nothing will be applied. "
+                    "The plan is saved for manual review."
+                )
+
             gate_apply = (
                 gate_mode == 'auto'
+                and gate_plan.detection_status == 'ok'
                 and not gate_plan.needs_review
                 and gate_plan.confidence >= confidence_threshold
                 and not validate_plan(gate_plan, plan_duration, min_sermon_seconds)
