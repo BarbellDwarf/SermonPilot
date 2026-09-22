@@ -405,7 +405,7 @@ export function Settings({ user }: { user: { display_name: string; role?: string
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Settings" sub={isLive ? "Each section saves to your account on save." : "Mock forms. Each section saves on its own."} />
+      <PageHeader title="Settings" sub={isLive ? "Each section saves to your account on save." : "Sections save on their own. Placeholder sections are labelled as such."} />
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-xs text-muted">{ENV_NOTE}</p>
       <div
         role="tablist"
