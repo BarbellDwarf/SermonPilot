@@ -40,11 +40,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 import tempfile
 import time
 from pathlib import Path
 from typing import Any
+
+try:  # src package import (project root on sys.path)
+    from src.safe_delete import trash_local
+except ImportError:  # src dir placed directly on sys.path
+    from safe_delete import trash_local  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +217,7 @@ def render_bounded_snippets(
         except OSError:
             continue
         if cap > 0 and size > cap:
-            path.unlink(missing_ok=True)
+            trash_local(path, reason="review_snippet_over_cap", stage="review_snippet")
             logger.info("Dropped oversized review snippet %s (%d bytes)", path, size)
             continue
         kept.append(path)
@@ -251,7 +255,12 @@ def _read_metadata(review_dir: Path) -> dict[str, Any]:
 
 
 def _remove_staged_file(path: str | None) -> None:
-    """Delete a staged cloud download only when it really lives in staging."""
+    """Move a staged cloud download to trash, only when it really lives in staging.
+
+    The staged file is a local copy of a cloud source; the cloud original stays
+    in place. Even so the local copy is moved, never unlinked, so a mistaken
+    cleanup can be recovered.
+    """
     if not path:
         return
     candidate = Path(str(path))
@@ -259,9 +268,12 @@ def _remove_staged_file(path: str | None) -> None:
         if candidate.parent != _staging_root().resolve():
             logger.info("Refusing to remove non-staged file %s", candidate)
             return
-        candidate.unlink(missing_ok=True)
-        candidate.with_name(f"{candidate.stem}_enhanced{candidate.suffix}").unlink(missing_ok=True)
-        candidate.with_name(f"{candidate.stem}_cleaned.wav").unlink(missing_ok=True)
+        for target in (
+            candidate,
+            candidate.with_name(f"{candidate.stem}_enhanced{candidate.suffix}"),
+            candidate.with_name(f"{candidate.stem}_cleaned.wav"),
+        ):
+            trash_local(target, reason="review_staged_source_released", stage="review")
     except OSError as exc:
         logger.warning("Could not remove staged review source %s: %s", candidate, exc)
 
@@ -282,12 +294,12 @@ def finalize_review_media(review_dir: Path | str, outcome: str) -> bool:
 
     if outcome == "discarded":
         _remove_staged_file(metadata.get("staged_file"))
-        shutil.rmtree(review_dir, ignore_errors=True)
+        trash_local(review_dir, reason="review_discarded", stage="review")
         logger.info("Discarded review media %s", review_dir)
         return True
 
     snippets = review_dir / "snippets"
-    shutil.rmtree(snippets, ignore_errors=True)
+    trash_local(snippets, reason="review_snippets_released", stage="review")
     _remove_staged_file(metadata.get("staged_file"))
     logger.info("Finalized review media %s (%s)", review_dir, outcome)
     return True
