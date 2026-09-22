@@ -1268,10 +1268,11 @@ def _build_apply_kwargs(
     render_only: bool,
     audio_offset: float,
     skip_audio: bool = False,
+    **extra: Any,
 ) -> dict[str, Any]:
     return _apply_core()._build_apply_kwargs(
         full_sermon, media_path, plan_file, render_only, audio_offset,
-        skip_audio=skip_audio,
+        skip_audio=skip_audio, **extra,
     )
 
 
