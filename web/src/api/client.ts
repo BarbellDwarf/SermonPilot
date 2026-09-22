@@ -377,6 +377,26 @@ export const llmConfigApi = {
     }),
 };
 
+export interface ApiConfigField {
+  source: string;
+  secret: boolean;
+  value?: unknown;
+  has_value?: boolean;
+  masked?: string;
+}
+
+export interface ApiConfigSection {
+  section: string;
+  fields: Record<string, ApiConfigField>;
+}
+
+export const configApi = {
+  section: (name: string) => send<ApiConfigSection>(`/api/config/sections/${name}`, "GET"),
+  save: (name: string, values: Record<string, unknown>) =>
+    send<ApiConfigSection>(`/api/config/sections/${name}`, "PUT", { values }),
+  sources: () => send<{ sources: Record<string, string> }>("/api/config/sources", "GET"),
+};
+
 export const meApi = {
   patch: (body: { display_name?: string; email?: string }) =>
     send<AuthUser>("/api/me", "PATCH", body),

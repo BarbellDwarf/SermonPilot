@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
-import { cloudApi, isLive, outputDirApi, type ApiCloudRemote } from "../api/client";
-import { useUserSettings } from "../api/useUserSettings";
-import { Button, Chip, Field, SectionCard, Toggle, inputCls } from "./ui";
+import { cloudApi, isLive, outputDirApi, type ApiCloudRemote, type ApiConfigField } from "../api/client";
+import { fieldSource, useConfigForm } from "../api/useConfigSection";
+import { Button, Chip, EnvSourceBadge, Field, SectionCard, Toggle, inputCls } from "./ui";
 import { FileExplorerDialog } from "./FileExplorer";
 
 interface GeneralState {
   dryRun: boolean;
   debug: boolean;
   hashtagVerification: boolean;
-  outputDir: string;
   saveOriginal: boolean;
   saveTranscript: boolean;
 }
@@ -17,61 +16,104 @@ const DEFAULTS: GeneralState = {
   dryRun: false,
   debug: false,
   hashtagVerification: true,
-  outputDir: "processed_sermons",
   saveOriginal: true,
   saveTranscript: true,
 };
 
+const PATHS = {
+  dryRun: "dry_run",
+  debug: "debug",
+  hashtagVerification: "hashtag_verification",
+  saveOriginal: "save_original_audio",
+  saveTranscript: "save_transcript",
+} as const;
+
+function overrideList(fields: Record<string, ApiConfigField>): { label: string; source: string }[] {
+  const labels: Record<string, string> = {
+    dry_run: "Dry run",
+    debug: "Debug",
+    hashtag_verification: "Hashtag verification",
+    save_original_audio: "Save original audio",
+    save_transcript: "Save transcript",
+  };
+  return Object.entries(labels)
+    .map(([path, label]) => ({ label, source: fieldSource(fields, path) }))
+    .filter((item) => item.source !== "db" && item.source !== "default");
+}
+
 export function GeneralSettingsSection({ show }: { show: (m: string) => void }) {
-  const [saved, setSaved] = useUserSettings<GeneralState>("settings.general", DEFAULTS);
-  const [cur, setCur] = useState<GeneralState>(saved);
+  const { cur, fields, dirty, set, save } = useConfigForm<GeneralState>(
+    "general",
+    DEFAULTS,
+    PATHS,
+  );
+  const [outputDir, setOutputDir] = useState("processed_sermons");
+  const [savedOutputDir, setSavedOutputDir] = useState<string | null>(null);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
   const [remotes, setRemotes] = useState<ApiCloudRemote[]>([]);
-  const remoteMatch = /^remote:([A-Za-z0-9._-]{1,64}):(.*)$/.exec(cur.outputDir.trim());
+  const remoteMatch = /^remote:([A-Za-z0-9._-]{1,64}):(.*)$/.exec(outputDir.trim());
   const [cloudRemote, setCloudRemote] = useState(remoteMatch?.[1] ?? "");
-  const dirty = isLive && JSON.stringify(cur) !== JSON.stringify(saved);
-  const set = <K extends keyof GeneralState>(k: K, v: GeneralState[K]) =>
-    setCur((c) => ({ ...c, [k]: v }));
 
   useEffect(() => {
-    if (!isLive) return;
+    if (!isLive) {
+      setSavedOutputDir("processed_sermons");
+      return;
+    }
+    void outputDirApi
+      .get()
+      .then((r) => {
+        setOutputDir(r.output_dir);
+        setSavedOutputDir(r.output_dir);
+      })
+      .catch(() => setSavedOutputDir("processed_sermons"));
     void cloudApi
       .list()
       .then((r) => setRemotes(r.items))
       .catch(() => setRemotes([]));
   }, []);
 
+  const outputDirty = savedOutputDir !== null && outputDir !== savedOutputDir;
+  const dirtyAll = (isLive ? dirty : false) || outputDirty;
+
   const chooseRemote = (name: string) => {
     setCloudRemote(name);
-    if (name) set("outputDir", `remote:${name}:`);
+    if (name) setOutputDir(`remote:${name}:`);
   };
 
   const pickCloudFolder = (path: string) => {
     const sub = path.replace(/^\/+/, "");
-    set("outputDir", `remote:${cloudRemote}:${sub}`);
+    setOutputDir(`remote:${cloudRemote}:${sub}`);
   };
 
-  const save = () => {
-    const commit = () => {
-      setSaved(cur);
-      setCur(cur);
-      show(isLive ? "General settings saved." : "General settings saved (mock).");
-    };
-    if (isLive && cur.outputDir !== saved.outputDir) {
-      void outputDirApi
-        .put(cur.outputDir)
-        .then(commit)
-        .catch((e) => show(`Output directory rejected: ${(e as Error).message}`));
-      return;
-    }
-    commit();
+  const onSave = () => {
+    const persistOutput = outputDirty
+      ? outputDirApi.put(outputDir).then(() => setSavedOutputDir(outputDir))
+      : Promise.resolve();
+    persistOutput
+      .then(() =>
+        save((c) => ({
+          [PATHS.dryRun]: c.dryRun,
+          [PATHS.debug]: c.debug,
+          [PATHS.hashtagVerification]: c.hashtagVerification,
+          [PATHS.saveOriginal]: c.saveOriginal,
+          [PATHS.saveTranscript]: c.saveTranscript,
+        })),
+      )
+      .then(() => show(isLive ? "General settings saved." : "General settings saved (mock)."))
+      .catch((e) => show(`Could not save: ${(e as Error).message}`));
   };
+
+  const overrides = overrideList(fields);
 
   return (
     <SectionCard
       title="General"
-      sub="Processing options and output settings (mock). Mirrors the legacy General tab minus SermonAudio credentials, which live under SermonAudio Accounts."
+      sub={
+        isLive
+          ? "Processing options and output settings. Saved here is what the pipeline resolves."
+          : "Processing options and output settings (mock)."
+      }
     >
       <h3 className="text-sm font-semibold">Processing options</h3>
       <div className="mt-2 grid grid-cols-1 gap-2">
@@ -95,14 +137,29 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
         />
       </div>
 
+      {overrides.length > 0 ? (
+        <div
+          className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-line bg-ink px-3 py-2 text-xs text-muted"
+          role="status"
+        >
+          <span>Overridden by the environment:</span>
+          {overrides.map((item) => (
+            <span key={item.source} className="flex items-center gap-1">
+              <span>{item.label}</span>
+              <EnvSourceBadge source={item.source} />
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       <h3 className="mt-4 text-sm font-semibold">Output settings</h3>
       <div className="mt-2 grid grid-cols-1 gap-2">
         <Field label="Output directory" htmlFor="gen-outdir" hint="Local directory or a cloud remote (remote:<name>:<folder>) for processed sermon files. This is your default for new sermons.">
           <div className="flex flex-wrap items-center gap-2">
             <input
               id="gen-outdir"
-              value={cur.outputDir}
-              onChange={(e) => set("outputDir", e.target.value)}
+              value={outputDir}
+              onChange={(e) => setOutputDir(e.target.value)}
               className={`${inputCls} min-w-0 flex-1 font-mono`}
               autoComplete="off"
             />
@@ -142,7 +199,7 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
           ) : (
             <>
               <Chip tone="ok">local folder</Chip>
-              <Chip tone="info">{cur.outputDir || "no path"}</Chip>
+              <Chip tone="info">{outputDir || "no path"}</Chip>
             </>
           )}
         </div>
@@ -161,10 +218,10 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" disabled={!dirty} onClick={save}>
+        <Button variant="primary" disabled={!dirtyAll} onClick={onSave}>
           Save
         </Button>
-        {!dirty ? (
+        {!dirtyAll ? (
           <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>
         ) : (
           <span className="text-xs text-warn" role="status">
@@ -177,7 +234,7 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
         open={browseOpen}
         title="Choose an output directory"
         pick="folder"
-        onPickFolder={(p) => set("outputDir", p)}
+        onPickFolder={(p) => setOutputDir(p)}
         onClose={() => setBrowseOpen(false)}
       />
       {cloudRemote ? (

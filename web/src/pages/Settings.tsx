@@ -21,7 +21,8 @@ import {
   inputCls,
 } from "../components/ui";
 
-const ENV_NOTE = "Environment variables only seed defaults — saved user settings always win.";
+const ENV_NOTE =
+  "Environment variables override saved settings for the variables they map to. A field shows the variable name when the environment is winning.";
 
 const TABS = [
   { id: "general", label: "General" },
@@ -330,8 +331,9 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
             {retired === null ? "state unknown (bridge unreachable)" : retired ? "console is live — Streamlit may retire" : "Streamlit still serves sermon.moraclan.us"}
           </p>
           <p className="mt-1 font-mono">
-            web_console_ready flips in live config → operator moves nginx vhost
-            sermon.moraclan.us.conf upstream 8501 → 8504 (see web/README.md).
+            web_console_ready lives in the settings database; the Streamlit System settings page
+            flips it, then the operator moves the nginx vhost sermon.moraclan.us.conf upstream
+            8501 → 8504 (see web/README.md).
           </p>
         </div>
       ) : null}

@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { isLive } from "../api/client";
-import { useUserSettings } from "../api/useUserSettings";
-import { Button, Field, SectionCard, inputCls } from "./ui";
+import { useEffect, useMemo, useState } from "react";
+import { isLive, type ApiConfigField } from "../api/client";
+import { fieldSource, fieldValue, useConfigSection } from "../api/useConfigSection";
+import { Button, EnvSourceBadge, Field, SectionCard, inputCls } from "./ui";
 
 const BACKENDS = [
+  { id: "whisper_local", label: "Local Whisper (openai-whisper)" },
   { id: "faster_whisper_local", label: "Local Whisper (Faster Whisper)" },
   { id: "whisper_openai", label: "OpenAI Whisper API" },
   { id: "whisper_openrouter", label: "OpenRouter Whisper API" },
@@ -30,78 +31,7 @@ const DEVICES = [
 ];
 const COMPUTE_TYPES = ["auto", "float16", "float32", "int8_float16", "int8"];
 
-const MANAGEABLE_MODELS = [
-  { id: "tiny", size: "75 MB" },
-  { id: "base", size: "142 MB" },
-  { id: "small", size: "244 MB" },
-  { id: "medium", size: "769 MB" },
-  { id: "large-v3-turbo", size: "809 MB" },
-  { id: "large-v3", size: "2.9 GB" },
-];
-
-function ModelManager({ show }: { show: (m: string) => void }) {
-  const [downloaded, setDownloaded] = useState<string[]>(["tiny", "base"]);
-  const [progress, setProgress] = useState<Record<string, number>>({});
-  const downloading = Object.keys(progress).length > 0 ? Object.keys(progress)[0] : null;
-
-  const startDownload = (id: string) => {
-    if (downloaded.includes(id) || progress[id] !== undefined) return;
-    setProgress({ [id]: 0 });
-    const t = window.setInterval(() => {
-      setProgress((p) => {
-        const cur = (p[id] ?? 0) + 20;
-        if (cur >= 100) {
-          window.clearInterval(t);
-          window.setTimeout(() => {
-            setProgress({});
-            setDownloaded((d) => (d.includes(id) ? d : [...d, id]));
-            show(`Model downloaded (mock): ${id}.`);
-          }, 250);
-          return { [id]: 100 };
-        }
-        return { [id]: cur };
-      });
-    }, 300);
-  };
-
-  return (
-    <div className="mt-3 rounded-md border border-line p-3" aria-label="Manage models">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold">Manage models</h3>
-        <p className="text-xs text-muted">Mock downloads. Nothing leaves the browser.</p>
-      </div>
-      <ul className="mt-2 flex flex-col gap-2">
-        {MANAGEABLE_MODELS.map((m) => {
-          const done = downloaded.includes(m.id);
-          const pct = progress[m.id];
-          const busy = downloading !== null && downloading !== m.id;
-          return (
-            <li key={m.id} className="flex flex-wrap items-center gap-2 rounded-md border border-line p-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-mono text-sm font-semibold">{m.id}</p>
-                <p className="font-mono text-xs text-muted">{m.size}{done ? " · downloaded" : ""}</p>
-                {pct !== undefined ? (
-                  <div className="mt-2 h-2 overflow-hidden rounded bg-raised" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`Downloading ${m.id}`}>
-                    <div className="h-full rounded bg-accent" style={{ width: `${pct}%` }} />
-                  </div>
-                ) : null}
-              </div>
-              {done ? (
-                <span className="text-xs text-muted" role="status">Ready</span>
-              ) : pct !== undefined ? (
-                <span className="font-mono text-xs text-muted" role="status">{pct}%</span>
-              ) : (
-                <Button onClick={() => startDownload(m.id)} disabled={busy} aria-label={`Download model ${m.id}`}>
-                  Download
-                </Button>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
+const LOCAL_BACKENDS = new Set(["whisper_local", "faster_whisper_local"]);
 
 interface TranscriptionState {
   backend: string;
@@ -115,57 +45,137 @@ interface TranscriptionState {
   openrouterModel: string;
 }
 
-const DEFAULTS: TranscriptionState = {
-  backend: "faster_whisper_local",
-  localModel: "base",
-  device: "auto",
-  computeType: "auto",
-  language: "en",
-  openaiBaseUrl: "https://api.openai.com/v1",
-  openaiModel: "whisper-1",
-  openrouterBaseUrl: "https://openrouter.ai/api/v1",
-  openrouterModel: "openai/whisper-large-v3",
+const FALLBACK: Record<string, unknown> = {
+  "transcription.backend": "faster_whisper_local",
+  "transcription.compute_type": "auto",
+  "transcription.whisper_local.model": "base",
+  "transcription.whisper_local.device": "auto",
+  "transcription.whisper_local.language": "en",
+  "transcription.faster_whisper_local.model": "base",
+  "transcription.faster_whisper_local.device": "auto",
+  "transcription.faster_whisper_local.language": "en",
+  "transcription.whisper_openai.base_url": "https://api.openai.com/v1",
+  "transcription.whisper_openai.model": "whisper-1",
+  "transcription.whisper_openrouter.base_url": "https://openrouter.ai/api/v1",
+  "transcription.whisper_openrouter.model": "openai/whisper-large-v3",
 };
 
+function localPrefix(backend: string): string {
+  return backend === "whisper_local" ? "whisper_local" : "faster_whisper_local";
+}
+
+function stateFromFields(fields: Record<string, ApiConfigField>): TranscriptionState {
+  const backend = String(fieldValue(fields, "transcription.backend", "faster_whisper_local"));
+  const prefix = localPrefix(backend);
+  return {
+    backend,
+    localModel: String(fieldValue(fields, `transcription.${prefix}.model`, "base")),
+    device: String(fieldValue(fields, `transcription.${prefix}.device`, "auto")),
+    language: String(fieldValue(fields, `transcription.${prefix}.language`, "en")),
+    computeType: String(fieldValue(fields, "transcription.compute_type", "auto")),
+    openaiBaseUrl: String(
+      fieldValue(fields, "transcription.whisper_openai.base_url", "https://api.openai.com/v1"),
+    ),
+    openaiModel: String(fieldValue(fields, "transcription.whisper_openai.model", "whisper-1")),
+    openrouterBaseUrl: String(
+      fieldValue(fields, "transcription.whisper_openrouter.base_url", "https://openrouter.ai/api/v1"),
+    ),
+    openrouterModel: String(
+      fieldValue(fields, "transcription.whisper_openrouter.model", "openai/whisper-large-v3"),
+    ),
+  };
+}
+
+function SecretStatus({ field }: { field: ApiConfigField | undefined }) {
+  if (field?.has_value) {
+    return (
+      <p className="mt-1 text-xs text-muted" role="status">
+        A key is saved{field.masked ? ` (${field.masked})` : ""}. Leave blank to keep it.
+      </p>
+    );
+  }
+  return <p className="mt-1 text-xs text-muted">No key saved yet.</p>;
+}
+
 export function TranscriptionSettingsSection({ show }: { show: (m: string) => void }) {
-  const [saved, setSaved] = useUserSettings<TranscriptionState>("settings.transcription", DEFAULTS);
+  const { fields, save } = useConfigSection("transcription", FALLBACK);
+  const saved = useMemo(() => stateFromFields(fields), [fields]);
+  const savedKey = JSON.stringify(saved);
   const [cur, setCur] = useState<TranscriptionState>(saved);
   const [openaiKey, setOpenaiKey] = useState("");
-  const [savedOpenaiKey, setSavedOpenaiKey] = useState("");
   const [openrouterKey, setOpenrouterKey] = useState("");
-  const [savedOpenrouterKey, setSavedOpenrouterKey] = useState("");
-  const dirty =
-    (isLive && JSON.stringify(cur) !== JSON.stringify(saved)) ||
-    openaiKey !== savedOpenaiKey ||
-    openrouterKey !== savedOpenrouterKey;
+
+  useEffect(() => {
+    setCur(saved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedKey]);
+
   const set = <K extends keyof TranscriptionState>(k: K, v: TranscriptionState[K]) =>
     setCur((c) => ({ ...c, [k]: v }));
+
+  const dirty =
+    JSON.stringify(cur) !== savedKey || openaiKey !== "" || openrouterKey !== "";
 
   const urlOk = (u: string) => u.trim() === "" || /^https?:\/\/.{3,}/.test(u.trim());
   const valid =
     urlOk(cur.openaiBaseUrl) && urlOk(cur.openrouterBaseUrl) && cur.language.trim() !== "";
 
+  const localKeyExpr = `transcription.${localPrefix(cur.backend)}`;
+  const isLocal = LOCAL_BACKENDS.has(cur.backend);
+
+  const onSave = () => {
+    const values: Record<string, unknown> = {
+      "transcription.backend": cur.backend,
+      "transcription.compute_type": cur.computeType,
+      "transcription.whisper_openai.base_url": cur.openaiBaseUrl,
+      "transcription.whisper_openai.model": cur.openaiModel,
+      "transcription.whisper_openrouter.base_url": cur.openrouterBaseUrl,
+      "transcription.whisper_openrouter.model": cur.openrouterModel,
+    };
+    if (isLocal) {
+      values[`${localKeyExpr}.model`] = cur.localModel;
+      values[`${localKeyExpr}.device`] = cur.device;
+      values[`${localKeyExpr}.language`] = cur.language;
+    }
+    if (openaiKey.trim()) values["transcription.whisper_openai.api_key"] = openaiKey;
+    if (openrouterKey.trim()) values["transcription.whisper_openrouter.api_key"] = openrouterKey;
+    void save(values)
+      .then(() => {
+        setOpenaiKey("");
+        setOpenrouterKey("");
+        show(isLive ? "Transcription settings saved." : "Transcription settings saved (mock).");
+      })
+      .catch((e) => show(`Could not save: ${(e as Error).message}`));
+  };
+
   return (
     <SectionCard
       title="Transcription"
-      sub="Backend and per-backend options (mock). API keys are placeholders only and never leave the browser."
+      sub={
+        isLive
+          ? "Backend and per-backend options. Saved here is what the pipeline resolves. API keys are write-only."
+          : "Backend and per-backend options (mock). API keys are placeholders only and never leave the browser."
+      }
     >
       <Field label="Transcription backend" htmlFor="tr-backend">
-        <select
-          id="tr-backend"
-          value={cur.backend}
-          onChange={(e) => set("backend", e.target.value)}
-          className={inputCls}
-        >
-          {BACKENDS.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.label}
-            </option>
-          ))}
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            id="tr-backend"
+            value={cur.backend}
+            onChange={(e) => set("backend", e.target.value)}
+            className={`${inputCls} min-w-0 flex-1`}
+          >
+            {BACKENDS.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.label}
+              </option>
+            ))}
+          </select>
+          <EnvSourceBadge source={fieldSource(fields, "transcription.backend")} />
+        </div>
       </Field>
 
-      {cur.backend === "faster_whisper_local" ? (
+      {isLocal ? (
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Local model" htmlFor="tr-model" hint="Larger is more accurate but slower.">
             <select
@@ -225,14 +235,12 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
         </div>
       ) : null}
 
-      {cur.backend === "faster_whisper_local" ? <ModelManager show={show} /> : null}
-
       {cur.backend === "whisper_openai" ? (
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field
             label="OpenAI API key"
             htmlFor="tr-oai-key"
-            hint="Placeholder only. Only the last 4 characters ever display."
+            hint="Write-only. Only the last 4 characters ever display."
           >
             <input
               id="tr-oai-key"
@@ -243,6 +251,7 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
               autoComplete="new-password"
               placeholder="••••••••"
             />
+            <SecretStatus field={fields["transcription.whisper_openai.api_key"]} />
           </Field>
           <Field label="Base URL" htmlFor="tr-oai-url" hint="OpenAI-compatible endpoint.">
             <input
@@ -271,7 +280,7 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
           <Field
             label="OpenRouter API key"
             htmlFor="tr-or-key"
-            hint="Placeholder only. Only the last 4 characters ever display."
+            hint="Write-only. Only the last 4 characters ever display."
           >
             <input
               id="tr-or-key"
@@ -282,6 +291,7 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
               autoComplete="new-password"
               placeholder="••••••••"
             />
+            <SecretStatus field={fields["transcription.whisper_openrouter.api_key"]} />
           </Field>
           <Field label="Base URL" htmlFor="tr-or-url" hint="OpenRouter API endpoint.">
             <input
@@ -305,6 +315,16 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
         </div>
       ) : null}
 
+      {isLocal ? (
+        <div className="mt-3 rounded-md border border-line p-3">
+          <h3 className="text-sm font-semibold">Model downloads</h3>
+          <p className="mt-1 text-xs text-muted">
+            Whisper weights are fetched inside the processing container on first use. This console
+            does not trigger or track downloads yet.
+          </p>
+        </div>
+      ) : null}
+
       {!valid ? (
         <p className="mt-2 text-xs text-danger" role="alert">
           Check base URLs (must start with http(s)://) and the language code.
@@ -312,18 +332,7 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
       ) : null}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button
-          variant="primary"
-          disabled={!dirty || !valid}
-          onClick={() => {
-            const next = { ...cur, openaiKey, openrouterKey };
-            setSaved(next);
-            setSavedOpenaiKey(openaiKey);
-            setSavedOpenrouterKey(openrouterKey);
-            setCur(cur);
-            show(isLive ? "Transcription settings saved." : "Transcription settings saved (mock).");
-          }}
-        >
+        <Button variant="primary" disabled={!dirty || !valid} onClick={onSave}>
           Save
         </Button>
         {!dirty ? (
