@@ -1,26 +1,6 @@
 # Findings ignored by osv-scanner with a documented reason and an expiry.
 # When ignoreUntil passes, the scan fails again and the decision is revisited.
 
-[[IgnoredVulns]]
-id = "PYSEC-2026-311"
-ignoreUntil = 2026-12-31T00:00:00Z
-reason = "chromadb 1.5.9 is the latest published release and the advisory's affected range ends at 1.5.9, so no upgrade path exists. SermonPilot uses the embedded PersistentClient only; the advisories target the chromadb HTTP server, which this app never runs. Revisit when upstream publishes a fix."
-
-[[IgnoredVulns]]
-id = "PYSEC-2026-3813"
-ignoreUntil = 2026-12-31T00:00:00Z
-reason = "Same chromadb situation: no fixed release exists, embedded client only, server mode unused."
-
-[[IgnoredVulns]]
-id = "PYSEC-2026-3814"
-ignoreUntil = 2026-12-31T00:00:00Z
-reason = "Same chromadb situation: no fixed release exists, embedded client only, server mode unused."
-
-[[IgnoredVulns]]
-id = "PYSEC-2026-3815"
-ignoreUntil = 2026-12-31T00:00:00Z
-reason = "Same chromadb situation: no fixed release exists, embedded client only, server mode unused."
-
 # Not scanned automatically: requirements-gpu.txt, requirements-cpu.txt and
 # requirements-rocm.txt pin torch with +cu126/+cpu/+rocm local versions that
 # osv-scanner cannot resolve. Those images run torch 2.14.0+cu126 (CPU/GPU)

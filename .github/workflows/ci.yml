@@ -27,7 +27,7 @@ jobs:
 
       - name: Install dependencies
         # The fast suite (-m "not heavy") imports only these packages, so the
-        # full requirements set (torch, whisper, chromadb, ...) stays out of CI.
+        # full requirements set (torch, whisper, ...) stays out of CI.
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           python -m pip install --upgrade pip
