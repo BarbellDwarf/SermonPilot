@@ -271,6 +271,7 @@ def _build_apply_kwargs(
     audio_offset: float,
     skip_audio: bool = False,
     config: dict[str, Any] | None = None,
+    existing_sermon_id: str | None = None,
 ) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "audio_file": media_path,
@@ -285,6 +286,8 @@ def _build_apply_kwargs(
         "dry_run": render_only,
         "skip_audio": skip_audio,
     }
+    if existing_sermon_id:
+        kwargs["existing_sermon_id"] = str(existing_sermon_id)
     if config:
         kwargs["config"] = config
     return kwargs
@@ -394,6 +397,7 @@ def run_library_apply(
         float(audio_offset or 0.0),
         skip_audio=already_enhanced,
         config=config,
+        existing_sermon_id=sermon_id,
     )
     if progress_callback is not None:
         apply_kwargs["progress_callback"] = progress_callback

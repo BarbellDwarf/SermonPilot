@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import secrets
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -67,7 +66,10 @@ def create_draft_sermon(request: Request, body: SermonCreateBody) -> dict:
     user = request_user(request)
     if user is None:
         raise HTTPException(status_code=401, detail="authentication required")
-    sermon_id = f"s-{secrets.token_hex(8)}"
+    from src.sermon_identity import derive_sermon_id
+
+    resolved_title = body.title.strip() or "Untitled"
+    sermon_id = derive_sermon_id(body.speaker, body.recorded_date, resolved_title)
     from server.api.accounts import get_db_path
     from ui.database import SermonDatabase, SermonRepository
 
@@ -75,7 +77,7 @@ def create_draft_sermon(request: Request, body: SermonCreateBody) -> dict:
     ok = repo.save_sermon(
         {
             "id": sermon_id,
-            "title": body.title.strip() or "Untitled",
+            "title": resolved_title,
             "speaker": body.speaker.strip(),
             "recorded_date": body.recorded_date.strip(),
             "series_title": body.series_title.strip(),
