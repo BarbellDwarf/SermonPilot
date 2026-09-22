@@ -112,3 +112,15 @@ def test_needs_review_bool_coerced_to_int(repo: SermonRepository):
     repo.save_edit_plan_revision("s1", _plan(needs_review=False))
     current = repo.get_current_edit_plan("s1")
     assert current["needs_review"] == 0
+
+
+def test_detection_status_defaults_to_ok(repo: SermonRepository):
+    _insert_sermon(repo, "s1")
+    repo.save_edit_plan_revision("s1", _plan())
+    assert repo.get_current_edit_plan("s1")["detection_status"] == "ok"
+
+
+def test_detection_status_unavailable_round_trips(repo: SermonRepository):
+    _insert_sermon(repo, "s1")
+    repo.save_edit_plan_revision("s1", _plan(detection_status="unavailable"))
+    assert repo.get_current_edit_plan("s1")["detection_status"] == "unavailable"

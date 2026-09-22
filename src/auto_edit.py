@@ -4,6 +4,7 @@ import json
 import logging
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,14 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _FFMPEG_TIMEOUT_SECONDS = 3600
+
+DETECTION_OK = "ok"
+DETECTION_UNAVAILABLE = "unavailable"
+
+_DEFAULT_MAX_TRANSCRIPT_CHARS = 24000
+_CHARS_PER_TOKEN = 3.5
+_OUTPUT_TOKEN_RESERVE = 2048
+_ELISION_MARKER = "[... middle of the transcript elided to fit the model context ...]"
 
 SYSTEM_PROMPT = (
     "You are a precise sermon video editor. You analyse timestamped sermon transcripts and "
@@ -32,6 +41,7 @@ class EditPlan:
     qa_judgment: str = "cut"
     reasoning: str = ""
     audio_offset: float = 0.0
+    detection_status: str = DETECTION_OK
 
 
 def _format_timestamp(seconds: float) -> str:
@@ -39,11 +49,54 @@ def _format_timestamp(seconds: float) -> str:
     return f"{seconds // 60:02d}:{seconds % 60:02d}"
 
 
+def _bound_transcript(lines: list[str], max_chars: int | None) -> tuple[str, bool]:
+    """Join transcript lines, eliding the middle when the character budget is exceeded.
+
+    Cut detection needs the opening (where teaching starts) and the closing
+    (where Q&A starts), so the whole-transcript shape is preserved by keeping
+    a head and a tail and replacing the middle with a marker. Returns the
+    joined text and whether anything was elided.
+    """
+    transcript = "\n".join(lines)
+    if not max_chars or max_chars <= 0 or len(transcript) <= max_chars:
+        return transcript, False
+
+    budget = max_chars - len(_ELISION_MARKER) - 2
+    if budget <= 0:
+        return transcript[:max_chars], True
+
+    head_budget = budget // 2
+    tail_budget = budget - head_budget
+
+    head: list[str] = []
+    used = 0
+    for line in lines:
+        if used + len(line) + 1 > head_budget:
+            break
+        head.append(line)
+        used += len(line) + 1
+
+    tail: list[str] = []
+    used = 0
+    for line in reversed(lines):
+        if used + len(line) + 1 > tail_budget:
+            break
+        tail.append(line)
+        used += len(line) + 1
+    tail.reverse()
+
+    if len(head) + len(tail) >= len(lines):
+        return transcript, False
+
+    return "\n".join(head + [_ELISION_MARKER] + tail), True
+
+
 def build_detection_prompt(
     segments: list[dict[str, Any]],
     qa_margin_seconds: float = 3.0,
     previous_plan: dict[str, Any] | None = None,
     rejection_notes: str | None = None,
+    max_transcript_chars: int | None = None,
 ) -> str:
     transcript_lines = []
     for segment in segments:
@@ -51,7 +104,18 @@ def build_detection_prompt(
         end = float(segment.get("end", start) or start)
         text = str(segment.get("text", "")).strip()
         transcript_lines.append(f"[{_format_timestamp(start)}-{_format_timestamp(end)}] {text}")
-    transcript = "\n".join(transcript_lines)
+    transcript, elided = _bound_transcript(transcript_lines, max_transcript_chars)
+    if elided:
+        logger.info(
+            "auto_edit: transcript bounded to %d chars (middle elided) to fit the model context",
+            max_transcript_chars,
+        )
+    elision_note = (
+        "\nNote: the transcript was shortened to fit the model context and the middle "
+        "was elided. Derive the cut points from the excerpts shown.\n"
+        if elided
+        else ""
+    )
 
     refinement = ""
     if previous_plan is not None or rejection_notes:
@@ -84,7 +148,7 @@ from the uploaded video.
 
 Transcript:
 {transcript}
-
+{elision_note}
 Follow these rules exactly:
 
 1. Identify where the sermon/class TEACHING starts. Ignore pre-service noise, music, prayer,
@@ -101,7 +165,8 @@ Follow these rules exactly:
    question is clipped. Subtract that margin from your natural cut time.
 6. Quote the decisive transcript lines in evidence. Evidence is mandatory and must be non-empty.
 {refinement}
-Respond with STRICT JSON only, in exactly this shape:
+Respond with the JSON object FIRST, before any explanation. Do not write analysis,
+commentary, or working notes. Respond with STRICT JSON only, in exactly this shape:
 {{"start": <seconds>, "end": <seconds>, "confidence": <0-1>, "evidence": "<quoted lines>",
 "qa_judgment": "cut"|"teaching_continues", "reasoning": "<short>"}}
 
@@ -109,30 +174,103 @@ Timestamps must be in seconds measured from the start of the recording, matching
 timestamps above."""
 
 
-def _strip_markdown_fences(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text
-        if text.rstrip().endswith("```"):
-            text = text.rstrip()[:-3]
-    text = text.strip()
-    first = text.find("{")
-    last = text.rfind("}")
-    if first != -1 and last > first:
-        text = text[first : last + 1]
-    return text.strip()
+def _extract_json_payload(text: str) -> dict[str, Any] | None:
+    """Return the first JSON object that carries ``start`` and ``end``.
+
+    Models commonly wrap the payload in reasoning prose or markdown fences,
+    and may emit a stray ``{`` before the real object. Scan each brace
+    position with a real decoder and keep the first object whose shape matches
+    an edit plan, so a verbose model still parses.
+    """
+    if not text:
+        return None
+    decoder = json.JSONDecoder()
+    index = 0
+    while index < len(text):
+        brace = text.find("{", index)
+        if brace == -1:
+            return None
+        try:
+            payload, end = decoder.raw_decode(text, brace)
+        except json.JSONDecodeError:
+            index = brace + 1
+            continue
+        if isinstance(payload, dict) and "start" in payload and "end" in payload:
+            return payload
+        index = max(end, brace + 1)
+    return None
 
 
-def _fallback_plan(duration: float | None, evidence: str, reasoning: str) -> EditPlan:
-    end = duration if duration is not None else 0.0
+def _preview(text: str, limit: int = 300) -> str:
+    return (text or "").strip().replace("\n", " ")[:limit]
+
+
+def _iter_providers(llm_manager: Any) -> list[Any]:
+    providers: list[Any] = []
+    primary = getattr(llm_manager, "primary_provider", None)
+    if primary is not None:
+        providers.append(primary)
+    providers.extend(getattr(llm_manager, "fallback_providers", None) or [])
+    validator = getattr(llm_manager, "validator_provider", None)
+    if validator is not None:
+        providers.append(validator)
+    providers.extend((getattr(llm_manager, "operation_providers", None) or {}).values())
+    return providers
+
+
+def _resolve_transcript_char_budget(
+    config: dict[str, Any] | None, llm_manager: Any
+) -> int:
+    """Bound the transcript to the smallest model context actually configured.
+
+    ``num_ctx`` counts prompt plus generated tokens, so reserve room for the
+    reply and convert the remainder to characters with a conservative ratio.
+    An explicit ``auto_edit.max_transcript_chars`` always wins.
+    """
+    auto_edit_config = (config or {}).get("auto_edit", {}) or {}
+    explicit = auto_edit_config.get("max_transcript_chars")
+    try:
+        if explicit is not None and int(explicit) > 0:
+            return int(explicit)
+    except (TypeError, ValueError):
+        pass
+
+    contexts = [
+        int(provider.num_ctx)
+        for provider in _iter_providers(llm_manager)
+        if isinstance(getattr(provider, "num_ctx", None), int)
+        and int(provider.num_ctx) > 0
+    ]
+    if not contexts:
+        return _DEFAULT_MAX_TRANSCRIPT_CHARS
+    usable_tokens = max(min(contexts) - _OUTPUT_TOKEN_RESERVE, 1024)
+    return max(4000, int(usable_tokens * _CHARS_PER_TOKEN))
+
+
+def _provider_summary(llm_manager: Any) -> str:
+    try:
+        info = llm_manager.get_provider_info()
+    except Exception:
+        info = {}
+    parts: list[str] = []
+    primary = info.get("primary") or {}
+    if primary:
+        parts.append(f"primary={primary.get('type')}/{primary.get('model')}")
+    for fallback in info.get("fallback") or []:
+        parts.append(f"fallback={fallback.get('type')}/{fallback.get('model')}")
+    return ", ".join(parts) or "unknown"
+
+
+def _unavailable_plan(evidence: str, reasoning: str) -> EditPlan:
     return EditPlan(
         start=0.0,
-        end=float(end),
+        end=0.0,
         confidence=0.0,
         needs_review=True,
         evidence=evidence,
         qa_judgment="cut",
         reasoning=reasoning,
+        detection_status=DETECTION_UNAVAILABLE,
     )
 
 
@@ -147,39 +285,68 @@ def detect_cut_points(
     auto_edit_config = (config or {}).get("auto_edit", {})
     qa_margin_seconds = float(auto_edit_config.get("qa_margin_seconds", 3.0))
     min_sermon_seconds = float(auto_edit_config.get("min_sermon_seconds", 600))
+    max_transcript_chars = _resolve_transcript_char_budget(config, llm_manager)
 
     if not segments:
-        logger.warning("auto_edit: no timestamped segments, returning needs_review plan")
-        plan = _fallback_plan(
-            duration,
-            "No timestamped transcript available",
+        logger.error("auto_edit: cut detection unavailable: no timestamped transcript segments")
+        return _unavailable_plan(
+            "Cut detection failed: no timestamped transcript was available.",
             "Detection requires timestamped transcript segments",
         )
-        plan_needs_review = validate_plan(plan, duration, min_sermon_seconds)
-        if plan_needs_review:
-            logger.warning(f"auto_edit fallback plan invalid: {plan_needs_review}")
-        return plan
 
     prompt = build_detection_prompt(
         segments,
         qa_margin_seconds,
         previous_plan=previous_plan,
         rejection_notes=rejection_notes,
+        max_transcript_chars=max_transcript_chars,
     )
+    prompt_chars = len(prompt)
     messages: list[dict[str, str]] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
+    provider_summary = _provider_summary(llm_manager)
 
     plan: EditPlan | None = None
     last_response = ""
+    last_error = ""
     for attempt in range(1, 4):
+        started = time.monotonic()
         try:
             response = llm_manager.chat(messages, operation="auto_edit")
-            last_response = response or ""
-            payload = json.loads(_strip_markdown_fences(response))
         except Exception as e:
-            logger.warning(f"auto_edit: attempt {attempt}/3, LLM response unusable: {e}")
+            last_error = f"{type(e).__name__}: {_preview(str(e))}"
+            logger.warning(
+                "auto_edit: attempt %d/3 call failed (provider=%s prompt_chars=%d "
+                "elapsed=%.1fs): %s",
+                attempt,
+                provider_summary,
+                prompt_chars,
+                time.monotonic() - started,
+                last_error,
+            )
+            continue
+
+        last_response = response or ""
+        logger.info(
+            "auto_edit: attempt %d/3 returned (provider=%s prompt_chars=%d "
+            "response_chars=%d elapsed=%.1fs)",
+            attempt,
+            provider_summary,
+            prompt_chars,
+            len(last_response),
+            time.monotonic() - started,
+        )
+
+        payload = _extract_json_payload(last_response)
+        if payload is None:
+            last_error = "no parsable JSON payload"
+            logger.warning(
+                "auto_edit: attempt %d/3 returned no parsable JSON (preview=%r)",
+                attempt,
+                _preview(last_response),
+            )
             continue
 
         try:
@@ -190,8 +357,9 @@ def detect_cut_points(
             qa_judgment = str(payload.get("qa_judgment", "cut"))
             reasoning = str(payload.get("reasoning", ""))
         except (KeyError, TypeError, ValueError) as e:
+            last_error = f"invalid JSON fields: {e}"
             logger.warning(
-                f"auto_edit: attempt {attempt}/3, LLM JSON missing or invalid fields: {e}"
+                "auto_edit: attempt %d/3 JSON fields invalid: %s", attempt, last_error
             )
             continue
 
@@ -204,9 +372,8 @@ def detect_cut_points(
                 "teaching_continues",
             )
         ):
-            logger.warning(
-                f"auto_edit: attempt {attempt}/3, LLM JSON failed sanity checks, retrying"
-            )
+            last_error = "JSON failed sanity checks"
+            logger.warning("auto_edit: attempt %d/3 JSON failed sanity checks", attempt)
             continue
 
         if duration is not None:
@@ -224,13 +391,21 @@ def detect_cut_points(
         break
 
     if plan is None:
-        preview = (last_response or "").strip().replace("\n", " ")[:300]
-        logger.warning(
-            "auto_edit: LLM output unusable after 3 attempts, falling back. "
-            "Last raw response preview (scrubbed, truncated): %r",
-            preview,
+        detail = last_error or "no usable JSON payload"
+        logger.error(
+            "auto_edit: cut detection UNAVAILABLE after 3 attempts (provider=%s "
+            "prompt_chars=%d last_error=%s). Last raw response preview "
+            "(scrubbed, truncated): %r",
+            provider_summary,
+            prompt_chars,
+            detail,
+            _preview(last_response),
         )
-        return _fallback_plan(duration, "Detection fallback: LLM output not usable", "")
+        return _unavailable_plan(
+            "Cut detection failed; no usable cut points were returned. "
+            "Set the cuts manually or re-run detection.",
+            detail,
+        )
 
     problems = validate_plan(plan, duration, min_sermon_seconds)
     if problems:
@@ -498,6 +673,9 @@ def render_review_snippets(
     logo_path: Path | None = None,
     fade_out_tail_seconds: float = DEFAULT_FADE_OUT_TAIL_SECONDS,
 ) -> list[Path]:
+    if getattr(plan, "detection_status", DETECTION_OK) == DETECTION_UNAVAILABLE:
+        logger.info("auto_edit: no review snippets for unavailable cut detection")
+        return []
     out_dir.mkdir(parents=True, exist_ok=True)
     snippets: list[Path] = []
 
