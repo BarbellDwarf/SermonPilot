@@ -2414,6 +2414,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             from src.review_media import (
                 render_bounded_snippets,
                 resolve_review_media_root,
+                retained_artifact_line,
                 sweep_abandoned_reviews,
                 write_review_marker,
             )
@@ -2427,14 +2428,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             )
             review_dir.mkdir(parents=True, exist_ok=True)
 
-            ext = Path(final_upload_path).suffix
-            processed_path = review_dir / build_output_filename(
-                review_title, series_title, speaker_name, recorded_date, "Processed", ext
-            )
-            if Path(final_upload_path).exists() and (
-                Path(final_upload_path).resolve() != processed_path.resolve()
-            ):
-                shutil.copy2(final_upload_path, processed_path)
+            ext = Path(final_upload_path).suffix if final_upload_path else Path(audio_path).suffix
 
             original_ext = Path(original_input_path).suffix
             original_path = review_dir / build_output_filename(
@@ -2462,6 +2456,26 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     and Path(audio_path).resolve() != keeper_path.resolve()
                 ):
                     shutil.copy2(audio_path, keeper_path)
+
+            # A post-approval render is the only thing worth copying as the
+            # processed media. The interactive pause happens before the render,
+            # so its multi-GB pre-edit mux/enhanced artifact is not duplicated
+            # into the review directory: the keeper and the transcript are what
+            # the review panel needs, and a re-edit re-derives the render.
+            render_source: Path | None = None
+            if isinstance(auto_edit_state, dict):
+                edited = auto_edit_state.get('edited_path')
+                if edited and Path(str(edited)).exists():
+                    render_source = Path(str(edited))
+            processed_path: Path | None = None
+            if render_source is not None and (
+                keeper_path is None or render_source.resolve() != keeper_path.resolve()
+            ):
+                processed_path = review_dir / build_output_filename(
+                    review_title, series_title, speaker_name, recorded_date, "Processed", ext
+                )
+                if render_source.resolve() != processed_path.resolve():
+                    shutil.copy2(render_source, processed_path)
 
             enhanced_path: Path | None = None
             if (
@@ -2513,7 +2527,6 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'description': review_description,
                 'hashtags': review_hashtags,
                 'original_file': str(original_path),
-                'processed_file': str(processed_path),
                 'is_video': input_is_video,
                 'upload_type': upload_type,
                 'transcript_length': len(transcript) if transcript else 0,
@@ -2525,6 +2538,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             }
             if keeper_path is not None:
                 metadata['keeper_file'] = str(keeper_path)
+            if processed_path is not None:
+                metadata['processed_file'] = str(processed_path)
             if enhanced_path is not None:
                 metadata['enhanced_file'] = str(enhanced_path)
             if transcript:
@@ -2541,8 +2556,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 if transcript_segments:
                     save_transcript_timestamps(review_dir, transcript_segments)
 
+            playable_media = processed_path or keeper_path or original_path
             review_file_paths: dict[str, str] = {
-                'audio': str(processed_path),
+                'audio': str(playable_media),
                 'metadata': str(get_file_path(review_dir, "metadata")),
             }
             if enhanced_path is not None:
@@ -2572,7 +2588,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     'recorded_date': recorded_date or '',
                     'event_type': event_type or '',
                     'bible_text': bible_text or '',
-                    'duration': int(_ffprobe_duration(processed_path) or 0),
+                    'duration': int(_ffprobe_duration(playable_media) or 0),
                     'status': 'draft',
                     'file_paths': review_file_paths,
                     'content': {
@@ -2585,9 +2601,33 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             except Exception as e:
                 logger.warning(f"Failed to save pending review sermon to local database: {e}")
 
+            retained_media: list[tuple[str, Path]] = [("original", original_path)]
+            if keeper_path is not None:
+                retained_media.append(("keeper", keeper_path))
+            if enhanced_path is not None:
+                retained_media.append(("enhanced", enhanced_path))
+            if processed_path is not None:
+                retained_media.append(("processed", processed_path))
+            for snippet in snippet_files:
+                retained_media.append((snippet.stem, snippet))
+            if transcript:
+                retained_media.append(("transcript", transcript_file))
+                if transcript_segments:
+                    retained_media.append(("transcript_timestamps", timestamps_file))
+            for kind, artifact in retained_media:
+                line = retained_artifact_line(kind, artifact)
+                console_print(line)
+                logger.info(line)
+            if keeper_used and (keeper_path is None or not keeper_path.exists()):
+                console_print(
+                    "Review media: keeper transcode existed but was not retained in "
+                    f"{review_dir}",
+                    level="warning",
+                )
+
             write_review_marker(review_dir, review_id)
             try:
-                sweep_abandoned_reviews(config)
+                sweep_abandoned_reviews(config, protect_dir=review_dir)
             except Exception as e:
                 logger.warning(f"Review media sweep failed: {e}")
 
