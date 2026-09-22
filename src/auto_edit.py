@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import subprocess
 import time
@@ -21,11 +22,50 @@ _CHARS_PER_TOKEN = 3.5
 _OUTPUT_TOKEN_RESERVE = 2048
 _ELISION_MARKER = "[... middle of the transcript elided to fit the model context ...]"
 
-SYSTEM_PROMPT = (
+DEFAULT_DETECTION_SYSTEM_PROMPT = (
     "You are a precise sermon video editor. You analyse timestamped sermon transcripts and "
     "return strict JSON only. Never wrap the JSON in markdown fences. Never add prose before "
     "or after the JSON."
 )
+
+SYSTEM_PROMPT = DEFAULT_DETECTION_SYSTEM_PROMPT
+
+DETECTION_TEMPLATE_NAME = "cut_detection"
+
+# Built-in detection prompt. Placeholders ({transcript}, {elision_note},
+# {refinement}, {qa_margin_seconds}) are substituted by _render_template, which
+# only touches ``{word}`` tokens, so the literal JSON braces below survive.
+DEFAULT_DETECTION_USER_PROMPT = """\
+You are analysing a timestamped transcript of a recorded sermon video.
+Identify two cut points so the publisher can trim pre-service content and post-service Q&A
+from the uploaded video.
+
+Transcript:
+{transcript}
+{elision_note}
+Follow these rules exactly:
+
+1. Identify where the sermon/class TEACHING starts. Ignore pre-service noise, music, prayer,
+   announcements, welcome, and Scripture reading unless it is the main body of the teaching.
+2. Identify the first transition into OPEN Q&A: the speaker invites questions from the audience
+   or the transcript shows an audience question-and-answer cadence (short exchanges, gestures
+   like "how do we", audience members speaking).
+3. If a question appears but is followed by SUSTAINED FURTHER TEACHING (a multi-minute block of
+   exposition), the END point goes AFTER that teaching block closes, and qa_judgment must be
+   "teaching_continues".
+4. If you cannot tell from the transcript whether teaching continues after a question, set
+   needs_review in your reasoning to true and quote the ambiguous lines in evidence.
+5. The END point must sit {qa_margin_seconds} seconds BEFORE the first Q&A utterance so no
+   question is clipped. Subtract that margin from your natural cut time.
+6. Quote the decisive transcript lines in evidence. Evidence is mandatory and must be non-empty.
+{refinement}
+Respond with the JSON object FIRST, before any explanation. Do not write analysis,
+commentary, or working notes. Respond with STRICT JSON only, in exactly this shape:
+{"start": <seconds>, "end": <seconds>, "confidence": <0-1>, "evidence": "<quoted lines>",
+"qa_judgment": "cut"|"teaching_continues", "reasoning": "<short>"}
+
+Timestamps must be in seconds measured from the start of the recording, matching the transcript
+timestamps above."""
 
 
 @dataclass
@@ -91,12 +131,48 @@ def _bound_transcript(lines: list[str], max_chars: int | None) -> tuple[str, boo
     return "\n".join(head + [_ELISION_MARKER] + tail), True
 
 
+_TEMPLATE_PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
+
+
+def _render_template(template: str, values: dict[str, Any]) -> str:
+    """Substitute ``{word}`` placeholders, leaving unknown tokens untouched.
+
+    Regex substitution (not ``str.format``) keeps literal JSON braces in the
+    detection prompt intact and never raises on an unknown placeholder.
+    """
+
+    def _replace(match: re.Match[str]) -> str:
+        key = match.group(1)
+        return str(values[key]) if key in values else match.group(0)
+
+    return _TEMPLATE_PLACEHOLDER_RE.sub(_replace, template)
+
+
+def resolve_detection_template(config: dict[str, Any] | None) -> dict[str, str] | None:
+    """Return the configured cut-detection prompt template, or None to use defaults.
+
+    A missing, disabled, or blank template falls back to the built-in prompt.
+    """
+    templates = (config or {}).get("prompt_templates") or {}
+    tmpl = templates.get(DETECTION_TEMPLATE_NAME) if isinstance(templates, dict) else None
+    if not isinstance(tmpl, dict) or not tmpl.get("enabled", True):
+        return None
+    user_text = str(tmpl.get("user") or "")
+    if not user_text.strip():
+        return None
+    return {
+        "system": str(tmpl.get("system") or "") or DEFAULT_DETECTION_SYSTEM_PROMPT,
+        "user": user_text,
+    }
+
+
 def build_detection_prompt(
     segments: list[dict[str, Any]],
     qa_margin_seconds: float = 3.0,
     previous_plan: dict[str, Any] | None = None,
     rejection_notes: str | None = None,
     max_transcript_chars: int | None = None,
+    template: dict[str, str] | None = None,
 ) -> str:
     transcript_lines = []
     for segment in segments:
@@ -142,36 +218,16 @@ Publisher notes (authoritative):
 Re-propose start and end so they satisfy the notes, and quote FRESH transcript lines
 as evidence for the new proposal. Do not reuse the previous evidence."""
 
-    return f"""You are analysing a timestamped transcript of a recorded sermon video.
-Identify two cut points so the publisher can trim pre-service content and post-service Q&A
-from the uploaded video.
-
-Transcript:
-{transcript}
-{elision_note}
-Follow these rules exactly:
-
-1. Identify where the sermon/class TEACHING starts. Ignore pre-service noise, music, prayer,
-   announcements, welcome, and Scripture reading unless it is the main body of the teaching.
-2. Identify the first transition into OPEN Q&A: the speaker invites questions from the audience
-   or the transcript shows an audience question-and-answer cadence (short exchanges, gestures
-   like "how do we", audience members speaking).
-3. If a question appears but is followed by SUSTAINED FURTHER TEACHING (a multi-minute block of
-   exposition), the END point goes AFTER that teaching block closes, and qa_judgment must be
-   "teaching_continues".
-4. If you cannot tell from the transcript whether teaching continues after a question, set
-   needs_review in your reasoning to true and quote the ambiguous lines in evidence.
-5. The END point must sit {qa_margin_seconds} seconds BEFORE the first Q&A utterance so no
-   question is clipped. Subtract that margin from your natural cut time.
-6. Quote the decisive transcript lines in evidence. Evidence is mandatory and must be non-empty.
-{refinement}
-Respond with the JSON object FIRST, before any explanation. Do not write analysis,
-commentary, or working notes. Respond with STRICT JSON only, in exactly this shape:
-{{"start": <seconds>, "end": <seconds>, "confidence": <0-1>, "evidence": "<quoted lines>",
-"qa_judgment": "cut"|"teaching_continues", "reasoning": "<short>"}}
-
-Timestamps must be in seconds measured from the start of the recording, matching the transcript
-timestamps above."""
+    user_template = (template or {}).get("user") or DEFAULT_DETECTION_USER_PROMPT
+    return _render_template(
+        user_template,
+        {
+            "transcript": transcript,
+            "elision_note": elision_note,
+            "refinement": refinement,
+            "qa_margin_seconds": qa_margin_seconds,
+        },
+    )
 
 
 def _extract_json_payload(text: str) -> dict[str, Any] | None:
@@ -294,16 +350,19 @@ def detect_cut_points(
             "Detection requires timestamped transcript segments",
         )
 
+    template = resolve_detection_template(config)
     prompt = build_detection_prompt(
         segments,
         qa_margin_seconds,
         previous_plan=previous_plan,
         rejection_notes=rejection_notes,
         max_transcript_chars=max_transcript_chars,
+        template=template,
     )
     prompt_chars = len(prompt)
+    system_prompt = (template or {}).get("system") or DEFAULT_DETECTION_SYSTEM_PROMPT
     messages: list[dict[str, str]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt},
     ]
     provider_summary = _provider_summary(llm_manager)

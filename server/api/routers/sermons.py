@@ -127,6 +127,8 @@ def _row_to_plan(sermon_id: str, row: dict, revisions_total: int) -> EditPlanOut
         end_sec=float(end) if end is not None else None,
         offset_sec=float(row.get("audio_offset") or 0.0),
         detection_status=str(row.get("detection_status") or "ok"),
+        reasoning=str(row.get("reasoning") or ""),
+        notes=str(row.get("notes") or ""),
     )
 
 

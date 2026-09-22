@@ -87,22 +87,51 @@ function CutPreview({
 
 interface ReviewPanelProps {
   plan: EditPlan;
+  history?: EditPlan[];
+  onRefresh?: () => void;
   sermonId: string;
   sermonTitle: string;
   onToast: (msg: string) => void;
 }
 
-export function ReviewPanel({ plan: initial, sermonId, sermonTitle, onToast }: ReviewPanelProps) {
+export function ReviewPanel({
+  plan: initial,
+  history: planHistory,
+  onRefresh,
+  sermonId,
+  sermonTitle,
+  onToast,
+}: ReviewPanelProps) {
   const [plan, setPlan] = useState(initial);
   const [startText, setStartText] = useState(formatCut(initial.startSec));
   const [endText, setEndText] = useState(formatCut(initial.endSec));
   const [offsetText, setOffsetText] = useState(initial.offsetSec.toFixed(1));
   const [target, setTarget] = useState<"render" | "upload">("render");
   const [applying, setApplying] = useState(false);
+  const [refining, setRefining] = useState(false);
+  const [notesText, setNotesText] = useState("");
+  const [mockNotes, setMockNotes] = useState<{ revision: number; note: string }[]>([]);
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
   const media = useSermonMedia(sermonId, isLive);
   const [seek, setSeek] = useState<{ sec: number; n: number } | null>(null);
+
+  const noteRows = useMemo(() => {
+    const fromPlan = (planHistory ?? [])
+      .filter((row) => row.notes.trim().length > 0)
+      .map((row) => ({ revision: row.revision, note: row.notes.trim() }));
+    const merged = [...fromPlan, ...mockNotes];
+    const seen = new Set<string>();
+    return merged
+      .filter((row) => {
+        const key = `${row.revision}:${row.note}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => a.revision - b.revision);
+  }, [planHistory, mockNotes]);
+
 
   const requestSeek = (sec: number) =>
     setSeek((previous) => ({ sec, n: (previous?.n ?? 0) + 1 }));
@@ -186,6 +215,79 @@ export function ReviewPanel({ plan: initial, sermonId, sermonTitle, onToast }: R
     }, 1200);
   };
 
+  const submitRefine = () => {
+    const note = notesText.trim();
+    if (!note || refining) return;
+    if (isLive) {
+      setRefining(true);
+      void writeApi
+        .refinePlan(sermonId, note)
+        .then(() => {
+          setRefining(false);
+          setNotesText("");
+          onRefresh?.();
+          onToast("Re-detection queued with your notes. The panel updates when the new proposal is ready.");
+        })
+        .catch((e) => {
+          setRefining(false);
+          const msg = (e as Error).message;
+          onToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`);
+        });
+      return;
+    }
+    setRefining(true);
+    window.setTimeout(() => {
+      setRefining(false);
+      setNotesText("");
+      const nextRevision = plan.revision + 1;
+      setMockNotes((rows) => [...rows, { revision: nextRevision, note }]);
+      setHistory((h) => [...h, `revision ${plan.revision} superseded`]);
+      setPlan((p) => ({
+        ...p,
+        status: "pending_review",
+        revision: nextRevision,
+        revisionsTotal: Math.max(p.revisionsTotal, nextRevision),
+        reasoning: `Re-ran detection against your note: "${note}".`,
+      }));
+      onToast("New cut proposal ready (mock). Previous revision superseded.");
+    }, 900);
+  };
+
+  const reDetect = () => {
+    if (refining) return;
+    if (isLive) {
+      setRefining(true);
+      void writeApi
+        .reDetectPlan(sermonId)
+        .then(() => {
+          setRefining(false);
+          onRefresh?.();
+          onToast("Re-detection queued from scratch. Earlier revisions stay in the history.");
+        })
+        .catch((e) => {
+          setRefining(false);
+          const msg = (e as Error).message;
+          onToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`);
+        });
+      return;
+    }
+    setRefining(true);
+    window.setTimeout(() => {
+      setRefining(false);
+      const nextRevision = plan.revision + 1;
+      setHistory((h) => [...h, `revision ${plan.revision} superseded (re-detect)`]);
+      setPlan((p) => ({
+        ...p,
+        status: "pending_review",
+        revision: nextRevision,
+        revisionsTotal: Math.max(p.revisionsTotal, nextRevision),
+        detectionStatus: "ok",
+        reasoning: "Detection re-run from scratch without prior notes.",
+      }));
+      onToast("Detection re-run from scratch (mock). Earlier revisions kept in history.");
+    }, 900);
+  };
+
   return (
     <section aria-labelledby="review-h" className="flex flex-col gap-3">
       <h2 id="review-h" className="text-lg font-semibold">Review auto-edit plan</h2>
@@ -197,6 +299,9 @@ export function ReviewPanel({ plan: initial, sermonId, sermonTitle, onToast }: R
           </span>
           <span className="font-mono text-xs text-muted">confidence {plan.confidence}%</span>
           <Chip tone={plan.qa === "Pass" ? "ok" : "warn"}>QA: {plan.qa}</Chip>
+          <Chip tone={detectionFailed ? "error" : "ok"}>
+            Detection: {detectionFailed ? "unavailable" : "ok"}
+          </Chip>
         </div>
         {detectionFailed ? (
           <div
@@ -210,6 +315,23 @@ export function ReviewPanel({ plan: initial, sermonId, sermonTitle, onToast }: R
         ) : (
           <p className="mt-2 max-w-prose text-sm text-muted">{plan.evidence}</p>
         )}
+        {!detectionFailed && plan.reasoning ? (
+          <p className="mt-2 max-w-prose text-sm text-muted">
+            <span className="font-semibold">Reasoning:</span> {plan.reasoning}
+          </p>
+        ) : null}
+        {noteRows.length > 0 ? (
+          <div className="mt-3 rounded-md border border-line bg-ink p-3">
+            <p className="text-sm font-semibold">Rejection notes</p>
+            <ul className="mt-1 flex flex-col gap-1">
+              {noteRows.map((row) => (
+                <li key={`${row.revision}:${row.note}`} className="text-xs text-muted">
+                  <span className="font-mono">revision {row.revision}</span>: {row.note}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {history.length > 0 ? (
           <p className="mt-1 font-mono text-xs text-muted">{history.join(" · ")}</p>
         ) : null}
@@ -283,6 +405,38 @@ export function ReviewPanel({ plan: initial, sermonId, sermonTitle, onToast }: R
             media={media}
             onSeek={requestSeek}
           />
+        </div>
+
+        <div className="mt-4 rounded-md border border-line bg-ink p-3">
+          <label htmlFor="refine-notes" className="text-sm font-semibold">
+            Reject with notes
+          </label>
+          <p className="mt-1 max-w-prose text-xs text-muted">
+            Say what the detector got wrong and it re-reads the transcript with every
+            note so far, then returns a new revision. The old proposal is superseded.
+          </p>
+          <textarea
+            id="refine-notes"
+            value={notesText}
+            onChange={(e) => setNotesText(e.target.value)}
+            rows={3}
+            disabled={refining}
+            placeholder="e.g. Keep only the second of the two back-to-back classes and drop the earlier one."
+            className="mt-2 w-full min-w-0 rounded-md border border-line bg-ink px-3 py-2 text-sm text-mist"
+          />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button
+              variant="primary"
+              onClick={submitRefine}
+              disabled={!notesText.trim() || refining}
+              aria-busy={refining}
+            >
+              {refining ? "Queueing…" : "Re-run with notes"}
+            </Button>
+            <Button onClick={reDetect} disabled={refining}>
+              Re-detect from scratch
+            </Button>
+          </div>
         </div>
 
         <fieldset className="mt-4">

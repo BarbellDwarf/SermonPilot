@@ -1729,11 +1729,13 @@ def execute_auto_edit_apply_job(job: Job) -> JobResult:
 
 
 def execute_auto_edit_refine_job(job: Job) -> JobResult:
-    """Re-run cut detection for a sermon using rejection notes as refinement.
+    """Re-run cut detection for a sermon under review.
 
     Required job parameters:
-        - sermon_id: the sermon whose current plan is being refined
-        - notes: the user's refinement instructions (may be empty)
+        - sermon_id: the sermon whose plan is being refined
+        - notes: the publisher's rejection instructions (refine only; may be empty)
+        - re_detect: when truthy, start a clean revision with no notes or
+          previous proposal instead of refining against the rejection history
         - config: full config dict
     """
     try:
@@ -1742,6 +1744,7 @@ def execute_auto_edit_refine_job(job: Job) -> JobResult:
 
         sermon_id = job.parameters.get('sermon_id')
         notes = job.parameters.get('notes') or ''
+        re_detect = bool(job.parameters.get('re_detect', False))
         config = resolve_job_config(job)
 
         if not sermon_id:
@@ -1752,11 +1755,18 @@ def execute_auto_edit_refine_job(job: Job) -> JobResult:
             )
 
         _inject_sermon_updater_config(config)
-        job.update_progress(10, "Re-running cut detection with your notes...")
+        job.update_progress(
+            10,
+            "Re-running cut detection from scratch..."
+            if re_detect
+            else "Re-running cut detection with your notes...",
+        )
 
         from sermon_updater import refine_edit_plan
 
-        result = refine_edit_plan(sermon_id, notes=notes, config=config)
+        result = refine_edit_plan(
+            sermon_id, notes=notes, config=config, re_detect=re_detect
+        )
 
         if not result.get('success'):
             err = result.get('error') or 'Re-detection failed'

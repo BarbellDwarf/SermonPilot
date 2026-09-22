@@ -1266,8 +1266,114 @@ def _auto_edit_metadata_block(auto_edit_cfg: dict[str, Any] | None) -> dict[str,
     }
 
 
-def refine_edit_plan(sermon_id: str, notes: str = "", config: dict | None = None) -> dict[str, Any]:
-    """Re-run cut detection with the user's rejection notes as refinement guidance."""
+_SYSTEM_PLAN_NOTE_PREFIXES = (
+    'Detected cut points',
+    'Plan loaded from',
+    'apply failed',
+    'values saved from Library',
+)
+
+
+def _is_user_rejection_note(note: str) -> bool:
+    """True when a plan note is a publisher instruction, not engine bookkeeping."""
+    return bool(note) and not note.startswith(_SYSTEM_PLAN_NOTE_PREFIXES)
+
+
+def _accumulated_rejection_notes(history: list[dict[str, Any]]) -> list[str]:
+    """Publisher rejection notes in revision order, deduplicated.
+
+    Only the note that produced each revision is stored, so ordering by
+    revision yields the instructions in the order they were given. Engine
+    status strings sharing the ``notes`` column are skipped.
+    """
+    ordered = sorted(history, key=lambda row: int(row.get('revision') or 0))
+    notes: list[str] = []
+    for row in ordered:
+        for part in str(row.get('notes') or '').split(';'):
+            part = part.strip()
+            if _is_user_rejection_note(part) and part not in notes:
+                notes.append(part)
+    return notes
+
+
+def _merge_rejection_notes(prior: list[str], new_note: str) -> list[str]:
+    merged = list(prior)
+    if new_note and new_note not in merged:
+        merged.append(new_note)
+    return merged
+
+
+def _review_dir_for_refine(sermon_id: str, repo: Any, config: dict[str, Any]) -> Path | None:
+    """Locate a sermon's retained review media, falling back to the output tree."""
+    try:
+        from src.review_media import review_dir_for_sermon
+
+        review_dir = review_dir_for_sermon(sermon_id, repo)
+        if review_dir is not None:
+            return review_dir
+    except Exception as exc:
+        logger.debug("Review directory lookup failed for %s: %s", sermon_id, exc)
+    output_root = Path(config.get('output_directory', 'processed_sermons'))
+    if not output_root.is_absolute():
+        output_root = Path(__file__).parent / output_root
+    return find_sermon_dir(output_root, sermon_id)
+
+
+def _rerender_review_snippets(review_dir: Path, plan: EditPlan, meta: dict[str, Any]) -> None:
+    """Re-render the review preview clips from the retained source media.
+
+    Reuses the same snippet file names the media API globs, so the panel picks
+    up the new cuts without a metadata rewrite. A failed detection removes the
+    stale clips so no preview suggests cut points that were not returned.
+    """
+    import shutil
+
+    from src.review_media import render_bounded_snippets
+
+    snippets_dir = review_dir / "snippets"
+    if plan.detection_status != 'ok':
+        shutil.rmtree(snippets_dir, ignore_errors=True)
+        return
+    if not bool(meta.get('is_video')):
+        return
+    keeper = meta.get('keeper_file')
+    source = keeper if keeper and Path(str(keeper)).exists() else meta.get('original_file')
+    if not source or not Path(str(source)).exists():
+        logger.info("Review snippet re-render skipped for %s: no retained video source", review_dir)
+        return
+    auto_edit_meta = meta.get('auto_edit') if isinstance(meta.get('auto_edit'), dict) else {}
+    logo = auto_edit_meta.get('logo_path')
+    logo_path = Path(str(logo)).expanduser() if logo else None
+    if logo_path is not None and not logo_path.exists():
+        logo_path = None
+    shutil.rmtree(snippets_dir, ignore_errors=True)
+    try:
+        render_bounded_snippets(
+            Path(str(source)),
+            plan,
+            snippets_dir,
+            logo_path=logo_path,
+            fade_out_tail_seconds=float(auto_edit_meta.get('fade_out_tail_seconds', 2.0)),
+        )
+    except Exception as exc:
+        logger.warning("Review snippet re-render failed for %s: %s", review_dir, exc)
+
+
+def refine_edit_plan(
+    sermon_id: str,
+    notes: str = "",
+    config: dict | None = None,
+    re_detect: bool = False,
+) -> dict[str, Any]:
+    """Re-run cut detection for a sermon under review.
+
+    A refine run carries the previous proposal, every prior rejection note in
+    revision order, and the new note, so the model can redefine the scope (for
+    example, keep only the second of two back-to-back classes). A re-detect run
+    starts clean: no previous proposal and no notes, while earlier revisions
+    stay in the history. Both reuse the retained review media and never re-run
+    enhancement or transcription.
+    """
     config = config or globals().get('config') or {}
     result: dict[str, Any] = {'success': False, 'sermon_id': sermon_id, 'error': None}
 
@@ -1277,40 +1383,44 @@ def refine_edit_plan(sermon_id: str, notes: str = "", config: dict | None = None
         repo = SermonRepository()
         current = repo.get_current_edit_plan(sermon_id)
         history = repo.get_edit_plan_history(sermon_id)
-        prior_notes: list[str] = []
-        for row in history:
-            for part in str(row.get('notes') or '').split(';'):
-                part = part.strip()
-                if part and part not in prior_notes:
-                    prior_notes.append(part)
-        combined_notes = '; '.join(prior_notes)
-        new_notes = str(notes or '').strip()
-        if new_notes and new_notes not in prior_notes:
-            combined_notes = f"{new_notes}; {combined_notes}".strip('; ')
 
-        output_root = Path(config.get('output_directory', 'processed_sermons'))
-        if not output_root.is_absolute():
-            output_root = Path(__file__).parent / output_root
-        sermon_dir = find_sermon_dir(output_root, sermon_id)
-        if sermon_dir is None:
+        new_note = str(notes or '').strip()
+        accumulated = _accumulated_rejection_notes(history)
+        if not re_detect:
+            accumulated = _merge_rejection_notes(accumulated, new_note)
+        else:
+            accumulated = []
+
+        review_dir = _review_dir_for_refine(sermon_id, repo, config)
+        if review_dir is None:
             result['error'] = f"Sermon directory not found for {sermon_id}"
             return result
 
-        segments = read_transcript_timestamps(sermon_dir)
+        segments = read_transcript_timestamps(review_dir)
         if not segments:
             result['error'] = "No timestamped transcript available for re-detection"
             return result
 
         source_path = str((current or {}).get('source_path') or '')
+        meta = read_metadata(review_dir) or {}
         duration = None
         if source_path and Path(source_path).exists():
             duration = _ffprobe_duration(source_path)
         if not duration:
-            meta = read_metadata(sermon_dir) or {}
             duration = float(meta.get('duration') or 0) or None
+        if not duration:
+            for candidate in (
+                meta.get('keeper_file'),
+                meta.get('processed_file'),
+                meta.get('original_file'),
+            ):
+                if candidate and Path(str(candidate)).exists():
+                    duration = _ffprobe_duration(str(candidate))
+                    if duration:
+                        break
 
         previous_plan = None
-        if current:
+        if current and not re_detect:
             previous_plan = {
                 'start': current.get('proposed_start'),
                 'end': current.get('proposed_end'),
@@ -1323,9 +1433,10 @@ def refine_edit_plan(sermon_id: str, notes: str = "", config: dict | None = None
             config,
             duration,
             previous_plan=previous_plan,
-            rejection_notes=combined_notes,
+            rejection_notes='; '.join(accumulated) or None,
         )
 
+        stored_note = '' if re_detect else new_note
         repo.save_edit_plan_revision(sermon_id, {
             'proposed_start': float(plan.start),
             'proposed_end': float(plan.end),
@@ -1339,8 +1450,10 @@ def refine_edit_plan(sermon_id: str, notes: str = "", config: dict | None = None
             'detection_status': plan.detection_status,
             'status': 'pending_review',
             'source_path': source_path or None,
-            'notes': combined_notes,
+            'notes': stored_note,
         })
+
+        _rerender_review_snippets(review_dir, plan, meta)
 
         result.update({
             'success': plan.detection_status == 'ok',
@@ -1352,7 +1465,9 @@ def refine_edit_plan(sermon_id: str, notes: str = "", config: dict | None = None
             'qa_judgment': plan.qa_judgment,
             'reasoning': plan.reasoning,
             'detection_status': plan.detection_status,
-            'notes': combined_notes,
+            'notes': stored_note,
+            'accumulated_notes': accumulated,
+            're_detect': re_detect,
             'duration': duration,
         })
         if plan.detection_status != 'ok':

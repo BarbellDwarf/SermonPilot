@@ -166,19 +166,26 @@ def test_public_base_url_unusable_key_names_db_source(
     assert "db" in message
 
 
-def test_public_base_url_unusable_key_names_file_source(
+def test_public_base_url_unusable_key_names_db_source_after_legacy_file_import(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     config_path = tmp_path / "resolution.yaml"
     config_path.write_text(
         "transcription:\n  whisper_openai:\n    api_key: abc\n", encoding="utf-8"
     )
+    monkeypatch.setenv("DATABASE_URL", str(tmp_path / "legacy-file-source.db"))
     monkeypatch.setenv("SA_UPDATER_CONFIG", str(config_path))
+
+    import ui.database as dbmod
+
+    monkeypatch.setattr(dbmod, "_db", None)
 
     with pytest.raises(TranscriptionError) as excinfo:
         tr.transcribe("audio.wav", config=_openai_config("https://api.openai.com/v1", "abc"))
 
-    assert "file" in str(excinfo.value)
+    message = str(excinfo.value)
+    assert "transcription.whisper_openai.api_key" in message
+    assert "db" in message
 
 
 def test_placeholder_and_dummy_keys_still_resolve_to_unset() -> None:

@@ -24,6 +24,7 @@ from server.api.routers.jobs import router as jobs_router
 from server.api.routers.llm_config import router as llm_config_router
 from server.api.routers.media import router as media_router
 from server.api.routers.meta import router as meta_router
+from server.api.routers.prompts import router as prompts_router
 from server.api.routers.sermons import library_router as library_router
 from server.api.routers.sermons import router as sermons_router
 from server.api.routers.status import router as status_router
@@ -115,6 +116,7 @@ def create_app() -> FastAPI:
     app.include_router(writes_router)
     app.include_router(llm_config_router)
     app.include_router(app_config_router)
+    app.include_router(prompts_router)
     app.include_router(files_router)
     app.include_router(explore_router)
     app.include_router(cloud_router)

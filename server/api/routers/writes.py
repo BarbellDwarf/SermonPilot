@@ -270,6 +270,64 @@ class ApplyBody(BaseModel):
     plan_id: str | None = None
 
 
+class RefineBody(BaseModel):
+    notes: str = ""
+
+
+def _enqueue_plan_refine(
+    *, sermon_id: str, notes: str, re_detect: bool, user_id: str | None
+) -> dict[str, str]:
+    active = _active_job_for(sermon_id)
+    if active:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "an active job already exists for this sermon",
+                "job_id": active["id"],
+            },
+        )
+    from ui.job_queue import JobType
+
+    title = f"Re-detect cuts: {sermon_id}" if re_detect else f"Refine cuts: {sermon_id}"
+    job_id = _queue().add_job(
+        JobType.AUTO_EDIT,
+        title,
+        f"Cut review re-detection for {sermon_id}",
+        parameters={
+            "refine": True,
+            "re_detect": re_detect,
+            "sermon_id": sermon_id,
+            "notes": notes,
+            "config": _resolved_job_config(),
+        },
+        user_id=user_id,
+    )
+    return {"job_id": job_id, "status": "queued"}
+
+
+@router.post("/sermons/{sermon_id}/plan/refine", status_code=202)
+def refine_plan(sermon_id: str, body: RefineBody, user=Depends(require_user)):
+    owner = _sermon_owner(sermon_id)
+    if owner is None or not visible(owner, user):
+        raise HTTPException(status_code=404, detail="sermon not found")
+    notes = (body.notes or "").strip()
+    if not notes:
+        raise HTTPException(status_code=422, detail="notes are required to refine a plan")
+    return _enqueue_plan_refine(
+        sermon_id=sermon_id, notes=notes, re_detect=False, user_id=user.get("id")
+    )
+
+
+@router.post("/sermons/{sermon_id}/plan/re-detect", status_code=202)
+def re_detect_plan(sermon_id: str, user=Depends(require_user)):
+    owner = _sermon_owner(sermon_id)
+    if owner is None or not visible(owner, user):
+        raise HTTPException(status_code=404, detail="sermon not found")
+    return _enqueue_plan_refine(
+        sermon_id=sermon_id, notes="", re_detect=True, user_id=user.get("id")
+    )
+
+
 @router.post("/sermons/{sermon_id}/plan/apply", status_code=202)
 def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(require_user)):
     owner = _sermon_owner(sermon_id)
