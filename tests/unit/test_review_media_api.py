@@ -133,3 +133,78 @@ def test_dry_run_review_makes_no_api_calls_and_keeps_media(
     ).json()
     kinds = {item["kind"]: item for item in body["items"]}
     assert kinds["source"]["available"] is True
+
+
+def test_pause_with_keeper_retains_media_and_skips_processed_copy(tmp_path, monkeypatch):
+    import json
+
+    from src import auto_edit as auto_edit_mod
+    from src import review_media
+    from src.auto_edit import EditPlan
+
+    review_root = tmp_path / "reviews"
+    monkeypatch.setenv("SERMONPILOT_REVIEW_MEDIA_DIR", str(review_root))
+    monkeypatch.setenv("SERMONPILOT_REVIEW_RETENTION_DAYS", "0")
+    monkeypatch.setenv("SERMONPILOT_REVIEW_RETENTION_MAX_GB", "0.000001")
+
+    def fake_keeper(source, out, config):
+        out = Path(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"k" * 8192)
+        return out
+
+    def fake_snippets(source, plan, out_dir, logo_path=None, fade_out_tail_seconds=2.0):
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / "snippet_start.mp4"
+        path.write_bytes(b"clip")
+        return [path]
+
+    monkeypatch.setattr(auto_edit_mod, "transcode_to_keeper", fake_keeper)
+    monkeypatch.setattr(review_media, "render_bounded_snippets", fake_snippets)
+
+    video = tmp_path / "sermon.mp4"
+    video.write_bytes(b"fake video bytes")
+    cfg = {
+        "output_directory": str(tmp_path / "output"),
+        "auto_edit": {"enabled": False, "min_sermon_seconds": 1, "qa_margin_seconds": 3.0},
+    }
+    monkeypatch.setattr(su, "config", cfg)
+    monkeypatch.setattr(
+        su,
+        "transcribe_segments",
+        Mock(return_value=[{"start": 0.0, "end": 120.0, "text": "teaching"}]),
+    )
+    monkeypatch.setattr(
+        su,
+        "detect_cut_points",
+        Mock(
+            return_value=EditPlan(
+                start=30.0, end=600.0, confidence=0.9, needs_review=False, evidence="quotes"
+            )
+        ),
+    )
+    monkeypatch.setattr(su, "create_new_sermon_api", Mock(return_value="111"))
+    monkeypatch.setattr(su, "upload_media_file", Mock(return_value=True))
+
+    result = su.process_new_sermon(
+        str(video),
+        speaker_name=f"Review Speaker {tmp_path.name}",
+        recorded_date="2024-01-01",
+        dry_run=True,
+        auto_edit_mode="interactive",
+    )
+
+    assert result["edit_plan_status"] == "pending_review"
+    review_dir = Path(result["output_dir"])
+    assert review_dir.is_dir()
+    assert any(review_dir.iterdir())
+
+    metadata = json.loads((review_dir / "metadata.json").read_text(encoding="utf-8"))
+    keeper_file = metadata.get("keeper_file")
+    assert keeper_file, metadata
+    assert Path(keeper_file).is_file()
+    assert Path(keeper_file).parent == review_dir
+
+    assert not list(review_dir.glob("*Processed*"))
+    assert "processed_file" not in metadata
