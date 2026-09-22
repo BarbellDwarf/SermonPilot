@@ -31,3 +31,11 @@ if (typeof HTMLMediaElement !== "undefined") {
     value: () => {},
   });
 }
+
+if (typeof Element !== "undefined" && typeof Element.prototype.scrollIntoView !== "function") {
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    writable: true,
+    value: () => {},
+  });
+}
