@@ -20,7 +20,10 @@ from src.sermon_identity import identity_key
 logger = logging.getLogger(__name__)
 
 _MEDIA_SUFFIXES = frozenset(
-    {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".mpa", ".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
+    {
+        ".mp3", ".wav", ".m4a", ".flac", ".ogg", ".mpa",
+        ".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi",
+    }
 )
 
 

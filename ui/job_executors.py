@@ -1015,6 +1015,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             progress_callback=progress_cb,
             auto_edit_mode=auto_edit_mode,
             cancel_check=lambda: _raise_if_job_cancelled(job),
+            existing_sermon_id=job.parameters.get("sermon_id"),
         )
         processing_temp_dir = result.get('processing_temp_dir')
 
