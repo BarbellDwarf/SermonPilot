@@ -29,60 +29,29 @@ import { CloudBrowser, MOCK_REMOTES } from "../components/CloudBrowser";
 import { Combobox } from "../components/Combobox";
 import { FileExplorerDialog } from "../components/FileExplorer";
 
-type UploadTab = "browser" | "server";
+type SourceKind = "browser" | "server" | "cloud";
 type AutoEditMode = "interactive" | "auto";
 
-function CloudFileDialog({
-  open,
-  name,
-  provider,
-  attachedDriveId,
-  onClose,
-  onUse,
-}: {
-  open: boolean;
-  name: string;
-  provider?: string;
-  attachedDriveId?: string;
-  onClose: () => void;
-  onUse: (item: ApiCloudFile) => void;
-}) {
-  const ref = useRef<HTMLDialogElement>(null);
-  const [path, setPath] = useState("");
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (open && !el.open) el.showModal();
-    if (!open && el.open) el.close();
-  }, [open]);
-  useEffect(() => {
-    if (open) setPath("");
-  }, [open, name]);
-  return (
-    <dialog
-      ref={ref}
-      aria-label={`Browse ${name}`}
-      onClose={onClose}
-      onClick={(e) => {
-        if (e.target === ref.current) onClose();
-      }}
-      className="w-[min(44rem,calc(100vw-2rem))] max-h-[85vh] overflow-y-auto rounded-xl border border-line bg-surface p-4 text-mist backdrop:bg-black/60"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">Pick a cloud file</h2>
-        <Button onClick={onClose}>Close</Button>
-      </div>
-      <CloudBrowser
-        name={name}
-        path={path}
-        onPath={setPath}
-        onUse={onUse}
-        provider={provider}
-        attachedDriveId={attachedDriveId}
-      />
-    </dialog>
-  );
+const sourceOptions: { id: SourceKind; label: string }[] = [
+  { id: "browser", label: "Upload" },
+  { id: "server", label: "Server path" },
+  { id: "cloud", label: "Cloud file" },
+];
+
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined) return "";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let n = bytes;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i += 1;
+  }
+  return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
+
+const prefilledCloudMatch = (value: string) =>
+  /^remote:([A-Za-z0-9._-]{1,64}):(.*)$/.exec(value.trim());
 
 // Static full SermonAudio eventType enum (mirrors ui.sermon_metadata.DEFAULT_EVENT_TYPES).
 const eventTypes = [
@@ -123,10 +92,13 @@ const initialMeta = { title: "", speaker: "", date: "", series: "", eventType: "
 export function NewSermon() {
   const [searchParams] = useSearchParams();
   const prefilledPath = searchParams.get("server_path") ?? "";
-  const [uploadTab, setUploadTab] = useState<UploadTab>(prefilledPath ? "server" : "browser");
+  const prefilledCloud = prefilledCloudMatch(prefilledPath);
+  const [source, setSource] = useState<SourceKind>(
+    prefilledCloud ? "cloud" : prefilledPath ? "server" : "browser",
+  );
   const [fileName, setFileName] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [serverPath, setServerPath] = useState(prefilledPath);
+  const [serverPath, setServerPath] = useState(prefilledCloud ? "" : prefilledPath);
   const [pathStat, setPathStat] = useState<ServerPathStat | null>(null);
   const [statPending, setStatPending] = useState(false);
   const [meta, setMeta] = useState(initialMeta);
@@ -146,8 +118,18 @@ export function NewSermon() {
   const [fileObj, setFileObj] = useState<File | null>(null);
   const [queuedJob, setQueuedJob] = useState<string | null>(null);
   const [cloudRemotes, setCloudRemotes] = useState<ApiCloudRemote[]>([]);
-  const [cloudPick, setCloudPick] = useState("");
-  const [cloudOpen, setCloudOpen] = useState(false);
+  const [cloudPick, setCloudPick] = useState(prefilledCloud?.[1] ?? "");
+  const [cloudBrowse, setCloudBrowse] = useState("");
+  const [cloudFile, setCloudFile] = useState<ApiCloudFile | null>(
+    prefilledCloud
+      ? {
+          name: prefilledCloud[2].split("/").filter(Boolean).pop() ?? prefilledCloud[2],
+          path: prefilledCloud[2],
+          type: "file",
+          size: null,
+        }
+      : null,
+  );
   const [localOpen, setLocalOpen] = useState(false);
   const [outputDir, setOutputDir] = useState("processed_sermons");
   const [outputSource, setOutputSource] = useState<"user" | "default">("default");
@@ -161,7 +143,7 @@ export function NewSermon() {
 
   // Live server-path stat: debounce the input, then ask the server to stat() it.
   useEffect(() => {
-    if (!isLive || uploadTab !== "server") return;
+    if (!isLive || source !== "server") return;
     const trimmed = serverPath.trim();
     if (!trimmed.startsWith("/") || trimmed.length <= 3) {
       setPathStat(null);
@@ -176,7 +158,7 @@ export function NewSermon() {
         .finally(() => setStatPending(false));
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [serverPath, uploadTab]);
+  }, [serverPath, source]);
 
   // Live ending-card options: the user's own branding uploads.
   useEffect(() => {
@@ -223,8 +205,13 @@ export function NewSermon() {
   const facetSeriesOptions = facetsQuery.data?.series ?? [];
 
   const useCloudFile = (item: ApiCloudFile) => {
-    setServerPath(`remote:${cloudPick}:${item.path}`);
-    setCloudOpen(false);
+    setCloudFile(item);
+  };
+
+  const chooseCloudRemote = (name: string) => {
+    setCloudPick(name);
+    setCloudBrowse("");
+    setCloudFile(null);
   };
 
   const useLocalFile = (path: string) => {
@@ -269,29 +256,39 @@ export function NewSermon() {
     saveOutputDir(`remote:${outputRemote}:${sub}`);
   };
 
-  const remotePath = /^remote:[A-Za-z0-9._-]{1,64}:.+$/.test(serverPath.trim());
-  const pathLooksValid =
-    (serverPath.trim().startsWith("/") && serverPath.trim().length > 3) || remotePath;
+  const pathLooksValid = serverPath.trim().startsWith("/") && serverPath.trim().length > 3;
   const serverValid = isLive
-    ? remotePath || (pathStat ? pathStat.exists && pathStat.is_file !== false : pathLooksValid)
+    ? pathStat
+      ? pathStat.exists && pathStat.is_file !== false
+      : pathLooksValid
     : pathLooksValid;
   const browserHasSource = isLive ? fileObj !== null : fileName !== null;
-  const hasSource = uploadTab === "browser" ? browserHasSource : serverValid;
+  const cloudRef = cloudPick && cloudFile ? `remote:${cloudPick}:${cloudFile.path}` : "";
+  const cloudValid = Boolean(cloudRef);
+  const hasSource =
+    source === "browser" ? browserHasSource : source === "server" ? serverValid : cloudValid;
 
   const missing = useMemo(() => {
     const list: string[] = [];
-    if (!hasSource) list.push(uploadTab === "browser" ? "source file" : "valid server path");
+    if (!hasSource)
+      list.push(
+        source === "browser"
+          ? "source file"
+          : source === "server"
+            ? "valid server path"
+            : "cloud file",
+      );
     if (!meta.title.trim()) list.push("title");
     if (!meta.speaker.trim()) list.push("speaker");
     if (!meta.date) list.push("date");
     return list;
-  }, [hasSource, uploadTab, meta.title, meta.speaker, meta.date]);
+  }, [hasSource, source, meta.title, meta.speaker, meta.date]);
 
   const valid = missing.length === 0;
   const helper = valid
     ? isLive
       ? "Ready to queue. The pipeline run appears under Jobs."
-      : "Ready to queue. This mock run appears under Jobs."
+      : "Source and details are complete. Demo mode sends nothing."
     : `Missing: ${missing.join(", ")}.`;
 
   const pickMockFile = () => setFileName("sample-sermon-upload.mp3");
@@ -307,6 +304,8 @@ export function NewSermon() {
     setQueuedJob(null);
     setServerPath("");
     setPathStat(null);
+    setCloudFile(null);
+    setCloudBrowse("");
     setMeta(initialMeta);
     setEnhance(true);
     setTranscribe(true);
@@ -324,6 +323,8 @@ export function NewSermon() {
     setQueuedJob(jobId);
     setServerPath("");
     setPathStat(null);
+    setCloudFile(null);
+    setCloudBrowse("");
     setMeta(initialMeta);
     setEnhance(true);
     setTranscribe(true);
@@ -357,16 +358,11 @@ export function NewSermon() {
   const start = () => {
     if (!valid || starting) return;
     if (!isLive) {
-      setStarting(true);
-      window.setTimeout(() => {
-        setStarting(false);
-        setToast("Processing queued (mock). Track it under Jobs.");
-        window.setTimeout(() => setToast(null), 3000);
-      }, 1200);
+      showToast("Demo mode: nothing was sent.");
       return;
     }
     setStarting(true);
-    if (uploadTab === "browser" && fileObj) {
+    if (source === "browser" && fileObj) {
       const form = new FormData();
       form.append("file", fileObj);
       const payload = commonPayload();
@@ -387,12 +383,13 @@ export function NewSermon() {
         });
       return;
     }
+    const containerPath = source === "cloud" ? cloudRef : serverPath.trim();
     void serverPathApi
-      .create({ container_path: serverPath.trim(), ...commonPayload() })
+      .create({ container_path: containerPath, ...commonPayload() })
       .then((r) => {
         setStarting(false);
         clearFormKeepJob(r.job_id);
-        showToast(`Server file queued as job ${r.job_id}.`);
+        showToast(`${source === "cloud" ? "Cloud file" : "Server file"} queued as job ${r.job_id}.`);
       })
       .catch((e) => {
         setStarting(false);
@@ -420,21 +417,18 @@ export function NewSermon() {
   };
 
   const onTabsKey = (e: React.KeyboardEvent) => {
-    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
-    setUploadTab((t) => {
-      if (e.key === "ArrowRight") return t === "browser" ? "server" : "browser";
-      return t === "server" ? "browser" : "server";
-    });
+    if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(e.key)) return;
+    e.preventDefault();
+    const index = sourceOptions.findIndex((o) => o.id === source);
+    let next = index;
+    if (e.key === "ArrowRight") next = (index + 1) % sourceOptions.length;
+    else if (e.key === "ArrowLeft") next = (index - 1 + sourceOptions.length) % sourceOptions.length;
+    else if (e.key === "Home") next = 0;
+    else next = sourceOptions.length - 1;
+    setSource(sourceOptions[next].id);
   };
 
   const serverChips = isLive ? (
-    remotePath ? (
-      <>
-        <Chip tone="ok">cloud reference</Chip>
-        <Chip tone="info">remote</Chip>
-        <Chip tone="neutral">validated on queue</Chip>
-      </>
-    ) : (
     <>
       <Chip tone={pathStat?.exists ? "ok" : "neutral"}>
         {statPending ? "checking…" : pathStat ? (pathStat.exists ? "exists" : "not found") : "no check yet"}
@@ -446,7 +440,6 @@ export function NewSermon() {
         {pathStat?.exists && pathStat.ext ? `${pathStat.ext} · ${pathStat.kind}` : "type —"}
       </Chip>
     </>
-    )
   ) : (
     <>
       <Chip tone={serverValid ? "ok" : "neutral"}>{serverValid ? "exists" : "no check yet"}</Chip>
@@ -455,12 +448,22 @@ export function NewSermon() {
     </>
   );
 
+  const sourceSummary = (() => {
+    if (source === "browser") {
+      const name = isLive ? fileObj?.name : fileName;
+      const size = isLive ? fileObj?.size : undefined;
+      return name ? `upload:${name}${size != null ? ` (${formatBytes(size)})` : ""}` : "upload:no file";
+    }
+    if (source === "server") {
+      if (!serverValid) return "server:no path";
+      return `server:${serverPath.trim()}${pathStat?.size_human ? ` (${pathStat.size_human})` : ""}`;
+    }
+    if (!cloudRef) return "cloud:no file";
+    return `cloud:${cloudRef}${cloudFile?.size ? ` (${formatBytes(cloudFile.size)})` : ""}`;
+  })();
+
   const summaryBits = [
-    uploadTab === "browser"
-      ? (isLive ? (fileObj?.name ?? "no file") : (fileName ?? "no file"))
-      : serverValid
-        ? serverPath.trim()
-        : "no path",
+    sourceSummary,
     meta.title.trim() || "untitled",
     meta.speaker.trim() || "no speaker",
     meta.date || "no date",
@@ -479,7 +482,7 @@ export function NewSermon() {
         sub={
           isLive
             ? "Upload, describe, then queue the pipeline on the server."
-            : "Upload, describe, then queue the pipeline. Mock only, nothing is sent."
+            : "Upload, describe, then queue the pipeline. Demo mode sends nothing."
         }
         actions={
           <Button variant="ghost" onClick={() => setConfirmReset(true)}>
@@ -488,27 +491,29 @@ export function NewSermon() {
         }
       />
 
-      <SectionCard n={1} title="Upload" sub="Pick one source. Browser upload or a path already on the server.">
+      <SectionCard
+        n={1}
+        title="Source"
+        sub="Pick one source: upload a file, use a path on the server, or choose a file from cloud storage."
+      >
         <div
           role="tablist"
-          aria-label="Upload source"
+          aria-label="Source kind"
           onKeyDown={onTabsKey}
           className="flex gap-1 overflow-x-auto rounded-lg border border-line bg-ink p-1"
         >
-          {(
-            [
-              { id: "browser", label: "Browser Upload" },
-              { id: "server", label: "Server Path" },
-            ] as { id: UploadTab; label: string }[]
-          ).map((t) => {
-            const selected = uploadTab === t.id;
+          {sourceOptions.map((t) => {
+            const selected = source === t.id;
             return (
               <button
                 key={t.id}
+                id={`source-tab-${t.id}`}
                 type="button"
                 role="tab"
                 aria-selected={selected}
-                onClick={() => setUploadTab(t.id)}
+                aria-controls={`source-panel-${t.id}`}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => setSource(t.id)}
                 className={`flex min-h-[44px] flex-1 items-center justify-center whitespace-nowrap rounded-md px-3 text-sm font-semibold transition-colors ${
                   selected ? "bg-raised text-mist" : "text-muted hover:bg-raised hover:text-mist"
                 }`}
@@ -519,8 +524,13 @@ export function NewSermon() {
           })}
         </div>
 
-        {uploadTab === "browser" ? (
-          <div className="mt-3">
+        {source === "browser" ? (
+          <div
+            id="source-panel-browser"
+            role="tabpanel"
+            aria-labelledby="source-tab-browser"
+            className="mt-3"
+          >
             <input
               ref={fileInput}
               type="file"
@@ -601,18 +611,34 @@ export function NewSermon() {
               ))}
             </div>
             <p className="mt-2 text-xs text-muted">
-              Large files (over ~500 MB) may take a while on slow connections. Prefer Server Path for those.
+              Large files (over ~500 MB) may take a while on slow connections. Prefer Server path or Cloud file for those.
             </p>
+            {!browserHasSource ? (
+              <p role="alert" className="mt-2 text-xs text-danger">
+                Choose a file to upload.
+              </p>
+            ) : null}
           </div>
-        ) : (
-          <div className="mt-3 flex flex-col gap-3">
-            <Field label="Server path" htmlFor="server-path" hint="Absolute path on the processing machine, or a cloud reference remote:<name>:<path> from Settings > Cloud Mounts.">
+        ) : null}
+
+        {source === "server" ? (
+          <div
+            id="source-panel-server"
+            role="tabpanel"
+            aria-labelledby="source-tab-server"
+            className="mt-3 flex flex-col gap-3"
+          >
+            <Field
+              label="Server path"
+              htmlFor="server-path"
+              hint="Absolute path on the processing machine."
+            >
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   id="server-path"
                   value={serverPath}
                   onChange={(e) => setServerPath(e.target.value)}
-                  placeholder="/media/sample-sermon.mp3 or remote:drive:sermons/sample.mp3"
+                  placeholder="/media/sample-sermon.mp3"
                   inputMode="text"
                   autoComplete="off"
                   className={`${inputCls} min-w-0 flex-1`}
@@ -620,64 +646,86 @@ export function NewSermon() {
                 <Button variant="secondary" onClick={() => setLocalOpen(true)}>
                   Browse files
                 </Button>
-                {remotePath ? (
-                  <span
-                    className="inline-flex max-w-full items-center gap-1 rounded-full border border-info px-2.5 py-1 text-xs text-info"
-                    title={serverPath.trim()}
-                  >
-                    Cloud file:
-                    <span className="truncate font-mono">{serverPath.trim()}</span>
-                  </span>
-                ) : null}
               </div>
             </Field>
             <div className="flex flex-wrap gap-2" aria-live="polite" aria-label="Path validation">
               {serverChips}
             </div>
-
-            <div className="rounded-md border border-line bg-ink p-3">
-              <p className="text-xs font-semibold text-muted">From cloud</p>
-              <div className="mt-2 flex flex-wrap items-end gap-2">
-                <div className="min-w-[12rem] flex-1">
-                  <label htmlFor="cloud-pick" className="sr-only">
-                    Cloud remote
-                  </label>
-                  <select
-                    id="cloud-pick"
-                    value={cloudPick}
-                    onChange={(e) => setCloudPick(e.target.value)}
-                    className={inputCls}
-                  >
-                    <option value="">Choose a remote…</option>
-                    {cloudRemotes.map((r) => (
-                      <option key={r.name} value={r.name}>
-                        {r.name} · {r.provider}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <Button
-                  variant="secondary"
-                  onClick={() => setCloudOpen(true)}
-                  disabled={!cloudPick}
-                >
-                  Browse cloud
-                </Button>
-              </div>
-              {cloudRemotes.length === 0 ? (
-                <p className="mt-1 text-xs text-muted">
-                  No cloud remotes yet. Connect one in Settings › Cloud Mounts.
-                </p>
-              ) : null}
-            </div>
-
+            {!serverValid ? (
+              <p role="alert" className="text-xs text-danger">
+                Enter an absolute path that exists on the server.
+              </p>
+            ) : null}
             {isLive ? (
               <p className="text-xs text-muted">
-                The server checks the path exists, then queues the real pipeline against it. Local paths are read in place; cloud sources are fetched into the server's work area for processing, then removed.
+                The server checks the path exists, then queues the real pipeline against it. Local paths are read in place.
               </p>
             ) : null}
           </div>
-        )}
+        ) : null}
+
+        {source === "cloud" ? (
+          <div
+            id="source-panel-cloud"
+            role="tabpanel"
+            aria-labelledby="source-tab-cloud"
+            className="mt-3 flex flex-col gap-3"
+          >
+            <Field
+              label="Cloud remote"
+              htmlFor="cloud-remote"
+              hint="Connect or manage remotes in Settings › Cloud Mounts."
+            >
+              <select
+                id="cloud-remote"
+                value={cloudPick}
+                onChange={(e) => chooseCloudRemote(e.target.value)}
+                className={inputCls}
+              >
+                <option value="">Choose a remote…</option>
+                {cloudRemotes.map((r) => (
+                  <option key={r.name} value={r.name}>
+                    {r.name} · {r.provider}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {cloudRemotes.length === 0 ? (
+              <p className="text-xs text-muted">
+                No cloud remotes yet. Connect one in Settings › Cloud Mounts.
+              </p>
+            ) : null}
+            {cloudPick ? (
+              <CloudBrowser
+                name={cloudPick}
+                path={cloudBrowse}
+                onPath={setCloudBrowse}
+                onUse={useCloudFile}
+                provider={cloudRemotes.find((r) => r.name === cloudPick)?.provider}
+                attachedDriveId={cloudRemotes.find((r) => r.name === cloudPick)?.team_drive}
+              />
+            ) : (
+              <p className="text-xs text-muted">Choose a remote to browse its files.</p>
+            )}
+            {cloudRef ? (
+              <p className="flex flex-wrap items-center gap-2 text-xs text-info" title={cloudRef}>
+                <Chip tone="ok">cloud file</Chip>
+                <span className="truncate font-mono">{cloudRef}</span>
+                {cloudFile?.size ? (
+                  <span className="text-muted">{formatBytes(cloudFile.size)}</span>
+                ) : null}
+              </p>
+            ) : null}
+            {!cloudValid ? (
+              <p role="alert" className="text-xs text-danger">
+                Pick a file with “Use this file”.
+              </p>
+            ) : null}
+            <p className="text-xs text-muted">
+              The selected file is fetched into the server's work area for processing, then removed.
+            </p>
+          </div>
+        ) : null}
       </SectionCard>
 
       <details className="rounded-md border border-line bg-ink p-3">
@@ -960,17 +1008,6 @@ export function NewSermon() {
           </p>
         </div>
       </div>
-
-      {cloudPick ? (
-        <CloudFileDialog
-          open={cloudOpen}
-          name={cloudPick}
-          provider={cloudRemotes.find((r) => r.name === cloudPick)?.provider}
-          attachedDriveId={cloudRemotes.find((r) => r.name === cloudPick)?.team_drive}
-          onClose={() => setCloudOpen(false)}
-          onUse={useCloudFile}
-        />
-      ) : null}
 
       <FileExplorerDialog
         open={localOpen}
