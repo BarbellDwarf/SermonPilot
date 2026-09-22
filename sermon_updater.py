@@ -1323,16 +1323,20 @@ def _rerender_review_snippets(review_dir: Path, plan: EditPlan, meta: dict[str, 
     """Re-render the review preview clips from the retained source media.
 
     Reuses the same snippet file names the media API globs, so the panel picks
-    up the new cuts without a metadata rewrite. A failed detection removes the
-    stale clips so no preview suggests cut points that were not returned.
+    up the new cuts without a metadata rewrite. A failed detection releases the
+    stale clips to trash so no preview suggests cut points that were not
+    returned.
     """
-    import shutil
-
     from src.review_media import render_bounded_snippets
+
+    try:
+        from src.safe_delete import trash_local
+    except ImportError:
+        from safe_delete import trash_local  # type: ignore[no-redef]
 
     snippets_dir = review_dir / "snippets"
     if plan.detection_status != 'ok':
-        shutil.rmtree(snippets_dir, ignore_errors=True)
+        trash_local(snippets_dir, reason="review_snippets_rerender", stage="review")
         return
     if not bool(meta.get('is_video')):
         return
@@ -1346,7 +1350,7 @@ def _rerender_review_snippets(review_dir: Path, plan: EditPlan, meta: dict[str, 
     logo_path = Path(str(logo)).expanduser() if logo else None
     if logo_path is not None and not logo_path.exists():
         logo_path = None
-    shutil.rmtree(snippets_dir, ignore_errors=True)
+    trash_local(snippets_dir, reason="review_snippets_rerender", stage="review")
     try:
         render_bounded_snippets(
             Path(str(source)),
