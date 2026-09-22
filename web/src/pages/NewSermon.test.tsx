@@ -45,12 +45,12 @@ vi.mock("../api/client", () => ({
   filesApi: { list: vi.fn(), explore: mocks.exploreFiles, downloadUrl: vi.fn(() => "") },
 }));
 
-function renderPage() {
+function renderPage(entry = "/new") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter
-        initialEntries={["/new"]}
+        initialEntries={[entry]}
         future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <NewSermon />
@@ -240,5 +240,23 @@ describe("NewSermon source options", () => {
 
     await user.click(screen.getByRole("tab", { name: "Upload" }));
     expect(submitButton().disabled).toBe(true);
+  });
+
+  it("starts on the cloud option when a remote reference is prefilled", async () => {
+    const user = userEvent.setup();
+    const entry = `/new?server_path=${encodeURIComponent("remote:sample-remote:sermons/sample.mp3")}`;
+    renderPage(entry);
+
+    expect(screen.getByRole("tab", { name: "Cloud file" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    await fillMetadata(user);
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    await user.click(submitButton());
+
+    await waitFor(() => expect(mocks.createServerPath).toHaveBeenCalledTimes(1));
+    expect(mocks.createServerPath.mock.calls[0][0]).toMatchObject({
+      container_path: "remote:sample-remote:sermons/sample.mp3",
+    });
   });
 });
