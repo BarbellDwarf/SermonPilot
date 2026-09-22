@@ -230,8 +230,8 @@ python src/description_validator.py --local-sermons --export-csv monthly_audit.c
 
 **"Validator LLM not configured"**
 - The standalone `src/description_validator.py` reads a YAML file directly
-  (`--config`, default `config.yaml`); point it at a YAML file that contains
-  your `llm` block (export one from the Settings page)
+  (`--config`); point it at a YAML export from the Settings page that contains
+  your `llm` block
 - The `sermon_updater.py` validation flags use the resolved settings store;
   enable `llm.validator` there
 - Verify the validator model is available (run `ollama list` for Ollama models)
