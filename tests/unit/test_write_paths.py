@@ -298,3 +298,117 @@ def test_sermon_transcript_and_truncation(client, scoped_setup):
         "/api/sermons/nope/transcript", headers=s["admin_headers"]
     )
     assert missing.status_code == 404
+
+
+def test_refine_queues_auto_edit_job_with_notes(client, scoped_setup, monkeypatch):
+    s = scoped_setup
+    import ui.database as dbmod
+
+    monkeypatch.setattr(dbmod, "_db", None)
+    monkeypatch.setenv("DATABASE_URL", get_db_path())
+    monkeypatch.setattr("ui.job_queue.JobQueue._resources_available", lambda self: False)
+
+    r = client.post(
+        "/api/sermons/s-a/plan/refine",
+        json={"notes": "Only the second class"},
+        headers=s["a"]["headers"],
+    )
+    assert r.status_code == 202, r.text
+    job_id = r.json()["job_id"]
+
+    conn = sqlite3.connect(get_db_path())
+    row = conn.execute(
+        "SELECT type, status, user_id, parameters FROM background_jobs WHERE id = ?",
+        (job_id,),
+    ).fetchone()
+    conn.close()
+    assert row is not None
+    assert row[0] == "auto_edit"
+    assert row[1] in ("queued", "running")
+    assert row[2] == s["a"]["id"]
+    params = json.loads(row[3])
+    assert params["refine"] is True
+    assert params["re_detect"] is False
+    assert params["notes"] == "Only the second class"
+    assert params["sermon_id"] == "s-a"
+    assert params["config"]
+
+    duplicate = client.post(
+        "/api/sermons/s-a/plan/refine",
+        json={"notes": "again"},
+        headers=s["a"]["headers"],
+    )
+    assert duplicate.status_code == 409
+
+    foreign = client.post(
+        "/api/sermons/s-a/plan/refine",
+        json={"notes": "notes"},
+        headers=s["b"]["headers"],
+    )
+    assert foreign.status_code == 404
+
+
+def test_refine_requires_notes(client, scoped_setup):
+    s = scoped_setup
+    assert (
+        client.post(
+            "/api/sermons/s-a/plan/refine",
+            json={"notes": "   "},
+            headers=s["a"]["headers"],
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/api/sermons/s-a/plan/refine",
+            json={},
+            headers=s["a"]["headers"],
+        ).status_code
+        == 422
+    )
+
+
+def test_re_detect_queues_fresh_job_without_notes(client, scoped_setup, monkeypatch):
+    s = scoped_setup
+    import ui.database as dbmod
+
+    monkeypatch.setattr(dbmod, "_db", None)
+    monkeypatch.setenv("DATABASE_URL", get_db_path())
+    monkeypatch.setattr("ui.job_queue.JobQueue._resources_available", lambda self: False)
+
+    r = client.post("/api/sermons/s-a/plan/re-detect", headers=s["a"]["headers"])
+    assert r.status_code == 202, r.text
+    job_id = r.json()["job_id"]
+
+    conn = sqlite3.connect(get_db_path())
+    row = conn.execute(
+        "SELECT type, parameters FROM background_jobs WHERE id = ?", (job_id,)
+    ).fetchone()
+    conn.close()
+    assert row[0] == "auto_edit"
+    params = json.loads(row[1])
+    assert params["refine"] is True
+    assert params["re_detect"] is True
+    assert params["notes"] == ""
+
+    foreign = client.post("/api/sermons/s-b/plan/re-detect", headers=s["a"]["headers"])
+    assert foreign.status_code == 404
+
+
+def test_plan_endpoint_carries_reasoning_and_notes(client, scoped_setup):
+    s = scoped_setup
+    conn = sqlite3.connect(get_db_path())
+    conn.execute(
+        "INSERT INTO edit_plans (sermon_id, revision, status, proposed_start,"
+        " proposed_end, confidence, reasoning, notes)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("s-a", 2, "pending_review", 10.0, 20.0, 0.8, "second class only", "Keep only the second"),
+    )
+    conn.commit()
+    conn.close()
+
+    got = client.get("/api/sermons/s-a/plan", headers=s["a"]["headers"])
+    assert got.status_code == 200, got.text
+    plan = got.json()["plan"]
+    assert plan["reasoning"] == "second class only"
+    assert plan["notes"] == "Keep only the second"
