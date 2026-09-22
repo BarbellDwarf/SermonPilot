@@ -7,6 +7,12 @@ export interface MediaMarker {
   label: string;
 }
 
+export interface PlayWindow {
+  startSec: number;
+  endSec: number;
+  nonce: number;
+}
+
 interface MediaPlayerProps {
   sermonId: string;
   kind: string;
@@ -16,6 +22,8 @@ interface MediaPlayerProps {
   markers?: MediaMarker[];
   seekToSec?: number | null;
   seekNonce?: number;
+  playWindow?: PlayWindow | null;
+  onTime?: (sec: number) => void;
   label?: string;
   className?: string;
 }
@@ -35,6 +43,8 @@ export function MediaPlayer({
   markers = [],
   seekToSec = null,
   seekNonce = 0,
+  playWindow = null,
+  onTime,
   label,
   className = "",
 }: MediaPlayerProps) {
@@ -55,6 +65,34 @@ export function MediaPlayer({
   useEffect(() => {
     applySeek(mediaRef.current);
   }, [seekToSec, seekNonce]);
+
+  useEffect(() => {
+    const element = mediaRef.current;
+    if (!playWindow || !element) return;
+    try {
+      element.currentTime = Math.max(0, playWindow.startSec);
+    } catch {
+      // metadata not loaded yet; playback starts from the beginning
+    }
+    const stopAt = () => {
+      if (element.currentTime >= playWindow.endSec) {
+        try {
+          element.pause();
+        } catch {
+          // pause is best-effort
+        }
+        element.removeEventListener("timeupdate", stopAt);
+      }
+    };
+    element.addEventListener("timeupdate", stopAt);
+    try {
+      const result = element.play();
+      if (result && typeof result.catch === "function") void result.catch(() => {});
+    } catch {
+      // autoplay may be blocked; the user can press play
+    }
+    return () => element.removeEventListener("timeupdate", stopAt);
+  }, [playWindow?.nonce]);
 
   if (!available || failed) {
     return (
@@ -96,7 +134,10 @@ export function MediaPlayer({
               setDuration(event.currentTarget.duration || 0);
               applySeek(event.currentTarget);
             }}
-            onTimeUpdate={(event) => setCurrent(event.currentTarget.currentTime)}
+            onTimeUpdate={(event) => {
+              setCurrent(event.currentTarget.currentTime);
+              onTime?.(event.currentTarget.currentTime);
+            }}
           />
         ) : (
           <audio
@@ -112,7 +153,10 @@ export function MediaPlayer({
               setDuration(event.currentTarget.duration || 0);
               applySeek(event.currentTarget);
             }}
-            onTimeUpdate={(event) => setCurrent(event.currentTarget.currentTime)}
+            onTimeUpdate={(event) => {
+              setCurrent(event.currentTarget.currentTime);
+              onTime?.(event.currentTarget.currentTime);
+            }}
           />
         )}
         {video

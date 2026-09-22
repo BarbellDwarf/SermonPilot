@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MediaPlayer } from "./MediaPlayer";
 
 describe("MediaPlayer", () => {
@@ -70,5 +70,45 @@ describe("MediaPlayer", () => {
     );
     expect(screen.getByRole("button", { name: /Start · 00:12\.5/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /End · 01:35\.0/ })).toBeTruthy();
+  });
+
+  it("seeks to the start of a play window and pauses at the end", () => {
+    const { rerender } = render(
+      <MediaPlayer sermonId="s-1" kind="processed" contentType="video/mp4" available />,
+    );
+    const element = document.querySelector("video") as HTMLVideoElement;
+    const pauseSpy = vi.spyOn(element, "pause");
+
+    rerender(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        contentType="video/mp4"
+        available
+        playWindow={{ startSec: 12.5, endSec: 22.5, nonce: 1 }}
+      />,
+    );
+    expect(element.currentTime).toBe(12.5);
+
+    element.currentTime = 23;
+    fireEvent.timeUpdate(element);
+    expect(pauseSpy).toHaveBeenCalled();
+  });
+
+  it("reports playback time through onTime", () => {
+    const onTime = vi.fn();
+    render(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        contentType="video/mp4"
+        available
+        onTime={onTime}
+      />,
+    );
+    const element = document.querySelector("video") as HTMLVideoElement;
+    element.currentTime = 7.5;
+    fireEvent.timeUpdate(element);
+    expect(onTime).toHaveBeenCalledWith(7.5);
   });
 });
