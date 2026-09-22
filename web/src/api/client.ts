@@ -248,12 +248,32 @@ export const auth = {
   },
 };
 
+export interface ApiTrashRecord {
+  source: string;
+  destination: string;
+  mode: "local" | "remote" | "remote-kept" | string;
+  reason: string;
+  deleted_at: string;
+  sermon_id?: string | null;
+  job_id?: string | null;
+  stage?: string | null;
+  moved: boolean;
+  recoverable: boolean;
+}
+
+export interface ApiDeleteSermonResult {
+  deleted: boolean;
+  id: string;
+  recoverable?: boolean;
+  trash?: ApiTrashRecord[];
+}
+
 export const api = {
   sermons: (params?: { search?: string; sort?: string; limit?: number; offset?: number }) =>
     authed<ApiSermonList>("/api/sermons", params),
   sermon: (id: string) => authed<ApiSermonDetail>(`/api/sermons/${encodeURIComponent(id)}`),
   transcript: (id: string) => authed<ApiTranscript>(`/api/sermons/${encodeURIComponent(id)}/transcript`),
-  deleteSermon: (id: string) => send<{ deleted: boolean; id: string }>(`/api/sermons/${encodeURIComponent(id)}`, "DELETE"),
+  deleteSermon: (id: string) => send<ApiDeleteSermonResult>(`/api/sermons/${encodeURIComponent(id)}`, "DELETE"),
   updateSermon: (id: string, patch: SermonDetailsPatch) =>
     send<ApiSermonDetail>(`/api/sermons/${encodeURIComponent(id)}`, "PATCH", patch),
   plan: (id: string) => authed<ApiSermonPlan>(`/api/sermons/${encodeURIComponent(id)}/plan`),
