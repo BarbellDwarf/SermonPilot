@@ -15,8 +15,8 @@ enumeration of environment variables.
 
 | Legacy tab | Legacy control (config path) | Console home |
 |---|---|---|
-| General | API Key (`api_key`) | SermonAudio Accounts, per-account `api_key` |
-| General | Broadcaster ID (`broadcaster_id`) | SermonAudio Accounts, per-account `broadcaster_id` |
+| General | API Key (`api_key`) | SermonAudio Accounts, per-account `api_key`; Single-account fallback for the seeded/env value |
+| General | Broadcaster ID (`broadcaster_id`) | SermonAudio Accounts, per-account `broadcaster_id`; Single-account fallback for the seeded/env value |
 | General | Test API Connection | SermonAudio Accounts, "Test" |
 | General | Dry Run Mode (`dry_run`) | General |
 | General | Debug Mode (`debug`) | General |
@@ -76,6 +76,7 @@ surface, not migrations.
 | Console section | Purpose |
 |---|---|
 | SermonAudio Accounts | Multiple broadcaster accounts with a default, replacing the single legacy `api_key` plus `broadcaster_id` pair |
+| Single-account fallback | The seeded/env `api_key` and `broadcaster_id` the pipeline uses when no account is picked, with its winning source named (`db` / env / `default`) |
 | Cloud Mounts | Remote upload targets |
 | Routing (inside LLM Providers) | Which provider slot handles metadata, validation, transcription assist, and fallback |
 | Processing defaults | Keeper audio and video bitrates, default audio offset |
@@ -111,7 +112,10 @@ Every console config field reads its winning source from
 `GET /api/config/sections/{section}`. When an environment variable supplies a
 value, the field shows a badge with that variable name; `db` and `default`
 sources show no badge. This is the visible form of the rule that the
-environment always overrides saved settings.
+environment always overrides saved settings. The Single-account fallback card
+goes further and spells out `set by environment: <VAR>` for each SermonAudio
+credential, so an operator can see why editing the saved value has no effect
+until the variable is unset.
 
 ## Related
 
