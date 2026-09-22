@@ -10,11 +10,13 @@ The backend is selected via the `transcription.backend` entry in the config file
 All backends return a plain transcript string (or empty string on failure).
 """
 
+import ipaddress
 import logging
 import os
 import sys
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
@@ -45,6 +47,29 @@ _KNOWN_KEY_PLACEHOLDERS = frozenset(
 )
 
 
+def _api_key_defect(value: Any) -> str | None:
+    """Describe why a candidate key is unusable, or None when it is usable.
+
+    Never includes the value itself: only the shape of the problem (empty,
+    placeholder, known dummy, or the failing length) so diagnostics cannot
+    leak a credential.
+    """
+    if value is None:
+        return "not set"
+    if not isinstance(value, str):
+        return "not a string"
+    cleaned = value.strip()
+    if not cleaned:
+        return "empty"
+    if "${" in cleaned or cleaned.startswith("$"):
+        return "an unresolved ${VAR} placeholder"
+    if cleaned.lower() in _KNOWN_KEY_PLACEHOLDERS:
+        return "a known placeholder value"
+    if len(cleaned) < _MIN_PLAUSIBLE_API_KEY_LEN:
+        return f"length {len(cleaned)} < {_MIN_PLAUSIBLE_API_KEY_LEN}"
+    return None
+
+
 def _clean_api_key(value: Any) -> str:
     """Normalize a candidate API key, returning '' when it is unusable.
 
@@ -53,18 +78,9 @@ def _clean_api_key(value: Any) -> str:
     junk left in config files) are treated as unset so they are never
     sent to a transcription endpoint.
     """
-    if not isinstance(value, str):
+    if _api_key_defect(value) is not None:
         return ""
-    cleaned = value.strip()
-    if not cleaned:
-        return ""
-    if "${" in cleaned or cleaned.startswith("$"):
-        return ""
-    if cleaned.lower() in _KNOWN_KEY_PLACEHOLDERS:
-        return ""
-    if len(cleaned) < _MIN_PLAUSIBLE_API_KEY_LEN:
-        return ""
-    return cleaned
+    return str(value).strip()
 
 
 def _resolve_transcription_api_key(env_var: str, cfg_value: Any) -> str:
@@ -73,6 +89,97 @@ def _resolve_transcription_api_key(env_var: str, cfg_value: Any) -> str:
     if from_env:
         return from_env
     return _clean_api_key(cfg_value)
+
+
+def _is_local_endpoint(base_url: str | None) -> bool:
+    """True when a transcription base URL points at a private LAN address.
+
+    Loopback, RFC1918 addresses, and ``.local`` mDNS names are treated as
+    local services: they run on the operator's own network and commonly
+    ignore auth, so a missing key must not fail the request. Hostnames that
+    resolve to a public name are not local, and an unparseable URL is not
+    local.
+    """
+    if not base_url:
+        return False
+    host = urlparse(base_url).hostname
+    if not host:
+        return False
+    host = host.strip().lower().rstrip(".")
+    if host == "localhost" or host.endswith(".local"):
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_private
+
+
+def _env_var_for_config_path(key_path: str) -> str | None:
+    """Return the env var that supplied a dotted config path, if any.
+
+    When several mapped variables target the same path, the last one the
+    resolver applied wins, mirroring ``apply_env_overrides``.
+    """
+    try:
+        from .core.config import ENV_CONFIG_MAP
+    except ImportError:
+        from core.config import ENV_CONFIG_MAP
+
+    selected: str | None = None
+    for env_var, paths in ENV_CONFIG_MAP.items():
+        if os.getenv(env_var) and any(".".join(path) == key_path for path in paths):
+            selected = env_var
+    return selected
+
+
+def _config_source_for_path(key_path: str) -> str:
+    """Label where the effective value at a config path came from.
+
+    Reuses the resolver's source map; an ``env`` source is narrowed to the
+    specific environment variable so the message names the override that
+    silently won.
+    """
+    try:
+        from ui.config_utils import resolve_config_with_sources
+
+        _config, sources = resolve_config_with_sources()
+        source = sources.get(key_path, "default")
+    except Exception:
+        return "default"
+    if source != "env":
+        return source
+    env_var = _env_var_for_config_path(key_path)
+    return f"env {env_var}" if env_var else "env"
+
+
+def _unusable_key_message(key_path: str, raw_value: Any) -> str:
+    """Build an actionable message naming the path, its source, and the defect."""
+    defect = _api_key_defect(raw_value) or "unusable"
+    source = _config_source_for_path(key_path)
+    return (
+        f"Transcription API key {key_path} came from {source} and is unusable ({defect})"
+    )
+
+
+def _auth_headers(
+    api_key: str, base_url: str, key_path: str, raw_api_key: Any
+) -> dict[str, str]:
+    """Return request headers, allowing keyless local endpoints.
+
+    A usable key is always sent. Without one, a local endpoint is called
+    unauthenticated with a single log line; anything else fails with a
+    message that names the config path and the layer that supplied the value.
+    """
+    if api_key:
+        return {"Authorization": f"Bearer {api_key}"}
+    if _is_local_endpoint(base_url):
+        logger.info(
+            "Transcription endpoint %s is local; skipping API key authentication",
+            base_url,
+        )
+        return {}
+    raise TranscriptionError(_unusable_key_message(key_path, raw_api_key))
 
 
 def _detect_device(preference: str = "auto", allow_rocm: bool = True) -> str:
@@ -742,19 +849,25 @@ def _transcribe_faster_whisper_local_segments(
 
 
 def _transcribe_openrouter(
-    audio_path: str, api_key: str, base_url: str, model: str, progress_callback=None
+    audio_path: str,
+    api_key: str,
+    base_url: str,
+    model: str,
+    progress_callback=None,
+    key_path: str = "transcription.whisper_openrouter.api_key",
+    raw_api_key: Any = None,
 ) -> str:
     """Transcribe using OpenRouter's Whisper endpoint.
 
     OpenRouter follows the OpenAI API shape: POST /audio/transcriptions.
+    A local base URL is called without auth when no usable key is resolved.
     """
-    if not api_key:
-        raise TranscriptionError("OpenRouter API key missing for transcription")
-    headers = {"Authorization": f"Bearer {api_key}"}
+    effective_base = base_url.rstrip("/") if base_url else "https://openrouter.ai/api/v1"
+    headers = _auth_headers(api_key, effective_base, key_path, raw_api_key)
     files = {"file": open(audio_path, "rb")}
     data = {"model": model}
     try:
-        url = f"{base_url.rstrip('/')}/audio/transcriptions"
+        url = f"{effective_base}/audio/transcriptions"
         logger.info("Calling OpenRouter Whisper at %s", url)
         if progress_callback:
             progress_callback(5, f"Uploading audio to {url}")
@@ -802,19 +915,20 @@ def _transcribe_openai(
     model: str,
     progress_callback=None,
     want_segments: bool = False,
+    key_path: str = "transcription.whisper_openai.api_key",
+    raw_api_key: Any = None,
 ) -> str | list[dict[str, float | str]]:
     """Transcribe using OpenAI's Whisper endpoint.
 
     If base_url is not provided, defaults to OpenAI's official endpoint.
     Supports SSE streaming for progress reporting when the endpoint supports it.
     With want_segments=True, requests verbose_json and returns timed segments,
-    or an empty list when the response carries no usable timestamps.
+    or an empty list when the response carries no usable timestamps. A local
+    base URL is called without auth when no usable key is resolved.
     """
-    if not api_key:
-        raise TranscriptionError("OpenAI API key missing for transcription")
     effective_base = base_url.rstrip("/") if base_url else "https://api.openai.com/v1"
+    headers = _auth_headers(api_key, effective_base, key_path, raw_api_key)
     url = f"{effective_base}/audio/transcriptions"
-    headers = {"Authorization": f"Bearer {api_key}"}
     files = {"file": open(audio_path, "rb")}
     data = {"model": model}
     if want_segments:
@@ -962,7 +1076,8 @@ def transcribe(
         )
     elif backend == "whisper_openrouter":
         or_cfg = transcription_cfg.get("whisper_openrouter", {})
-        api_key = _resolve_transcription_api_key("OPENROUTER_API_KEY", or_cfg.get("api_key", ""))
+        cfg_key = or_cfg.get("api_key", "")
+        api_key = _resolve_transcription_api_key("OPENROUTER_API_KEY", cfg_key)
         base_url = or_cfg.get("base_url", "https://openrouter.ai/api/v1")
         model = (
             model_size
@@ -970,17 +1085,28 @@ def transcribe(
             else or_cfg.get("model", "openai/whisper-large-v3")
         )
         return _transcribe_openrouter(
-            audio_path, api_key, base_url, model, progress_callback=progress_callback
+            audio_path,
+            api_key,
+            base_url,
+            model,
+            progress_callback=progress_callback,
+            raw_api_key=cfg_key,
         )
     elif backend == "whisper_openai":
         oi_cfg = transcription_cfg.get("whisper_openai", {})
-        api_key = _resolve_transcription_api_key("OPENAI_API_KEY", oi_cfg.get("api_key", ""))
+        cfg_key = oi_cfg.get("api_key", "")
+        api_key = _resolve_transcription_api_key("OPENAI_API_KEY", cfg_key)
         base_url = oi_cfg.get("base_url", "https://api.openai.com/v1")
         model = (
             model_size if _is_cloud_model_override(model_size) else oi_cfg.get("model", "whisper-1")
         )
         return _transcribe_openai(
-            audio_path, api_key, base_url, model, progress_callback=progress_callback
+            audio_path,
+            api_key,
+            base_url,
+            model,
+            progress_callback=progress_callback,
+            raw_api_key=cfg_key,
         )
     else:
         logger.warning("Unknown transcription backend '%s', skipping transcription", backend)
@@ -1058,7 +1184,8 @@ def transcribe_segments(
         return []
     elif backend == "whisper_openai":
         oi_cfg = transcription_cfg.get("whisper_openai", {})
-        api_key = _resolve_transcription_api_key("OPENAI_API_KEY", oi_cfg.get("api_key", ""))
+        cfg_key = oi_cfg.get("api_key", "")
+        api_key = _resolve_transcription_api_key("OPENAI_API_KEY", cfg_key)
         base_url = oi_cfg.get("base_url", "https://api.openai.com/v1")
         model = (
             model_size if _is_cloud_model_override(model_size) else oi_cfg.get("model", "whisper-1")
@@ -1070,6 +1197,7 @@ def transcribe_segments(
             model,
             progress_callback=progress_callback,
             want_segments=True,
+            raw_api_key=cfg_key,
         )
         return _normalize_segments(result)
     else:
