@@ -392,7 +392,25 @@ def test_refine_job_calls_refine_with_notes(monkeypatch) -> None:
     assert result.success is True
     assert result.data["start"] == 120.0
     assert refine.call_args.kwargs["notes"] == "Keep only the second class"
+    assert refine.call_args.kwargs["re_detect"] is False
     assert refine.call_args.args[0] == "draft_123"
+
+
+def test_refine_job_passes_re_detect_flag(monkeypatch) -> None:
+    from ui.job_executors import execute_auto_edit_refine_job
+
+    refine = Mock(return_value={"success": True, "confidence": 0.8})
+    monkeypatch.setattr("sermon_updater.refine_edit_plan", refine)
+    job = _job({
+        "refine": True,
+        "sermon_id": "draft_123",
+        "notes": "",
+        "re_detect": True,
+        "config": CONFIG,
+    })
+    result = execute_auto_edit_refine_job(job)
+    assert result.success is True
+    assert refine.call_args.kwargs["re_detect"] is True
 
 
 def test_refine_dispatch_routes_refine_jobs(monkeypatch) -> None:

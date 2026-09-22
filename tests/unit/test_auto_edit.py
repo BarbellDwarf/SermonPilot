@@ -9,11 +9,14 @@ import pytest
 
 import src.llm_manager as llm_manager_module
 from src.auto_edit import (
+    DEFAULT_DETECTION_SYSTEM_PROMPT,
     EditPlan,
+    _render_template,
     _resolve_transcript_char_budget,
     build_detection_prompt,
     detect_cut_points,
     render_review_snippets,
+    resolve_detection_template,
     validate_plan,
 )
 from src.llm_manager import LLMManager
@@ -88,6 +91,71 @@ class TestBuildDetectionPrompt:
     def test_no_refinement_markers_without_context(self):
         prompt = build_detection_prompt(SEGMENTS)
         assert "RE-DETECTION" not in prompt
+
+
+class TestDetectionPromptTemplate:
+    def test_render_template_leaves_literal_json_and_unknown_tokens(self):
+        rendered = _render_template(
+            'A {transcript} B {"start": 1} C {unknown}',
+            {"transcript": "T"},
+        )
+        assert rendered == 'A T B {"start": 1} C {unknown}'
+
+    def test_builtin_default_keeps_json_shape(self):
+        prompt = build_detection_prompt(SEGMENTS)
+        assert '{"start": <seconds>' in prompt
+        assert "{qa_margin_seconds}" not in prompt
+        assert "{transcript}" not in prompt
+
+    def test_configured_template_overrides_builtin(self):
+        config = {
+            "prompt_templates": {
+                "cut_detection": {
+                    "enabled": True,
+                    "system": "Custom system",
+                    "user": "OVERRIDE BODY {transcript} margin {qa_margin_seconds}",
+                }
+            }
+        }
+        manager = FakeLLMManager(CANNED_JSON)
+        detect_cut_points(SEGMENTS, manager, config, duration=3700.0)
+        system = manager.calls[0]["messages"][0]["content"]
+        user = manager.calls[0]["messages"][1]["content"]
+        assert system == "Custom system"
+        assert user.startswith("OVERRIDE BODY")
+        assert "Follow these rules exactly" not in user
+        assert "[00:00-00:10] Welcome everyone, let us pray." in user
+
+    def test_unset_template_uses_builtin_default(self):
+        manager = FakeLLMManager(CANNED_JSON)
+        detect_cut_points(SEGMENTS, manager, {"auto_edit": {}}, duration=3700.0)
+        assert manager.calls[0]["messages"][0]["content"] == DEFAULT_DETECTION_SYSTEM_PROMPT
+        assert "Follow these rules exactly" in manager.calls[0]["messages"][1]["content"]
+
+    def test_disabled_template_falls_back_to_default(self):
+        config = {
+            "prompt_templates": {"cut_detection": {"enabled": False, "user": "NOPE"}}
+        }
+        assert resolve_detection_template(config) is None
+        manager = FakeLLMManager(CANNED_JSON)
+        detect_cut_points(SEGMENTS, manager, config, duration=3700.0)
+        assert "NOPE" not in manager.calls[0]["messages"][1]["content"]
+
+    def test_blank_template_falls_back_to_default(self):
+        assert resolve_detection_template(
+            {"prompt_templates": {"cut_detection": {"user": "   "}}}
+        ) is None
+
+    def test_custom_template_still_parses_json(self):
+        config = {
+            "prompt_templates": {
+                "cut_detection": {"user": "Custom\n{transcript}\nReturn strict JSON."}
+            }
+        }
+        manager = FakeLLMManager(CANNED_JSON)
+        plan = detect_cut_points(SEGMENTS, manager, config, duration=3700.0)
+        assert plan.detection_status == "ok"
+        assert plan.start == 245.0
 
 
 class TestDetectCutPoints:

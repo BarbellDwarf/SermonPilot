@@ -106,6 +106,8 @@ export interface EditPlan {
   endSec: number;
   offsetSec: number;
   detectionStatus: DetectionStatus;
+  reasoning: string;
+  notes: string;
 }
 
 export const editPlans: Record<string, EditPlan> = {
@@ -121,6 +123,8 @@ export const editPlans: Record<string, EditPlan> = {
     endSec: 2512.3,
     offsetSec: 0.4,
     detectionStatus: "ok",
+    reasoning: "Teaching starts after the welcome; Q&A begins after the closing prayer.",
+    notes: "Keep only the second of the two back-to-back classes.",
   },
   "s-04": {
     sermonId: "s-04",
@@ -134,6 +138,8 @@ export const editPlans: Record<string, EditPlan> = {
     endSec: 2650.0,
     offsetSec: -0.3,
     detectionStatus: "ok",
+    reasoning: "Confident opening cut, the ending sits just before the audience question.",
+    notes: "",
   },
 };
 
