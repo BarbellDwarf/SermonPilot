@@ -90,21 +90,113 @@ ENV_NUMERIC_PATHS: dict[tuple[str, ...], type] = {
     ('audio_normalize',): float,
 }
 
+# Deploy-time secrets: the owner keeps these in the environment, and they are
+# never copied into the settings database. They still override saved values for
+# the running process, and the Settings UI names the variable that is winning.
+SECRET_ENV_VARS: frozenset[str] = frozenset({
+    'SERMONAUDIO_API_KEY',
+    'OPENAI_API_KEY',
+    'ANTHROPIC_API_KEY',
+    'XAI_API_KEY',
+    'GOOGLE_API_KEY',
+    'GROQ_API_KEY',
+    'OPENROUTER_API_KEY',
+    'AUTO_EDIT_LLM_API_KEY',
+    'WHISPER_OPENAI_API_KEY',
+})
 
-def coerce_env_value(path: tuple[str, ...], value: str):
-    """Coerce a raw environment string to the type the config path expects."""
+# Provider -> env var, the single fallback for ``*.api_key`` paths that are not
+# spelled out in ENV_CONFIG_MAP (for example llm.validator.openai.api_key).
+PROVIDER_API_KEY_ENV: dict[str, str] = {
+    'openai': 'OPENAI_API_KEY',
+    'anthropic': 'ANTHROPIC_API_KEY',
+    'xai': 'XAI_API_KEY',
+    'google': 'GOOGLE_API_KEY',
+    'groq': 'GROQ_API_KEY',
+    'openrouter': 'OPENROUTER_API_KEY',
+}
+
+
+def _dotted(path: tuple[str, ...] | list[str] | str) -> str:
+    if isinstance(path, str):
+        return path
+    return '.'.join(path)
+
+
+def _build_path_env_map() -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for env_var, config_paths in ENV_CONFIG_MAP.items():
+        for config_path in config_paths:
+            dotted = _dotted(config_path)
+            # First mapping wins: ENV_CONFIG_MAP lists the canonical variable
+            # first (for example OPENAI_API_KEY before WHISPER_OPENAI_API_KEY
+            # for transcription.whisper_openai.api_key).
+            mapping.setdefault(dotted, env_var)
+    return mapping
+
+
+PATH_ENV_MAP: dict[str, str] = _build_path_env_map()
+
+
+def env_var_for_path(path: tuple[str, ...] | list[str] | str) -> str | None:
+    """Return the environment variable mapped to a dotted config path.
+
+    ENV_CONFIG_MAP is the only enumeration; api_key paths that are not
+    spelled out there fall back to the provider's conventional variable.
+    """
+    dotted = _dotted(path)
+    mapped = PATH_ENV_MAP.get(dotted)
+    if mapped:
+        return mapped
+    parts = dotted.split('.')
+    if len(parts) >= 2 and parts[-1] == 'api_key':
+        if len(parts) >= 5 and parts[0] == 'llm' and parts[1] == 'operations':
+            return 'AUTO_EDIT_LLM_API_KEY'
+        return PROVIDER_API_KEY_ENV.get(parts[-2])
+    return None
+
+
+class ConfigValueError(ValueError):
+    """A config value failed normalisation.
+
+    The message names the path and the source and reports the value's length,
+    never the value itself, so a malformed secret can be diagnosed without
+    printing it.
+    """
+
+    def __init__(self, path: str, source: str, expected: str, length: int):
+        self.path = path
+        self.source = source
+        self.expected = expected
+        self.length = length
+        super().__init__(
+            f"Invalid value for {path} (source: {source}): "
+            f"expected {expected}, got {length} characters"
+        )
+
+
+def coerce_value(path: tuple[str, ...], value: Any, source: str) -> Any:
+    """Normalise a raw string to the type the config path expects.
+
+    Raises ConfigValueError with a value-free message when the value cannot
+    be normalised.
+    """
     if isinstance(value, str) and value.lower() in ('true', 'false'):
         return value.lower() == 'true'
     if path in ENV_NUMERIC_PATHS:
         try:
             return ENV_NUMERIC_PATHS[path](value)
-        except ValueError:
-            logger.warning(
-                "Invalid numeric value for %s: %r (ignored)",
-                '.'.join(path), value,
-            )
-            return None
+        except (TypeError, ValueError) as exc:
+            length = len(value) if isinstance(value, str) else 0
+            raise ConfigValueError(
+                _dotted(path), source, ENV_NUMERIC_PATHS[path].__name__, length
+            ) from exc
     return value
+
+
+def coerce_env_value(path: tuple[str, ...], value: str, source: str = "environment"):
+    """Coerce a raw environment string to the type the config path expects."""
+    return coerce_value(path, value, source)
 
 
 def set_nested_value(config: dict, path: list[str], value: Any):
@@ -128,7 +220,11 @@ def apply_env_overrides(config: dict[str, Any], environ=None) -> dict[str, Any]:
         value = env.get(env_var)
         if value:
             for config_path in config_paths:
-                coerced = coerce_env_value(tuple(config_path), value)
+                try:
+                    coerced = coerce_value(tuple(config_path), value, env_var)
+                except ConfigValueError as exc:
+                    logger.warning("%s", exc)
+                    continue
                 set_nested_value(config, config_path, coerced)
     return config
 
