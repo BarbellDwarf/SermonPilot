@@ -1,14 +1,14 @@
 # SermonAudio Updater Configuration
 # Settings load from the SQLite settings database, seeded from environment
-# variables on first run (see README). This file is optional: use it via
-# the UI import or SA_UPDATER_CONFIG; config.yaml is export/import only.
+# variables on first run (see README). No file is read at run time. This file
+# is a reference showing every recognized key; a pre-database config.yaml (or
+# the file named by SA_UPDATER_CONFIG) is imported into an empty database once.
 #
 # API-KEY CONTRACT: never store literal keys in this file. Every api_key
 # below is a ${VAR} placeholder resolved from the environment at load time
-# (see src/core/config.py _substitute_env_vars / _override_from_env).
-# At runtime a key may also come from the UI-saved DB config_cache, which is
-# overlaid in memory with precedence: environment > DB cache > this file.
-# The Settings UI always writes placeholders back here, never literals.
+# (see src/core/config.py). At runtime a key may also come from the UI-saved DB
+# config_cache. Precedence is: environment > DB > built-in default.
+# The Settings UI YAML export writes placeholders, never literals.
 #
 # Supported variables (see .env.example and docs/SECURITY_SETUP_GUIDE.md):
 #   SERMONAUDIO_API_KEY, SERMONAUDIO_BROADCASTER_ID,

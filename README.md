@@ -34,8 +34,9 @@ cp .env.example .env
 # Edit .env with your SermonAudio API key and broadcaster ID
 ```
 
-No `config.yaml` is needed. On first launch the environment variables are
-seeded into the SQLite settings database; see [Configuration](#configuration).
+No `config.yaml` is needed. On first launch the config-like environment
+variables are written into the SQLite settings database once (deploy-time
+secrets stay in the environment); see [Configuration](#configuration).
 
 ### Docker (Pre-built Images)
 
@@ -113,9 +114,10 @@ docker build --build-arg GPU_BACKEND=cuda -t sermonpilot:latest .
 ## Configuration
 
 Settings live in a SQLite settings database and are resolved in this order,
-lowest to highest: built-in defaults, an optional file layer (`SA_UPDATER_CONFIG`),
-the settings database, then environment variables (env always wins for the
-running process). There is no required config file.
+lowest to highest: built-in defaults, the per-variant template (fresh installs
+only), the settings database, then environment variables. A mapped environment
+variable always wins over the stored value for the running process. There is no
+required config file, and no config file is read at run time.
 
 ```bash
 cp .env.example .env
@@ -134,10 +136,12 @@ Environment variables that seed and override settings:
 | Behavior | `DEBUG`, `VERBOSE`, `DRY_RUN`, `HASHTAG_VERIFICATION` |
 | Runtime (not part of the settings store) | `DATABASE_URL`, `APP_PASSWORD` |
 
-On first launch with any of these set, the resolved values are written into the
-settings database once, so a container started with only a `.env` file keeps
-its settings across restarts. Change settings any time in the web UI Settings
-page; environment variables still override the stored values per process.
+On first launch with any of these set, the config-like values are written into
+the settings database once, so a container started with only a `.env` file keeps
+its settings across restarts. Deploy-time secrets (the various `*_API_KEY`
+variables) are never copied into the database: they stay in the environment and
+override the stored value while set, and the Settings UI names the variable that
+is winning. Change settings any time in the web UI Settings page.
 
 `config.yaml` is export/import only and never read for resolution:
 
@@ -145,14 +149,15 @@ page; environment variables still override the stored values per process.
   imported into the settings database once, automatically.
 - The Settings page has an Import/Export tab that downloads the current
   settings as YAML and restores from an uploaded YAML file.
-- Set `SA_UPDATER_CONFIG` to a YAML path to load it as an extra layer between
-  defaults and the database (escape hatch for tests and unusual setups).
+- Set `SA_UPDATER_CONFIG` to a YAML path and its contents are imported into the
+  settings database once, when the database is empty. It is never a resolution
+  layer (escape hatch for tests and unusual setups). The legacy-to-console
+  settings mapping is in [docs/SETTINGS_PARITY.md](docs/SETTINGS_PARITY.md).
 - Docker images ship per-variant templates under `config/templates/`
   (`cuda.yaml`, `rocm.yaml`, `cpu.yaml`) that differ in the transcription
   section; the container startup logs the matching template for your image.
 
-Commonly tuned keys (set them in the UI, in the file layer, or via the env
-vars above):
+Commonly tuned keys (set them in the UI or via the env vars above):
 
 - `audio_enhancement_method`: `deepfilternet` (default, recommended), `clear-natural`, `clear-studio`, `custom`, or `none`
 - `transcription.backend`: `whisper_local` (code default), `faster_whisper_local`, `whisper_openai`, or `whisper_openrouter`

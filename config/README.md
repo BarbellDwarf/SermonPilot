@@ -1,22 +1,20 @@
 # Configuration Directory
 
-This directory contains configuration templates and examples for the SermonPilot.
+This directory holds configuration templates that ship with the Docker images,
+plus YAML examples kept for reference. No file here is read at run time.
 
 ## Files
 
+### `templates/{cuda,rocm,cpu}.yaml`
+Per-Docker-variant templates. The Dockerfile sets `SERMONPILOT_VARIANT`, and the
+matching template is imported into the settings database once, on a fresh
+database only. After that the database is authoritative.
+
 ### `config.example.yaml`
-Main configuration template. Copy this to `config.yaml` in the repository root and update with your settings:
-
-```bash
-cp config/config.example.yaml config.yaml
-```
-
-Contains:
-- SermonAudio API credentials
-- LLM provider settings  
-- Processing options
-- Audio enhancement settings
-- Default search criteria
+A reference config showing every supported path. It is not copied to
+`config.yaml` for normal use. A pre-database install that still has a
+`config.yaml` (or a file named by `SA_UPDATER_CONFIG`) has its contents imported
+into the database once, when the database has no configuration row yet.
 
 ### `llm_examples.yaml`
 LLM provider configuration examples for different services:
@@ -27,15 +25,19 @@ LLM provider configuration examples for different services:
 - Ollama configuration
 - Provider fallback examples
 
-## Usage
+## How settings resolve
 
-1. Copy the main template:
-   ```bash
-   cp config/config.example.yaml config.yaml
-   ```
+Settings come from, lowest to highest priority:
 
-2. Edit `config.yaml` with your credentials and preferences
+1. Built-in defaults
+2. The per-variant template (fresh database only)
+3. The SQLite `config_cache.app_config` row
+4. Environment variables mapped in `src/core/config.py::ENV_CONFIG_MAP`
 
-3. Reference `llm_examples.yaml` for LLM provider-specific configurations
+Environment variables always win while they are set. Config-like variables are
+seeded into the database once on startup, when no value is saved for their path
+yet. Deploy-time secrets (API keys) stay in the environment and are never copied
+into the database.
 
-4. The `config.yaml` file is automatically ignored by git to protect your credentials
+Edit settings in the web console Settings page or the Streamlit settings page,
+not in a file.

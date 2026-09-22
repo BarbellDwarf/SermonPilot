@@ -32,8 +32,6 @@ except ImportError:
             pass
     sermonaudio = MockSermonAudio()
 
-import yaml  # noqa: E402
-
 from src.sermon_paths import discover_sermons, read_metadata  # noqa: E402
 from ui.database import SermonRepository  # noqa: E402
 
@@ -567,12 +565,11 @@ def get_sermon_manager(config: dict[str, Any] | None = None) -> SermonManager:
 
     if _sermon_manager is None:
         if config is None:
-            # Load default config
             try:
-                with open('config.yaml') as f:
-                    config = yaml.safe_load(f)
-            except FileNotFoundError:
-                config = {}
+                from ui.config_utils import resolve_config
+            except ImportError:
+                from config_utils import resolve_config
+            config = resolve_config()
 
         _sermon_manager = SermonManager(config)
 

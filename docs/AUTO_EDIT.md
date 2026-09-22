@@ -25,7 +25,8 @@ kdenlive stays in the workflow for rare creative edits only: multi-cam cuts, tit
 
 ## Configuration
 
-Add this to `config.yaml`:
+Add this under the `auto_edit` key in the settings database (edit through a
+Settings page, or set it in a `config.yaml` that gets imported once):
 
 ```yaml
 auto_edit:
