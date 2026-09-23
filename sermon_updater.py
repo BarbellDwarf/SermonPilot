@@ -1188,6 +1188,172 @@ def update_sermon_metadata(sermon_id: str, description: str, hashtags: str | lis
     return resp.status_code in (200, 204)
 
 
+# Local field name -> (SermonAudio PATCH key, max length or None). The keys
+# come from the API's SermonParamsPatch schema; anything not listed here
+# cannot be updated through node/sermons/{id}.
+SERMON_PATCH_FIELD_MAP: dict[str, tuple[str, int | None]] = {
+    'title': ('fullTitle', 85),
+    'display_title': ('displayTitle', 30),
+    'subtitle': ('subtitle', 30),
+    'bible_text': ('bibleText', None),
+    'event_type': ('eventType', None),
+    'hashtags': ('keywords', None),
+    'description': ('moreInfoText', None),
+}
+
+
+def _display_title_for_api(title: str) -> str:
+    """Derive a SermonAudio displayTitle (max 30) from a full title."""
+    return title[:30] if len(title) <= 30 else title[:27] + "..."
+
+
+def _normalize_hashtags_value(hashtags: str | list[str] | tuple[str, ...]) -> str:
+    if isinstance(hashtags, list | tuple):
+        return ','.join(str(tag) for tag in hashtags)
+    return str(hashtags)
+
+
+def _split_hashtags(hashtags: str | list[str] | tuple[str, ...]) -> list[str]:
+    """Normalise stored hashtags to a list, matching the historical push."""
+    if isinstance(hashtags, list | tuple):
+        return [str(tag) for tag in hashtags]
+    text = str(hashtags or '')
+    if ' ' in text and ',' not in text:
+        return text.split()
+    return [tag.strip() for tag in text.split(',') if tag.strip()]
+
+
+def push_sermon_fields(sermon_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+    """PATCH operator-edited metadata fields to SermonAudio.
+
+    One PATCH carries every field the API's SermonParamsPatch accepts for the
+    requested local names. Names the API cannot update, empty values,
+    over-length values, and invalid event types are reported in ``skipped``
+    with a reason instead of being silently dropped.
+
+    Returns ``{success, status_code, pushed, skipped, error}``.
+    """
+    payload: dict[str, Any] = {}
+    pushed: list[str] = []
+    skipped: dict[str, str] = {}
+
+    for name, value in fields.items():
+        spec = SERMON_PATCH_FIELD_MAP.get(name)
+        if spec is None:
+            skipped[name] = 'not updatable through the SermonAudio API'
+            continue
+        api_key, max_len = spec
+        if value is None:
+            skipped[name] = 'empty value'
+            continue
+        if name == 'hashtags':
+            text = _normalize_hashtags_value(value).strip()
+        else:
+            text = str(value).strip()
+        if not text:
+            skipped[name] = 'empty value'
+            continue
+        if name == 'event_type':
+            try:
+                validate_event_type_for_api(text)
+            except ValueError as exc:
+                skipped[name] = str(exc)
+                continue
+        if max_len is not None and len(text) > max_len:
+            skipped[name] = f'value exceeds {max_len} characters; not pushed'
+            continue
+        payload[api_key] = text
+        pushed.append(name)
+
+    if not payload:
+        return {
+            'success': False,
+            'status_code': None,
+            'pushed': [],
+            'skipped': skipped,
+            'error': 'no updatable fields to push',
+        }
+
+    url = BASE_URL + f'node/sermons/{sermon_id}'
+    headers = get_api_headers()
+    try:
+        resp = requests.patch(url, headers=headers, json=payload, timeout=60)
+    except requests.RequestException as e:
+        return {
+            'success': False,
+            'status_code': None,
+            'pushed': [],
+            'skipped': skipped,
+            'error': f'request failed: {e}',
+        }
+
+    ok = resp.status_code in (200, 204)
+    logger.debug("Push sermon fields status: %d (pushed=%s)", resp.status_code, pushed)
+    return {
+        'success': ok,
+        'status_code': resp.status_code,
+        'pushed': pushed,
+        'skipped': skipped,
+        'error': None if ok else f'SermonAudio returned {resp.status_code}',
+    }
+
+
+def push_sermon_metadata(
+    sermon_id: str, sermon: dict[str, Any], *, full_push: bool = False
+) -> dict[str, Any]:
+    """Push a sermon's metadata to SermonAudio.
+
+    The default keeps the historical description-only update. ``full_push``
+    also sends title, display title, subtitle, bible text, event type, and
+    hashtags, and applies the series after the field PATCH.
+    """
+    content = sermon.get('content') if isinstance(sermon.get('content'), dict) else {}
+    description = (
+        sermon.get('description')
+        or sermon.get('ai_description')
+        or content.get('description')
+        or ''
+    )
+    hashtags = sermon.get('hashtags') or content.get('hashtags') or ''
+
+    if not full_push:
+        ok = update_sermon_metadata(
+            sermon_id,
+            description,
+            _split_hashtags(hashtags),
+            series_title=sermon.get('series_title') or None,
+        )
+        return {
+            'success': ok,
+            'status_code': None,
+            'pushed': ['description', 'hashtags'] if ok else [],
+            'skipped': {},
+            'error': None if ok else 'description update failed',
+        }
+
+    title = str(sermon.get('title') or '').strip()
+    result = push_sermon_fields(
+        sermon_id,
+        {
+            'title': title,
+            'display_title': _display_title_for_api(title) if title else '',
+            'subtitle': sermon.get('subtitle') or '',
+            'bible_text': sermon.get('bible_text')
+            or sermon.get('scripture_reference')
+            or '',
+            'event_type': sermon.get('event_type') or '',
+            'hashtags': _split_hashtags(hashtags),
+            'description': description,
+        },
+    )
+    series_title = sermon.get('series_title')
+    if result.get('success') and series_title:
+        series_id = resolve_series_id(series_title, create_missing=True)
+        if series_id is not None:
+            set_sermon_series(sermon_id, series_id)
+    return result
+
+
 def upload_audio_file(sermon_id: str, audio_path: str) -> bool:
     logger.debug("Uploading audio for sermon %s from %s", sermon_id, audio_path)
     return upload_media_file(sermon_id, audio_path, "original-audio")

@@ -564,6 +564,57 @@ def regenerate_description(sermon_id: str, user=Depends(require_user)):
     return {"job_id": job_id, "status": "queued"}
 
 
+class MetadataPushBody(BaseModel):
+    full_push: bool = True
+
+
+@router.post("/sermons/{sermon_id}/metadata/push", status_code=202)
+def push_sermon_metadata(
+    sermon_id: str, body: MetadataPushBody, user=Depends(require_user)
+):
+    """Queue a job that pushes this sermon's edited metadata to SermonAudio.
+
+    ``full_push`` sends title, display title, subtitle, bible text, event type
+    and hashtags as well as the description. The default keeps the historical
+    description-and-hashtags update.
+    """
+    owner = _sermon_owner(sermon_id)
+    if owner is None or not visible(owner, user):
+        raise HTTPException(status_code=404, detail="sermon not found")
+    active = _active_job_for(sermon_id)
+    if active:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "an active job already exists for this sermon",
+                "job_id": active["id"],
+            },
+        )
+    from ui.job_labels import build_job_labels
+    from ui.job_queue import JobType
+
+    name, description = build_job_labels(
+        JobType.METADATA_UPDATE,
+        **_sermon_label_fields(sermon_id),
+    )
+    job_id = _queue().add_job(
+        JobType.METADATA_UPDATE,
+        name,
+        description,
+        parameters={
+            "sermon_ids": [sermon_id],
+            "actions": {
+                "push_metadata": True,
+                "full_push": bool(body.full_push),
+            },
+            "config": _resolved_job_config(),
+            "user_id": user.get("id"),
+        },
+        user_id=user.get("id"),
+    )
+    return {"job_id": job_id, "status": "queued", "full_push": bool(body.full_push)}
+
+
 def _ingest_base() -> Path:
     return Path(os.environ.get("SERMONPILOT_RAW_INGEST", "/data/raw_ingest"))
 

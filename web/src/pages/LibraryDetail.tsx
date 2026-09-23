@@ -189,6 +189,27 @@ export function LibraryDetail() {
     showToast("Description regeneration queued (mock).");
   };
 
+  const pushDetails = () => {
+    if (!id) return;
+    if (isLive) {
+      void writeApi
+        .pushMetadata(id, true)
+        .then(() => {
+          showToast("Metadata push queued.");
+        })
+        .catch((e) => {
+          const msg = (e as Error).message;
+          showToast(
+            /409/.test(msg)
+              ? "A job is already running for this teaching."
+              : `Could not queue: ${msg}`,
+          );
+        });
+      return;
+    }
+    showToast("Metadata push queued (mock).");
+  };
+
   const saveDetails = (patch: DetailsPatch) => {
     if (!id) return Promise.resolve();
     if (isLive) {
@@ -273,6 +294,7 @@ export function LibraryDetail() {
           onEdit={() => setEditingOverride(true)}
           onSaveDetails={saveDetails}
           onRegenerateDescription={regenerateDescription}
+          onPushDetails={pushDetails}
         />
       ) : planLoading ? (
         <SkeletonList rows={3} />

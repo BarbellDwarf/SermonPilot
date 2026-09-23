@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { ApiMediaItem } from "../api/client";
 import type { EditPlan, LibrarySermon, PlanStatus } from "../mock/data";
-import { api } from "../api/client";
+import { api, writeApi } from "../api/client";
 import { LibraryDetail } from "./LibraryDetail";
 
 const mocks = vi.hoisted(() => ({
@@ -35,6 +35,7 @@ vi.mock("../api/client", () => ({
     refinePlan: vi.fn(),
     reDetectPlan: vi.fn(),
     regenerateDescription: vi.fn(),
+    pushMetadata: vi.fn(),
   },
 }));
 
@@ -260,6 +261,22 @@ describe("LibraryDetail completed details editing", () => {
       expect(screen.getByTestId("details-save-state").textContent).toContain("Saved");
     });
     expect(screen.queryByTestId("sermon-review")).toBeNull();
+  });
+
+  it("queues a full metadata push from the finished view", async () => {
+    const user = userEvent.setup();
+    setSermon("processed", "pending_review");
+    (writeApi.pushMetadata as unknown as Mock).mockResolvedValue({
+      job_id: "j-1",
+      status: "queued",
+      full_push: true,
+    });
+    renderDetail();
+
+    await user.click(screen.getByTestId("push-details"));
+
+    await waitFor(() => expect(writeApi.pushMetadata).toHaveBeenCalledWith("s-1", true));
+    await waitFor(() => expect(screen.getByText("Metadata push queued.")).toBeTruthy());
   });
 
   it("opens the transcript from the finished view with copy and download affordances", async () => {

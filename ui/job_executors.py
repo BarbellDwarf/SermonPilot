@@ -1504,6 +1504,40 @@ def _classify_metadata_update_result(result: dict, actions: dict) -> dict[str, A
     return {"ok": True, "reason": None}
 
 
+def _push_metadata_for_sermon(
+    job: Job, sermon_updater, sermon_id: str, actions: dict, results: dict
+) -> dict[str, Any]:
+    """Push one sermon's stored metadata to SermonAudio and record what moved.
+
+    Returns the same ``{ok, reason}`` shape as
+    ``_classify_metadata_update_result``; the per-field outcome is appended to
+    ``results['pushes']`` so a caller can report which fields were skipped.
+    """
+    from ui.database import SermonRepository
+
+    sermon = SermonRepository().get_sermon(sermon_id)
+    if not sermon:
+        return {"ok": False, "reason": "sermon not found locally"}
+
+    push_result = sermon_updater.push_sermon_metadata(
+        sermon_id, sermon, full_push=bool(actions.get('full_push', True))
+    )
+    pushed = list(push_result.get('pushed') or [])
+    skipped = dict(push_result.get('skipped') or {})
+    results.setdefault('pushes', []).append(
+        {"sermon_id": sermon_id, "pushed": pushed, "skipped": skipped}
+    )
+
+    if not push_result.get('success'):
+        return {"ok": False, "reason": push_result.get('error') or "metadata push failed"}
+    if skipped:
+        job.add_log(
+            f"Sermon {sermon_id}: pushed {', '.join(pushed) or 'nothing'}; skipped "
+            + ", ".join(f"{name} ({reason})" for name, reason in skipped.items())
+        )
+    return {"ok": True, "reason": None}
+
+
 def execute_metadata_update_job(job: Job) -> JobResult:
     """Execute a metadata update job (AI description/hashtag generation)"""
     try:
@@ -1556,18 +1590,23 @@ def execute_metadata_update_job(job: Job) -> JobResult:
                     progress, f"Processing sermon {sermon_id} ({i+1}/{len(sermon_ids)})"
                 )
 
-                result = sermon_updater.process_single_sermon(
-                    sermon_id,
-                    no_upload=False,
-                    verbose=False,
-                    skip_audio=True,
-                    force_description=actions.get('generate_description', False),
-                    force_hashtags=actions.get('generate_hashtags', False),
-                    no_metadata=False,
-                    config=config,
-                )
+                if actions.get('push_metadata'):
+                    outcome = _push_metadata_for_sermon(
+                        job, sermon_updater, sermon_id, actions, results
+                    )
+                else:
+                    result = sermon_updater.process_single_sermon(
+                        sermon_id,
+                        no_upload=False,
+                        verbose=False,
+                        skip_audio=True,
+                        force_description=actions.get('generate_description', False),
+                        force_hashtags=actions.get('generate_hashtags', False),
+                        no_metadata=False,
+                        config=config,
+                    )
+                    outcome = _classify_metadata_update_result(result, actions)
 
-                outcome = _classify_metadata_update_result(result, actions)
                 if outcome["ok"]:
                     results['completed'] += 1
                     job.add_log(f"Sermon {sermon_id}: Updated")

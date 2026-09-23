@@ -503,6 +503,12 @@ export const writeApi = {
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/upload`, "POST"),
   regenerateDescription: (id: string) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/description/regenerate`, "POST"),
+  pushMetadata: (id: string, fullPush = true) =>
+    send<{ job_id: string; status: string; full_push: boolean }>(
+      `/api/sermons/${encodeURIComponent(id)}/metadata/push`,
+      "POST",
+      { full_push: fullPush },
+    ),
   cancelJob: (id: string) => send<{ cancelled: boolean; job_id: string }>(`/api/jobs/${encodeURIComponent(id)}/cancel`, "POST"),
 };
 
