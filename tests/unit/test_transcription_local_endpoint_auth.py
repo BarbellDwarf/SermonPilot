@@ -81,12 +81,12 @@ def test_private_base_url_transcribes_without_a_key(
 
     with caplog.at_level(logging.INFO, logger="src.transcription"):
         result = tr.transcribe(
-            _audio_file(tmp_path), config=_openai_config("http://10.0.0.5:8780/v1/")
+            _audio_file(tmp_path), config=_openai_config("http://203.0.113.5:8780/v1/")
         )
 
     assert result == "hello world"
     assert len(calls) == 1
-    assert calls[0]["url"] == "http://10.0.0.5:8780/v1/audio/transcriptions"
+    assert calls[0]["url"] == "http://203.0.113.5:8780/v1/audio/transcriptions"
     assert "Authorization" not in calls[0]["headers"]
     assert any("local" in record.message.lower() for record in caplog.records)
 
@@ -98,7 +98,7 @@ def test_private_base_url_uses_a_valid_key_when_present(
 
     result = tr.transcribe(
         _audio_file(tmp_path),
-        config=_openai_config("http://10.0.0.5:8780/v1/", api_key="sk-valid-key-1234567890"),
+        config=_openai_config("http://203.0.113.5:8780/v1/", api_key="sk-valid-key-1234567890"),
     )
 
     assert result == "ok"
@@ -119,7 +119,7 @@ def test_private_base_url_segments_without_a_key(
     )
 
     result = tr.transcribe_segments(
-        _audio_file(tmp_path), config=_openai_config("http://10.0.0.5:8780/v1/")
+        _audio_file(tmp_path), config=_openai_config("http://203.0.113.5:8780/v1/")
     )
 
     assert [segment["text"] for segment in result] == ["hello", "world"]
@@ -200,7 +200,7 @@ def test_placeholder_and_dummy_keys_still_resolve_to_unset() -> None:
 @pytest.mark.parametrize(
     "base_url",
     [
-        "http://10.0.0.5:8780/v1/",
+        "http://203.0.113.5:8780/v1/",
         "http://192.168.1.1:8780/v1/",
         "http://172.16.0.9:8780/v1/",
         "http://127.0.0.1:8780/v1/",
