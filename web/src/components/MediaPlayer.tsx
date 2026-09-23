@@ -186,7 +186,7 @@ export function MediaPlayer({
               key={`jump-${marker.label}-${marker.atSec}`}
               type="button"
               onClick={() => seek(marker.atSec)}
-              className="inline-flex min-h-[32px] items-center rounded-md border border-line px-2 font-mono text-xs text-mist transition-colors hover:border-muted"
+              className="inline-flex min-h-[44px] items-center rounded-md border border-line px-2 font-mono text-xs text-mist transition-colors hover:border-muted"
             >
               {marker.label} · {formatCut(marker.atSec)}
             </button>
