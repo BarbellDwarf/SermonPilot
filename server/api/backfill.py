@@ -1,19 +1,23 @@
 """One-time ownership backfill: assign unowned sermons/jobs to the admin user.
 
 Usage: ``python -m server.api.backfill``. Safe to re-run: only rows with
-``user_id IS NULL`` are touched. Historical sermons become admin-owned so they
-stay visible to admins and hidden from non-admin users (NULL = unowned/legacy =
-admin-visible only).
+``user_id IS NULL`` are touched. Rows that a recorded draft publish can be
+traced to are first assigned their real owner (see
+``ui.database.repair_ownerless_sermons``); the remainder become admin-owned so
+they stay visible to admins and hidden from non-admin users (NULL = unowned/
+legacy = admin-visible only).
 """
 
 from __future__ import annotations
 
 from server.api.accounts import _ensure_columns, writable_conn
+from ui.database import repair_ownerless_sermons
 
 
 def backfill() -> dict[str, int]:
     with writable_conn() as conn:
         _ensure_columns(conn)
+        repair_ownerless_sermons(conn)
         admin = conn.execute(
             "SELECT id FROM users WHERE role = 'admin' ORDER BY created_at, id LIMIT 1"
         ).fetchone()
