@@ -198,6 +198,7 @@ def get_sermon(request: Request, sermon_id: str) -> SermonDetailOut:
         series=str(sermon.get("series_title") or ""),
         status=str(sermon.get("status") or ""),
         description=str(description) if description else None,
+        description_needs_review=bool(sermon.get("description_needs_review")),
         files=[
             {
                 "file_type": str(item.get("file_type") or ""),

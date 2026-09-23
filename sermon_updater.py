@@ -3221,17 +3221,42 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                                 notes=metadata_notes,
                             )
                         _report(72, f"Description generated in {time.time() - _started:.1f}s")
+                    except DescriptionGenerationError as e:
+                        metadata_notes['description_needs_review'] = True
+                        metadata_notes['description_error'] = str(e)
+                        logger.warning(
+                            "Description generation failed (provider=%s, "
+                            "elapsed=%s, attempts=%s); leaving the field empty "
+                            "and marking it for review: %s",
+                            getattr(e, 'provider', None),
+                            getattr(e, 'elapsed_seconds', None),
+                            getattr(e, 'attempts', None),
+                            e,
+                        )
+                        stage_description = None
                     except LLMModelNotFoundError as e:
                         _log_metadata_model_missing(e)
+                        metadata_notes['description_needs_review'] = True
+                        metadata_notes['description_error'] = str(e)
                         stage_description = None
                     except LLMModelNotConfiguredError as e:
                         logger.warning("metadata skipped: %s", e)
+                        metadata_notes['description_needs_review'] = True
+                        metadata_notes['description_error'] = str(e)
                         stage_description = None
                     except LLMTimeoutError as e:
                         _log_metadata_timeout(e)
+                        metadata_notes['description_needs_review'] = True
+                        metadata_notes['description_error'] = str(e)
                         stage_description = None
                     except Exception as e:
-                        logger.warning("LLM description generation failed: %s", e)
+                        logger.warning(
+                            "LLM description generation failed; leaving the field "
+                            "empty and marking it for review: %s",
+                            e,
+                        )
+                        metadata_notes['description_needs_review'] = True
+                        metadata_notes['description_error'] = str(e)
                         stage_description = None
 
                     if stage_description:
@@ -3239,6 +3264,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                             "Description ready (%d chars); stored in "
                             "sermons.description and sermon_content.description",
                             len(stage_description),
+                        )
+                    elif metadata_notes.get('description_error'):
+                        logger.warning(
+                            "Description generation failed; the field is left "
+                            "empty and marked for review (description_needs_review)"
                         )
                     else:
                         logger.warning(
@@ -3315,7 +3345,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 if bible_text:
                     title += f" - {bible_text}"
 
-            if not description:
+            description_failed = bool(metadata_notes.get('description_error'))
+            if not description and not description_failed:
                 description = f"A sermon by {speaker_name}"
                 if bible_text:
                     description += f" on {bible_text}"
@@ -3336,6 +3367,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         result['title'] = title
         result['description'] = description
         result['hashtags'] = hashtags
+        if metadata_notes.get('description_error'):
+            result['description_error'] = metadata_notes['description_error']
 
         # Generate short display title if requested
         short_display_title = None
@@ -3349,7 +3382,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 logger.warning("Short title generation failed: %s", e)
 
         console_print(f"Generated title: {title}")
-        console_print(f"Generated description: {description[:100]}...")
+        if metadata_notes.get('description_error'):
+            console_print("Description generation failed - retry", level="warning")
+        else:
+            console_print(f"Generated description: {description[:100]}...")
         if hashtags:
             console_print(f"Generated hashtags: {hashtags}")
 
@@ -3360,7 +3396,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             console_print(f"  Date: {recorded_date}")
             console_print(f"  Event: {event_type}")
             console_print(f"  Bible Text: {bible_text}")
-            console_print(f"  Description: {description[:100]}...")
+            if metadata_notes.get('description_error'):
+                console_print("  Description: description generation failed - retry")
+            else:
+                console_print(f"  Description: {description[:100]}...")
             console_print(f"  Hashtags: {hashtags}")
             console_print(f"  Audio: {enhanced_audio_path}")
             if input_is_video:
@@ -3507,6 +3546,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     'duration': duration,
                     'status': 'draft',
                     'edit_status': 'rendered' if auto_edit_state else None,
+                    'description_needs_review': bool(
+                        metadata_notes.get('description_needs_review')
+                    ),
                     'file_paths': {
                         'audio': str(final_output_path),
                         'metadata': str(get_file_path(output_dir, "metadata")),
@@ -3654,6 +3696,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         'event_type': event_type or '',
                         'bible_text': bible_text or '',
                         'status': 'draft',
+                        'description_needs_review': bool(
+                            metadata_notes.get('description_needs_review')
+                        ),
                         'file_paths': {
                             'audio': str(draft_processed_path),
                             'metadata': str(
@@ -3875,6 +3920,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     'bible_text': bible_text or '',
                     'duration': duration,
                     'status': 'processed',
+                    'description_needs_review': bool(
+                        metadata_notes.get('description_needs_review')
+                    ),
                     'upload_info': {
                         'sermonaudio_id': str(sermon_id),
                         'upload_date': dt.datetime.now(),
@@ -3948,6 +3996,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     'event_type': event_type or '',
                     'bible_text': bible_text or '',
                     'status': 'error',
+                    'description_needs_review': bool(
+                        metadata_notes.get('description_needs_review')
+                    ),
                     'upload_info': {
                         'sermonaudio_id': str(sermon_id),
                         'upload_date': dt.datetime.now(),
@@ -4801,13 +4852,17 @@ def generate_validated_summary(
         validation_info['final_status'] = 'no_validation'
         return summary, validation_info
 
+    def _fallback_provider():
+        providers = getattr(llm_manager, 'fallback_providers', None) or []
+        return providers[0] if providers else None
+
     def try_generate_summary(use_fallback=False):
         """Helper function to generate summary with specific provider."""
         notes: dict = {}
-        if use_fallback and llm_manager.fallback_provider:
+        if use_fallback and _fallback_provider():
             # Temporarily swap providers for fallback generation
             original_primary = llm_manager.primary_provider
-            llm_manager.primary_provider = llm_manager.fallback_provider
+            llm_manager.primary_provider = _fallback_provider()
             try:
                 summary = generate_summary(transcript, event_type, speaker_name, notes=notes)
                 return summary, notes
@@ -4837,7 +4892,7 @@ def generate_validated_summary(
         return primary_summary, validation_info
 
     # If primary failed validation, try fallback
-    if llm_manager.fallback_provider:
+    if _fallback_provider():
         logger.debug("Primary summary failed validation, trying fallback model...")
         validation_info['fallback_used'] = True
         fallback_summary, fallback_notes = try_generate_summary(use_fallback=True)
@@ -4949,6 +5004,8 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
     hashtags = None
     transcript = None
     validation_info = None
+    description_needs_review = False
+    description_error: str | None = None
 
     # Determine if we need transcript for metadata or saving
     needs_transcript = needs_desc_update or needs_hash_update
@@ -4976,11 +5033,33 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
             if needs_desc_update:
                 if not verbose:
                     print("   Generating description...")
-                summary, validation_info = generate_validated_summary(
-                    transcript, event_type=event_type, speaker_name=speaker_name
-                )
-                logger.debug("Generated description (%d chars), validation: %s",
-                           len(summary), validation_info['final_status'])
+                try:
+                    summary, validation_info = generate_validated_summary(
+                        transcript, event_type=event_type, speaker_name=speaker_name
+                    )
+                    description_needs_review = bool(
+                        validation_info.get('description_needs_review')
+                    )
+                    logger.debug("Generated description (%d chars), validation: %s",
+                               len(summary), validation_info['final_status'])
+                except DescriptionGenerationError as e:
+                    summary = None
+                    description_needs_review = True
+                    description_error = str(e)
+                    validation_info = {
+                        'final_status': 'generation_failed',
+                        'needs_review': True,
+                        'description_needs_review': True,
+                    }
+                    logger.warning(
+                        "Description generation failed (provider=%s, elapsed=%s, "
+                        "attempts=%s); leaving the stored description unchanged "
+                        "and marking it for review: %s",
+                        getattr(e, 'provider', None),
+                        getattr(e, 'elapsed_seconds', None),
+                        getattr(e, 'attempts', None),
+                        e,
+                    )
 
             if needs_hash_update:
                 if not verbose:
@@ -5110,18 +5189,48 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
             try:
                 repo = SermonRepository()
                 with repo.db.get_connection() as conn:
-                    conn.execute(
-                        "UPDATE sermons SET description = ?, updated_at = ? WHERE id = ?",
-                        (summary, dt.datetime.now(), sermon_id)
-                    )
-                    conn.execute("""
-                        INSERT OR REPLACE INTO sermon_content
-                        (sermon_id, transcript_text, description, hashtags, updated_at)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (
-                        sermon_id, transcript or '', summary or '', hashtags or '',
-                        str(dt.datetime.now())
-                    ))
+                    if summary is not None:
+                        conn.execute(
+                            "UPDATE sermons SET description = ?, updated_at = ? WHERE id = ?",
+                            (summary, dt.datetime.now(), sermon_id)
+                        )
+                    else:
+                        conn.execute(
+                            "UPDATE sermons SET updated_at = ? WHERE id = ?",
+                            (dt.datetime.now(), sermon_id)
+                        )
+
+                    content_updates: dict[str, str] = {}
+                    if transcript is not None:
+                        content_updates['transcript_text'] = transcript
+                    if summary is not None:
+                        content_updates['description'] = summary
+                    if hashtags is not None:
+                        content_updates['hashtags'] = hashtags
+                    if content_updates:
+                        cols = list(content_updates)
+                        placeholders = ", ".join(["?" for _ in cols])
+                        set_expr = ", ".join(f"{c} = excluded.{c}" for c in cols)
+                        conn.execute(f"""
+                            INSERT INTO sermon_content
+                            (sermon_id, {', '.join(cols)}, updated_at)
+                            VALUES (?, {placeholders}, ?)
+                            ON CONFLICT(sermon_id) DO UPDATE SET
+                                {set_expr}, updated_at = excluded.updated_at
+                        """, [sermon_id, *content_updates.values(), str(dt.datetime.now())])
+
+                    if needs_desc_update:
+                        conn.execute(
+                            "UPDATE sermons SET description_needs_review = ? WHERE id = ?",
+                            (1 if description_needs_review else 0, sermon_id),
+                        )
+
+                    merged = conn.execute(
+                        "SELECT transcript_text, description, hashtags FROM sermon_content "
+                        "WHERE sermon_id = ?",
+                        (sermon_id,),
+                    ).fetchone()
+                    merged = dict(merged) if merged else {}
                     conn.execute("DELETE FROM sermon_search WHERE sermon_id = ?", (sermon_id,))
                     conn.execute("""
                         INSERT INTO sermon_search
@@ -5131,9 +5240,9 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                         sermon_id,
                         sermon_name or '',
                         speaker_name or '',
-                        transcript or '',
-                        summary or '',
-                        hashtags or '',
+                        merged.get('transcript_text') or '',
+                        merged.get('description') or '',
+                        merged.get('hashtags') or '',
                     ))
                     conn.commit()
                 logger.debug("Dry-run: saved generated content to database")
@@ -5281,6 +5390,8 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                 'bible_text': str(getattr(details, 'bibleText', '') or ''),
                 'duration': int(getattr(details, 'durationSeconds', 0) or 0),
                 'status': 'processed' if not DRY_RUN else 'pending',
+                'description_needs_review': description_needs_review,
+                'description_error': description_error,
                 'file_paths': {
                     'audio': (
                         output_audio if output_audio and os.path.exists(output_audio) else None
@@ -5340,7 +5451,9 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
         "action": "processed",
         "completed": completed_actions,
         "skipped": [action for action in processing_actions if action not in completed_actions],
-        "validation_info": validation_info if validation_info else None
+        "validation_info": validation_info if validation_info else None,
+        "description_needs_review": description_needs_review,
+        "description_error": description_error,
     }
 
 
