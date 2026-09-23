@@ -1303,6 +1303,26 @@ def _auto_edit_confidence_threshold(auto_edit_cfg: dict[str, Any]) -> float:
     return min(float(auto_edit_cfg.get('auto_confidence_threshold', 0.8)), 0.99)
 
 
+def _cut_detection_needs_transcript(
+    config: dict[str, Any] | None,
+    auto_edit_mode: str | None,
+    edit_plan_file: str | None,
+    input_is_video: bool,
+) -> bool:
+    """True when the run will LLM-detect cut points and therefore needs segments.
+
+    An explicit edit plan supplies the cuts, so detection never runs. Auto-edit
+    only applies to video inputs. Otherwise the gate is active when the caller
+    forced a mode or the config enables auto-edit.
+    """
+    if edit_plan_file or not input_is_video:
+        return False
+    if auto_edit_mode is not None:
+        return True
+    cfg = config.get('auto_edit', {}) if isinstance(config, dict) else {}
+    return bool(cfg.get('enabled', False))
+
+
 def _auto_edit_metadata_block(auto_edit_cfg: dict[str, Any] | None) -> dict[str, Any]:
     """Ending-card prefs persisted with a draft for deferred renders/snippets."""
     cfg = auto_edit_cfg if isinstance(auto_edit_cfg, dict) else {}
@@ -2679,9 +2699,15 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 final_upload_path = original_input_path
                 upload_type = "original-video"
 
-        # Step 2: Transcribe audio for metadata generation
+        # Step 2: Transcribe audio for metadata generation and cut detection.
+        # Supplying every metadata field must not starve cut detection: when
+        # the gate will LLM-detect cut points, a transcript is required.
         transcript = ""
         transcript_segments: list[dict[str, float | str]] = []
+        detection_needs_transcript = _cut_detection_needs_transcript(
+            config, auto_edit_mode, edit_plan_file, input_is_video
+        )
+        metadata_needs_transcript = not (title and description and hashtags)
         if reuse_transcript is not None:
             # Apply/re-render path: the review step already transcribed this
             # sermon, so reuse the retained transcript instead of re-running
@@ -2696,7 +2722,18 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 len(transcript),
             )
             _report(55, f"Reusing retained transcript ({len(transcript)} characters)")
-        elif (not title or not description or not hashtags) and not skip_transcription:
+        elif detection_needs_transcript or (
+            metadata_needs_transcript and not skip_transcription
+        ):
+            if detection_needs_transcript and skip_transcription:
+                console_print(
+                    "Cut detection needs a transcript; ignoring "
+                    "--skip-transcription for this run."
+                )
+                logger.warning(
+                    "Cut detection is enabled; ignoring skip_transcription so "
+                    "detection has transcript segments"
+                )
             transcript = _reuse_existing_transcript(
                 original_input_path, speaker_name, series_title, title, config
             )
@@ -2746,6 +2783,16 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 _report(55, f"Transcription complete: {len(transcript)} characters")
         elif skip_transcription:
             console_print("Skipping transcription (--skip-transcription enabled)")
+            _report(55, "Skipped transcription")
+        else:
+            console_print(
+                "Skipping transcription: metadata supplied and cut detection "
+                "is not going to run"
+            )
+            logger.info(
+                "Skipping transcription: metadata supplied and cut detection "
+                "is not going to run"
+            )
             _report(55, "Skipped transcription")
 
         result['transcript'] = transcript
