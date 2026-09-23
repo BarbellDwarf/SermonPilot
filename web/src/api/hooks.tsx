@@ -193,6 +193,7 @@ export function useLibrarySermons(query: string, sort: LibrarySort) {
 export interface SermonDetailData {
   sermon: LibrarySermon;
   description: string | null;
+  descriptionNeedsReview: boolean;
   files: { file_type: string; file_path: string; file_size: number | null }[];
   transcriptAvailable: boolean;
   transcriptLength: number;
@@ -210,7 +211,7 @@ export function useSermonDetail(id: string | undefined) {
   if (!isLive) {
     return {
       data: mockSermon
-        ? ({ sermon: mockSermon, description: null, files: [], transcriptAvailable: false, transcriptLength: 0 } as SermonDetailData)
+        ? ({ sermon: mockSermon, description: null, descriptionNeedsReview: false, files: [], transcriptAvailable: false, transcriptLength: 0 } as SermonDetailData)
         : null,
       isLoading: false,
       error: null as string | null,
@@ -222,6 +223,7 @@ export function useSermonDetail(id: string | undefined) {
       ? ({
           sermon: toLibrarySermon(live.data),
           description: live.data.description,
+          descriptionNeedsReview: live.data.description_needs_review,
           files: live.data.files,
           transcriptAvailable: live.data.transcript_available,
           transcriptLength: live.data.transcript_length,
