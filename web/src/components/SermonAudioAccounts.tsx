@@ -100,7 +100,9 @@ function AccountCard({
           </div>
         ) : null}
       </dl>
-      <p className="mt-1 text-xs text-muted">API key {sourceCopy("db")}.</p>
+      <p className="mt-1 text-xs text-muted">
+        {account.hasKey ? `API key ${sourceCopy("db")}.` : "No API key stored."}
+      </p>
       <div className="mt-2 flex flex-wrap gap-2">
         <Button onClick={onEdit} aria-label={`Edit ${account.name}`}>
           Edit
