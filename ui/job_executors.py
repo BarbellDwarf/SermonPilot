@@ -1473,6 +1473,37 @@ def execute_batch_processing_job(job: Job) -> JobResult:
         )
 
 
+def _classify_metadata_update_result(result: dict, actions: dict) -> dict[str, Any]:
+    """Decide whether a metadata-update result actually did the requested work.
+
+    A skipped record, a description flagged for review, or a requested action
+    that produced no value is a failure with a reason; only real work counts as
+    success. This keeps a no-op regenerate from reporting success.
+    """
+    if not result:
+        return {"ok": False, "reason": "no result returned"}
+    if result.get("action") == "skipped":
+        return {"ok": False, "reason": result.get("reason") or "nothing to regenerate"}
+    if result.get("description_needs_review"):
+        return {
+            "ok": False,
+            "reason": result.get("description_error") or "description needs review",
+        }
+    requested: list[str] = []
+    if actions.get("generate_description"):
+        requested.append("description")
+    if actions.get("generate_hashtags"):
+        requested.append("hashtags")
+    completed = result.get("completed") or []
+    missing = [name for name in requested if name not in completed]
+    if missing:
+        reason = result.get("description_error")
+        if not reason:
+            reason = f"requested {', '.join(missing)} was not generated"
+        return {"ok": False, "reason": reason}
+    return {"ok": True, "reason": None}
+
+
 def execute_metadata_update_job(job: Job) -> JobResult:
     """Execute a metadata update job (AI description/hashtag generation)"""
     try:
@@ -1510,7 +1541,8 @@ def execute_metadata_update_job(job: Job) -> JobResult:
             'total': len(sermon_ids),
             'completed': 0,
             'failed': 0,
-            'details': []
+            'details': [],
+            'failures': [],
         }
 
         for i, sermon_id in enumerate(sermon_ids):
@@ -1535,28 +1567,41 @@ def execute_metadata_update_job(job: Job) -> JobResult:
                     config=config,
                 )
 
-                if result and result.get('description_needs_review'):
-                    results['failed'] += 1
-                    reason = result.get('description_error') or 'description needs review'
-                    job.add_log(
-                        f"Sermon {sermon_id}: description generation failed - retry ({reason})"
-                    )
-                    logger.warning(
-                        "Metadata update for %s: description generation failed - retry (%s)",
-                        sermon_id, reason,
-                    )
-                else:
+                outcome = _classify_metadata_update_result(result, actions)
+                if outcome["ok"]:
                     results['completed'] += 1
                     job.add_log(f"Sermon {sermon_id}: Updated")
+                else:
+                    results['failed'] += 1
+                    results['failures'].append(
+                        {"sermon_id": sermon_id, "reason": outcome["reason"]}
+                    )
+                    job.add_log(f"Sermon {sermon_id}: {outcome['reason']}")
+                    logger.warning(
+                        "Metadata update for %s did not complete: %s",
+                        sermon_id,
+                        outcome["reason"],
+                    )
 
             except Exception as e:
                 results['failed'] += 1
+                results['failures'].append({"sermon_id": sermon_id, "reason": str(e)})
                 job.add_log(f"Sermon {sermon_id}: {str(e)}")
                 logger.error(f"Metadata update error for {sermon_id}: {e}")
 
         summary = f"Metadata update: {results['completed']} completed, {results['failed']} failed"
         job.update_progress(100, summary)
 
+        if results['failed']:
+            reasons = "; ".join(
+                f"{item['sermon_id']}: {item['reason']}" for item in results['failures']
+            )
+            return JobResult(
+                success=False,
+                message=summary,
+                error=reasons or "one or more sermons did not update",
+                data=results,
+            )
         return JobResult(success=True, message=summary, data=results)
 
     except JobCancelledError:

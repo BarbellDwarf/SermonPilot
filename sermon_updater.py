@@ -5265,6 +5265,17 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                 hashtags = generate_hashtags(transcript)
                 logger.debug("Generated hashtags: %s", hashtags)
 
+    if needs_desc_update and summary is None and description_error is None:
+        description_needs_review = True
+        description_error = "No description was generated"
+        if not transcript:
+            description_error += " because no transcript was available"
+        logger.warning(
+            "Description regeneration produced no output for %s: %s",
+            sermon_id,
+            description_error,
+        )
+
     # Audio processing (if needed)
     output_audio = None
     if needs_audio:
