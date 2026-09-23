@@ -73,6 +73,7 @@ export interface SermonReviewProps {
   onSaveDetails?: (patch: DetailsPatch) => Promise<void> | void;
   onRefresh?: () => void;
   onToast: (msg: string) => void;
+  enhanceDefault?: boolean;
 }
 
 function CollapsibleSection({
@@ -143,12 +144,14 @@ export function SermonReview({
   onSaveDetails,
   onRefresh,
   onToast,
+  enhanceDefault = true,
 }: SermonReviewProps) {
   const [plan, setPlan] = useState(initial);
   const [startText, setStartText] = useState(formatCut(initial.startSec));
   const [endText, setEndText] = useState(formatCut(initial.endSec));
   const [offsetText, setOffsetText] = useState(initial.offsetSec.toFixed(1));
   const [applying, setApplying] = useState(false);
+  const [enhance, setEnhance] = useState(enhanceDefault);
   const [refining, setRefining] = useState(false);
   const [notesText, setNotesText] = useState("");
   const [notesOpen, setNotesOpen] = useState(false);
@@ -256,6 +259,7 @@ export function SermonReview({
           end: end ?? plan.endSec,
           audio_offset: offset ?? plan.offsetSec,
           render_only: renderOnly,
+          enhance_audio: enhance,
         })
         .then(() => {
           setApplying(false);
@@ -436,6 +440,21 @@ export function SermonReview({
             History
           </Button>
         </div>
+        <label className="flex w-fit flex-wrap items-center gap-2 text-sm text-mist">
+          <input
+            type="checkbox"
+            checked={enhance}
+            onChange={(e) => setEnhance(e.target.checked)}
+            data-testid="apply-enhance-audio"
+            className="h-4 w-4"
+          />
+          Enhance audio
+          <span className="text-xs text-muted">
+            {enhance
+              ? "requested for this apply (defaults to Audio settings)"
+              : "skipped for this apply"}
+          </span>
+        </label>
         {notesOpen ? (
           <div className="rounded-md border border-line bg-ink p-3">
             <label htmlFor="refine-notes" className="text-sm font-semibold">
