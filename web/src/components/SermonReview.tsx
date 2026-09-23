@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { mediaStreamUrl, writeApi, type ApiMediaItem } from "../api/client";
+import { mediaStreamUrl, writeApi, type ApiMediaItem, ApiError } from "../api/client";
 import type { SermonMediaData } from "../api/hooks";
 import type { EditPlan, LibrarySermon, PlanStatus } from "../mock/data";
 import { formatCut, parseCut } from "../utils/time";
@@ -244,6 +244,8 @@ export function SermonReview({
   const [endText, setEndText] = useState(formatCut(initial.endSec));
   const [offsetText, setOffsetText] = useState(initial.offsetSec.toFixed(1));
   const [applying, setApplying] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [confirmUploadNoDescription, setConfirmUploadNoDescription] = useState(false);
   const [enhance, setEnhance] = useState(enhanceDefault);
   const [refining, setRefining] = useState(false);
   const [notesText, setNotesText] = useState("");
@@ -373,6 +375,42 @@ export function SermonReview({
   };
 
   const dirty = start !== plan.startSec || end !== plan.endSec || offset !== plan.offsetSec;
+
+  const processedAvailable = !!media.byKind.processed?.available;
+  const alreadyPublished = sermon.status === "processed";
+
+  const uploadExisting = (confirmMissingDescription: boolean) => {
+    if (uploading) return;
+    if (live) {
+      setUploading(true);
+      void writeApi
+        .uploadOnly(sermon.id, { confirm_missing_description: confirmMissingDescription })
+        .then(() => {
+          setUploading(false);
+          setConfirmUploadNoDescription(false);
+          onToast("Upload of the existing render queued.");
+        })
+        .catch((e) => {
+          setUploading(false);
+          const err = e as ApiError;
+          if (err?.code === "missing_description" && !confirmMissingDescription) {
+            setConfirmUploadNoDescription(true);
+            return;
+          }
+          if (err?.code === "job_active") {
+            onToast("A job is already running for this teaching.");
+            return;
+          }
+          onToast(err?.message || "Could not queue the upload.");
+        });
+      return;
+    }
+    setUploading(true);
+    window.setTimeout(() => {
+      setUploading(false);
+      onToast("Upload of the existing render queued (mock).");
+    }, 900);
+  };
 
   const approve = (renderOnly: boolean) => {
     if (errors.length > 0 || applying) return;
@@ -661,6 +699,21 @@ export function SermonReview({
                   >
                     Approve · Render-only
                   </button>
+                  {alreadyPublished ? null : (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-testid="upload-existing-render"
+                      className={menuItemClass}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        uploadExisting(false);
+                      }}
+                      disabled={!processedAvailable || applying || uploading}
+                    >
+                      {uploading ? "Uploading…" : "Upload existing render"}
+                    </button>
+                  )}
                   <button
                     type="button"
                     role="menuitem"
@@ -729,6 +782,21 @@ export function SermonReview({
               >
                 Approve · Render+upload
               </Button>
+              {alreadyPublished ? null : (
+                <Button
+                  data-testid="upload-existing-render"
+                  onClick={() => uploadExisting(false)}
+                  disabled={!processedAvailable || applying || uploading}
+                  aria-busy={uploading}
+                  title={
+                    processedAvailable
+                      ? "Publish the render already on disk without re-rendering."
+                      : "No rendered output yet. Render the approved cut first."
+                  }
+                >
+                  {uploading ? "Uploading…" : "Upload existing render"}
+                </Button>
+              )}
               <Button
                 className="w-full min-[480px]:w-auto"
                 onClick={() => setNotesOpen((v) => !v)}
@@ -1224,6 +1292,15 @@ export function SermonReview({
           setStatusLog([]);
           onToast("Original restored (mock). Plan reset to draft.");
         }}
+      />
+
+      <ConfirmDialog
+        open={confirmUploadNoDescription}
+        title={`Upload “${sermon.title}” without a description?`}
+        body="The description is empty because generation did not finish. Regenerate the description from the transcript before uploading, or upload anyway to publish the entry without one."
+        confirmLabel="Upload anyway"
+        onClose={() => setConfirmUploadNoDescription(false)}
+        onConfirm={() => uploadExisting(true)}
       />
     </div>
   );
