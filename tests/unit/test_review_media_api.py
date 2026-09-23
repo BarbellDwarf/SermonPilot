@@ -9,6 +9,13 @@ from unittest.mock import Mock
 
 import sermon_updater as su
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _allow_tmp_output_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_DIRECTORY", str(tmp_path))
+
 
 def _set_output_dir(user_id: str, path: Path) -> None:
     from server.api.accounts import set_setting, writable_conn

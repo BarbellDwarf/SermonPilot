@@ -358,11 +358,53 @@ def _resolve_output_path(value: str) -> Path:
     return path.resolve()
 
 
+def _operator_output_roots() -> list[Path]:
+    """Stable, operator-controlled roots an output directory may live under.
+
+    The per-user output directory is user-settable, so without a root model a
+    user could point it at ``/etc`` and read the whole filesystem through the
+    file views. Allowed roots are the app default, the raw ingest directory and
+    the configured input/output directories; anything else falls back to the
+    default.
+    """
+    candidates = [_resolve_output_path(_DEFAULT_OUTPUT_DIR)]
+    raw = os.environ.get("SERMONPILOT_RAW_INGEST", "").strip()
+    if raw:
+        candidates.append(Path(raw))
+    try:
+        from ui.config_utils import resolve_config
+
+        config = resolve_config() or {}
+        for key in ("output_directory", "input_directory"):
+            configured = str(config.get(key) or "").strip()
+            if configured and not configured.startswith("remote:"):
+                candidates.append(_resolve_output_path(configured))
+    except Exception as exc:
+        logger.warning("Could not resolve output roots: %s", exc)
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except (OSError, RuntimeError):
+            continue
+        if str(resolved) not in seen:
+            seen.add(str(resolved))
+            roots.append(resolved)
+    return roots
+
+
+def _within_output_roots(path: Path) -> bool:
+    return any(path == root or root in path.parents for root in _operator_output_roots())
+
+
 def resolve_user_output_dir(user: dict) -> Path:
     """Absolute output root for a user: settings.general.output_dir or the default.
 
     A configured cloud reference (``remote:<name>:<sub>``) has no local root, so
-    the local file views fall back to the default directory.
+    the local file views fall back to the default directory. A stored path
+    outside the operator roots (for example one written by a settings restore)
+    also falls back, so it can never become a read root.
     """
     with writable_conn() as conn:
         general = get_setting(conn, user["id"], "settings.general")
@@ -371,7 +413,10 @@ def resolve_user_output_dir(user: dict) -> Path:
         configured = str(general.get("output_dir") or "").strip()
     if configured.startswith("remote:"):
         return _resolve_output_path(_DEFAULT_OUTPUT_DIR)
-    return _resolve_output_path(configured or _DEFAULT_OUTPUT_DIR)
+    resolved = _resolve_output_path(configured or _DEFAULT_OUTPUT_DIR)
+    if not _within_output_roots(resolved):
+        return _resolve_output_path(_DEFAULT_OUTPUT_DIR)
+    return resolved
 
 
 def _validate_remote_output(value: str, user: dict) -> str | None:
@@ -408,6 +453,8 @@ def validate_output_path(value: str) -> Path:
     resolved = _resolve_output_path(raw)
     if resolved == Path(resolved.anchor):
         raise HTTPException(status_code=422, detail="output_dir cannot be the filesystem root")
+    if not _within_output_roots(resolved):
+        raise HTTPException(status_code=422, detail="output_dir is outside the allowed roots")
     if resolved.exists():
         if not resolved.is_dir():
             raise HTTPException(status_code=422, detail="output_dir is not a directory")
@@ -459,7 +506,9 @@ def get_output_dir(user=Depends(require_user)):
     configured = ""
     if isinstance(general, dict):
         configured = str(general.get("output_dir") or "").strip()
-    if configured:
+    if configured.startswith("remote:"):
+        return {"output_dir": configured, "source": "user"}
+    if configured and _within_output_roots(_resolve_output_path(configured)):
         return {"output_dir": configured, "source": "user"}
     return {"output_dir": _DEFAULT_OUTPUT_DIR, "source": "default"}
 

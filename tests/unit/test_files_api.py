@@ -2,6 +2,13 @@ from __future__ import annotations
 
 import base64
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _allow_tmp_output_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_DIRECTORY", str(tmp_path))
+
 
 def _seed_key(user_id: str, raw: str) -> None:
     from server.api.accounts import set_setting, writable_conn
@@ -29,6 +36,23 @@ def test_me_files_lists_only_user_output_dir(client, scoped_setup, tmp_path):
     names = [f["name"] for f in r.json()["items"]]
     assert "user-a-talk" in names
     assert "shared.txt" in names
+
+
+def test_output_dir_outside_allowed_roots_is_refused(client, scoped_setup, tmp_path):
+    s = scoped_setup
+    r = client.put(
+        "/api/me/output-dir", json={"output_dir": "/etc"}, headers=s["a"]["headers"]
+    )
+    assert r.status_code == 422, r.text
+
+    _seed_output_dir(s["a"]["id"], "/etc")
+    files = client.get("/api/me/files", headers=s["a"]["headers"])
+    assert files.status_code == 200
+    assert files.json()["root"] != "/etc"
+    dl = client.get(
+        "/api/me/files/download", params={"path": "passwd"}, headers=s["a"]["headers"]
+    )
+    assert dl.status_code == 404
 
 
 def test_file_download_path_traversal_blocked(client, scoped_setup, tmp_path):

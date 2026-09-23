@@ -3,7 +3,15 @@ from __future__ import annotations
 import json
 import sqlite3
 
+import pytest
+
 from server.api.accounts import get_db_path
+
+
+@pytest.fixture(autouse=True)
+def _allow_tmp_roots(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_DIRECTORY", str(tmp_path))
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
 
 
 def _seed_output_dir(user_id: str, path) -> None:
