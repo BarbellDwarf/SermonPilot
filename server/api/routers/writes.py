@@ -280,13 +280,15 @@ def _active_job_for(sermon_id: str) -> dict[str, Any] | None:
 
 
 class ApplyBody(BaseModel):
-    start: float
-    end: float
+    start: float = 0.0
+    end: float = 0.0
     audio_offset: float = 0.0
     render_only: bool = True
     re_detect: bool = False
     plan_id: str | None = None
     enhance_audio: bool | None = None
+    upload_only: bool = False
+    confirm_missing_description: bool = False
 
 
 class RefineBody(BaseModel):
@@ -352,11 +354,98 @@ def re_detect_plan(sermon_id: str, user=Depends(require_user)):
     )
 
 
+_UPLOAD_ONLY_STATUS: dict[str, int] = {
+    "not_found": 404,
+    "already_published": 409,
+    "no_render": 422,
+    "missing_description": 422,
+}
+
+
+def _enqueue_upload_existing(
+    *,
+    sermon_id: str,
+    user: dict,
+    confirm_missing_description: bool,
+) -> dict[str, Any]:
+    """Queue the upload-only action for a sermon whose render already exists.
+
+    The refusal guards run here, before a job exists, so the console gets an
+    immediate reason instead of a queued job that fails later. ``upload_only``
+    never falls back to a full re-render: when the guard refuses, no job is
+    created.
+    """
+    from server.api.db import get_repository
+    from ui.upload_only import assess_upload_only
+
+    active = _active_job_for(sermon_id)
+    if active:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "an active job already exists for this sermon",
+                "job_id": active["id"],
+                "code": "job_active",
+            },
+        )
+    assessment = assess_upload_only(
+        get_repository(),
+        sermon_id,
+        confirm_missing_description=confirm_missing_description,
+    )
+    if not assessment.ok:
+        detail: dict[str, Any] = {
+            "code": assessment.code,
+            "message": assessment.message,
+        }
+        if assessment.can_regenerate:
+            detail["can_regenerate"] = True
+        raise HTTPException(
+            status_code=_UPLOAD_ONLY_STATUS.get(assessment.code, 422),
+            detail=detail,
+        )
+    from ui.job_labels import build_job_labels
+    from ui.job_queue import JobType
+
+    name, description = build_job_labels(
+        JobType.SERMON_PUBLISH,
+        variant="upload_only",
+        **_sermon_label_fields(sermon_id),
+    )
+    job_id = _queue().add_job(
+        JobType.SERMON_PUBLISH,
+        name,
+        description,
+        parameters={
+            "sermon_id": sermon_id,
+            "upload_only": True,
+            "confirm_missing_description": bool(confirm_missing_description),
+            "config": _resolved_job_config(),
+        },
+        user_id=user.get("id"),
+    )
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "render": {
+            "name": assessment.render_name,
+            "size": assessment.render_size,
+            "size_human": assessment.render_size_human,
+        },
+    }
+
+
 @router.post("/sermons/{sermon_id}/plan/apply", status_code=202)
 def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(require_user)):
     owner = _sermon_owner(sermon_id)
     if owner is None or not visible(owner, user):
         raise HTTPException(status_code=404, detail="sermon not found")
+    if body.upload_only:
+        return _enqueue_upload_existing(
+            sermon_id=sermon_id,
+            user=user,
+            confirm_missing_description=body.confirm_missing_description,
+        )
     if body.end <= body.start:
         raise HTTPException(status_code=422, detail="end must be greater than start")
     active = _active_job_for(sermon_id)

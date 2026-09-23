@@ -122,6 +122,33 @@ def test_labels_from_job_infers_apply_variant_from_params() -> None:
     assert "uploading it to SermonAudio" in description
 
 
+def test_upload_only_variant_states_the_existing_render() -> None:
+    name, description = build_job_labels(
+        JobType.SERMON_PUBLISH,
+        title=TITLE,
+        speaker=SPEAKER,
+        recorded_date=DATE,
+        variant="upload_only",
+    )
+    assert name.startswith("Upload existing render")
+    assert description == f'Uploading the existing render for "{TITLE}" ({SPEAKER}).'
+
+
+def test_labels_from_job_infers_upload_only_variant_from_params() -> None:
+    job = Job(
+        id="job-3",
+        type=JobType.SERMON_PUBLISH,
+        title="ignored",
+        description="ignored",
+        status=JobStatus.RUNNING,
+        progress=0.0,
+        created_at=datetime.now(),
+        parameters={"sermon_id": "s-1", "upload_only": True},
+    )
+    _, description = labels_from_job(job)
+    assert description.startswith("Uploading the existing render for")
+
+
 def test_sermon_fields_for_reads_the_repository(monkeypatch) -> None:
     class _Repo:
         def get_sermon(self, sermon_id: str) -> dict[str, str]:
