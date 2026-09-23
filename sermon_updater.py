@@ -2025,12 +2025,68 @@ def _mux_audio_codec_args(audio_path: str | Path) -> list[str]:
 
     Audio already in an AAC-compatible container is stream-copied so the mux
     never re-encodes (and never falls back to ffmpeg's low default bitrate).
-    Anything else is encoded once at 192k, matching the rest of the pipeline.
+    Anything else, a PCM WAV included, is encoded once at 192k. The arguments
+    must describe the same path that is passed to ``-i``; ``_build_mux_command``
+    is the only caller and enforces that.
     """
     suffix = Path(audio_path).suffix.lower()
     if suffix in ('.mp4', '.m4a', '.aac'):
         return ['-c:a', 'copy']
     return ['-c:a', 'aac', '-b:a', '192k']
+
+
+def _build_mux_command(
+    video_input: str | Path,
+    audio_input: str | Path,
+    out: str | Path,
+    correction: float = 0.0,
+) -> list[str]:
+    """Build the ffmpeg command that muxes an enhanced audio track into video.
+
+    The codec arguments come from ``audio_input``, the same path handed to
+    ``-i``, so the stream-copy decision can never disagree with the input and
+    stream-copy a PCM WAV into a video container.
+    """
+    cmd = ["ffmpeg", "-y", "-i", str(video_input)]
+    if abs(correction) > 1e-6:
+        cmd += ["-itsoffset", f"{correction:.3f}"]
+    cmd += [
+        "-i", str(audio_input),
+        "-c:v", "copy",
+        *_mux_audio_codec_args(audio_input),
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-shortest",
+        str(out),
+    ]
+    return cmd
+
+
+def _mux_video_with_audio(
+    video_input: str | Path,
+    audio_input: str | Path,
+    out: str | Path,
+    correction: float = 0.0,
+    *,
+    cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
+) -> list[str]:
+    """Mux, then return A/V stream-bound problems (empty means within tolerance)."""
+    cmd = _build_mux_command(video_input, audio_input, out, correction)
+    logger.info("Muxing enhanced audio into video: %s", " ".join(cmd))
+    run_supervised(
+        cmd,
+        cancel_check=cancel_check,
+        log=cancel_log,
+        step="video mux",
+        partial_paths=[out],
+        partial_reason="cancelled_render_partial",
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=True,
+    )
+    return _verify_mux_av_sync(out)
 
 
 def _transcode_media(
@@ -2693,11 +2749,15 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 logger.warning("AudioProcessor unavailable, skipping enhancement")
                 enhanced_audio_path = audio_path
 
-        # The enhancer writes WAV regardless of the input container; transcode
-        # back to the input's format so saved/uploaded files match their
-        # extension and MIME type instead of shipping a 500MB "mp3".
+        # The enhancer writes WAV regardless of the input container. An
+        # audio-only source is transcoded back to its format so the saved and
+        # uploaded file matches its extension and MIME type instead of shipping
+        # a 500MB "mp3". A video source keeps the WAV: the mux encodes it once
+        # to AAC and that mux is the enhanced artifact the render consumes, so
+        # the retained enhancement is the file that was actually muxed.
         if (
-            enhanced_audio_path != audio_path
+            not input_is_video
+            and enhanced_audio_path != audio_path
             and enhanced_audio_path.exists()
             and temp_dir is not None
         ):
@@ -2730,13 +2790,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         f"{original_input_path.stem}_enhanced{original_input_path.suffix}"
                     )
                     # Encode the enhancer's WAV directly rather than remuxing
-                    # the AAC upload copy: a second AAC generation carries
-                    # encoder priming delay the mux would not compensate.
+                    # an AAC copy: a second AAC generation carries encoder
+                    # priming delay the mux would not compensate. The codec
+                    # arguments are derived from this same path by
+                    # ``_build_mux_command``.
                     mux_audio_input = Path(enhanced_audio_path)
-                    if temp_dir is not None:
-                        wav_candidate = temp_dir / "enhanced_audio.wav"
-                        if wav_candidate.exists():
-                            mux_audio_input = wav_candidate
 
                     correction = 0.0
                     av_cfg = config.get('av_sync') or {}
@@ -2816,32 +2874,14 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         except Exception as e:
                             logger.warning("av_sync measurement failed: %s", e)
 
-                    mux_cmd = ["ffmpeg", "-y", "-i", str(original_input_path)]
-                    if abs(correction) > 1e-6:
-                        mux_cmd += ["-itsoffset", f"{correction:.3f}"]
-                    mux_cmd += [
-                        "-i", str(mux_audio_input),
-                        "-c:v", "copy",
-                        *_mux_audio_codec_args(enhanced_audio_path),
-                        "-map", "0:v:0",
-                        "-map", "1:a:0",
-                        "-shortest",
-                        str(final_video),
-                    ]
-                    logger.info("Muxing enhanced audio into video: %s", " ".join(mux_cmd))
-                    run_supervised(
-                        mux_cmd,
+                    sync_problems = _mux_video_with_audio(
+                        original_input_path,
+                        mux_audio_input,
+                        final_video,
+                        correction,
                         cancel_check=_check_cancelled,
-                        log=cancel_log,
-                        step="video mux",
-                        partial_paths=[final_video],
-                        partial_reason="cancelled_render_partial",
-                        capture_output=True,
-                        text=True,
-                        timeout=600,
-                        check=True,
+                        cancel_log=cancel_log,
                     )
-                    sync_problems = _verify_mux_av_sync(final_video)
                     if sync_problems:
                         logger.warning(
                             "A/V sync check on %s: %s", final_video, "; ".join(sync_problems)
