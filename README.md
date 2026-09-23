@@ -35,8 +35,9 @@ cp .env.example .env
 ```
 
 No `config.yaml` is needed. On first launch the config-like environment
-variables are written into the SQLite settings database once (deploy-time
-secrets stay in the environment); see [Configuration](#configuration).
+variables are written into the SQLite settings database once (SermonAudio
+credentials are seeded this way; provider API keys stay in the environment);
+see [Configuration](#configuration).
 
 ### Docker (Pre-built Images)
 
@@ -137,10 +138,15 @@ Environment variables that seed and override settings:
 
 On first launch with any of these set, the config-like values are written into
 the settings database once, so a container started with only a `.env` file keeps
-its settings across restarts. Deploy-time secrets (the various `*_API_KEY`
-variables) are never copied into the database: they stay in the environment and
-override the stored value while set, and the Settings UI names the variable that
-is winning. Change settings any time in the web UI Settings page.
+its settings across restarts. The SermonAudio credentials are seeded this way
+too: the database becomes their source of truth, and an exported
+`SERMONAUDIO_API_KEY` or `SERMONAUDIO_BROADCASTER_ID` still wins and is reported
+as coming from the environment while it is set. The Console Settings page names
+"set by environment: SERMONAUDIO_API_KEY" on the fallback credential when that
+is the case. Other deploy-time secrets (the provider `*_API_KEY` variables) are
+never copied into the database: they stay in the environment and override the
+stored value while set, and the Settings UI names the variable that is winning.
+Change settings any time in the web UI Settings page.
 
 `config.yaml` is export/import only and never read for resolution:
 

@@ -93,8 +93,12 @@ ENV_NUMERIC_PATHS: dict[tuple[str, ...], type] = {
 # Deploy-time secrets: the owner keeps these in the environment, and they are
 # never copied into the settings database. They still override saved values for
 # the running process, and the Settings UI names the variable that is winning.
+#
+# SermonAudio credentials are deliberately absent: they are seeded into the
+# settings database on first resolve so the database can be their source of
+# truth, while an exported SERMONAUDIO_API_KEY still wins and is reported as
+# coming from the environment.
 SECRET_ENV_VARS: frozenset[str] = frozenset({
-    'SERMONAUDIO_API_KEY',
     'OPENAI_API_KEY',
     'ANTHROPIC_API_KEY',
     'XAI_API_KEY',

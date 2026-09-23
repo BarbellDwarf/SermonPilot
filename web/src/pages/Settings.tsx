@@ -9,6 +9,7 @@ import { GeneralSettingsSection } from "../components/GeneralSettings";
 import { LlmConnectionsSection } from "../components/LlmConnections";
 import { PromptTemplatesSection } from "../components/PromptTemplates";
 import { SermonAudioAccountsSection } from "../components/SermonAudioAccounts";
+import { SermonAudioCredentialsSection } from "../components/SermonAudioCredentials";
 import { TranscriptionSettingsSection } from "../components/TranscriptionSettings";
 import { ValidationSettingsSection } from "../components/ValidationSettings";
 import {
@@ -458,6 +459,7 @@ export function Settings({ user }: { user: { display_name: string; role?: string
       {active === "sermonaudio" && (
         <div role="tabpanel" id="panel-sermonaudio" aria-labelledby="tab-sermonaudio" className="flex flex-col gap-4">
         <SermonAudioAccountsSection show={show} />
+        <SermonAudioCredentialsSection show={show} />
         </div>
       )}
       {active === "cloud" && (
