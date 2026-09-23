@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { SermonReview, type DetailsPatch, type TranscriptState } from "../components/SermonReview";
-import { sermonActionMatrix } from "../components/sermonActions";
+import { SermonCompleted } from "../components/SermonCompleted";
+import { sermonActionMatrix, sermonViewMode } from "../components/sermonActions";
 import { sermonStatusLabel, sermonStatusTone } from "./Library";
 import { Button, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast, buttonClass } from "../components/ui";
 import { QueryError, useSermonDetail, useSermonMedia, useSermonPlan, useSermonTranscript } from "../api/hooks";
@@ -43,6 +44,7 @@ export function LibraryDetail() {
   const [pushing, setPushing] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [editingOverride, setEditingOverride] = useState(false);
 
   const { data: detail, isLoading, error, retry } = useSermonDetail(id);
   const { plan, history: planHistory, isLoading: planLoading, error: planError, retry: retryPlan } = useSermonPlan(id);
@@ -227,6 +229,9 @@ export function LibraryDetail() {
     hasRender: !!media.byKind["processed"]?.available,
   });
 
+  const viewMode = sermonViewMode({ status: sermon.status, planStatus: plan?.status });
+  const showCompleted = viewMode === "completed" && !editingOverride;
+
   const headerActions = (
     <>
       {actions.canPublishLegacy ? (
@@ -246,7 +251,24 @@ export function LibraryDetail() {
         ← Library
       </Link>
 
-      {planLoading ? (
+      {showCompleted ? (
+        <SermonCompleted
+          sermon={sermon}
+          description={detail?.description ?? null}
+          descriptionNeedsReview={detail?.descriptionNeedsReview ?? false}
+          media={media}
+          isLive={isLive}
+          statusChip={<Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>}
+          headerActions={headerActions}
+          transcript={transcriptState}
+          history={planHistory}
+          sermonaudioId={detail?.sermonaudioId ?? null}
+          uploadedAt={detail?.uploadedAt ?? null}
+          onEdit={() => setEditingOverride(true)}
+          onSaveDetails={saveDetails}
+          onRegenerateDescription={regenerateDescription}
+        />
+      ) : planLoading ? (
         <SkeletonList rows={3} />
       ) : planError ? (
         <QueryError message={planError} onRetry={retryPlan} />
@@ -268,6 +290,7 @@ export function LibraryDetail() {
           onToast={showToast}
           onUpload={push}
           enhanceDefault={enhanceDefault}
+          onShowCompleted={viewMode === "completed" ? () => setEditingOverride(false) : undefined}
         />
       ) : (
         <div className="flex flex-col gap-4">

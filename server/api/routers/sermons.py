@@ -180,6 +180,7 @@ def get_sermon(request: Request, sermon_id: str) -> SermonDetailOut:
         raise HTTPException(status_code=404, detail="sermon not found")
     files = repo.get_sermon_files(sermon_id)
     content = sermon.get("content") or {}
+    upload_info = sermon.get("upload_info") or {}
     transcript = content.get("transcript_text") or ""
     description = content.get("description") or sermon.get("description")
     try:
@@ -209,6 +210,19 @@ def get_sermon(request: Request, sermon_id: str) -> SermonDetailOut:
         ],
         transcript_available=bool(transcript.strip()),
         transcript_length=len(transcript),
+        sermonaudio_id=(
+            str(upload_info["sermonaudio_id"])
+            if upload_info.get("sermonaudio_id")
+            else None
+        ),
+        upload_date=(
+            str(upload_info["upload_date"]) if upload_info.get("upload_date") else None
+        ),
+        upload_status=(
+            str(upload_info["upload_status"])
+            if upload_info.get("upload_status")
+            else None
+        ),
     )
 
 

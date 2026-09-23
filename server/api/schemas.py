@@ -48,6 +48,9 @@ class SermonDetailOut(BaseModel):
     files: list[SermonFileOut] = []
     transcript_available: bool = False
     transcript_length: int = 0
+    sermonaudio_id: str | None = None
+    upload_date: str | None = None
+    upload_status: str | None = None
 
 
 class EditPlanOut(BaseModel):
