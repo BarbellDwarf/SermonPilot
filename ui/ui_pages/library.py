@@ -263,30 +263,28 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
                     f"the speaker wanted the audience to understand, believe, or do. "
                     f"Avoid generic statements; "
                     f"emphasize unique focus.\n\nTranscript:\n{transcript}\n\nGuidelines:\n"
-                    f"- Target 900 to 1200 characters; stay under 1400 "
-                    f"(the API rejects text over 1700)\n"
-                    f"- One paragraph format\n"
+                    f"- One paragraph of plain prose: cover the main message, the key "
+                    f"scripture, and the practical application\n"
+                    f"- Four to six sentences is usually enough; keep it under 1400 "
+                    f"characters so the upload is accepted\n"
                     + speaker_instruction +
-                    "- No intro/closing words\n- No markdown or bullets\n"
-                    "- Do not prefix with 'Summary:'\n- If incomplete, infer likely main message\n"
-                    "- Keep within the target length or the upload will fail\n"
+                    "- No intro or closing words\n- No markdown or bullets\n"
+                    "- Do not prefix with 'Summary:' or any other label\n"
+                    "- If the transcript is incomplete, infer the likely main message\n"
                     "- Use the actual speaker name, not placeholder text\n"
-                    "- IMPORTANT: Return ONLY the final summary paragraph. Do not include any "
-                    "reasoning, "
-                    "thinking process, explanations, or commentary. "
-                    "Start directly with the summary content."
+                    "- Reply with the description ONLY: no reasoning, no commentary, no "
+                    "character or word counting, no headings, no quotes, and no notes "
+                    "about the text or its length\n"
+                    "- Start directly with the description."
                 )
 
-                description = llm.chat([{'role': 'user', 'content': desc_prompt}])
+                raw_description = llm.chat([{'role': 'user', 'content': desc_prompt}])
                 from src.llm_manager import extract_final_answer
+                from src.metadata_cleanup import clean_description
 
-                description = extract_final_answer(description)
-
-                description = re.sub(
-                    r'^(Okay|Alright|Let me|I\'ll|I need to|Here[^:]*:|Sure[^:]*:).*?\n',
-                    '', description, flags=re.IGNORECASE | re.MULTILINE,
+                description = clean_description(
+                    extract_final_answer(raw_description) or raw_description
                 )
-                description = description.strip()
 
                 if len(description) > 1600:
                     from src.llm_manager import trim_to_sentence
@@ -305,7 +303,9 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
                     f"Text:\n{transcript[:3000]}\n\nHashtags:"
                 )
                 hashtags_raw = llm.chat([{'role': 'user', 'content': hashtag_prompt}])
-                hashtags = ' '.join(hashtags_raw.replace(',', ' ').split())[:150]
+                from src.metadata_cleanup import clean_hashtags
+
+                hashtags = clean_hashtags(hashtags_raw)
 
         # Save to database
         with st.spinner("Saving to database..."):

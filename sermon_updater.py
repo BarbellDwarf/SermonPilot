@@ -108,6 +108,12 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
         LLMTimeoutError,
     )
     from llm_manager import _call_with_deadline as _llm_call_with_deadline
+    from metadata_cleanup import (
+        clean_description,
+        clean_description_with_retry,
+        clean_hashtags,
+        clean_title,
+    )
     from processing.orchestrator import (
         ArgumentsNormalizer,
         ProcessingOrchestrator,
@@ -1625,7 +1631,7 @@ Generate a compelling sermon title:"""
         response = llm_manager.chat(messages)
 
         # Clean up the response
-        title = response.strip().strip('"').strip("'")
+        title = clean_title(response)
 
         # Ensure title doesn't exceed API limit
         if len(title) > 85:
@@ -1683,7 +1689,7 @@ Shortened title (max 30 chars):"""
 
     try:
         response = llm_manager.chat(messages)
-        short_title = response.strip().strip('"').strip("'")
+        short_title = clean_title(response)
         if len(short_title) > 30:
             short_title = short_title[:27] + "..."
         if short_title:
@@ -3012,6 +3018,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             console_print(f"✂️ Auto edit ready: {edited_path.name}")
 
         # Step 3: Generate metadata using transcript or fallback
+        metadata_notes: dict = {}
         if transcript and not skip_ai_generation:
             console_print("Generating metadata from transcript...")
 
@@ -3059,6 +3066,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                                 event_type=event_type,
                                 speaker_name=speaker_name
                             )
+                            if validation_info:
+                                metadata_notes['description_needs_review'] = bool(
+                                    validation_info.get('description_needs_review')
+                                )
                             is_valid, reason, score, _, _ = validator.validate_description(
                                 stage_description, {'sermon_id': None}
                             )
@@ -3070,13 +3081,15 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                                 stage_description = generate_summary(
                                     transcript,
                                     event_type=event_type,
-                                    speaker_name=speaker_name
+                                    speaker_name=speaker_name,
+                                    notes=metadata_notes,
                                 )
                         else:
                             stage_description = generate_summary(
                                 transcript,
                                 event_type=event_type,
-                                speaker_name=speaker_name
+                                speaker_name=speaker_name,
+                                notes=metadata_notes,
                             )
                         _report(72, f"Description generated in {time.time() - _started:.1f}s")
                     except LLMModelNotFoundError as e:
@@ -3154,6 +3167,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             console_print("Skipping AI metadata generation")
         else:
             console_print("No transcript available, using basic metadata...")
+
+        result['description_needs_review'] = bool(
+            metadata_notes.get('description_needs_review')
+        )
 
         # Fallback metadata generation for any missing fields
         if skip_ai_generation:
@@ -4213,175 +4230,40 @@ def download_file(url: str, local_path: str):
 
 
 def _clean_llm_thinking_response(response: str) -> str:
-    """
-    Clean up LLM responses that include thinking/reasoning before the final answer.
-    Uses a two-step approach: detection + LLM cleanup if needed.
+    """Return only the description text from a raw model response.
+
+    ``extract_final_answer`` keeps the last draft-style block, then the pure
+    cleanup keeps the first real paragraph and cuts trailing self-narration
+    such as character counts.
     """
     if not response:
         return response
 
     from src.llm_manager import extract_final_answer
 
-    extracted = extract_final_answer(response)
-    if extracted and extracted != response.strip() and len(extracted) >= 120:
+    extracted = extract_final_answer(response) or response
+    cleaned = clean_description(extracted)
+    if cleaned and cleaned != response.strip():
         logger.debug(
-            "Extracted final answer from planning output (%d -> %d chars)",
-            len(response), len(extracted),
+            "Cleaned model description output (%d -> %d chars)",
+            len(response), len(cleaned),
         )
-        return extracted
-
-    # Common patterns that indicate thinking/reasoning sections
-    thinking_indicators = [
-        "Okay, let me",
-        "Let me think",
-        "Let me start by",
-        "First, I need to",
-        "Now, the guidelines:",
-        "I need to identify",
-        "Let me piece",
-        "Check the character count",
-        "Avoid any markdown",
-        "Make sure it's",
-        "Let me",
-        "First,",
-        "Now,",
-        "I should",
-        "I'll",
-        "Looking at this",
-        "The speaker",
-        "The sermon is",
-        "The main points",
-        "based on",
-        "seem to be",
-        "carefully.",
-        "The transcript",
-        "reading through",
-    ]
-
-    # Check if response contains thinking patterns
-    has_thinking = any(indicator.lower() in response.lower() for indicator in thinking_indicators)
-
-    if has_thinking:
-        logger.debug(
-            "Detected thinking patterns in LLM response, attempting cleanup with second LLM call"
-        )
-
-        # Try to use LLM to extract just the description
-        cleanup_prompt = (
-            "The following text contains both reasoning/thinking and a sermon description. "
-            "Extract ONLY the final sermon description paragraph. Do not include any "
-            "reasoning, analysis, or commentary. Return only the description itself.\n\n"
-            f"Text: {response}\n\n"
-            "Instructions:\n"
-            "- Return ONLY the sermon description\n"
-            "- Start directly with the description content\n"
-            "- Maximum 1600 characters\n"
-            "- One paragraph format\n"
-            "- No reasoning or explanation"
-        )
-
-        try:
-            cleaned_response = llm_manager.chat([{'role': 'user', 'content': cleanup_prompt}])
-
-            # Verify the cleaned response is shorter and doesn't have thinking patterns
-            if len(cleaned_response) < len(response):
-                # Check if cleaned response still has thinking patterns
-                still_has_thinking = any(indicator.lower() in cleaned_response.lower()
-                                       for indicator in thinking_indicators)
-
-                if not still_has_thinking:
-                    logger.debug("LLM cleanup successful (original: %d chars, cleaned: %d chars)",
-                                len(response), len(cleaned_response))
-                    return cleaned_response
-                else:
-                    logger.debug(
-                        "LLM cleanup still contains thinking patterns, "
-                        "falling back to regex cleanup"
-                    )
-            else:
-                logger.debug("LLM cleanup didn't reduce length, falling back to regex cleanup")
-
-        except Exception as e:
-            logger.warning("LLM cleanup failed: %s, falling back to regex cleanup", e)
-
-    # Fallback to original regex-based cleanup if LLM cleanup failed or wasn't needed
-    return _regex_cleanup_thinking(response)
+    return cleaned
 
 
-def _regex_cleanup_thinking(response: str) -> str:
-    """
-    Fallback regex-based cleanup for LLM thinking patterns.
-    """
-    # Try to find transition phrases and extract content after them
-    transition_phrases = [
-        " The speaker emphasizes",
-        " The speaker stresses",
-        " The speaker teaches",
-        " The speaker explains",
-        " The pastor emphasizes",
-        " This sermon",
-    ]
-
-    for phrase in transition_phrases:
-        if phrase in response:
-            # Find where this phrase starts and take everything from there
-            start_idx = response.find(phrase)
-            if start_idx > 0:  # Make sure it's not at the very beginning
-                result = response[start_idx:].strip()
-                if len(result) > 100:  # Make sure we have substantial content
-                    logger.debug(
-                        "Found transition phrase, cleaned response "
-                        "(original: %d chars, cleaned: %d chars)",
-                        len(response), len(result),
-                    )
-                    return result
-
-    # Try splitting by sentences and look for the actual content
-    sentences = [s.strip() for s in response.split('.') if s.strip()]
-
-    thinking_indicators = [
-        "Okay, let me", "Let me start by", "First, I need to", "Now, the guidelines:",
-        "I need to identify", "The sermon is", "The main points", "based on",
-        "seem to be", "carefully.", "The transcript", "reading through"
-    ]
-
-    # Look for the transition from thinking to actual content
-    for i, sentence in enumerate(sentences):
-        # Check if this sentence contains thinking indicators
-        has_thinking = any(
-            indicator.lower() in sentence.lower() for indicator in thinking_indicators
-        )
-
-        # If we find a sentence that doesn't have thinking and is substantial
-        if not has_thinking and len(sentence) > 30:
-            # Check if it starts with speaker name or substantive content
-            if any(word in sentence for word in ["emphasizes", "stresses", "teaches", "explains"]):
-                remaining_sentences = sentences[i:]
-                result = '. '.join(remaining_sentences)
-                if not result.endswith('.'):
-                    result += '.'
-
-                logger.debug("Regex cleanup found content (original: %d chars, cleaned: %d chars)",
-                            len(response), len(result))
-                return result
-
-    # If all else fails, look for the last substantial paragraph
-    paragraphs = [p.strip() for p in response.split('\n\n') if p.strip()]
-    if len(paragraphs) > 1:
-        last_para = paragraphs[-1]
-        if len(last_para) > 100:  # Substantial content
-            logger.debug("Using last paragraph as summary (original: %d chars, cleaned: %d chars)",
-                        len(response), len(last_para))
-            return last_para
-
-    # Return original if no cleanup was possible
-    return response
+_DESCRIPTION_RETRY_INSTRUCTION = (
+    "That reply was not usable as a description. Rewrite it and reply with ONLY "
+    "the description: one paragraph of plain prose. Do not include reasoning, "
+    "character or word counting, headings, labels, quotes, or any notes about "
+    "the text or its length."
+)
 
 
 def generate_summary(
     transcript: str,
     event_type: str | None = None,
     speaker_name: str | None = None,
+    notes: dict | None = None,
 ) -> str:
     def is_class_event(et):
         class_types = [
@@ -4458,20 +4340,23 @@ def generate_summary(
             f"the speaker wanted the audience to understand, believe, or do. "
             f"Avoid generic statements; "
             f"emphasize unique focus.\n\nTranscript:\n{working_text}\n\nGuidelines:\n"
-            f"- Target 900 to 1200 characters; stay under 1400 (the API rejects text over 1700)\n"
-            f"- One paragraph format\n"
+            f"- One paragraph of plain prose: cover the main message, the key scripture, "
+            f"and the practical application\n"
+            f"- Four to six sentences is usually enough; keep it under 1400 characters "
+            f"so the upload is accepted\n"
             + speaker_instruction +
-            "- No intro/closing words\n- No markdown or bullets\n"
-            "- Do not prefix with 'Summary:'\n- If incomplete, infer likely main message\n"
-            "- Keep within the target length or the upload will fail\n"
+            "- No intro or closing words\n- No markdown or bullets\n"
+            "- Do not prefix with 'Summary:' or any other label\n"
+            "- If the transcript is incomplete, infer the likely main message\n"
             "- Use the actual speaker name, not placeholder text\n"
             "- Include specific scripture references, source material, and concrete "
             "examples from the transcript\n"
             "- Mention the specific doctrines, rules, or texts the speaker expounded\n"
             "- Describe the practical application the speaker gave\n"
-            "- IMPORTANT: Return ONLY the final summary paragraph. Do not include any reasoning, "
-            "thinking process, explanations, or commentary. "
-            "Start directly with the summary content."
+            "- Reply with the description ONLY: no reasoning, no commentary, no "
+            "character or word counting, no headings, no quotes, and no notes about "
+            "the text or its length\n"
+            "- Start directly with the description."
         )
         messages = [{'role': 'user', 'content': prompt}]
     try:
@@ -4480,8 +4365,21 @@ def generate_summary(
         logger.debug("Generating summary using %s LLM...", primary_provider)
         response = llm_manager.chat(messages)
 
-        # Clean up responses that include thinking/reasoning (common with some models)
-        response = _clean_llm_thinking_response(response)
+        response, description_needs_review = clean_description_with_retry(
+            _clean_llm_thinking_response(response),
+            regenerate=lambda: _clean_llm_thinking_response(
+                llm_manager.chat(
+                    [*messages, {'role': 'user', 'content': _DESCRIPTION_RETRY_INSTRUCTION}]
+                )
+            ),
+        )
+        if notes is not None:
+            notes['description_needs_review'] = description_needs_review
+        if description_needs_review:
+            logger.warning(
+                "Description flagged needs_review after cleanup and one retry (%d chars)",
+                len(response),
+            )
 
         # Ensure the response doesn't exceed SermonAudio's character limit
         max_chars = 1600  # Conservative limit (API limit is 1700)
@@ -4539,22 +4437,9 @@ def verify_hashtags(initial_hashtags: str, original_text: str) -> str:
         response = llm_manager.chat(messages)
 
         # Extract only hashtags from the response
-        import re
-        hashtag_pattern = r'#\w+'
-        hashtags = re.findall(hashtag_pattern, response)
+        verified_hashtags = clean_hashtags(response)
 
-        if hashtags:
-            verified_hashtags = ' '.join(hashtags)
-            # Ensure length limit
-            if len(verified_hashtags) > 150:
-                # Truncate at word boundary
-                truncated = verified_hashtags[:150]
-                last_space = truncated.rfind(' ')
-                if last_space > 0:
-                    verified_hashtags = truncated[:last_space]
-                else:
-                    verified_hashtags = truncated
-
+        if verified_hashtags:
             logger.debug("Verified hashtags: %s", verified_hashtags)
             return verified_hashtags
         else:
@@ -4566,11 +4451,9 @@ def verify_hashtags(initial_hashtags: str, original_text: str) -> str:
     except Exception as e:
         logger.error("Hashtag verification failed: %s", e)
         # Return cleaned version of original hashtags as fallback
-        import re
-        hashtag_pattern = r'#\w+'
-        fallback_hashtags = re.findall(hashtag_pattern, initial_hashtags)
+        fallback_hashtags = clean_hashtags(initial_hashtags)
         if fallback_hashtags:
-            return ' '.join(fallback_hashtags)[:150]
+            return fallback_hashtags
         else:
             return "#faith #hope #worship #christian #jesus"
 
@@ -4605,10 +4488,7 @@ def generate_hashtags(text: str) -> str:
             logger.debug("Final verified hashtags: %s", verified_hashtags)
             return verified_hashtags
         else:
-            # Original processing method for backward compatibility
-            hashtags = ' '.join(response.replace(',', ' ').split())
-            if len(hashtags) > 150:
-                hashtags = hashtags[:150]
+            hashtags = clean_hashtags(response)
             logger.debug("Generated hashtags (no verification): %s", hashtags)
             return hashtags
 
@@ -4636,7 +4516,8 @@ def generate_validated_summary(
         'fallback_used': False,
         'validation_attempts': [],
         'final_status': 'pending',
-        'needs_review': False
+        'needs_review': False,
+        'description_needs_review': False,
     }
 
     # Check if validation is enabled
@@ -4648,27 +4529,32 @@ def generate_validated_summary(
 
     if not validation_enabled:
         # If validation is disabled, use the original generation method
-        summary = generate_summary(transcript, event_type, speaker_name)
+        gen_notes: dict = {}
+        summary = generate_summary(transcript, event_type, speaker_name, notes=gen_notes)
+        validation_info['description_needs_review'] = bool(
+            gen_notes.get('description_needs_review')
+        )
         validation_info['final_status'] = 'no_validation'
         return summary, validation_info
 
     def try_generate_summary(use_fallback=False):
         """Helper function to generate summary with specific provider."""
+        notes: dict = {}
         if use_fallback and llm_manager.fallback_provider:
             # Temporarily swap providers for fallback generation
             original_primary = llm_manager.primary_provider
             llm_manager.primary_provider = llm_manager.fallback_provider
             try:
-                summary = generate_summary(transcript, event_type, speaker_name)
-                return summary
+                summary = generate_summary(transcript, event_type, speaker_name, notes=notes)
+                return summary, notes
             finally:
                 llm_manager.primary_provider = original_primary
         else:
-            return generate_summary(transcript, event_type, speaker_name)
+            return generate_summary(transcript, event_type, speaker_name, notes=notes), notes
 
     # Try primary model first
     validation_info['primary_attempts'] = 1
-    primary_summary = try_generate_summary(use_fallback=False)
+    primary_summary, primary_notes = try_generate_summary(use_fallback=False)
 
     # Validate the primary summary
     is_valid, reason = llm_manager.validate_description(primary_summary, validation_criteria)
@@ -4680,6 +4566,9 @@ def generate_validated_summary(
     })
 
     if is_valid:
+        validation_info['description_needs_review'] = bool(
+            primary_notes.get('description_needs_review')
+        )
         validation_info['final_status'] = 'approved_primary'
         return primary_summary, validation_info
 
@@ -4687,7 +4576,7 @@ def generate_validated_summary(
     if llm_manager.fallback_provider:
         logger.debug("Primary summary failed validation, trying fallback model...")
         validation_info['fallback_used'] = True
-        fallback_summary = try_generate_summary(use_fallback=True)
+        fallback_summary, fallback_notes = try_generate_summary(use_fallback=True)
 
         # Validate the fallback summary
         is_valid, reason = llm_manager.validate_description(fallback_summary, validation_criteria)
@@ -4699,10 +4588,16 @@ def generate_validated_summary(
         })
 
         if is_valid:
+            validation_info['description_needs_review'] = bool(
+                fallback_notes.get('description_needs_review')
+            )
             validation_info['final_status'] = 'approved_fallback'
             return fallback_summary, validation_info
 
     # If both failed validation, mark for manual review
+    validation_info['description_needs_review'] = bool(
+        primary_notes.get('description_needs_review')
+    )
     validation_info['final_status'] = 'needs_review'
     validation_info['needs_review'] = True
 
