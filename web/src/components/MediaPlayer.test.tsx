@@ -70,6 +70,12 @@ describe("MediaPlayer", () => {
     );
     expect(screen.getByRole("button", { name: /Start · 00:12\.5/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /End · 01:35\.0/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Start · 00:12\.5/ }).className).toContain(
+      "min-h-[44px]",
+    );
+    expect(screen.getByRole("button", { name: /End · 01:35\.0/ }).className).toContain(
+      "min-h-[44px]",
+    );
   });
 
   it("seeks to the start of a play window and pauses at the end", () => {

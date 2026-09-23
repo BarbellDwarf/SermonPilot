@@ -172,7 +172,7 @@ export function Timeline({
                 onPlayRegion?.(clip.id, clip.startSec, clip.endSec);
               }}
               style={{ left: `${left}%`, width: `${Math.max(width, 0.6)}%`, touchAction: "none" }}
-              className="absolute bottom-0 z-20 h-2 rounded-t border border-accent/60 bg-accent/40"
+              className="absolute bottom-0 z-20 h-2 rounded-t border border-accent/60 bg-accent/40 before:absolute before:-top-9 before:inset-x-0 before:h-11 before:content-['']"
             />
           );
         })}
@@ -220,10 +220,14 @@ export function Timeline({
           style={{ left: `${keepLeft}%`, touchAction: "none" }}
           onPointerDown={beginDrag("start")}
           onKeyDown={nudge("start")}
-          className={`absolute inset-y-0 z-40 w-4 -translate-x-1/2 cursor-ew-resize border border-accent bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-            selected === "start" ? "ring-2 ring-accent" : ""
-          }`}
+          className="absolute inset-y-0 z-40 w-11 -translate-x-1/2 cursor-ew-resize bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         >
+          <span
+            aria-hidden="true"
+            className={`absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 border border-accent bg-surface ${
+              selected === "start" ? "ring-2 ring-accent" : ""
+            }`}
+          />
           <span aria-hidden="true" className="absolute left-1/2 top-1/2 h-4 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-accent" />
         </button>
         <button
@@ -239,10 +243,14 @@ export function Timeline({
           style={{ left: `${keepRight}%`, touchAction: "none" }}
           onPointerDown={beginDrag("end")}
           onKeyDown={nudge("end")}
-          className={`absolute inset-y-0 z-40 w-4 -translate-x-1/2 cursor-ew-resize border border-accent bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent ${
-            selected === "end" ? "ring-2 ring-accent" : ""
-          }`}
+          className="absolute inset-y-0 z-40 w-11 -translate-x-1/2 cursor-ew-resize bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
         >
+          <span
+            aria-hidden="true"
+            className={`absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 border border-accent bg-surface ${
+              selected === "end" ? "ring-2 ring-accent" : ""
+            }`}
+          />
           <span aria-hidden="true" className="absolute left-1/2 top-1/2 h-4 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-accent" />
         </button>
       </div>
