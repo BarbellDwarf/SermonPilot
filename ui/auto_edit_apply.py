@@ -709,6 +709,7 @@ def run_library_apply(
     plan_id: Any = None,
     progress_callback: Callable[[float, str], None] | None = None,
     cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
     config: dict[str, Any] | None = None,
     enhance_audio: bool | None = None,
 ) -> dict[str, Any]:
@@ -831,6 +832,8 @@ def run_library_apply(
         apply_kwargs["progress_callback"] = progress_callback
     if cancel_check is not None:
         apply_kwargs["cancel_check"] = cancel_check
+    if cancel_log is not None:
+        apply_kwargs["cancel_log"] = cancel_log
 
     _set_edit_status(repo, sermon_id, "applied")
     try:

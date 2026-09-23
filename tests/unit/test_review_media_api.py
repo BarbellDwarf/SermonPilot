@@ -147,7 +147,7 @@ def test_pause_with_keeper_retains_media_and_skips_processed_copy(tmp_path, monk
     monkeypatch.setenv("SERMONPILOT_REVIEW_RETENTION_DAYS", "0")
     monkeypatch.setenv("SERMONPILOT_REVIEW_RETENTION_MAX_GB", "0.000001")
 
-    def fake_keeper(source, out, config):
+    def fake_keeper(source, out, config, **_kwargs):
         out = Path(out)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"k" * 8192)

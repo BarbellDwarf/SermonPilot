@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from src.supervised_process import run_supervised
+from src.supervised_process import ProcessCancelled, run_supervised
 
 LONG_SLEEP = [sys.executable, "-c", "import time; time.sleep(600)"]
 
@@ -34,7 +34,7 @@ def test_cancel_stops_long_child_within_seconds_and_logs() -> None:
     thread.start()
 
     begin = time.monotonic()
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ProcessCancelled):
         run_supervised(
             LONG_SLEEP,
             cancel_check=_check,
@@ -61,7 +61,7 @@ def test_cancel_moves_partial_output_to_trash(
     partial = tmp_path / "render_edited.mp4"
     partial.write_bytes(b"half-written-placeholder")
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ProcessCancelled):
         run_supervised(
             LONG_SLEEP,
             cancel_check=_cancel_check_raising(),
@@ -96,7 +96,7 @@ def test_hard_kill_fallback_is_reported(tmp_path: Path) -> None:
             raise RuntimeError("stop-placeholder")
 
     begin = time.monotonic()
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ProcessCancelled):
         run_supervised(
             ignores_term,
             cancel_check=_check,

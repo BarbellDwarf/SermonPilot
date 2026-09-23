@@ -23,6 +23,8 @@ CLI and one-shot renders keep their existing behaviour, and code that patches
 from __future__ import annotations
 
 import logging
+import os
+import signal
 import subprocess
 import threading
 import time
@@ -38,29 +40,65 @@ DEFAULT_TERMINATE_GRACE_SECONDS = 10.0
 _TRASH_META_KEYS = ("sermon_id", "job_id", "stage", "config")
 
 
+class ProcessCancelled(Exception):
+    """Raised by :func:`run_supervised` after a cancelled child is stopped.
+
+    A dedicated type lets a stage distinguish "the user cancelled" from an
+    ordinary command failure, so a broad ``except Exception`` around a render
+    cannot mistake a cancellation for a failed encode. ``original`` carries the
+    exception the cancel hook raised, when there was one.
+    """
+
+    def __init__(self, message: str, *, original: BaseException | None = None) -> None:
+        super().__init__(message)
+        self.original = original
+
+
+def _signal_process(proc: subprocess.Popen, pgid: int | None, sig: int) -> None:
+    """Signal the child's whole process group, falling back to the child."""
+    if pgid is not None:
+        try:
+            os.killpg(pgid, sig)
+            return
+        except ProcessLookupError:
+            return
+        except Exception:
+            pass
+    try:
+        if sig == signal.SIGTERM:
+            proc.terminate()
+        else:
+            proc.kill()
+    except Exception:
+        pass
+
+
 def terminate_process(
     proc: subprocess.Popen, grace_seconds: float = DEFAULT_TERMINATE_GRACE_SECONDS
 ) -> bool:
     """Stop a child process, escalating from terminate to kill.
 
-    Returns True when the process had to be hard-killed, False when it exited
-    after ``terminate`` (or had already exited). Never raises.
+    The child runs in its own session (:func:`run_supervised` passes
+    ``start_new_session``), so the signal reaches grandchildren a shell wrapper
+    left behind rather than only the top process. Returns True when the process
+    had to be hard-killed, False when it exited after ``terminate`` (or had
+    already exited). Never raises.
     """
     if proc.poll() is not None:
         return False
-    try:
-        proc.terminate()
-    except Exception:
-        pass
+    pgid: int | None = None
+    if hasattr(os, "killpg"):
+        try:
+            pgid = os.getpgid(proc.pid)
+        except Exception:
+            pgid = None
+    _signal_process(proc, pgid, signal.SIGTERM)
     try:
         proc.wait(timeout=grace_seconds)
         return False
     except Exception:
         pass
-    try:
-        proc.kill()
-    except Exception:
-        pass
+    _signal_process(proc, pgid, signal.SIGKILL)
     try:
         proc.wait(timeout=5.0)
     except Exception:
@@ -144,10 +182,10 @@ def run_supervised(
 
     Without ``cancel_check`` this defers to :func:`subprocess.run`, so callers
     that never had a cancel hook keep their exact behaviour. With a hook, the
-    child is supervised and the hook's exception is re-raised after the child
-    is stopped. ``partial_paths`` are moved into the trash root on cancel.
+    child is supervised and the call raises :class:`ProcessCancelled` after the
+    child is stopped. ``partial_paths`` are moved into the trash root on cancel.
     """
-    if cancel_check is None and not partial_paths:
+    if cancel_check is None:
         return subprocess.run(
             cmd,
             capture_output=capture_output,
@@ -169,6 +207,7 @@ def run_supervised(
         text=text,
         cwd=cwd,
         env=env,
+        start_new_session=(os.name == "posix"),
     )
 
     out_chunks: list = []
@@ -200,8 +239,9 @@ def run_supervised(
                 _trash_partials(partial_paths, partial_reason, partial_meta)
                 elapsed = time.monotonic() - stop_started
                 suffix = " (hard kill)" if hard_killed else ""
-                _emit(log, f"Cancelled during {label} (stopped after {elapsed:.0f}s){suffix}")
-                raise exc
+                message = f"Cancelled during {label} (stopped after {elapsed:.0f}s){suffix}"
+                _emit(log, message)
+                raise ProcessCancelled(message, original=exc) from exc
         time.sleep(max(poll_interval, 0.0))
 
     if timed_out:
