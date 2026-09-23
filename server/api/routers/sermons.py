@@ -18,7 +18,7 @@ from server.api.schemas import (
     SermonPlanOut,
     TranscriptOut,
 )
-from server.api.scoping import request_user, scope_rows, visible
+from server.api.scoping import may_claim, request_user, scope_rows, visible
 
 router = APIRouter(prefix="/api/sermons", tags=["sermons"])
 
@@ -75,6 +75,11 @@ def create_draft_sermon(request: Request, body: SermonCreateBody) -> dict:
     from ui.database import SermonDatabase, SermonRepository
 
     repo = SermonRepository(SermonDatabase(db_path=get_db_path()))
+    if not may_claim(repo.get_sermon(sermon_id), user):
+        raise HTTPException(
+            status_code=403,
+            detail="a sermon with this identity is owned by another user",
+        )
     ok = repo.save_sermon(
         {
             "id": sermon_id,

@@ -32,6 +32,33 @@ def test_create_draft_sermon_attributes_and_scopes(client, scoped_setup):
     assert missing.status_code == 422
 
 
+def test_create_draft_cannot_overwrite_another_users_sermon(client, scoped_setup):
+    s = scoped_setup
+    body = {"title": "Shared Title", "speaker": "Speaker X", "recorded_date": "2026-09-20"}
+    first = client.post("/api/sermons", json=body, headers=s["a"]["headers"])
+    assert first.status_code == 201, first.text
+    sermon_id = first.json()["id"]
+
+    hijack = client.post(
+        "/api/sermons",
+        json={**body, "description": "hijacked"},
+        headers=s["b"]["headers"],
+    )
+    assert hijack.status_code == 403, hijack.text
+
+    detail = client.get(f"/api/sermons/{sermon_id}", headers=s["a"]["headers"])
+    assert detail.status_code == 200
+    assert detail.json()["description"] in (None, "")
+    assert client.get(f"/api/sermons/{sermon_id}", headers=s["b"]["headers"]).status_code == 404
+
+    again = client.post(
+        "/api/sermons",
+        json={**body, "description": "mine now"},
+        headers=s["a"]["headers"],
+    )
+    assert again.status_code == 201, again.text
+
+
 def test_apply_queues_job_with_attribution_and_guard(client, scoped_setup, monkeypatch):
     s = scoped_setup
     import ui.database as dbmod

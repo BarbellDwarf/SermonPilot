@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from pydantic import BaseModel
 
 from server.api.routers.auth import require_user
-from server.api.scoping import visible
+from server.api.scoping import may_claim, visible
 
 router = APIRouter(prefix="/api", tags=["write"])
 
@@ -101,12 +101,17 @@ def _save_draft_sermon(
     recorded_date: str,
     series_title: str = "",
     description: str = "",
-    user_id: str | None,
+    user: dict,
 ) -> None:
     from server.api.accounts import get_db_path
     from ui.database import SermonDatabase, SermonRepository
 
     repo = SermonRepository(SermonDatabase(db_path=get_db_path()))
+    if not may_claim(repo.get_sermon(sermon_id), user):
+        raise HTTPException(
+            status_code=403,
+            detail="a sermon with this identity is owned by another user",
+        )
     ok = repo.save_sermon(
         {
             "id": sermon_id,
@@ -116,7 +121,7 @@ def _save_draft_sermon(
             "series_title": series_title.strip(),
             "description": description.strip(),
             "status": "draft",
-            "user_id": user_id,
+            "user_id": user.get("id"),
         }
     )
     if not ok:
@@ -734,7 +739,7 @@ async def upload_sermon(
             speaker=speaker.strip(),
             recorded_date=recorded_date.strip(),
             series_title=series_title.strip(),
-            user_id=user.get("id"),
+            user=user,
         )
     except HTTPException:
         try:
@@ -887,7 +892,7 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
         speaker=body.speaker,
         recorded_date=body.recorded_date,
         series_title=body.series_title,
-        user_id=user.get("id"),
+        user=user,
     )
     resolved_logo = (body.logo_path or body.auto_edit_logo_path).strip()
     resolved_bible = (body.bible_text or body.scripture).strip()
