@@ -4136,8 +4136,14 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 pass  # Ignore cleanup errors
 
 
+AWAITING_REVIEW_EDIT_STATUSES = frozenset({"pending_review"})
+
+
 def publish_dry_run_sermon(
-    dry_run_id: str, publish: bool = True, upload_path: str | None = None
+    dry_run_id: str,
+    publish: bool = True,
+    upload_path: str | None = None,
+    force_source_publish: bool = False,
 ) -> dict[str, Any]:
     """Publish a locally-saved dry run sermon to SermonAudio.
 
@@ -4152,6 +4158,9 @@ def publish_dry_run_sermon(
             path stored on the sermon row. The upload-only flow resolves the
             stored render and passes it here so the exact file it inspected is
             the file that is uploaded.
+        force_source_publish: Escape hatch. A sermon still awaiting review must
+            not be published as its unedited source, so the default refuses.
+            Set this only to deliberately publish the source anyway.
 
     Returns:
         Dict with keys: ``success``, ``sermon_id`` (new), ``error``.
@@ -4165,6 +4174,16 @@ def publish_dry_run_sermon(
 
         if not sermon_data:
             result['error'] = f"Dry run sermon {dry_run_id} not found in database"
+            return result
+
+        edit_status = str(sermon_data.get('edit_status') or '')
+        if edit_status in AWAITING_REVIEW_EDIT_STATUSES and not force_source_publish:
+            result['error'] = (
+                f"Teaching {dry_run_id} is awaiting review "
+                f"(edit status: {edit_status}); publishing now would upload the "
+                "unedited source. Approve and render the edit first, or pass "
+                "force_source_publish=True to publish the source deliberately."
+            )
             return result
 
         title = sermon_data.get('title', '') or ''
