@@ -43,6 +43,7 @@ SECTIONS: dict[str, dict[str, str]] = {
         "audio_normalize": "bool",
         "audio_gain_db": "float",
         "audio_target_level_db": "float",
+        "metadata_processing.process_audio": "bool",
     },
     "transcription": {
         "transcription.backend": "str",

@@ -6,6 +6,7 @@ import { Button, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toas
 import { QueryError, useSermonDetail, useSermonMedia, useSermonPlan, useSermonTranscript } from "../api/hooks";
 import { api, isLive, writeApi } from "../api/client";
 import type { ApiTrashRecord } from "../api/client";
+import { fieldValue, useConfigSection } from "../api/useConfigSection";
 
 export function describeDeleteOutcome(records: ApiTrashRecord[]): string {
   const localMoved = records.filter((r) => r.mode === "local" && r.moved);
@@ -46,6 +47,10 @@ export function LibraryDetail() {
   const { plan, history: planHistory, isLoading: planLoading, error: planError, retry: retryPlan } = useSermonPlan(id);
   const media = useSermonMedia(id, isLive && !deleted);
   const transcript = useSermonTranscript(id, transcriptOpen);
+  const audioConfig = useConfigSection("audio");
+  const enhanceDefault =
+    fieldValue<boolean>(audioConfig.fields, "metadata_processing.process_audio", true) !== false &&
+    fieldValue<string>(audioConfig.fields, "audio_enhancement_method", "deepfilternet") !== "none";
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -232,6 +237,7 @@ export function LibraryDetail() {
           onSaveDetails={saveDetails}
           onRefresh={retryPlan}
           onToast={showToast}
+          enhanceDefault={enhanceDefault}
         />
       ) : (
         <div className="flex flex-col gap-4">

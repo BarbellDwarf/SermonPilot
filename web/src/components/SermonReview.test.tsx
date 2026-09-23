@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { SermonReview, type DetailsPatch } from "./SermonReview";
+import { writeApi } from "../api/client";
 import type { SermonMediaData } from "../api/hooks";
 import type { ApiMediaItem } from "../api/client";
 import type { EditPlan, LibrarySermon } from "../mock/data";
@@ -265,6 +266,58 @@ describe("SermonReview artifacts", () => {
     expect(disclosure.getAttribute("aria-expanded")).toBe("true");
     expect(other?.hasAttribute("hidden")).toBe(false);
     expect(screen.getAllByTestId("artifact-other-row").length).toBe(5);
+  });
+});
+
+describe("SermonReview enhancement choice", () => {
+  it("defaults the enhancement control to the app config and sends it", async () => {
+    const user = userEvent.setup();
+    const apply = vi
+      .spyOn(writeApi, "applyPlan")
+      .mockResolvedValue({ job_id: "j-1", status: "queued" });
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+        enhanceDefault={false}
+      />,
+    );
+
+    const toggle = screen.getByTestId("apply-enhance-audio") as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: /Approve · Render-only/ }));
+    await waitFor(() => expect(apply).toHaveBeenCalled());
+    expect(apply.mock.calls[0][1]).toMatchObject({ enhance_audio: false });
+  });
+
+  it("sends enhancement on when the configured default is on", async () => {
+    const user = userEvent.setup();
+    const apply = vi
+      .spyOn(writeApi, "applyPlan")
+      .mockResolvedValue({ job_id: "j-2", status: "queued" });
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+        enhanceDefault
+      />,
+    );
+
+    const toggle = screen.getByTestId("apply-enhance-audio") as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: /Approve · Render-only/ }));
+    await waitFor(() => expect(apply).toHaveBeenCalled());
+    expect(apply.mock.calls[0][1]).toMatchObject({ enhance_audio: true });
   });
 });
 
