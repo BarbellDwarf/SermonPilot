@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { SermonReview, type DetailsPatch, type TranscriptState } from "../components/SermonReview";
 import { SermonCompleted } from "../components/SermonCompleted";
@@ -45,6 +45,10 @@ export function LibraryDetail() {
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [editingOverride, setEditingOverride] = useState(false);
+
+  useEffect(() => {
+    setEditingOverride(false);
+  }, [id]);
 
   const { data: detail, isLoading, error, retry } = useSermonDetail(id);
   const { plan, history: planHistory, isLoading: planLoading, error: planError, retry: retryPlan } = useSermonPlan(id);
