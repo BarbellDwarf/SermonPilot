@@ -5390,6 +5390,7 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
                 'bible_text': str(getattr(details, 'bibleText', '') or ''),
                 'duration': int(getattr(details, 'durationSeconds', 0) or 0),
                 'status': 'processed' if not DRY_RUN else 'pending',
+                'description': summary,
                 'description_needs_review': description_needs_review,
                 'description_error': description_error,
                 'file_paths': {
