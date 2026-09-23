@@ -96,19 +96,23 @@ def show_sermon_import():
                     if status['missing_from_database'] > 0:
                         try:
                             from job_queue import JobType, get_job_queue
+
+                            from ui.job_labels import build_job_labels
+
                             job_queue = get_job_queue()
                             config = st.session_state.get('config', {})
                             processed_sermons_dir = config.get(
                                 'output_directory', 'processed_sermons'
                             )
 
+                            job_title, job_description = build_job_labels(
+                                JobType.SERMON_IMPORT,
+                                count=status['missing_from_database'],
+                            )
                             job_id = job_queue.add_job(
                                 job_type=JobType.SERMON_IMPORT,
-                                title="Bulk Sermon Import",
-                                description=(
-                                    f"Importing {status['missing_from_database']} missing "
-                                    "sermons from processed_sermons folder"
-                                ),
+                                title=job_title,
+                                description=job_description,
                                 parameters={
                                     'processed_sermons_dir': processed_sermons_dir,
                                     'force_reimport': False
@@ -162,19 +166,24 @@ def show_sermon_import():
                     if st.session_state.get('confirm_reimport', False):
                         try:
                             from job_queue import JobType, get_job_queue
+
+                            from ui.job_labels import build_job_labels
+
                             job_queue = get_job_queue()
                             config = st.session_state.get('config', {})
                             processed_sermons_dir = config.get(
                                 'output_directory', 'processed_sermons'
                             )
 
+                            job_title, job_description = build_job_labels(
+                                JobType.SERMON_IMPORT,
+                                count=status['total_in_folder'],
+                                variant="force_import",
+                            )
                             job_id = job_queue.add_job(
                                 job_type=JobType.SERMON_IMPORT,
-                                title="Force Re-import All Sermons",
-                                description=(
-                                    f"Re-importing all {status['total_in_folder']} sermons "
-                                    "with fresh API data"
-                                ),
+                                title=job_title,
+                                description=job_description,
                                 parameters={
                                     'processed_sermons_dir': processed_sermons_dir,
                                     'force_reimport': True,
