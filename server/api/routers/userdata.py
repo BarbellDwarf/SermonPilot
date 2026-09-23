@@ -439,7 +439,7 @@ def list_user_files(user=Depends(require_user)):
 def download_file(path: str, user=Depends(require_user)):
     root = resolve_user_output_dir(user).resolve()
     candidate = (root / path).resolve()
-    if not str(candidate).startswith(str(root)):
+    if not candidate.is_relative_to(root):
         raise HTTPException(status_code=400, detail="path escapes the output directory")
     if not candidate.is_file():
         raise HTTPException(status_code=404, detail="file not found")

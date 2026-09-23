@@ -45,3 +45,24 @@ def test_file_download_path_traversal_blocked(client, scoped_setup, tmp_path):
     assert client.get(base + "../secret.txt", headers=s["a"]["headers"]).status_code == 400
     assert client.get(base + "u/../../secret.txt", headers=s["a"]["headers"]).status_code == 400
     assert client.get(base + "u/nope.txt", headers=s["a"]["headers"]).status_code == 404
+
+
+def test_file_download_rejects_sibling_directory_sharing_the_prefix(
+    client, scoped_setup, tmp_path
+):
+    s = scoped_setup
+    outdir = tmp_path / "processed3"
+    (outdir / "u").mkdir(parents=True)
+    (outdir / "u" / "keep.txt").write_bytes(b"hello")
+    sibling = tmp_path / "processed3_vault"
+    sibling.mkdir()
+    (sibling / "secret.txt").write_bytes(b"top secret")
+    _seed_output_dir(s["a"]["id"], outdir)
+
+    base = "/api/me/files/download?path="
+    r = client.get(base + "u/keep.txt", headers=s["a"]["headers"])
+    assert r.status_code == 200
+    assert r.content == b"hello"
+    escaped = client.get(base + "../processed3_vault/secret.txt", headers=s["a"]["headers"])
+    assert escaped.status_code == 400
+    assert escaped.content != b"top secret"
