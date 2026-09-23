@@ -121,6 +121,30 @@ the console Audio section reaches the enhancer.
 legacy `metadata_processing.process_audio` boolean, and when the two disagree the
 log names the winner and the losing value once per resolution.
 
+## Per-user upload routing
+
+The credentials a publish uses are the ones belonging to the user who owns the
+job. The pipeline resolves them at job-execution time (never at enqueue time)
+from that user's `connections.sermonaudio` setting in `user_settings`: the
+account they marked as default, or the first usable account they own when no
+default is set. The job's resolved config is rebound to those credentials
+before the engine runs, so a job can never publish as another user.
+
+The Single-account fallback (the seeded/env `api_key` and `broadcaster_id`)
+applies only while no user has stored a connection anywhere. Once any account
+exists, a user without one resolves to an empty credential and the publish is
+refused with "Connect your SermonAudio account in Settings before publishing."
+The console refuses before a job is queued, and the executor refuses as a
+second line of defence. A dry run or a local render is never blocked.
+
+`GET /api/me/sermonaudio-connection` returns the resolved connection for the
+current user as `configured`, `source`, `account_name`, `broadcaster_id`,
+`masked_key`, and the refusal `message`. `source` is `user` for the user's own
+account, or the winning fallback source (an environment variable name, `db`, or
+`default`). The SermonAudio Accounts page renders this in its "Upload routing"
+card, so the operator can see which account an upload will use without
+revealing the key.
+
 ## Environment override display
 
 Every console config field reads its winning source from
