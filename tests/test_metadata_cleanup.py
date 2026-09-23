@@ -12,9 +12,9 @@ for _path in (str(PROJECT_ROOT), str(PROJECT_ROOT / "src")):
 
 from src.metadata_cleanup import (  # noqa: E402
     clean_description,
-    clean_description_with_retry,
     clean_hashtags,
     clean_title,
+    validate_description,
 )
 
 GOOD = (
@@ -74,40 +74,40 @@ def test_only_commentary_triggers_exactly_one_retry():
         calls.append("retry")
         return GOOD
 
-    result, needs_review = clean_description_with_retry(NARRATION, regenerate)
+    result, reason = validate_description(NARRATION, regenerate)
 
     assert result == GOOD
     assert calls == ["retry"]
-    assert needs_review is False
+    assert reason is None
 
 
 def test_clean_input_does_not_trigger_retry():
     def regenerate() -> str:  # pragma: no cover - must not run
         raise AssertionError("regenerate should not be called")
 
-    result, needs_review = clean_description_with_retry(GOOD, regenerate)
+    result, reason = validate_description(GOOD, regenerate)
 
     assert result == GOOD
-    assert needs_review is False
+    assert reason is None
 
 
-def test_failed_retry_keeps_best_cleaned_text_and_flags_review():
-    result, needs_review = clean_description_with_retry(
+def test_failed_retry_never_returns_junk():
+    result, reason = validate_description(
         NARRATION, lambda: "A short but real description."
     )
 
-    assert result == "A short but real description."
-    assert needs_review is True
+    assert result is None
+    assert reason is not None and reason.startswith("too short")
 
 
 def test_retry_exception_never_escapes():
     def regenerate() -> str:
         raise RuntimeError("model unavailable")
 
-    result, needs_review = clean_description_with_retry(NARRATION, regenerate)
+    result, reason = validate_description(NARRATION, regenerate)
 
-    assert result == ""
-    assert needs_review is True
+    assert result is None
+    assert reason == "empty"
 
 
 def test_hashtags_stay_a_clean_list():
