@@ -2142,7 +2142,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       reuse_transcript_segments: list | None = None,
                       keeper_prepared: bool = False,
                       enhanced_audio_file: str | None = None,
-                      require_enhancement: bool = False) -> dict:
+                      require_enhancement: bool = False,
+                      existing_description_needs_review: bool | None = None) -> dict:
     """Process a new sermon from audio file with automatic metadata generation.
 
     Args:
@@ -3231,6 +3232,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
         # Step 3: Generate metadata using transcript or fallback
         metadata_notes: dict = {}
+        if existing_description_needs_review is not None:
+            # A render that reuses the stored description must not clear the
+            # record's review flag; only a fresh generation may change it.
+            metadata_notes['description_needs_review'] = bool(
+                existing_description_needs_review
+            )
         if transcript and not skip_ai_generation:
             console_print("Generating metadata from transcript...")
 

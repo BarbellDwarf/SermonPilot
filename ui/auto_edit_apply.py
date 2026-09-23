@@ -494,6 +494,11 @@ def _build_apply_kwargs(
     }
     if existing_sermon_id:
         kwargs["existing_sermon_id"] = str(existing_sermon_id)
+    # A render that reuses the stored description must not clear the record's
+    # review flag; only a fresh generation may change it.
+    kwargs["existing_description_needs_review"] = bool(
+        full_sermon.get("description_needs_review")
+    )
     if config:
         kwargs["config"] = config
     if enhanced_audio_file:
@@ -586,8 +591,15 @@ def _retained_enhanced(sermon: dict[str, Any], repo: Any) -> str | None:
 def _stored_apply_metadata(
     full_sermon: dict[str, Any], review_metadata: dict[str, Any]
 ) -> dict[str, Any]:
-    """Metadata already on disk for this sermon, to reuse verbatim on apply."""
+    """Metadata the apply render reuses verbatim.
+
+    Operator authority rule: when the console saved a title or description
+    (``sermons.metadata_edited_at`` is set), the live row wins over the
+    metadata.json snapshot the review pass wrote. Otherwise the snapshot stays
+    first so an untouched review keeps the exact metadata it was approved with.
+    """
     content = full_sermon.get("content") or {}
+    operator_edited = bool(full_sermon.get("metadata_edited_at"))
 
     def _pick(*values: Any) -> Any:
         for value in values:
@@ -595,13 +607,24 @@ def _stored_apply_metadata(
                 return value
         return None
 
-    return {
-        "title": _pick(review_metadata.get("title"), full_sermon.get("title")),
-        "description": _pick(
+    if operator_edited:
+        title_sources = (full_sermon.get("title"), review_metadata.get("title"))
+        description_sources = (
+            full_sermon.get("description"),
+            content.get("description"),
+            review_metadata.get("description"),
+        )
+    else:
+        title_sources = (review_metadata.get("title"), full_sermon.get("title"))
+        description_sources = (
             review_metadata.get("description"),
             full_sermon.get("description"),
             content.get("description"),
-        ),
+        )
+
+    return {
+        "title": _pick(*title_sources),
+        "description": _pick(*description_sources),
         "hashtags": _pick(review_metadata.get("hashtags"), content.get("hashtags")),
         "subtitle": _pick(review_metadata.get("subtitle"), full_sermon.get("subtitle")),
         "bible_text": _pick(
