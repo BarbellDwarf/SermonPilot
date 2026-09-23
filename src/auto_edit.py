@@ -522,7 +522,7 @@ def _run_ffmpeg(
     *,
     cancel_check: Callable[[], None] | None = None,
     cancel_log: Callable[[str], None] | None = None,
-    partial_paths: list | None = None,
+    partial_paths: list[str | Path] | None = None,
     step: str = "edit render",
 ) -> None:
     import time as _time
