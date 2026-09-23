@@ -42,6 +42,8 @@ export interface SermonCompletedProps {
   history?: EditPlan[];
   sermonaudioId?: string | null;
   uploadedAt?: string | null;
+  bibleText?: string | null;
+  scriptureReference?: string | null;
   onEdit: () => void;
   onSaveDetails?: (patch: DetailsPatch) => Promise<void> | void;
   onRegenerateDescription?: () => void;
@@ -59,6 +61,8 @@ export function SermonCompleted({
   history,
   sermonaudioId,
   uploadedAt,
+  bibleText,
+  scriptureReference,
   onEdit,
   onSaveDetails,
   onRegenerateDescription,
@@ -295,6 +299,20 @@ export function SermonCompleted({
             </div>
           </dl>
         )}
+
+        {scriptureReference || bibleText ? (
+          <div data-testid="detail-scripture" className="mt-3 border-t border-line pt-3">
+            {scriptureReference ? (
+              <p className="text-xs font-medium text-muted">Scripture</p>
+            ) : null}
+            {scriptureReference ? (
+              <p className="mt-0.5 text-sm text-mist [overflow-wrap:anywhere]">{scriptureReference}</p>
+            ) : null}
+            {bibleText ? (
+              <p className="mt-1 whitespace-pre-wrap text-sm text-mist [overflow-wrap:anywhere]">{bibleText}</p>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       <section

@@ -51,6 +51,8 @@ class SermonDetailOut(BaseModel):
     sermonaudio_id: str | None = None
     upload_date: str | None = None
     upload_status: str | None = None
+    bible_text: str | None = None
+    scripture_reference: str | None = None
 
 
 class EditPlanOut(BaseModel):

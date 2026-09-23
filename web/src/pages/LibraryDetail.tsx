@@ -268,6 +268,8 @@ export function LibraryDetail() {
           history={planHistory}
           sermonaudioId={detail?.sermonaudioId ?? null}
           uploadedAt={detail?.uploadedAt ?? null}
+          bibleText={detail?.bibleText ?? null}
+          scriptureReference={detail?.scriptureReference ?? null}
           onEdit={() => setEditingOverride(true)}
           onSaveDetails={saveDetails}
           onRegenerateDescription={regenerateDescription}

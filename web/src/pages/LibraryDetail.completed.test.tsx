@@ -105,6 +105,8 @@ function setSermon(status: LibrarySermon["status"], planStatus: PlanStatus) {
       sermonaudioId: "12345",
       uploadedAt: "2026-09-07 08:30",
       uploadStatus: "success",
+      bibleText: "A placeholder passage.",
+      scriptureReference: "Sample 1:1",
     },
     isLoading: false,
     error: null,
@@ -164,6 +166,8 @@ describe("LibraryDetail completed sermons", () => {
     ]) {
       expect(screen.getByTestId(id)).toBeTruthy();
     }
+    expect(screen.getByTestId("detail-scripture").textContent).toContain("Sample 1:1");
+    expect(screen.getByTestId("detail-scripture").textContent).toContain("A placeholder passage.");
     expect(screen.getByTestId("completed-publication")).toBeTruthy();
     expect(screen.getByTestId("completed-transcript")).toBeTruthy();
     expect(screen.getByTestId("completed-files")).toBeTruthy();

@@ -223,6 +223,12 @@ def get_sermon(request: Request, sermon_id: str) -> SermonDetailOut:
             if upload_info.get("upload_status")
             else None
         ),
+        bible_text=str(sermon["bible_text"]) if sermon.get("bible_text") else None,
+        scripture_reference=(
+            str(sermon["scripture_reference"])
+            if sermon.get("scripture_reference")
+            else None
+        ),
     )
 
 

@@ -200,6 +200,8 @@ export interface SermonDetailData {
   sermonaudioId: string | null;
   uploadedAt: string | null;
   uploadStatus: string | null;
+  bibleText: string | null;
+  scriptureReference: string | null;
 }
 
 export function useSermonDetail(id: string | undefined) {
@@ -224,6 +226,8 @@ export function useSermonDetail(id: string | undefined) {
             sermonaudioId: null,
             uploadedAt: null,
             uploadStatus: null,
+            bibleText: null,
+            scriptureReference: null,
           } as SermonDetailData)
         : null,
       isLoading: false,
@@ -243,6 +247,8 @@ export function useSermonDetail(id: string | undefined) {
           sermonaudioId: live.data.sermonaudio_id,
           uploadedAt: live.data.upload_date,
           uploadStatus: live.data.upload_status,
+          bibleText: live.data.bible_text,
+          scriptureReference: live.data.scripture_reference,
         } as SermonDetailData)
       : null,
     isLoading: live.isPending,
