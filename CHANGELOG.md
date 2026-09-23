@@ -24,6 +24,10 @@ One sermon is one database record.
 - `sermons.edit_status` column tracking `draft`, `pending_review`, `applied`, `rendered`, `uploaded` and `failed` alongside the existing status values
 - Human-readable job labels built from sermon fields (`ui/job_labels.py`): every job queue call site on the Streamlit pages and the console write path now stores a title and description that name the sermon, speaker and batch size instead of a raw sermon id, and the Jobs page retry rebuilds them from the job parameters
 
+### Fixed
+
+- A container recreate no longer strands a job at `running`: startup reconciliation marks in-flight jobs terminal (`failed`, or `cancelled` when the cancel flag was already set), appends an interruption line to the existing log, and leaves completed output alone, so the sermon's queue is usable again without editing the database by hand
+
 ## v1.7.0 (2026-09-12)
 
 GPU stack migration: CUDA 12.6, torch 2.14, full PyTorch advisory clearance.
