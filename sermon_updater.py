@@ -2183,6 +2183,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             instead of running the enhancer. Used only when it exists.
         require_enhancement: When True an enhancement run that fails is a
             hard error, not a silent fallback to the un-enhanced source.
+        existing_description_needs_review: The review flag to keep when the
+            stored description is reused instead of regenerated. None leaves
+            the flag to the generator.
 
     Returns:
         Dict with keys: success, sermon_id, title, description, hashtags,
