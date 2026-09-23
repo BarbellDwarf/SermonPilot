@@ -71,13 +71,13 @@ llm_ollama_redundant:
   primary:
     provider: "ollama"
     ollama:
-      host: "${OLLAMA_PRIMARY_HOST:-http://192.168.1.100:11434}"  # Main Ollama server
+      host: "${OLLAMA_PRIMARY_HOST:-http://192.0.2.10:11434}"  # Main Ollama server
       model: "llama3.1:8b"
   fallback:
     enabled: true
     provider: "ollama"
     ollama:
-      host: "${OLLAMA_FALLBACK_HOST:-http://192.168.1.200:11434}"  # Backup Ollama server
+      host: "${OLLAMA_FALLBACK_HOST:-http://192.0.2.11:11434}"  # Backup Ollama server
       model: "llama3.1:8b"
 
 # Example 6: Premium model with budget fallback

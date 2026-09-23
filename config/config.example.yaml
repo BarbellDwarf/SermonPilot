@@ -232,7 +232,7 @@ auto_edit:
 # does not start it inside the container.
 #
 # Signal gateway credentials come from the environment only:
-#   INGEST_SIGNAL_URL         default http://192.0.2.22:8080
+#   INGEST_SIGNAL_URL         default http://localhost:8080
 #   INGEST_SIGNAL_SENDER      sending number/group id
 #   INGEST_SIGNAL_RECIPIENTS  comma-separated numbers/group ids
 # With sender/recipients unset the watcher logs "notify disabled" and only
