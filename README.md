@@ -1,259 +1,92 @@
 # SermonPilot
 
-Automated sermon processing tool that enhances audio (Clear/DeepFilterNet), transcribes (Whisper), generates AI metadata (title/description/hashtags via Ollama/OpenAI), and uploads to SermonAudio API. Provides a Streamlit web UI and CLI.
+SermonPilot takes a raw service recording and turns it into a finished sermon: it
+cleans and enhances the audio, transcribes it, finds and trims the dead time, and
+renders the edited video with an ending card. It publishes the result to
+SermonAudio with an AI-drafted title, description, and hashtags. All of it is
+operated from a web console.
 
-## Features
+## What the console does
 
-- **Audio Enhancement**: Clear (desert-ant-labs) ONNX model, built on DeepFilterNet 3, fine-tuned on speech corpus. Runs via ONNX Runtime with zero PyTorch dependency. Supports CUDA, ROCm, CPU. Falls back to DeepFilterNet.
-- **Transcription**: Local Whisper/faster-whisper, OpenAI API, or OpenRouter
-- **AI Metadata**: Title, description, and hashtag generation via Ollama, OpenAI, xAI, Groq, or OpenRouter
-- **SermonAudio Integration**: Create, update, and upload sermons directly to SermonAudio API
-- **Auto-Edit**: LLM-driven cut detection trims dead time around the sermon start and Q&A, with a keeper transcode for raw multi-GB ingests. See [docs/AUTO_EDIT.md](docs/AUTO_EDIT.md)
-- **Streamlit Web UI**: Dashboard, library, batch processing, validation, analytics, AI chat
-- **New Web Console** (`web/`, mock-data preview): React + Vite + TypeScript + Tailwind rebuild, currently Home + Jobs screens only
-- **Directory Structure**: `processed_sermons/{speaker}/{series}/{title} - {series} - {speaker}/`
+- **Three ways to add a recording**: upload a file in the browser, point at a
+  path on the server, or pick a file from a configured cloud mount.
+- **Cloud mounts without a command line**: connect Google Drive, Dropbox,
+  OneDrive, an S3-compatible bucket, or Backblaze B2 in Settings -> Cloud Mounts,
+  browse the remote, and use a file straight from the picker.
+- **One player, one timeline**: the review page shows a single player and a
+  single timeline with markers for the keep region, the opening and closing cuts,
+  and the ending card. Adjust the cut points, preview each segment, then approve.
+- **Approve and publish**: approving a cut renders the edited video with the
+  ending card, and the same action can upload it to SermonAudio. A render-only
+  approve saves locally and can be published later with "Upload existing render".
+- **A background job queue**: every run appears under Jobs with live status and
+  per-job logs. A queued or running job can be cancelled.
+- **Recoverable deletion**: deleting a sermon moves local media into a dated
+  trash area, and cloud media stays on its remote.
+- **Finished sermons stay editable**: a published sermon shows its details and
+  can be re-opened to re-render or edit.
 
-## Quick Start
+The legacy Streamlit interface (`ui/`) is still present and is served on its own
+port while the console takes over.
 
-### Local Installation
+## Quick start
 
-```bash
-git clone https://github.com/BarbellDwarf/SermonPilot.git
-cd SermonPilot
+The console runs in a browser. There is no command line for the operator.
 
-# Install UV (fast package manager)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+1. Open the console URL for your deployment.
+2. Sign in. On a fresh deployment the first admin account is bootstrapped from
+   the environment (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)); after that,
+   admins create accounts in Settings.
+3. Go to **New Sermon**. Pick one source: upload a file, enter a server path, or
+   choose a cloud file. Cloud remotes are connected under
+   **Settings -> Cloud Mounts**.
+4. Fill in title, speaker, and date (the rest is optional), choose the processing
+   options, and start the run. A dry run processes locally and skips the
+   SermonAudio upload.
+5. Open the sermon in **Library** to review the proposed cuts, then approve.
+   Follow the run under **Jobs**.
 
-# Create venv and install
-uv venv --python 3.11
-source .venv/bin/activate
-uv sync
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the image, environment,
+volumes, and first boot.
 
-# Configure
-cp .env.example .env
-# Edit .env with your SermonAudio API key and broadcaster ID
-```
+## Documentation
 
-No `config.yaml` is needed. On first launch the config-like environment
-variables are written into the SQLite settings database once (SermonAudio
-credentials are seeded this way; provider API keys stay in the environment);
-see [Configuration](#configuration).
+The full docs index is [docs/](docs/). Start with
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) to deploy,
+[docs/AUTO_EDIT.md](docs/AUTO_EDIT.md) for cut detection and the review workflow,
+and [docs/CLOUD_MOUNTS_OAUTH.md](docs/CLOUD_MOUNTS_OAUTH.md) for the cloud mount
+OAuth client.
 
-### Docker (Pre-built Images)
+## Architecture
 
-Pre-built images are available on GitHub Container Registry. Choose your GPU backend:
+- **Console** (`web/`): React, Vite, TypeScript, Tailwind. Talks to the API over
+  JSON.
+- **API server** (`server/api/`): FastAPI. Serves the console bundle and the
+  `/api/*` routes, reads the SQLite database, and queues jobs. Account sessions
+  gate every route except health, login, bootstrap, the cutover metadata, and the
+  OAuth callback.
+- **Job queue** (`ui/job_queue.py`, `ui/job_executors.py`): jobs run in a
+  background queue, serialized by default, with cancel and per-job logs.
+- **Media pipeline** (`sermon_updater.py`, `src/`): clean, enhance, mux,
+  transcribe, detect cuts, render the approved edit with the ending card, upload.
+- **LLM roles**: a primary provider generates metadata, a fallback catches
+  failures, and a validator reviews drafts. Each role has its own provider,
+  model, and endpoint in **Settings -> LLM Providers**.
 
-```bash
-# Configure first: copy the environment template and fill in your API keys
-cp .env.example .env
+Configuration lives in the SQLite database and is managed in Settings.
+Environment variables are a visible fallback: a mapped variable overrides the
+stored value for the running process, and the Settings UI names the variable that
+is winning.
 
-# Pull and run with CPU
-SERMONPILOT_TAG=cpu docker compose up -d
+## Requirements
 
-# Or pin a specific version and backend
-SERMONPILOT_TAG=v1.6.2-cuda docker compose up -d
-```
-
-Images are tagged as `ghcr.io/barbelldwarf/sermonpilot:TAG-BACKEND` (e.g. `v1.6.2-cuda`, `v1.6.2-rocm`, `v1.6.2-cpu`). Moving per-backend tags (`cuda`, `rocm`, `cpu`) track the latest release of each backend, and `latest` points to the latest CUDA build.
-
-### Hardware Acceleration
-
-To use GPU acceleration, you need to:
-
-1. **Pull the correct image tag**: set `SERMONPILOT_TAG` to a version with your backend (e.g. `v1.6.2-cuda`)
-
-2. **Add device access to docker-compose.yml**: uncomment or add the appropriate `deploy` section:
-
-   **NVIDIA CUDA:**
-   ```yaml
-   services:
-     sermon-pilot:
-       image: ghcr.io/barbelldwarf/sermonpilot:${SERMONPILOT_TAG:-latest}
-       # ... other config ...
-       deploy:
-         resources:
-           reservations:
-             devices:
-               - driver: nvidia
-                 count: all
-                 capabilities: [gpu]
-   ```
-
-   **AMD ROCm:**
-   ```yaml
-   services:
-     sermon-pilot:
-       image: ghcr.io/barbelldwarf/sermonpilot:${SERMONPILOT_TAG:-latest}
-       # ... other config ...
-       devices:
-         - /dev/kfd
-         - /dev/dri
-   ```
-
-3. **Install the container toolkit** if you haven't already:
-   - **NVIDIA**: [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
-   - **AMD**: [rocm-docker](https://rocm.docs.amd.com/en/latest/deploy/docker.html)
-
-   On AMD GPUs, `whisper_local` (openai-whisper, torch-based) runs on the GPU;
-   `faster_whisper_local` uses CTranslate2, which has no ROCm support and is
-   forced to CPU. The `rocm` image ships a matching config template
-   (`config/templates/rocm.yaml`) that selects `whisper_local` and is offered
-   for import at startup. See [docs/GPU_INSTALLATION.md](docs/GPU_INSTALLATION.md).
-
-### Build Locally
-
-```bash
-docker build -t sermonpilot:latest .
-# Or with GPU support:
-docker build --build-arg GPU_BACKEND=cuda -t sermonpilot:latest .
-```
-
-> **Ollama**: If using Ollama for local LLM inference, run it separately:
-> `docker run -d --name ollama -p 11434:11434 ollama/ollama`
-> Then set `OLLAMA_HOST=http://host.docker.internal:11434` in your `.env`.
-
-## Configuration
-
-Settings live in a SQLite settings database and are resolved in this order,
-lowest to highest: built-in defaults, the per-variant template (fresh installs
-only), the settings database, then environment variables. A mapped environment
-variable always wins over the stored value for the running process. There is no
-required config file, and no config file is read at run time.
-
-```bash
-cp .env.example .env
-```
-
-Environment variables that seed and override settings:
-
-| Area | Variables |
-|------|-----------|
-| SermonAudio | `SERMONAUDIO_API_KEY`, `SERMONAUDIO_BROADCASTER_ID` |
-| LLM provider | `LLM_PROVIDER`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `XAI_API_KEY`, `XAI_MODEL`, `GROQ_API_KEY`, `GROQ_MODEL`, `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `GOOGLE_API_KEY`, `GOOGLE_MODEL` |
-| Transcription | `TRANSCRIPTION_BACKEND`, `WHISPER_MODEL` |
-| Audio | `AUDIO_ENHANCEMENT_METHOD`, `AUDIO_NOISE_REDUCTION`, `AUDIO_NORMALIZE`, `AUDIO_TARGET_LEVEL`, `AUDIO_GAIN_DB`, `QA_NORMALIZATION_ENABLED` |
-| Output | `OUTPUT_DIRECTORY`, `SAVE_TRANSCRIPT`, `SAVE_ORIGINAL_AUDIO` |
-| Behavior | `DEBUG`, `VERBOSE`, `DRY_RUN`, `HASHTAG_VERIFICATION` |
-| Runtime (not part of the settings store) | `DATABASE_URL`, `APP_PASSWORD` |
-
-On first launch with any of these set, the config-like values are written into
-the settings database once, so a container started with only a `.env` file keeps
-its settings across restarts. The SermonAudio credentials are seeded this way
-too: the database becomes their source of truth, and an exported
-`SERMONAUDIO_API_KEY` or `SERMONAUDIO_BROADCASTER_ID` still wins and is reported
-as coming from the environment while it is set. The Console Settings page names
-"set by environment: SERMONAUDIO_API_KEY" on the fallback credential when that
-is the case. Other deploy-time secrets (the provider `*_API_KEY` variables) are
-never copied into the database: they stay in the environment and override the
-stored value while set, and the Settings UI names the variable that is winning.
-Change settings any time in the web UI Settings page.
-
-`config.yaml` is export/import only and never read for resolution:
-
-- On an existing install that still has a `config.yaml`, its contents are
-  imported into the settings database once, automatically.
-- The Settings page has an Import/Export tab that downloads the current
-  settings as YAML and restores from an uploaded YAML file.
-- Set `SA_UPDATER_CONFIG` to a YAML path and its contents are imported into the
-  settings database once, when the database is empty. It is never a resolution
-  layer (escape hatch for tests and unusual setups). The legacy-to-console
-  settings mapping is in [docs/SETTINGS_PARITY.md](docs/SETTINGS_PARITY.md).
-- Docker images ship per-variant templates under `config/templates/`
-  (`cuda.yaml`, `rocm.yaml`, `cpu.yaml`) that differ in the transcription
-  section; the container startup logs the matching template for your image.
-
-Commonly tuned keys (set them in the UI or via the env vars above):
-
-- `audio_enhancement_method`: `deepfilternet` (default, recommended), `clear-natural`, `clear-studio`, `custom`, or `none`
-- `transcription.backend`: `whisper_local` (code default), `faster_whisper_local`, `whisper_openai`, or `whisper_openrouter`
-- `upload_dir`: staging directory for files uploaded through the web UI; defaults to `sermon_uploads` under the disk-backed cache root (`$XDG_CACHE_HOME/sermonpilot` or `~/.cache/sermonpilot`)
-- `processing_temp_dir`: parent directory for per-job processing temp dirs; defaults to `sermon_processing` under the same cache root. Each job gets its own subdirectory, removed when the job ends; leftovers older than 24h are swept at startup
-
-## Usage
-
-### Web Interface
-```bash
-streamlit run streamlit_app.py
-# Open http://localhost:8501
-```
-
-#### Filename auto-detection
-
-When you upload a file on the **New Sermon** page, SermonPilot reads the filename and pre-fills the metadata form. Name your recordings:
-
-```
-Title - Series - Speaker - date.extension
-```
-
-Segments are positional, split on the literal `" - "` separator, and anything past the fourth segment is ignored.
-
-| Position | Segment | Fills | If missing |
-|----------|---------|-------|------------|
-| 1 | Title | Sermon Title | Left blank for AI generation |
-| 2 | Series | Series dropdown (selects an existing series, otherwise pre-fills "Add New") | Left empty |
-| 3 | Speaker | Speaker dropdown (selects an existing pastor, otherwise pre-fills "Add New") | Left empty |
-| 4 | Date | Recording Date; accepts `YYYY-MM-DD`, `YYYY_MM_DD`, `MM-DD-YYYY`, `MM_DD_YYYY`, `DD.MM.YYYY` | Stays at today's default |
-
-Detection runs once per uploaded filename and only fills fields still at their defaults, so your own edits are never overwritten.
-
-Examples:
-- `My Sermon - Romans - Paul - 2026-08-20.mp4` fills title "My Sermon", series "Romans", speaker "Paul" and date 2026-08-20
-- `Evening Prayer.mp4` fills only the title "Evening Prayer"
-
-### CLI - New Sermon
-```bash
-python sermon_updater.py new-sermon audio.mp3 --speaker "Pastor Smith" --date "2024-01-15"
-```
-
-### CLI - Process Existing
-```bash
-python sermon_updater.py sermon-update --sermon-id 1234567890123
-```
-
-### CLI - List Sermons
-```bash
-python sermon_updater.py list --since-days 30
-```
-
-## Auto-Edit
-
-Drop the raw recording in and SermonPilot finds the sermon start and the Q&A boundary, cuts the dead time, adds a logo card, and uploads the edited video. Large raw files are shrunk first by the keeper transcode (NVENC, VAAPI, or libx264 at CRF 20), so there is no manual kdenlive pass for routine uploads. Interactive mode stops at a review panel in the Library where you can nudge timestamps, approve, reject with notes (which re-runs detection using your instructions), regenerate a proposal, restore the original, or re-edit from full quality.
-
-Needs `ffmpeg`. Cut detection runs on the configured LLM chain (Ollama by default), no extra environment variables needed. Full setup, config tables, CLI flags, and the review workflow: [docs/AUTO_EDIT.md](docs/AUTO_EDIT.md).
-
-## Audio Enhancement
-
-| Method | Description | Torch Dep | GPU Support |
-|--------|-------------|-----------|-------------|
-| **DeepFilterNet** (default) | Original DFN3 PyTorch model | Required | CUDA/ROCm |
-| Clear | ONNX model (desert-ant-labs/clear), DFN3 architecture, fine-tuned speech corpus (`clear-natural`/`clear-studio`) | None | CUDA/ROCm/CPU via ONNX Runtime |
-| none | No enhancement | None | n/a |
-
-## Directory Structure
-
-```
-processed_sermons/
-|-- Speaker Name/
-|   |-- Series Name/
-|   |   `-- Sermon Title - Series Name - Speaker Name/
-|   |       |-- audio.mp3
-|   |       |-- transcript.txt
-|   |       |-- description.txt
-|   |       |-- hashtags.txt
-|   |       `-- metadata.json
-|   `-- Another Series/
-|       `-- Another Sermon - Another Series - Speaker Name/
-`-- Another Speaker/
-    `-- A Series/
-        `-- A Sermon - A Series - Another Speaker/
-```
-
-## Security
-
-- **PyTorch** is pinned at `torch>=2.13.0` in `pyproject.toml`; the GPU override files resolve CUDA (`torch==2.14.0+cu126`) or ROCm (`torch==2.13.0+rocm7.1`) builds
-- **Clear enhancer** uses ONNX Runtime: zero PyTorch dependency for inference
-- API keys stored in `.env` (gitignored) or as environment variables
-- Secrets never need to touch disk in plaintext: keep them in the environment or as `${VAR}` placeholders in an imported file layer; the Settings export masks them
+- Docker with the Compose plugin.
+- A GPU host is recommended for the media work (audio enhancement, transcription,
+  and the render). The CPU image works, more slowly.
+- ffmpeg is included in the container image. Nothing beyond Docker is needed on
+  the host.
+- A reachable LLM provider: a local Ollama endpoint or a hosted provider
+  (OpenAI-compatible, xAI, Groq, OpenRouter).
 
 ## License
 
