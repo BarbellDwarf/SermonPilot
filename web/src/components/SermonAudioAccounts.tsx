@@ -22,7 +22,10 @@ export function routingCopy(view: ApiEffectiveConnection | null): string {
   if (view.source === "user") {
     return `Uploads use ${view.account_name || "your account"}${broadcaster}.`;
   }
-  return `No account connected. Uploads fall back to ${sourceCopy(view.source)}${broadcaster}.`;
+  if (view.source === "db") {
+    return `No account connected. Uploads fall back to the saved single-account credentials${broadcaster}.`;
+  }
+  return `No account connected. Uploads fall back to the environment variable ${view.source}${broadcaster}.`;
 }
 
 interface EditorDraft {

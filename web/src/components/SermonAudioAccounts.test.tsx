@@ -306,7 +306,23 @@ describe("routingCopy", () => {
         message: "",
       }),
     ).toBe(
-      "No account connected. Uploads fall back to set by environment: SERMONAUDIO_API_KEY (env-broadcaster).",
+      "No account connected. Uploads fall back to the environment variable SERMONAUDIO_API_KEY (env-broadcaster).",
+    );
+  });
+
+  it("names the saved single-account fallback", () => {
+    expect(
+      routingCopy({
+        configured: true,
+        source: "db",
+        account_id: null,
+        account_name: null,
+        broadcaster_id: "saved-broadcaster",
+        masked_key: "********1234",
+        message: "",
+      }),
+    ).toBe(
+      "No account connected. Uploads fall back to the saved single-account credentials (saved-broadcaster).",
     );
   });
 
