@@ -280,6 +280,14 @@ def restore_user(body: dict, user=Depends(require_user)):
     return {"restored": len(settings)}
 
 
+@me_router.get("/sermonaudio-connection")
+def effective_sermonaudio_connection(user=Depends(require_user)):
+    """The SermonAudio account this user's uploads will use, secret-free."""
+    from ui.sermonaudio_accounts import describe, resolve_connection
+
+    return describe(resolve_connection(user["id"]))
+
+
 @me_router.patch("")
 def update_profile(body: ProfileBody, user=Depends(require_user)):
     with writable_conn() as conn:

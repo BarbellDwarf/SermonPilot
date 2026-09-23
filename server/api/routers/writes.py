@@ -133,6 +133,18 @@ def _output_dir_for(user: dict, requested: str) -> str:
     return validate_output_dir(raw, user)
 
 
+def _require_sermonaudio_connection(user_id: str | None) -> None:
+    """Refuse a publish before it is queued when the user has no account."""
+    from ui.sermonaudio_accounts import CONNECT_ACCOUNT_MESSAGE, resolve_connection
+
+    if resolve_connection(user_id).usable:
+        return
+    raise HTTPException(
+        status_code=422,
+        detail={"code": "no_sermonaudio_account", "message": CONNECT_ACCOUNT_MESSAGE},
+    )
+
+
 def _resolved_job_config() -> dict[str, Any]:
     """Attach the resolved application config to API-enqueued jobs.
 
@@ -388,6 +400,7 @@ def _enqueue_upload_existing(
                 "code": "job_active",
             },
         )
+    _require_sermonaudio_connection(user.get("id"))
     assessment = assess_upload_only(
         get_repository(),
         sermon_id,
@@ -457,6 +470,8 @@ def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(r
                 "job_id": active["id"],
             },
         )
+    if not body.render_only:
+        _require_sermonaudio_connection(user.get("id"))
     from ui.job_labels import build_job_labels
     from ui.job_queue import JobType
 
@@ -510,6 +525,7 @@ def upload_now(sermon_id: str, user=Depends(require_user)):
                 "job_id": active["id"],
             },
         )
+    _require_sermonaudio_connection(user.get("id"))
     from ui.job_labels import build_job_labels
     from ui.job_queue import JobType
 
@@ -542,6 +558,7 @@ def regenerate_description(sermon_id: str, user=Depends(require_user)):
                 "job_id": active["id"],
             },
         )
+    _require_sermonaudio_connection(user.get("id"))
     from ui.job_labels import build_job_labels
     from ui.job_queue import JobType
 
@@ -662,6 +679,8 @@ async def upload_sermon(
         raise HTTPException(
             status_code=422, detail=f"missing required fields: {', '.join(missing)}"
         )
+    if not dry_run:
+        _require_sermonaudio_connection(user.get("id"))
     original = Path(file.filename or "").name
     ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
     if ext not in _UPLOAD_EXTENSIONS:
@@ -804,6 +823,8 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
         raise HTTPException(
             status_code=422, detail=f"missing required fields: {', '.join(missing)}"
         )
+    if not body.dry_run:
+        _require_sermonaudio_connection(user.get("id"))
     if body.container_path.strip().startswith("remote:"):
         from server.api.routers.cloud import (
             list_remote_names,
