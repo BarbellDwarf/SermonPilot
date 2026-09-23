@@ -97,6 +97,7 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
         def process_sermon_audio(*args, **kwargs):
             return False
     from auto_edit import (
+        MAX_AUDIO_OFFSET,
         EditPlan,
         apply_edit,
         detect_cut_points,
@@ -2777,11 +2778,31 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
         result['enhanced_audio_path'] = str(enhanced_audio_path)
 
+        # Resolve the edit gate before the mux: when a render will consume the
+        # mux, the A/V correction belongs in the render's plan, not baked into
+        # the intermediate mux (which the render would then apply twice).
+        if auto_edit_mode is not None:
+            auto_edit_cfg = config.get('auto_edit', {}) if isinstance(config, dict) else {}
+            gate_active = True
+            gate_mode = auto_edit_mode
+        else:
+            auto_edit_cfg = config.get('auto_edit', {}) if isinstance(config, dict) else {}
+            gate_active = bool(auto_edit_cfg.get('enabled', False)) or bool(edit_plan_file)
+            gate_mode = auto_edit_cfg.get('mode') or (
+                'interactive' if bool(auto_edit_cfg.get('require_review', False)) else 'auto'
+            )
+
+        if gate_active and not input_is_video:
+            console_print("⏭️  Auto-edit applies to video inputs only, skipping")
+            gate_active = False
+
         # If the original input was a video, mux the enhanced audio back in
         final_upload_path = enhanced_audio_path
         upload_type = "original-audio"
         enhanced_render_source: Path | None = None
         enhancement_mux_failed = False
+        mux_consumed = False
+        av_render_offset = 0.0
         if input_is_video:
             audio_was_enhanced = enhanced_audio_path != audio_path and enhanced_audio_path.exists()
             if audio_was_enhanced:
@@ -2796,7 +2817,29 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     # ``_build_mux_command``.
                     mux_audio_input = Path(enhanced_audio_path)
 
-                    correction = 0.0
+                    # The correction the finalized render must carry.
+                    # Precedence: an explicitly set manual offset always wins;
+                    # otherwise the measured auto correction is used when
+                    # auto_correct is on and its gates pass. The auto value is
+                    # clamped to the same +/-MAX_AUDIO_OFFSET limit that
+                    # validate_plan enforces. A manual value is left unclamped
+                    # so validate_plan can reject it rather than silently
+                    # truncate an operator's explicit choice.
+                    manual_explicit = audio_offset is not None
+                    manual_offset = float(audio_offset or 0.0)
+                    if not manual_explicit and edit_plan_file:
+                        try:
+                            plan_manual = float(
+                                _load_edit_plan_from_file(edit_plan_file).audio_offset or 0.0
+                            )
+                        except Exception:
+                            plan_manual = 0.0
+                        if abs(plan_manual) > 1e-6:
+                            manual_explicit = True
+                            manual_offset = plan_manual
+
+                    auto_correction = 0.0
+                    av_reason = "av_sync disabled"
                     av_cfg = config.get('av_sync') or {}
                     if av_cfg.get('enabled', True):
                         max_offset = float(av_cfg.get('max_offset_seconds', 2.0))
@@ -2843,18 +2886,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                                 measured += input_offset.offset_seconds
                             if enh_offset.available and enh_offset.offset_seconds is not None:
                                 measured += enh_offset.offset_seconds
-                            manual_offset = float(audio_offset or 0.0)
-                            if abs(manual_offset) <= 1e-6 and edit_plan_file:
-                                try:
-                                    manual_offset = float(
-                                        _load_edit_plan_from_file(
-                                            edit_plan_file
-                                        ).audio_offset or 0.0
-                                    )
-                                except Exception:
-                                    manual_offset = 0.0
-                            correction, av_reason = resolve_audio_correction(
-                                manual_offset,
+                            auto_correction, av_reason = resolve_audio_correction(
+                                0.0,
                                 measured,
                                 input_offset.confidence,
                                 auto_correct=auto_correct,
@@ -2863,22 +2896,38 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                             )
                             if "exceeds" in av_reason:
                                 result['av_sync_needs_review'] = True
-                            if abs(measured) > 0.1 or abs(manual_offset) > 1e-6:
+                            if abs(measured) > 0.1:
                                 console_print(
-                                    f"🎯 A/V decision: measured {measured:+.2f}s, "
-                                    f"manual {manual_offset:+.2f}s -> {av_reason}"
+                                    f"🎯 A/V decision: measured {measured:+.2f}s -> {av_reason}"
                                 )
-                            result['av_sync_offset_seconds'] = correction
                         except ProcessCancelled:
                             raise
                         except Exception as e:
                             logger.warning("av_sync measurement failed: %s", e)
 
+                    if manual_explicit:
+                        av_render_offset = manual_offset
+                        av_reason = "manual offset set; auto-correction skipped"
+                    else:
+                        av_render_offset = max(
+                            -MAX_AUDIO_OFFSET, min(MAX_AUDIO_OFFSET, auto_correction)
+                        )
+                    result['av_sync_offset_seconds'] = av_render_offset
+                    # The render applies the correction through the plan, so the
+                    # mux only bakes it in when no render will consume the mux.
+                    mux_correction = 0.0 if gate_active else av_render_offset
+                    if abs(av_render_offset) > 1e-6:
+                        console_print(
+                            f"🎯 A/V correction for render: {av_render_offset:+.3f}s "
+                            f"({av_reason})"
+                        )
+
+                    mux_video_input = audio_path if keeper_used else original_input_path
                     sync_problems = _mux_video_with_audio(
-                        original_input_path,
+                        mux_video_input,
                         mux_audio_input,
                         final_video,
-                        correction,
+                        mux_correction,
                         cancel_check=_check_cancelled,
                         cancel_log=cancel_log,
                     )
@@ -2893,6 +2942,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     final_upload_path = final_video
                     upload_type = "original-video"
                     enhanced_render_source = final_video
+                    mux_consumed = True
                     console_print(f"Muxed enhanced audio into video: {final_video.name}")
                 except ProcessCancelled:
                     raise
@@ -3325,21 +3375,6 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 },
             })
 
-        if auto_edit_mode is not None:
-            auto_edit_cfg = config.get('auto_edit', {}) if isinstance(config, dict) else {}
-            gate_active = True
-            gate_mode = auto_edit_mode
-        else:
-            auto_edit_cfg = config.get('auto_edit', {}) if isinstance(config, dict) else {}
-            gate_active = bool(auto_edit_cfg.get('enabled', False)) or bool(edit_plan_file)
-            gate_mode = auto_edit_cfg.get('mode') or (
-                'interactive' if bool(auto_edit_cfg.get('require_review', False)) else 'auto'
-            )
-
-        if gate_active and not input_is_video:
-            console_print("⏭️  Auto-edit applies to video inputs only, skipping")
-            gate_active = False
-
         if gate_active:
             edit_source = audio_path if keeper_used else original_input_path
             trash_source = edit_source
@@ -3360,6 +3395,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             else:
                 console_print(f"Rendering from {edit_source}")
                 logger.info("Rendering from %s", edit_source)
+            # The render consumes the enhanced mux when one was produced, so
+            # the published artifact carries the enhanced audio and its
+            # measured A/V correction. Without a mux the retained keeper or
+            # original is the base.
+            render_source = final_upload_path if mux_consumed else edit_source
             plan_duration = _ffprobe_duration(edit_source)
 
             if edit_plan_file:
@@ -3379,6 +3419,19 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             if audio_offset is not None:
                 gate_plan.audio_offset = float(audio_offset)
+                offset_source = "manual"
+            elif abs(float(gate_plan.audio_offset or 0.0)) > 1e-6:
+                offset_source = "plan"
+            else:
+                # No explicit manual offset: the measured correction reaches
+                # the render, which is the published artifact.
+                gate_plan.audio_offset = av_render_offset
+                offset_source = "measured"
+            logger.info(
+                "Edit render A/V offset: %+.3fs (%s)",
+                float(gate_plan.audio_offset or 0.0),
+                offset_source,
+            )
 
             confidence_threshold = _auto_edit_confidence_threshold(auto_edit_cfg)
             min_sermon_seconds = float(auto_edit_cfg.get('min_sermon_seconds', 600))
@@ -3443,7 +3496,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             )
             try:
                 edited_path = apply_edit(
-                    Path(edit_source),
+                    Path(render_source),
                     gate_plan,
                     edited_path,
                     logo_path=edit_logo_path,
