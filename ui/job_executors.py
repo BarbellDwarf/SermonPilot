@@ -1869,6 +1869,10 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
         re_detect = bool(params.get("re_detect", False))
         plan_id = params.get("plan_id")
         config = resolve_job_config(job)
+        actions = dict(params.get("actions") or {})
+        if params.get("enhance_audio") is not None:
+            actions["enhance_audio"] = bool(params["enhance_audio"])
+        request_enhance = actions.get("enhance_audio")
 
         if not sermon_id:
             return JobResult(
@@ -1915,6 +1919,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
             progress_callback=progress_cb,
             cancel_check=lambda: _raise_if_job_cancelled(job),
             config=config or None,
+            enhance_audio=request_enhance,
         )
 
         if result.get("cancelled"):
