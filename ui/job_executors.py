@@ -1038,6 +1038,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             progress_callback=progress_cb,
             auto_edit_mode=auto_edit_mode,
             cancel_check=lambda: _raise_if_job_cancelled(job),
+            cancel_log=job.add_log,
             existing_sermon_id=job.parameters.get("sermon_id"),
         )
         processing_temp_dir = result.get('processing_temp_dir')
@@ -1691,6 +1692,7 @@ def execute_auto_edit_apply_job(job: Job) -> JobResult:
                 auto_edit_mode='auto',
                 edit_plan_file=str(plan_file),
                 cancel_check=lambda: _raise_if_job_cancelled(job),
+                cancel_log=job.add_log,
             )
             if result.get('cancelled'):
                 job.add_log("Auto-edit apply cancelled by user")
@@ -1918,6 +1920,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
             plan_id=plan_id,
             progress_callback=progress_cb,
             cancel_check=lambda: _raise_if_job_cancelled(job),
+            cancel_log=job.add_log,
             config=config or None,
             enhance_audio=request_enhance,
         )

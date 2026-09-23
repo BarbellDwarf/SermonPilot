@@ -6,11 +6,17 @@ import re
 import shutil
 import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+try:  # src package import (project root on sys.path)
+    from src.supervised_process import ProcessCancelled, run_supervised
+except ImportError:  # src dir placed directly on sys.path
+    from supervised_process import ProcessCancelled, run_supervised  # type: ignore[no-redef]
 
 _FFMPEG_TIMEOUT_SECONDS = 3600
 
@@ -511,13 +517,29 @@ MAX_AUDIO_OFFSET = 5.0
 DEFAULT_FADE_OUT_TAIL_SECONDS = 2.0
 
 
-def _run_ffmpeg(cmd: list[str]) -> None:
+def _run_ffmpeg(
+    cmd: list[str],
+    *,
+    cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
+    partial_paths: list | None = None,
+    step: str = "edit render",
+) -> None:
     import time as _time
 
     start = _time.time()
     try:
-        subprocess.run(
-            cmd, capture_output=True, text=True, timeout=_FFMPEG_TIMEOUT_SECONDS, check=True
+        run_supervised(
+            cmd,
+            cancel_check=cancel_check,
+            log=cancel_log,
+            step=step,
+            partial_paths=partial_paths,
+            partial_reason="cancelled_render_partial",
+            capture_output=True,
+            text=True,
+            timeout=_FFMPEG_TIMEOUT_SECONDS,
+            check=True,
         )
     except subprocess.CalledProcessError as e:
         stderr_tail = (e.stderr or "")[-400:]
@@ -558,6 +580,8 @@ def apply_edit(
     logo_path: Path | None = None,
     fade_to_black: bool | None = None,
     fade_out_tail_seconds: float = DEFAULT_FADE_OUT_TAIL_SECONDS,
+    cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
 ) -> Path:
     if fade_to_black is None:
         fade_to_black = plan.fade_to_black
@@ -661,11 +685,24 @@ def apply_edit(
         str(out),
     ]
 
-    _run_ffmpeg(cmd)
+    _run_ffmpeg(
+        cmd,
+        cancel_check=cancel_check,
+        cancel_log=cancel_log,
+        partial_paths=[out],
+        step="edit render",
+    )
     return out
 
 
-def shift_snippet_audio(base: Path, offset: float, out: Path) -> Path:
+def shift_snippet_audio(
+    base: Path,
+    offset: float,
+    out: Path,
+    *,
+    cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
+) -> Path:
     """Remux a snippet with the audio track shifted by offset seconds.
 
     No re-encode: both streams are copied, so repeated nudges are near-instant.
@@ -693,11 +730,25 @@ def shift_snippet_audio(base: Path, offset: float, out: Path) -> Path:
     else:
         cmd += ["-shortest"]
     cmd += [str(out)]
-    _run_ffmpeg(cmd)
+    _run_ffmpeg(
+        cmd,
+        cancel_check=cancel_check,
+        cancel_log=cancel_log,
+        partial_paths=[out],
+        step="snippet shift",
+    )
     return out
 
 
-def _render_snippet(source: Path, start: float, end: float, out: Path) -> Path:
+def _render_snippet(
+    source: Path,
+    start: float,
+    end: float,
+    out: Path,
+    *,
+    cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
+) -> Path:
     cmd = [
         "ffmpeg",
         "-y",
@@ -721,7 +772,13 @@ def _render_snippet(source: Path, start: float, end: float, out: Path) -> Path:
         "96k",
         str(out),
     ]
-    _run_ffmpeg(cmd)
+    _run_ffmpeg(
+        cmd,
+        cancel_check=cancel_check,
+        cancel_log=cancel_log,
+        partial_paths=[out],
+        step="review snippet",
+    )
     return out
 
 
@@ -731,6 +788,8 @@ def render_review_snippets(
     out_dir: Path,
     logo_path: Path | None = None,
     fade_out_tail_seconds: float = DEFAULT_FADE_OUT_TAIL_SECONDS,
+    cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
 ) -> list[Path]:
     if getattr(plan, "detection_status", DETECTION_OK) == DETECTION_UNAVAILABLE:
         logger.info("auto_edit: no review snippets for unavailable cut detection")
@@ -744,7 +803,18 @@ def render_review_snippets(
     for name, (ws, we) in (("snippet_start.mp4", start_window), ("snippet_end.mp4", end_window)):
         if we - ws >= 0.5:
             try:
-                snippets.append(_render_snippet(source, ws, we, out_dir / name))
+                snippets.append(
+                    _render_snippet(
+                        source,
+                        ws,
+                        we,
+                        out_dir / name,
+                        cancel_check=cancel_check,
+                        cancel_log=cancel_log,
+                    )
+                )
+            except ProcessCancelled:
+                raise
             except RuntimeError as e:
                 logger.warning(f"auto_edit: review snippet {name} failed: {e}")
 
@@ -765,8 +835,12 @@ def render_review_snippets(
                     out_dir / "snippet_ending.mp4",
                     logo_path,
                     fade_out_tail_seconds=fade_out_tail_seconds,
+                    cancel_check=cancel_check,
+                    cancel_log=cancel_log,
                 )
             )
+        except ProcessCancelled:
+            raise
         except (RuntimeError, ValueError) as e:
             logger.warning(f"auto_edit: ending snippet failed: {e}")
 
@@ -962,7 +1036,14 @@ def _keeper_preset_args(encoder: str) -> list[str]:
     return ["-preset", "veryfast"]
 
 
-def transcode_to_keeper(source: Path, out: Path, config: dict[str, Any]) -> Path | None:
+def transcode_to_keeper(
+    source: Path,
+    out: Path,
+    config: dict[str, Any],
+    *,
+    cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
+) -> Path | None:
     keeper_cfg = config.get("auto_edit", {}).get("keeper", {})
     if not keeper_cfg.get("enabled", True):
         return source
@@ -1002,10 +1083,22 @@ def transcode_to_keeper(source: Path, out: Path, config: dict[str, Any]) -> Path
     ]
     logger.info(f"auto_edit keeper: transcoding {source.name} with {encoder}")
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        proc = run_supervised(
+            cmd,
+            cancel_check=cancel_check,
+            log=cancel_log,
+            step="keeper transcode",
+            partial_paths=[out],
+            partial_reason="cancelled_render_partial",
+            capture_output=True,
+            text=True,
+            timeout=3600,
+        )
         if proc.returncode != 0:
             logger.warning(f"auto_edit keeper: ffmpeg failed: {(proc.stderr or '')[-400:]}")
             return source
+    except ProcessCancelled:
+        raise
     except Exception as e:
         logger.warning(f"auto_edit keeper: transcode failed, keeping original: {e}")
         return source
