@@ -255,6 +255,7 @@ def test_explicit_off_skips_and_logs_the_reason(repo, review, pipeline, tmp_path
 
     assert result["success"] is True
     assert pipeline["enhance"] == 0
+    assert "enhanced_audio_file" not in pipeline["apply_kwargs"][-1]
     assert any(
         "Skipping audio enhancement (not requested; request turned it off)" in m
         for m in messages
