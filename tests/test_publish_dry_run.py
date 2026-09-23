@@ -212,7 +212,7 @@ def test_publish_dry_run_sermon_missing_audio_returns_error(tmp_path: Path, monk
     result = su.publish_dry_run_sermon("draft_test")
 
     assert result["success"] is False
-    assert "not found" in result["error"]
+    assert "No rendered output" in result["error"]
 
 
 def test_publish_dry_run_uploads_the_explicit_path_without_rendering(

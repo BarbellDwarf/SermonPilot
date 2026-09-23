@@ -4214,18 +4214,19 @@ def publish_dry_run_sermon(
                 return result
             audio_path_str = explicit_upload_path
         elif not audio_path_str or not Path(audio_path_str).exists():
-            # Fall back to looking in processed_sermons/{speaker}/{series}/{title}/ directory
-            output_root = Path(config.get('output_directory', 'processed_sermons'))
-            if not output_root.is_absolute():
-                output_root = Path(__file__).parent / output_root
-            fallback_dir = find_sermon_dir(output_root, dry_run_id)
-            if fallback_dir:
-                for f in fallback_dir.iterdir():
-                    if f.suffix.lower() in (
-                        '.mp3', '.wav', '.mp4', '.m4a', '.ogg', '.flac', '.mov', '.mkv', '.webm'
-                    ):
-                        audio_path_str = str(f)
-                        break
+            # No stored audio path, and never guess from directory order: the
+            # upload-only path already resolves the recorded render, so reuse
+            # that. A source recording that was never rendered stays refused.
+            from ui.upload_only import resolve_existing_render
+
+            recorded_render = resolve_existing_render(sermon_data)
+            if recorded_render is None:
+                result['error'] = (
+                    "No rendered output is recorded for this teaching, so there "
+                    "is nothing to publish. Render the approved cut first."
+                )
+                return result
+            audio_path_str = str(recorded_render)
         if not audio_path_str or not Path(audio_path_str).exists():
             result['error'] = f"Audio file not found: {audio_path_str}"
             return result
