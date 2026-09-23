@@ -89,7 +89,9 @@ def _extract_frames(
             step="A/V frame extraction",
             partial_paths=[out],
             partial_reason="cancelled_render_partial",
-            check=True, capture_output=True, timeout=600,
+            check=True,
+            capture_output=True,
+            timeout=600,
         )
     except ProcessCancelled:
         raise
@@ -122,7 +124,9 @@ def _audio_envelope(
             step="A/V audio extraction",
             partial_paths=[out],
             partial_reason="cancelled_render_partial",
-            check=True, capture_output=True, timeout=600,
+            check=True,
+            capture_output=True,
+            timeout=600,
         )
     except ProcessCancelled:
         raise
@@ -241,12 +245,18 @@ def measure_content_offset(
         return OffsetMeasurement(None, 0.0, False, "content", "opencv unavailable")
 
     frames = _extract_frames(
-        video, start_seconds, window_seconds,
-        cancel_check=cancel_check, cancel_log=cancel_log,
+        video,
+        start_seconds,
+        window_seconds,
+        cancel_check=cancel_check,
+        cancel_log=cancel_log,
     )
     envelope = _audio_envelope(
-        video, start_seconds, window_seconds,
-        cancel_check=cancel_check, cancel_log=cancel_log,
+        video,
+        start_seconds,
+        window_seconds,
+        cancel_check=cancel_check,
+        cancel_log=cancel_log,
     )
     if frames is None or envelope is None or len(frames) < 50:
         return OffsetMeasurement(None, 0.0, False, "content", "extraction failed")
@@ -329,7 +339,9 @@ def measure_waveform_offset(
                 step="A/V waveform extraction",
                 partial_paths=[out],
                 partial_reason="cancelled_render_partial",
-                check=True, capture_output=True, timeout=600,
+                check=True,
+                capture_output=True,
+                timeout=600,
             )
         except ProcessCancelled:
             raise

@@ -8,10 +8,10 @@ rclone copy or an audio preprocessing script left the child running and the
 single worker blocked until it finished on its own.
 
 :func:`run_supervised` starts the child with :class:`subprocess.Popen` and
-polls the hook every ``poll_interval`` seconds. On cancel it asks the child to
-stop (``terminate``), waits a short grace period, then kills it, moves any
-partial output named in ``partial_paths`` into the trash area per
-``src/safe_delete.py``, and re-raises the hook's exception so the job goes
+polls the hook every ``poll_interval`` seconds. On cancel it asks the child's
+process group to stop (``terminate``), waits a short grace period, then kills
+it, moves any partial output named in ``partial_paths`` into the trash area per
+``src/safe_delete.py``, and raises :class:`ProcessCancelled` so the job goes
 terminal as cancelled. If the child ignores ``terminate`` the hard kill is the
 fallback, so the worker is never left blocked.
 
