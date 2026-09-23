@@ -1,9 +1,9 @@
 """One-time ownership backfill: assign unowned sermons/jobs to the admin user.
 
 Usage: ``python -m server.api.backfill``. Safe to re-run: only rows with
-``user_id IS NULL`` are touched. Historical sermons (including River's)
-become admin-owned so they stay visible to admins and hidden from
-non-admin users (NULL = unowned/legacy = admin-visible only).
+``user_id IS NULL`` are touched. Historical sermons become admin-owned so they
+stay visible to admins and hidden from non-admin users (NULL = unowned/legacy =
+admin-visible only).
 """
 
 from __future__ import annotations

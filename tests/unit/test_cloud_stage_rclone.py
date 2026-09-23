@@ -154,7 +154,7 @@ def test_rclone_copyto_argv_and_success(staging, monkeypatch):
     result = execute_sermon_processing_job(
         _job(
             _params(
-                "remote:gbc-data:Sermon Audio/2026-09-20_09-45-58.mkv",
+                "remote:cloud-remote:Sermon Audio/2026-09-20_09-45-58.mkv",
                 user_id="user-a",
             )
         )
@@ -165,7 +165,7 @@ def test_rclone_copyto_argv_and_success(staging, monkeypatch):
     assert argv[:4] == [
         "/usr/bin/rclone",
         "copyto",
-        "gbc-data:Sermon Audio/2026-09-20_09-45-58.mkv",
+        "cloud-remote:Sermon Audio/2026-09-20_09-45-58.mkv",
         str(staging / "2026-09-20_09-45-58.mkv"),
     ]
     assert argv[4:6] == ["--config", str(cloud_config("user-a"))]
@@ -185,7 +185,7 @@ def test_rclone_nonzero_exit_reports_rclone_line(staging, monkeypatch):
     )
 
     result = execute_sermon_processing_job(
-        _job(_params("remote:gbc-data:missing.mkv", user_id="user-a"))
+        _job(_params("remote:cloud-remote:missing.mkv", user_id="user-a"))
     )
 
     assert result.success is False
@@ -200,7 +200,7 @@ def test_rclone_zero_byte_result_is_an_error(staging, monkeypatch):
     _install_fake_rclone(monkeypatch, rc=0, write=lambda dest: dest.write_bytes(b""))
 
     result = execute_sermon_processing_job(
-        _job(_params("remote:gbc-data:empty.mkv", user_id="user-a"))
+        _job(_params("remote:cloud-remote:empty.mkv", user_id="user-a"))
     )
 
     assert result.success is False
@@ -212,7 +212,7 @@ def test_rclone_zero_byte_result_is_an_error(staging, monkeypatch):
 def test_rclone_cancel_mid_copy_kills_and_cleans_partial(staging, monkeypatch):
     seen: list = []
     _stub_process(monkeypatch, seen)
-    job = _job(_params("remote:gbc-data:big.mkv", user_id="user-a"))
+    job = _job(_params("remote:cloud-remote:big.mkv", user_id="user-a"))
 
     def on_poll(polls: int) -> None:
         if polls >= 2:
@@ -239,7 +239,7 @@ def test_remote_without_user_id_errors_before_spawn(staging, monkeypatch):
     procs = _install_fake_rclone(monkeypatch, rc=0)
 
     result = execute_sermon_processing_job(
-        _job(_params("remote:gbc-data:a.mkv"))
+        _job(_params("remote:cloud-remote:a.mkv"))
     )
 
     assert result.success is False
@@ -260,7 +260,7 @@ def test_pending_review_keeps_staged_source_until_terminal(staging, monkeypatch)
     )
 
     result = execute_sermon_processing_job(
-        _job(_params("remote:gbc-data:pending.mkv", user_id="user-a"))
+        _job(_params("remote:cloud-remote:pending.mkv", user_id="user-a"))
     )
 
     assert result.success is True

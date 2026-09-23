@@ -328,11 +328,11 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
         >
           <p className="font-semibold text-mist">
             Front-door cutover:{" "}
-            {retired === null ? "state unknown (bridge unreachable)" : retired ? "console is live — Streamlit may retire" : "Streamlit still serves sermon.moraclan.us"}
+            {retired === null ? "state unknown (bridge unreachable)" : retired ? "console is live; the legacy UI may retire" : "the legacy UI still serves your domain"}
           </p>
           <p className="mt-1 font-mono">
-            web_console_ready lives in the settings database; the Streamlit System settings page
-            flips it, then the operator moves the nginx vhost sermon.moraclan.us.conf upstream
+            web_console_ready lives in the settings database; the legacy UI System settings page
+            flips it, then the operator moves the reverse proxy upstream
             8501 → 8504 (see web/README.md).
           </p>
         </div>

@@ -400,18 +400,18 @@ def test_serve_target_keeps_colon_for_root_and_subpath(client, scoped_setup, mon
     monkeypatch.setattr(cloud.shutil, "which", lambda _name: "/usr/bin/rclone")
     monkeypatch.setattr(cloud.subprocess, "Popen", _CapturingPopen)
 
-    cloud.ensure_remote_serve(s["a"]["id"], "gbc-data", "")
-    cloud.ensure_remote_serve(s["a"]["id"], "gbc-data", "Sermon Audio")
+    cloud.ensure_remote_serve(s["a"]["id"], "cloud-remote", "")
+    cloud.ensure_remote_serve(s["a"]["id"], "cloud-remote", "Sermon Audio")
 
     targets = [cmd[cmd.index("webdav") + 1] for cmd in _CapturingPopen.commands]
-    assert targets == ["gbc-data:", "gbc-data:Sermon Audio"]
-    assert _CapturingPopen.commands[0][3:6] == ["serve", "webdav", "gbc-data:"]
+    assert targets == ["cloud-remote:", "cloud-remote:Sermon Audio"]
+    assert _CapturingPopen.commands[0][3:6] == ["serve", "webdav", "cloud-remote:"]
 
 
 def test_stale_serve_key_is_not_reused(client, scoped_setup, monkeypatch):
     s = scoped_setup
     uid = s["a"]["id"]
-    legacy_key = f"{cloud._safe_segment(uid)}:gbc-data:"
+    legacy_key = f"{cloud._safe_segment(uid)}:cloud-remote:"
     state = cloud._load_serves(uid)
     state[legacy_key] = {"pid": os.getpid(), "port": 12345}
     cloud._save_serves(uid, state)
@@ -420,7 +420,7 @@ def test_stale_serve_key_is_not_reused(client, scoped_setup, monkeypatch):
     monkeypatch.setattr(cloud.shutil, "which", lambda _name: "/usr/bin/rclone")
     monkeypatch.setattr(cloud.subprocess, "Popen", _CapturingPopen)
 
-    url = cloud.ensure_remote_serve(uid, "gbc-data", "")
+    url = cloud.ensure_remote_serve(uid, "cloud-remote", "")
     assert _CapturingPopen.commands, "stale legacy serve must not be reused"
     assert url.startswith("http://127.0.0.1:")
     assert not url.endswith(":12345/")

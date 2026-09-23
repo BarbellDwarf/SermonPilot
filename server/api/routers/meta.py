@@ -2,8 +2,8 @@
 
 GET /api/meta/retirement reports whether the Streamlit front door may be
 retired, computed from the ``web_console_ready`` key in the settings database
-(the same store the pipeline resolves). Default False; River flips the key in
-Settings and the operator moves the nginx upstream. Public: single boolean,
+(the same store the pipeline resolves). Default False; the operator flips the
+key in Settings and moves the reverse-proxy upstream. Public: single boolean,
 no secrets.
 """
 
