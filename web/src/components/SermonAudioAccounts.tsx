@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { connectionsApi, type ApiConnection } from "../api/client";
+import { connectionsApi, type ApiConnection, type ApiEffectiveConnection } from "../api/client";
 import { sourceCopy } from "./SermonAudioCredentials";
 import { Button, Chip, ConfirmDialog, EmptyState, Field, SectionCard, inputCls } from "./ui";
 
@@ -10,6 +10,19 @@ export interface SermonAudioAccount {
   notes: string;
   hasKey: boolean;
   maskedKey: string;
+}
+
+/** Human-readable description of where this user's uploads will go. */
+export function routingCopy(view: ApiEffectiveConnection | null): string {
+  if (!view) return "Checking which SermonAudio account uploads will use...";
+  if (!view.configured) {
+    return view.message || "Connect your SermonAudio account in Settings before publishing.";
+  }
+  const broadcaster = view.broadcaster_id ? ` (${view.broadcaster_id})` : "";
+  if (view.source === "user") {
+    return `Uploads use ${view.account_name || "your account"}${broadcaster}.`;
+  }
+  return `No account connected. Uploads fall back to ${sourceCopy(view.source)}${broadcaster}.`;
 }
 
 interface EditorDraft {
@@ -118,6 +131,7 @@ function AccountCard({
 export function SermonAudioAccountsSection({ show }: { show: (m: string) => void }) {
   const [accounts, setAccounts] = useState<SermonAudioAccount[]>([]);
   const [defaultId, setDefaultId] = useState("");
+  const [routing, setRouting] = useState<ApiEffectiveConnection | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -143,6 +157,12 @@ export function SermonAudioAccountsSection({ show }: { show: (m: string) => void
       setLoadError((e as Error).message);
     } finally {
       if (alive.current) setLoading(false);
+    }
+    try {
+      const effective = await connectionsApi.effective();
+      if (alive.current) setRouting(effective);
+    } catch {
+      if (alive.current) setRouting(null);
     }
   }, []);
 
@@ -358,9 +378,14 @@ export function SermonAudioAccountsSection({ show }: { show: (m: string) => void
 
       <div className="mt-4 rounded-md border border-line p-3" aria-label="Upload routing">
         <h3 className="text-sm font-semibold">Upload routing</h3>
-        <p className="mt-0.5 text-xs text-muted">
-          Uploads and metadata pushes use the account selected per sermon when one is picked, otherwise the ★ default account.
+        <p className="mt-0.5 text-xs text-muted" role="status">
+          {routingCopy(routing)}
         </p>
+        {routing && !routing.configured ? (
+          <p className="mt-1 text-xs text-warn">
+            Uploads and metadata pushes are refused until an account is connected.
+          </p>
+        ) : null}
       </div>
 
       <p className="mt-3 text-xs text-muted">Changes save to your account immediately.</p>
