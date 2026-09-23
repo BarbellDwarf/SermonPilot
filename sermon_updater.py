@@ -2917,6 +2917,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'status': status,
                 'source_path': source_path,
                 'notes': notes,
+                'actions': {
+                    'enhance_audio': bool(enhanced_audio_file)
+                    or enhanced_audio_path != audio_path,
+                },
             })
 
         if auto_edit_mode is not None:
