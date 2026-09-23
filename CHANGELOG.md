@@ -26,6 +26,7 @@ One sermon is one database record.
 
 ### Fixed
 
+- The review page builds its action row from the record state: the legacy Push to SermonAudio control and the upload-only action are hidden once a sermon is published, upload-only appears only when a render exists, and a published record's apply actions read Re-render instead of Approve; the plan chip is labelled Plan: ... so its review state is not read as the record's status
 - A container recreate no longer strands a job at `running`: startup reconciliation marks in-flight jobs terminal (`failed`, or `cancelled` when the cancel flag was already set), appends an interruption line to the existing log, and leaves completed output alone, so the sermon's queue is usable again without editing the database by hand
 
 ## v1.7.0 (2026-09-12)
