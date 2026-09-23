@@ -147,7 +147,11 @@ def build_job_description(
         return f"Processing {subject}."
     if kind == "validation":
         if many:
-            return f"Checking the generated descriptions for {count} sermons."
+            line = f"Checking the generated descriptions for {count} sermons"
+            scope_text = _text(detail)
+            if scope_text:
+                return f"{line} ({scope_text})."
+            return f"{line}."
         return f"Checking the generated description for {subject}."
     if kind == "sermon_import":
         if variant == "force_import":

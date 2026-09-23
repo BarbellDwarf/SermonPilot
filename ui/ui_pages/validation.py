@@ -535,14 +535,12 @@ def start_background_validation(scope: str, options: dict):
             return
 
         # Create validation job
+        from ui.job_labels import build_job_labels
+
         job_queue = get_job_queue()
-
-        job_title = f"Validation: {scope}"
-        if scope == "Specific Sermon IDs":
-            job_description = f"Validating {len(sermon_ids)} specific sermons"
-        else:
-            job_description = f"Validating {len(sermon_ids)} sermons from {scope.lower()}"
-
+        job_title, job_description = build_job_labels(
+            JobType.VALIDATION, count=len(sermon_ids), detail=scope
+        )
 
         # Validate that essential config fields are present
         required_fields = ['api_key', 'broadcaster_id']
@@ -856,11 +854,17 @@ def regenerate_description(sermon_id):
     """Submit a regeneration job for a specific sermon"""
     try:
         from job_queue import JobType, get_job_queue
+
+        from ui.job_labels import build_job_labels, sermon_fields_for
+
         job_queue = get_job_queue()
+        label_title, label_description = build_job_labels(
+            JobType.METADATA_UPDATE, **sermon_fields_for([sermon_id])
+        )
         job_id = job_queue.add_job(
             job_type=JobType.METADATA_UPDATE,
-            title=f"Regenerate: {sermon_id}",
-            description=f"Regenerating description for sermon {sermon_id}",
+            title=label_title,
+            description=label_description,
             parameters={
                 'sermon_ids': [sermon_id],
                 'actions': {'generate_description': True, 'generate_hashtags': True},
@@ -906,11 +910,18 @@ def regenerate_high_priority():
         if not failed_ids:
             st.info("No high-priority failures found")
             return
+        from ui.job_labels import build_job_labels, sermon_fields_for
+
         job_queue = get_job_queue()
+        label_title, label_description = build_job_labels(
+            JobType.METADATA_UPDATE,
+            count=len(failed_ids),
+            **sermon_fields_for(failed_ids),
+        )
         job_id = job_queue.add_job(
             job_type=JobType.METADATA_UPDATE,
-            title=f"Bulk Regeneration: {len(failed_ids)} sermons",
-            description=f"Regenerating {len(failed_ids)} high-priority failed descriptions",
+            title=label_title,
+            description=label_description,
             parameters={
                 'sermon_ids': failed_ids,
                 'actions': {'generate_description': True, 'generate_hashtags': True},

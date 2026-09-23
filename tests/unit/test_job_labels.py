@@ -151,3 +151,11 @@ def test_sermon_fields_for_uses_the_supplied_repository() -> None:
         "recorded_date": DATE,
     }
     assert seen == ["s-9"]
+
+
+def test_validation_scope_is_carried_in_the_description() -> None:
+    name, description = build_job_labels(
+        JobType.VALIDATION, count=4, detail="Recent Sermons"
+    )
+    assert name == "Validate descriptions · 4 sermons"
+    assert description == "Checking the generated descriptions for 4 sermons (Recent Sermons)."

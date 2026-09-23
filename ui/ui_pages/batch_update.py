@@ -594,13 +594,16 @@ def start_batch_processing():
             )
             return
 
+        from ui.job_labels import build_job_labels, sermon_fields_for
+
         job_queue = get_job_queue()
 
         action_names = [k.replace("_", " ").title() for k, v in actions.items() if v]
-        job_title = f"Batch Processing: {len(sermon_ids)} sermons"
-        job_description = (
-            f"Processing {len(sermon_ids)} sermons with actions: "
-            f"{', '.join(action_names)}"
+        job_title, job_description = build_job_labels(
+            JobType.BATCH_PROCESSING,
+            count=len(sermon_ids),
+            detail=", ".join(action_names),
+            **sermon_fields_for(sermon_ids),
         )
 
         job_id = job_queue.add_job(
