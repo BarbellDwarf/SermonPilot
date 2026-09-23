@@ -260,6 +260,7 @@ export function LibraryDetail() {
           onRegenerateDescription={regenerateDescription}
           onRefresh={retryPlan}
           onToast={showToast}
+          onUpload={push}
           enhanceDefault={enhanceDefault}
         />
       ) : (
