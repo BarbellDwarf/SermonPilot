@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { mediaStreamUrl, type ApiMediaItem } from "../api/client";
 import type { SermonMediaData } from "../api/hooks";
 import type { EditPlan, LibrarySermon } from "../mock/data";
@@ -79,6 +79,16 @@ export function SermonCompleted({
     date: sermon.date,
     description: description ?? "",
   });
+
+  useEffect(() => {
+    setForm({
+      title: sermon.title,
+      speaker: sermon.speaker,
+      series: sermon.series,
+      date: sermon.date,
+      description: description ?? "",
+    });
+  }, [sermon.title, sermon.speaker, sermon.series, sermon.date, description]);
 
   const requestSeek = (sec: number) => setSeek((previous) => ({ sec, n: (previous?.n ?? 0) + 1 }));
 
