@@ -7,6 +7,7 @@ app and the processing pipeline are untouched.
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 from pathlib import Path
@@ -46,6 +47,8 @@ DEV_ORIGINS = [
     "http://127.0.0.1:3000",
 ]
 
+logger = logging.getLogger(__name__)
+
 
 def create_app() -> FastAPI:
     app = FastAPI(title="SermonPilot read-only bridge")
@@ -62,6 +65,24 @@ def create_app() -> FastAPI:
             migrate()
         except Exception:  # pragma: no cover - read-only deployments keep working
             pass
+
+    @app.on_event("startup")
+    def _reconcile_interrupted_jobs() -> None:
+        """Terminalise jobs whose worker died with a previous process.
+
+        The API bridge reads ``background_jobs`` directly, so a row left at
+        ``running`` by a container recreate would keep blocking its sermon
+        until some later write happened. This runs before the first request
+        and is idempotent, so the Streamlit queue's own reconciliation is a
+        no-op after it.
+        """
+        try:
+            from server.api.db import get_db_path
+            from ui.job_queue import reconcile_interrupted_jobs
+
+            reconcile_interrupted_jobs(db_path=get_db_path())
+        except Exception:  # pragma: no cover - a missing store must not stop boot
+            logger.debug("Startup job reconciliation skipped", exc_info=True)
 
     app.include_router(auth_router)
     app.include_router(status_router)
