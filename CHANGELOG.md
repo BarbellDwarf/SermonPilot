@@ -22,6 +22,7 @@ One sermon is one database record.
 - One-time idempotent migration at startup that groups rows by identity, keeps the richest row per group, folds unique plans, media, content and notes onto it, and logs every merge; groups with distinct SermonAudio ids are skipped
 - `docs/SERMON_IDENTITY.md` guide
 - `sermons.edit_status` column tracking `draft`, `pending_review`, `applied`, `rendered`, `uploaded` and `failed` alongside the existing status values
+- Human-readable job labels built from sermon fields (`ui/job_labels.py`): every job queue call site on the Streamlit pages and the console write path now stores a title and description that name the sermon, speaker and batch size instead of a raw sermon id, and the Jobs page retry rebuilds them from the job parameters
 
 ## v1.7.0 (2026-09-12)
 
