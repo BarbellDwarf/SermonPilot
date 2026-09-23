@@ -260,6 +260,12 @@ def test_api_guard_ignores_reconciled_job_immediately(
     assert _active_job_for("s-1") is None
 
 
+def test_reconciliation_skips_a_missing_store(tmp_path: Path) -> None:
+    missing = tmp_path / "absent.db"
+    assert reconcile_interrupted_jobs(db_path=str(missing)) == 0
+    assert not missing.exists()
+
+
 def test_api_startup_reconciles_running_job(
     db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

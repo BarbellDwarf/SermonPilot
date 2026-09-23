@@ -242,6 +242,8 @@ def reconcile_interrupted_jobs(db_path: str | None = None) -> int:
     is replaced with an interruption outcome that registers no artifact.
     """
     path = _resolve_reconcile_db_path(db_path)
+    if not os.path.isfile(path):
+        return 0
     statuses = tuple(sorted(status.value for status in IN_FLIGHT_JOB_STATUSES))
     placeholders = ",".join("?" for _ in statuses)
     reconciled = 0
