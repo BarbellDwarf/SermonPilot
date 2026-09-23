@@ -210,6 +210,61 @@ def test_single_sermon_failure_keeps_stored_description_and_flags_review(
     assert result["description_needs_review"] is True
 
 
+def test_single_sermon_success_updates_description_and_clears_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from ui.database import SermonDatabase, SermonRepository
+
+    db_path = tmp_path / "single_ok.db"
+    monkeypatch.setenv("DATABASE_URL", str(db_path))
+    monkeypatch.setattr("ui.database._db", None)
+    monkeypatch.setattr("database._db", None)
+    repo = SermonRepository(SermonDatabase(db_path=str(db_path)))
+    repo.save_sermon(
+        {
+            "id": "s-ok",
+            "title": "Stored Title",
+            "speaker": "Test Speaker",
+            "recorded_date": "2024-01-01",
+            "status": "processed",
+            "description": "Old description",
+            "description_needs_review": True,
+            "content": {"description": "Old description"},
+        }
+    )
+
+    details = SimpleNamespace(
+        speaker=SimpleNamespace(full_name="Test Speaker"),
+        display_title="Stored Title",
+        event_type="Sunday Service",
+        preachDate="2024-01-01",
+        bibleText="John 3:16",
+        durationSeconds=1800,
+        moreInfoText="Old description",
+        keywords="#stored",
+        media=None,
+    )
+    monkeypatch.setattr(su, "Node", SimpleNamespace(get_sermon=lambda sid: details))
+    monkeypatch.setattr(su, "needs_metadata_processing", lambda *a, **k: (True, False))
+    monkeypatch.setattr(su, "needs_audio_processing", lambda *a, **k: False)
+    monkeypatch.setattr(su, "get_sermon_transcript", lambda sid: "grace and mercy " * 20)
+    monkeypatch.setattr(su, "generate_summary", lambda *a, **k: GOOD)
+    config = {
+        "output_directory": str(tmp_path / "out"),
+        "metadata_processing": {"enabled": True},
+    }
+
+    result = su.process_single_sermon("s-ok", config=config)
+
+    stored = repo.get_sermon("s-ok")
+    assert stored["description"] == GOOD
+    assert stored["content"]["description"] == GOOD
+    assert bool(stored["description_needs_review"]) is False
+    assert result["description_needs_review"] is False
+
+
 def test_pipeline_failure_leaves_description_empty_and_flags_review(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
