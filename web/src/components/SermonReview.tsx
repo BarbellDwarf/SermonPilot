@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { mediaStreamUrl, writeApi, type ApiMediaItem } from "../api/client";
 import type { SermonMediaData } from "../api/hooks";
 import type { EditPlan, LibrarySermon, PlanStatus } from "../mock/data";
@@ -32,6 +32,11 @@ const PREVIEW_KINDS = ["snippet_start", "snippet_end", "snippet_ending"] as cons
 const TRANSCRIPT_KINDS = ["transcript", "transcript_timestamps"] as const;
 
 const MOBILE_BREAKPOINT_PX = 1024;
+
+const MOBILE_APPROVAL_BAR_PX = 64;
+
+const menuItemClass =
+  "flex min-h-[44px] w-full items-center rounded-md px-3 text-left text-sm font-medium text-mist transition-colors hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45";
 
 function useIsNarrow(breakpoint = MOBILE_BREAKPOINT_PX): boolean {
   const query = `(max-width: ${breakpoint - 1}px)`;
@@ -155,6 +160,7 @@ export interface SermonReviewProps {
   onRegenerateDescription?: () => void;
   onRefresh?: () => void;
   onToast: (msg: string) => void;
+  onUpload?: () => void;
   enhanceDefault?: boolean;
 }
 
@@ -230,6 +236,7 @@ export function SermonReview({
   onRegenerateDescription,
   onRefresh,
   onToast,
+  onUpload,
   enhanceDefault = true,
 }: SermonReviewProps) {
   const [plan, setPlan] = useState(initial);
@@ -252,6 +259,8 @@ export function SermonReview({
   const [allFilesOpen, setAllFilesOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement | null>(null);
   const narrow = useIsNarrow();
   const [filesOpen, setFilesOpen] = useState(!narrow);
   const [adjustOpen, setAdjustOpen] = useState(!narrow);
@@ -263,6 +272,24 @@ export function SermonReview({
     description: description ?? "",
   });
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
+        setMoreOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [moreOpen]);
 
   const noteRows = useMemo(() => {
     const fromPlan = (planHistory ?? [])
@@ -485,6 +512,77 @@ export function SermonReview({
     form.date !== sermon.date ||
     form.description !== (description ?? "");
 
+  const statusPills = (
+    <div className="flex flex-wrap items-center gap-2">
+      <Chip tone={planStatusTone[plan.status]}>{planStatusLabel[plan.status]}</Chip>
+      <span className="font-mono text-xs text-muted">
+        revision {plan.revision} of {plan.revisionsTotal}
+      </span>
+      <span className="font-mono text-xs text-muted">confidence {plan.confidence}%</span>
+      <Chip tone={plan.qa === "Pass" ? "ok" : "warn"}>QA: {plan.qa}</Chip>
+      <Chip tone={detectionFailed ? "error" : "ok"}>
+        Detection: {detectionFailed ? "unavailable" : "ok"}
+      </Chip>
+    </div>
+  );
+
+  const enhanceControl = (
+    <label className="flex w-fit flex-wrap items-center gap-2 text-sm text-mist">
+      <input
+        type="checkbox"
+        checked={enhance}
+        onChange={(e) => setEnhance(e.target.checked)}
+        data-testid="apply-enhance-audio"
+        className="h-4 w-4"
+      />
+      Enhance audio
+      <span className="text-xs text-muted">
+        {enhance
+          ? "requested for this apply (defaults to Audio settings)"
+          : "skipped for this apply"}
+      </span>
+    </label>
+  );
+
+  const notesPanel = notesOpen ? (
+    <div className="rounded-md border border-line bg-ink p-3">
+      <label htmlFor="refine-notes" className="text-sm font-semibold">
+        Reject with notes
+      </label>
+      <p className="mt-1 max-w-prose text-xs text-muted">
+        Say what the detector got wrong and it re-reads the transcript with every
+        note so far, then returns a new revision. The old proposal is superseded.
+      </p>
+      <textarea
+        id="refine-notes"
+        value={notesText}
+        onChange={(e) => setNotesText(e.target.value)}
+        rows={3}
+        disabled={refining}
+        placeholder="e.g. Keep only the second of the two back-to-back classes and drop the earlier one."
+        className="mt-2 w-full min-w-0 rounded-md border border-line bg-ink px-3 py-2 text-sm text-mist"
+      />
+      <div className="mt-2">
+        <Button
+          variant="primary"
+          onClick={submitRefine}
+          disabled={!notesText.trim() || refining}
+          aria-busy={refining}
+        >
+          {refining ? "Queueing…" : "Re-run with notes"}
+        </Button>
+      </div>
+    </div>
+  ) : null;
+
+  const detectionAlert = detectionFailed ? (
+    <div role="alert" className="rounded-md border border-danger bg-ink p-3 text-sm text-danger">
+      <span className="font-semibold">Cut detection failed.</span> No usable cut points were
+      returned, so there is no proposal to review. Enter the start and end below, or re-run
+      detection.
+    </div>
+  ) : null;
+
   return (
     <div data-testid="sermon-review" className="flex flex-col gap-4">
       <header className="flex min-w-0 flex-col gap-2">
@@ -502,103 +600,165 @@ export function SermonReview({
         </div>
       </header>
 
+      {narrow ? (
+        <section
+          data-testid="approval-summary"
+          aria-label="Plan status"
+          className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-3"
+        >
+          {statusPills}
+          {enhanceControl}
+        </section>
+      ) : null}
+
       <section
         aria-label="Approval"
         data-testid="approval-bar"
-        className="sticky top-16 z-20 flex flex-col gap-2 rounded-lg border border-line bg-surface p-3 shadow-lg lg:static lg:z-auto lg:shadow-none"
+        style={narrow ? { height: MOBILE_APPROVAL_BAR_PX, marginBottom: -MOBILE_APPROVAL_BAR_PX } : undefined}
+        className={
+          narrow
+            ? "sticky top-16 z-20 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 shadow-lg"
+            : "flex flex-col gap-2 rounded-lg border border-line bg-surface p-3 shadow-lg lg:static lg:z-auto lg:shadow-none"
+        }
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <Chip tone={planStatusTone[plan.status]}>{planStatusLabel[plan.status]}</Chip>
-          <span className="font-mono text-xs text-muted">
-            revision {plan.revision} of {plan.revisionsTotal}
-          </span>
-          <span className="font-mono text-xs text-muted">confidence {plan.confidence}%</span>
-          <Chip tone={plan.qa === "Pass" ? "ok" : "warn"}>QA: {plan.qa}</Chip>
-          <Chip tone={detectionFailed ? "error" : "ok"}>
-            Detection: {detectionFailed ? "unavailable" : "ok"}
-          </Chip>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="primary" onClick={() => approve(true)} disabled={errors.length > 0 || applying} aria-busy={applying}>
-            {applying ? "Queueing…" : "Approve · Render-only"}
-          </Button>
-          <Button
-            onClick={() => approve(false)}
-            disabled={errors.length > 0 || applying}
-          >
-            Approve · Render+upload
-          </Button>
-          <Button
-            className="w-full min-[480px]:w-auto"
-            onClick={() => setNotesOpen((v) => !v)}
-            aria-expanded={notesOpen}
-            aria-controls="refine-notes"
-          >
-            Reject with notes
-          </Button>
-          <Button className="w-full min-[480px]:w-auto" onClick={reDetect} disabled={refining}>
-            Re-detect
-          </Button>
-          <Button onClick={() => setHistoryOpen((v) => !v)} aria-expanded={historyOpen} aria-controls="history">
-            History
-          </Button>
-        </div>
-        <label className="flex w-fit flex-wrap items-center gap-2 text-sm text-mist">
-          <input
-            type="checkbox"
-            checked={enhance}
-            onChange={(e) => setEnhance(e.target.checked)}
-            data-testid="apply-enhance-audio"
-            className="h-4 w-4"
-          />
-          Enhance audio
-          <span className="text-xs text-muted">
-            {enhance
-              ? "requested for this apply (defaults to Audio settings)"
-              : "skipped for this apply"}
-          </span>
-        </label>
-        {notesOpen ? (
-          <div className="rounded-md border border-line bg-ink p-3">
-            <label htmlFor="refine-notes" className="text-sm font-semibold">
-              Reject with notes
-            </label>
-            <p className="mt-1 max-w-prose text-xs text-muted">
-              Say what the detector got wrong and it re-reads the transcript with every
-              note so far, then returns a new revision. The old proposal is superseded.
-            </p>
-            <textarea
-              id="refine-notes"
-              value={notesText}
-              onChange={(e) => setNotesText(e.target.value)}
-              rows={3}
-              disabled={refining}
-              placeholder="e.g. Keep only the second of the two back-to-back classes and drop the earlier one."
-              className="mt-2 w-full min-w-0 rounded-md border border-line bg-ink px-3 py-2 text-sm text-mist"
-            />
-            <div className="mt-2">
+        {narrow ? (
+          <>
+            <Button
+              variant="primary"
+              className="min-w-0 flex-1 whitespace-nowrap"
+              onClick={() => approve(false)}
+              disabled={errors.length > 0 || applying}
+              aria-busy={applying}
+            >
+              {applying ? "Queueing…" : "Approve"}
+            </Button>
+            <div ref={moreRef} className="relative shrink-0">
               <Button
-                variant="primary"
-                onClick={submitRefine}
-                disabled={!notesText.trim() || refining}
-                aria-busy={refining}
+                onClick={() => setMoreOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={moreOpen}
+                aria-controls="more-actions"
               >
-                {refining ? "Queueing…" : "Re-run with notes"}
+                More actions
+              </Button>
+              {moreOpen ? (
+                <div
+                  id="more-actions"
+                  data-testid="more-actions"
+                  role="menu"
+                  aria-label="More actions"
+                  className="absolute right-0 top-full z-40 mt-2 flex w-64 flex-col gap-1 rounded-lg border border-line bg-surface p-2 shadow-2xl"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuItemClass}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      approve(true);
+                    }}
+                    disabled={errors.length > 0 || applying}
+                  >
+                    Approve · Render-only
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuItemClass}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setNotesOpen((v) => !v);
+                    }}
+                    aria-expanded={notesOpen}
+                    aria-controls="refine-notes"
+                  >
+                    Reject with notes
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuItemClass}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      reDetect();
+                    }}
+                    disabled={refining}
+                  >
+                    Re-detect
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuItemClass}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setHistoryOpen((v) => !v);
+                    }}
+                    aria-expanded={historyOpen}
+                    aria-controls="history"
+                  >
+                    History
+                  </button>
+                  {onUpload ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={menuItemClass}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        onUpload();
+                      }}
+                    >
+                      Upload
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : (
+          <>
+            {statusPills}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="primary" onClick={() => approve(true)} disabled={errors.length > 0 || applying} aria-busy={applying}>
+                {applying ? "Queueing…" : "Approve · Render-only"}
+              </Button>
+              <Button
+                onClick={() => approve(false)}
+                disabled={errors.length > 0 || applying}
+              >
+                Approve · Render+upload
+              </Button>
+              <Button
+                className="w-full min-[480px]:w-auto"
+                onClick={() => setNotesOpen((v) => !v)}
+                aria-expanded={notesOpen}
+                aria-controls="refine-notes"
+              >
+                Reject with notes
+              </Button>
+              <Button className="w-full min-[480px]:w-auto" onClick={reDetect} disabled={refining}>
+                Re-detect
+              </Button>
+              <Button onClick={() => setHistoryOpen((v) => !v)} aria-expanded={historyOpen} aria-controls="history">
+                History
               </Button>
             </div>
-          </div>
-        ) : null}
-        {detectionFailed ? (
-          <div role="alert" className="rounded-md border border-danger bg-ink p-3 text-sm text-danger">
-            <span className="font-semibold">Cut detection failed.</span> No usable cut points were
-            returned, so there is no proposal to review. Enter the start and end below, or re-run
-            detection.
-          </div>
-        ) : null}
+            {enhanceControl}
+            {notesPanel}
+            {detectionAlert}
+          </>
+        )}
       </section>
 
-      <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div
+        data-testid="approval-content"
+        style={narrow ? { paddingTop: MOBILE_APPROVAL_BAR_PX } : undefined}
+        className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]"
+      >
         <div className="flex min-w-0 flex-col gap-4 lg:order-1">
+          {narrow ? notesPanel : null}
+          {narrow ? detectionAlert : null}
           <CollapsibleSection id="player-plan" title="Player & plan">
             <div className="flex min-w-0 flex-col gap-3">
               {live ? (
