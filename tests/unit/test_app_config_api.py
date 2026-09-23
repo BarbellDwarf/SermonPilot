@@ -187,3 +187,50 @@ def test_embeddings_env_overrides_are_gone():
         for paths in ENV_CONFIG_MAP.values()
         for path in paths
     )
+
+
+def test_sermonaudio_section_reports_env_source_without_the_secret(
+    client, scoped_setup, clean_env, monkeypatch
+):
+    env_key = "placeholder-sermonaudio-secret"
+    monkeypatch.setenv("SERMONAUDIO_API_KEY", env_key)
+    monkeypatch.setenv("SERMONAUDIO_BROADCASTER_ID", "env-broadcaster")
+    headers = scoped_setup["a"]["headers"]
+
+    response = client.get("/api/config/sections/sermonaudio", headers=headers)
+
+    assert response.status_code == 200
+    assert env_key not in response.text
+    fields = response.json()["fields"]
+    assert fields["api_key"]["secret"] is True
+    assert fields["api_key"]["has_value"] is True
+    assert fields["api_key"]["source"] == "SERMONAUDIO_API_KEY"
+    assert fields["broadcaster_id"]["value"] == "env-broadcaster"
+    assert fields["broadcaster_id"]["source"] == "SERMONAUDIO_BROADCASTER_ID"
+
+
+def test_sermonaudio_section_saves_to_db_and_reports_db_source(
+    client, scoped_setup, clean_env
+):
+    headers = scoped_setup["a"]["headers"]
+    stored_key = "placeholder-db-secret"
+
+    saved = client.put(
+        "/api/config/sections/sermonaudio",
+        json={"values": {"api_key": stored_key, "broadcaster_id": "db-broadcaster"}},
+        headers=headers,
+    )
+
+    assert saved.status_code == 200
+    assert stored_key not in saved.text
+    fields = saved.json()["fields"]
+    assert fields["api_key"]["source"] == "db"
+    assert fields["api_key"]["has_value"] is True
+    assert fields["api_key"]["masked"].endswith("cret")
+    assert fields["broadcaster_id"]["value"] == "db-broadcaster"
+    assert fields["broadcaster_id"]["source"] == "db"
+
+    got = client.get("/api/config/sections/sermonaudio", headers=headers)
+    assert stored_key not in got.text
+    assert got.json()["fields"]["api_key"]["source"] == "db"
+

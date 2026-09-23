@@ -102,21 +102,86 @@ def test_config_like_env_value_survives_env_removal(fresh_db, clear_config_env, 
     assert second["output_directory"] == "seeded-output"
 
 
-def test_secrets_stay_in_environment_and_never_reach_db(
+def test_provider_secrets_stay_in_environment_and_never_reach_db(
     fresh_db, clear_config_env, monkeypatch
 ):
-    monkeypatch.setenv("SERMONAUDIO_API_KEY", "env-secret-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "env-provider-key")
 
     config = resolve_config(fresh_db)
 
-    assert config["api_key"] == "env-secret-key"
+    assert config["llm"]["primary"]["openai"]["api_key"] == "env-provider-key"
+    assert fresh_db.load_config() is None
+
+
+def test_sermonaudio_credentials_seed_db_from_env(fresh_db, clear_config_env, monkeypatch):
+    env_key = "placeholder-sermonaudio-key"
+    monkeypatch.setenv("SERMONAUDIO_API_KEY", env_key)
+    monkeypatch.setenv("SERMONAUDIO_BROADCASTER_ID", "env-broadcaster")
+
+    config, sources = resolve_config_with_sources(fresh_db)
+
+    assert sources["api_key"] == "SERMONAUDIO_API_KEY"
+    assert sources["broadcaster_id"] == "SERMONAUDIO_BROADCASTER_ID"
+    assert len(config["api_key"]) == len(env_key)
     stored = fresh_db.load_config()
-    assert stored is None or "api_key" not in stored
+    assert stored is not None
+    assert len(stored["api_key"]) == len(env_key)
+    assert stored["broadcaster_id"] == "env-broadcaster"
 
-    monkeypatch.delenv("SERMONAUDIO_API_KEY", raising=False)
-    second = resolve_config(fresh_db)
 
-    assert second.get("api_key") != "env-secret-key"
+def test_sermonaudio_key_seeds_missing_path_in_existing_db(
+    fresh_db, clear_config_env, monkeypatch
+):
+    fresh_db.save_config({"dry_run": True})
+    env_key = "placeholder-existing-db-key"
+    monkeypatch.setenv("SERMONAUDIO_API_KEY", env_key)
+
+    config, sources = resolve_config_with_sources(fresh_db)
+
+    assert sources["api_key"] == "SERMONAUDIO_API_KEY"
+    assert len(config["api_key"]) == len(env_key)
+    stored = fresh_db.load_config()
+    assert stored["dry_run"] is True
+    assert len(stored["api_key"]) == len(env_key)
+
+
+def test_sermonaudio_env_still_wins_and_db_value_is_intact(
+    fresh_db, clear_config_env, monkeypatch
+):
+    fresh_db.save_config({"api_key": "db-placeholder-key", "broadcaster_id": "db-broadcaster"})
+    env_key = "env-placeholder-key"
+    monkeypatch.setenv("SERMONAUDIO_API_KEY", env_key)
+
+    config, sources = resolve_config_with_sources(fresh_db)
+
+    assert sources["api_key"] == "SERMONAUDIO_API_KEY"
+    assert len(config["api_key"]) == len(env_key)
+    stored = fresh_db.load_config()
+    assert stored["api_key"] == "db-placeholder-key"
+    assert stored["broadcaster_id"] == "db-broadcaster"
+
+
+def test_sermonaudio_db_source_when_env_unset(fresh_db, clear_config_env):
+    fresh_db.save_config({"api_key": "db-placeholder-key", "broadcaster_id": "db-broadcaster"})
+
+    config, sources = resolve_config_with_sources(fresh_db)
+
+    assert sources["api_key"] == "db"
+    assert sources["broadcaster_id"] == "db"
+    assert len(config["api_key"]) == len("db-placeholder-key")
+
+
+def test_sermonaudio_unconfigured_reports_default_not_invented(
+    fresh_db, clear_config_env, monkeypatch
+):
+    monkeypatch.delenv("SERMONPILOT_VARIANT", raising=False)
+
+    config, sources = resolve_config_with_sources(fresh_db)
+
+    assert sources["api_key"] == "default"
+    assert sources["broadcaster_id"] == "default"
+    assert not config.get("api_key")
+    assert not config.get("broadcaster_id")
 
 
 def test_no_seeding_without_env_vars(fresh_db, clear_config_env, monkeypatch):
