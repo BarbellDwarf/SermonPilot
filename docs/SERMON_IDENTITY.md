@@ -129,6 +129,26 @@ first creator keeps ownership: `save_sermon` sets `user_id` only when the
 column is NULL, and the migration copies a loser's `user_id` only when the
 survivor has none.
 
+## Publish migration and owner repair
+
+Publishing a draft moves its row to the SermonAudio id. `publish_dry_run_sermon`
+rebuilds the row from the draft in one transaction. That rebuild carries the
+draft's `user_id` and the other columns the draft held (`church_name`,
+`is_favorite`, `notes`, `description_needs_review`), every file path under its
+file type, and `sermon_content.key_topics` and `summary`. Rebuilding from a
+fixed column list dropped all of those before, so the published row lost its
+owner and the console owner check answered 404 for the operator's own sermon.
+
+A row already migrated with a NULL `user_id` is healed by
+`repair_ownerless_sermons`, which runs at the end of
+`SermonDatabase.init_database` and before the admin backfill in
+`server.api.backfill`. The repair reads `background_jobs` rows of type
+`sermon_publish`: the job stores the new id in its result and the publishing
+user in `user_id`. When exactly one such job names a NULL-owned sermon, the
+repair assigns that user. Rows with no publish record or with conflicting
+owners stay NULL and are reported in the return value. The repair only touches
+rows with a NULL owner, so a second run changes nothing.
+
 ## Limits
 
 The fingerprint depends on the source attributes available at creation time. A
