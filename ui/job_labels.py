@@ -190,8 +190,13 @@ def build_job_labels(
     return name, description
 
 
-def sermon_fields_for(sermon_ids: Any) -> dict[str, Any]:
-    """Best-effort title/speaker/date for the first id, for label building."""
+def sermon_fields_for(sermon_ids: Any, repo: Any = None) -> dict[str, Any]:
+    """Best-effort title/speaker/date for the first id, for label building.
+
+    Pass ``repo`` to read through a caller-owned repository. The API bridge
+    supplies its read-only one so label lookup never opens the live database
+    for writing.
+    """
     try:
         ids = list(sermon_ids)
     except TypeError:
@@ -199,9 +204,11 @@ def sermon_fields_for(sermon_ids: Any) -> dict[str, Any]:
     if not ids:
         return {}
     try:
-        from ui.database import SermonRepository
+        if repo is None:
+            from ui.database import SermonRepository
 
-        sermon = SermonRepository().get_sermon(str(ids[0]))
+            repo = SermonRepository()
+        sermon = repo.get_sermon(str(ids[0]))
     except Exception:
         return {}
     if not sermon:

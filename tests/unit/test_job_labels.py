@@ -135,3 +135,19 @@ def test_sermon_fields_for_reads_the_repository(monkeypatch) -> None:
         "recorded_date": DATE,
     }
     assert jl.sermon_fields_for([]) == {}
+
+
+def test_sermon_fields_for_uses_the_supplied_repository() -> None:
+    seen: list[str] = []
+
+    class _Repo:
+        def get_sermon(self, sermon_id: str) -> dict[str, str]:
+            seen.append(sermon_id)
+            return {"title": TITLE, "speaker": SPEAKER, "recorded_date": DATE}
+
+    assert jl.sermon_fields_for(["s-9"], repo=_Repo()) == {
+        "title": TITLE,
+        "speaker": SPEAKER,
+        "recorded_date": DATE,
+    }
+    assert seen == ["s-9"]
