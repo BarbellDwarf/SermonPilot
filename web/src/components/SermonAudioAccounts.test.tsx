@@ -128,6 +128,7 @@ describe("SermonAudioAccountsSection", () => {
     expect(await screen.findByText("Sample Chapel")).toBeTruthy();
     expect(screen.getByText("sample-chapel")).toBeTruthy();
     expect(screen.getByText("********7890")).toBeTruthy();
+    expect(screen.getByText(/API key saved in the database/)).toBeTruthy();
     expect(calls.some((c) => c.method === "GET" && c.url.includes(BASE))).toBe(true);
   });
 
@@ -138,19 +139,23 @@ describe("SermonAudioAccountsSection", () => {
 
     expect(await screen.findByText(/No SermonAudio accounts configured/i)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Add SermonAudio account" }));
+    await screen.findByRole("form", { name: "Account editor" });
     await user.type(screen.getByLabelText("Broadcaster display name"), "Sample Chapel");
     await user.type(screen.getByLabelText("Broadcaster ID"), "sample-chapel");
     await user.type(screen.getByLabelText("API key"), "sa-key-4321");
     await user.click(screen.getByRole("button", { name: "Add account to list" }));
 
-    await waitFor(() => {
-      const post = calls.find((c) => c.method === "POST" && c.url.includes(BASE));
-      expect(post?.body).toMatchObject({
-        name: "Sample Chapel",
-        broadcasterId: "sample-chapel",
-        apiKey: "sa-key-4321",
-      });
-    });
+    await waitFor(
+      () => {
+        const post = calls.find((c) => c.method === "POST" && c.url.includes(BASE));
+        expect(post?.body).toMatchObject({
+          name: "Sample Chapel",
+          broadcasterId: "sample-chapel",
+          apiKey: "sa-key-4321",
+        });
+      },
+      { timeout: 3000 },
+    );
     expect(await screen.findByText("Sample Chapel")).toBeTruthy();
     const reads = calls.filter((c) => c.method === "GET" && c.url.includes(BASE));
     expect(reads.length).toBeGreaterThanOrEqual(2);
