@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -429,7 +429,37 @@ describe("SermonReview mobile layout", () => {
     expect(screen.getByTestId("adjust-cuts-summary").textContent).toContain("Start");
   });
 
-  it("stacks the note and re-detect buttons full-width with 44px tap targets below 480px", () => {
+  it("pins a compact one-row bar and keeps the secondary actions behind More actions on a narrow viewport", async () => {
+    setViewportWidth(390);
+    const user = userEvent.setup();
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+        onUpload={noop}
+      />,
+    );
+
+    const bar = screen.getByTestId("approval-bar");
+    expect(bar.className).toContain("sticky");
+    expect(within(bar).getByRole("button", { name: "Approve" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Reject with notes" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Re-detect" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "History" })).toBeNull();
+
+    await user.click(within(bar).getByRole("button", { name: "More actions" }));
+    const menu = screen.getByTestId("more-actions");
+    for (const name of ["Reject with notes", "Re-detect", "History", "Upload"]) {
+      expect(within(menu).getByRole("menuitem", { name })).toBeTruthy();
+    }
+    expect(within(bar).queryByRole("button", { name: "History" })).toBeNull();
+  });
+
+  it("renders a non-sticky status summary above the player on a narrow viewport", () => {
     setViewportWidth(390);
     renderReview(
       <SermonReview
@@ -442,13 +472,76 @@ describe("SermonReview mobile layout", () => {
       />,
     );
 
-    const reject = screen.getByRole("button", { name: "Reject with notes" });
-    const reDetect = screen.getByRole("button", { name: "Re-detect" });
-    for (const button of [reject, reDetect]) {
-      expect(button.className).toContain("w-full");
-      expect(button.className).toContain("min-[480px]:w-auto");
-      expect(button.className).toContain("min-h-[44px]");
+    const summary = screen.getByTestId("approval-summary");
+    expect(summary.className).not.toContain("sticky");
+    expect(summary.textContent).toContain("Pending review");
+    expect(summary.textContent).toContain("QA: Pass");
+
+    const player = document.getElementById("player-plan");
+    expect(player).toBeTruthy();
+    expect(
+      summary.compareDocumentPosition(player!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("matches the content padding to the pinned bar height on a narrow viewport", () => {
+    setViewportWidth(390);
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    const bar = screen.getByTestId("approval-bar");
+    const content = screen.getByTestId("approval-content");
+    expect(bar.style.height).toBe("64px");
+    expect(content.style.paddingTop).toBe(bar.style.height);
+  });
+
+  it("keeps the desktop full action row and column layout unchanged", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    const bar = screen.getByTestId("approval-bar");
+    expect(screen.queryByTestId("approval-summary")).toBeNull();
+    expect(screen.queryByTestId("more-actions")).toBeNull();
+    for (const name of [
+      /Approve · Render-only/,
+      /Approve · Render\+upload/,
+      "Reject with notes",
+      "Re-detect",
+      "History",
+    ]) {
+      expect(within(bar).getByRole("button", { name })).toBeTruthy();
     }
+    expect(bar.className).toContain("lg:static");
+
+    const content = screen.getByTestId("approval-content");
+    expect(content.style.paddingTop).toBe("");
+    expect(content.className).toContain("lg:grid-cols-[minmax(0,1fr)_20rem]");
+
+    const player = document.getElementById("player-plan");
+    const details = document.getElementById("details");
+    const files = document.getElementById("files");
+    expect(
+      player!.compareDocumentPosition(details!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      player!.compareDocumentPosition(files!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });
 
