@@ -4173,9 +4173,7 @@ def publish_dry_run_sermon(
                 with open(metadata_path_str) as _f:
                     meta = _json.load(_f)
                 meta_upload_type = meta.get('upload_type')
-                if meta_upload_type == 'original-video' or (
-                    meta.get('is_video') and meta_upload_type == 'original-video'
-                ):
+                if meta_upload_type == 'original-video':
                     upload_type = "original-video"
                 elif is_video_file(audio_path_str):
                     upload_type = "original-video"
