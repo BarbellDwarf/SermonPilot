@@ -170,8 +170,18 @@ describe("LibraryDetail completed sermons", () => {
     expect(screen.getByTestId("detail-scripture").textContent).toContain("A placeholder passage.");
     expect(screen.getByTestId("completed-publication")).toBeTruthy();
     expect(screen.getByTestId("completed-transcript")).toBeTruthy();
-    expect(screen.getByTestId("completed-files")).toBeTruthy();
-    expect(screen.getAllByTestId("completed-file-row").length).toBeGreaterThan(0);
+    const files = screen.getByTestId("completed-files");
+    expect(within(files).getAllByTestId("completed-file-row").length).toBe(5);
+    for (const label of [
+      "Rendered output",
+      "Keeper",
+      "Source media",
+      "Enhanced audio",
+      "Start cut",
+    ]) {
+      expect(within(files).getByText(label)).toBeTruthy();
+    }
+    expect(within(files).queryByText("Transcript")).toBeNull();
     expect(screen.getByTestId("edit-sermon")).toBeTruthy();
 
     expect(screen.queryByTestId("sermon-review")).toBeNull();

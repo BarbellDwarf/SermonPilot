@@ -27,6 +27,8 @@ const COMPLETED_KIND_ORDER = [
   "snippet_ending",
 ];
 
+const TRANSCRIPT_KINDS = new Set(["transcript", "transcript_timestamps"]);
+
 const linkClass =
   "inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted";
 
@@ -87,7 +89,7 @@ export function SermonCompleted({
     const seen = new Set<string>();
     const rows: ApiMediaItem[] = [];
     for (const kind of [...COMPLETED_KIND_ORDER, ...media.items.map((item) => item.kind)]) {
-      if (seen.has(kind)) continue;
+      if (seen.has(kind) || TRANSCRIPT_KINDS.has(kind)) continue;
       seen.add(kind);
       const item = media.byKind[kind];
       if (item?.available) rows.push(item);
