@@ -528,6 +528,7 @@ class JobQueue:
         self._persist_wake = threading.Event()
         self._persister: threading.Thread | None = None
         self._last_heartbeat_at = 0.0
+        self._last_cancel_poll_at = 0.0
 
         # Initialize database connection
         self._init_database()
@@ -829,45 +830,52 @@ class JobQueue:
         return jobs
 
     def cancel_job(self, job_id: str) -> bool:
-        """Cancel a job
+        """Cancel a job from any process.
 
-        Cancels in-memory when the job lives in this instance; otherwise
-        falls back to a direct DB status flip so a cancel works from any
-        process (e.g. the API bridge) against rows created elsewhere.
+        The cancel is always recorded in the store first, so a worker running
+        in another process sees the flag on its next poll. When the job lives
+        in this instance the in-memory state is flipped too, which stops the
+        running executor immediately; a submit-only queue never rewrites the
+        whole row, it only flips the flag.
         """
-        cancelled = False
         with self._queue_lock:
             job = self._jobs.get(job_id)
-            if job and job.can_cancel:
-                if job.status in [JobStatus.QUEUED, JobStatus.RUNNING]:
-                    job.cancelled = True
-                    job.status = JobStatus.CANCELLED
-                    job.completed_at = datetime.now()
-                    job.add_log("Job cancelled by user")
-                    cancelled = True
-                    logger.info(f"Cancelled job {job_id}")
+            local = bool(
+                job
+                and job.can_cancel
+                and job.status in (JobStatus.QUEUED, JobStatus.RUNNING)
+            )
+            if local:
+                job.cancelled = True
+                job.status = JobStatus.CANCELLED
+                job.completed_at = datetime.now()
+                job.add_log("Job cancelled by user")
+                logger.info(f"Cancelled job {job_id}")
 
-        if cancelled:
+        if local and job is not None and self._owns_lease:
             self._save_job_to_db(job)
-            return cancelled
 
-        # Cross-process fallback: flip the DB row directly when this
-        # instance has never seen the job.
-        if self.db is not None:
-            try:
-                with self.db.get_connection() as conn:
-                    cursor = conn.execute(
-                        "UPDATE background_jobs SET status = 'cancelled',"
-                        " completed_at = datetime('now')"
-                        " WHERE id = ? AND status IN ('queued', 'running') AND can_cancel = 1",
-                        (job_id,),
-                    )
-                    conn.commit()
-                    cancelled = cursor.rowcount > 0
-            except Exception as e:
-                logger.error(f"DB cancel fallback failed for {job_id}: {e}")
-                cancelled = False
-        return cancelled
+        db_cancelled = self._cancel_job_in_db(job_id)
+        return local or db_cancelled
+
+    def _cancel_job_in_db(self, job_id: str) -> bool:
+        """Flip the store's cancel flag for a queued/running job, if any."""
+        if self.db is None:
+            return False
+        try:
+            with self.db.get_connection() as conn:
+                _ensure_job_columns(conn)
+                cursor = conn.execute(
+                    "UPDATE background_jobs SET cancelled = 1, status = 'cancelled',"
+                    " completed_at = datetime('now')"
+                    " WHERE id = ? AND status IN ('queued', 'running') AND can_cancel = 1",
+                    (job_id,),
+                )
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"DB cancel failed for {job_id}: {e}")
+            return False
 
     def retry_job(self, job_id: str) -> bool:
         """Retry a failed, cancelled, or completed job"""
@@ -959,9 +967,48 @@ class JobQueue:
                         )
                         self._shutdown_event.set()
                         return
+                now = time.monotonic()
+                if now - self._last_cancel_poll_at >= JOB_CANCEL_POLL_INTERVAL_SECONDS:
+                    self._last_cancel_poll_at = now
+                    self._sync_cancel_flags()
                 self._flush_dirty_jobs()
             except Exception as e:
                 logger.error(f"Job persistence flush failed: {e}")
+
+    def _sync_cancel_flags(self):
+        """Adopt cancel flags recorded in the store by another process.
+
+        A running executor polls ``job.cancelled``; this makes a cancel issued
+        through a different process visible within the cancel poll interval.
+        """
+        if self.db is None:
+            return
+        with self._queue_lock:
+            candidates = {
+                job.id: job
+                for job in self._jobs.values()
+                if job.status in (JobStatus.QUEUED, JobStatus.RUNNING) and not job.cancelled
+            }
+        if not candidates:
+            return
+        try:
+            placeholders = ",".join("?" for _ in candidates)
+            with self.db.get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT id, cancelled, status FROM background_jobs"
+                    f" WHERE id IN ({placeholders})",
+                    list(candidates),
+                ).fetchall()
+        except Exception:
+            return
+        for row in rows:
+            job = candidates.get(row["id"])
+            if job is None:
+                continue
+            if bool(row["cancelled"]) or row["status"] == JobStatus.CANCELLED.value:
+                job.cancelled = True
+                job.add_log("Cancel requested by another process")
+                logger.info("Synced cross-process cancel for job %s", job.id)
 
     def _flush_dirty_jobs(self):
         """Write running jobs whose debounce window has elapsed."""
@@ -1264,21 +1311,25 @@ class JobQueue:
                     present = _ensure_job_columns(conn)
                     user_id = job.user_id
                     owner_id = getattr(job, "_owner_id", None)
-                    if ("user_id" in present and user_id is None) or (
-                        "owner_id" in present and owner_id is None
-                    ):
-                        try:
-                            existing = conn.execute(
-                                "SELECT user_id, owner_id FROM background_jobs WHERE id = ?",
-                                (job.id,),
-                            ).fetchone()
-                            if existing is not None:
-                                if user_id is None:
-                                    user_id = existing["user_id"]
-                                if owner_id is None:
-                                    owner_id = existing["owner_id"]
-                        except Exception:
-                            pass
+                    stored_cancelled = False
+                    try:
+                        existing = conn.execute(
+                            "SELECT user_id, owner_id, cancelled FROM background_jobs WHERE id = ?",
+                            (job.id,),
+                        ).fetchone()
+                    except Exception:
+                        existing = None
+                    if existing is not None:
+                        if user_id is None:
+                            user_id = existing["user_id"]
+                        if owner_id is None:
+                            owner_id = existing["owner_id"]
+                        stored_cancelled = bool(existing["cancelled"])
+                    # A cancel recorded by any process is sticky: a worker's
+                    # periodic save must never clear it before its executor
+                    # notices. Adopt it so the running executor stops too.
+                    if stored_cancelled and not job.cancelled:
+                        job.cancelled = True
                     fields = [
                         "id", "type", "title", "description", "status", "progress",
                         "parameters", "result", "logs", "created_at", "started_at",
@@ -1310,9 +1361,24 @@ class JobQueue:
                         fields.append("cancelled")
                         values.append(1 if job.cancelled else 0)
                     placeholders = ",".join("?" for _ in fields)
+                    # Upsert with a sticky cancel: a worker's periodic save can
+                    # race a cancel from another process, so the stored flag is
+                    # the OR of the two. A plain replace could otherwise clear a
+                    # cancel that arrived between the read and the write.
+                    assignments = []
+                    for field in fields:
+                        if field == "id":
+                            continue
+                        if field == "cancelled":
+                            assignments.append(
+                                "cancelled = MAX(background_jobs.cancelled, excluded.cancelled)"
+                            )
+                        else:
+                            assignments.append(f"{field} = excluded.{field}")
                     conn.execute(
-                        f"INSERT OR REPLACE INTO background_jobs ({','.join(fields)}) "
-                        f"VALUES ({placeholders})",
+                        f"INSERT INTO background_jobs ({','.join(fields)}) "
+                        f"VALUES ({placeholders}) "
+                        f"ON CONFLICT(id) DO UPDATE SET {', '.join(assignments)}",
                         values,
                     )
                     conn.commit()

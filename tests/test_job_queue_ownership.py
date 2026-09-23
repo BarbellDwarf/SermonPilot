@@ -19,6 +19,7 @@ import ui.database as database_module
 from ui.database import SermonDatabase
 from ui.job_queue import (
     _JOB_LEASE_TABLE,
+    JobCancelledError,
     JobQueue,
     JobResult,
     JobStatus,
@@ -138,6 +139,16 @@ def _wait_for_terminal(queue: JobQueue, job_id: str, timeout: float = 10.0) -> J
     raise AssertionError(f"job {job_id} did not finish, last status: {job.status if job else None}")
 
 
+def _wait_for_db_status(db_path: Path | str, job_id: str, status: str,
+                        timeout: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _read_status(db_path, job_id) == status:
+            return True
+        time.sleep(0.02)
+    return False
+
+
 def test_reconciliation_leaves_a_live_job_alone_and_reaps_an_orphan(db_path: Path) -> None:
     _init_schema(db_path)
     _insert_job(db_path, "j-live", owner="live-worker")
@@ -246,3 +257,37 @@ def test_a_second_live_worker_does_not_start(
             second.stop()
     finally:
         first.stop()
+
+
+def test_cancel_through_another_process_stops_the_running_worker(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = SermonDatabase(db_path=str(db_path))
+    monkeypatch.setattr(database_module, "_db", db)
+
+    owner = JobQueue(worker_id="owner-1")
+    submit = JobQueue(run_workers=False, worker_id="api-1")
+    submit.start()
+    running = threading.Event()
+
+    def fake_executor(job) -> JobResult:
+        running.set()
+        while True:
+            if job.cancelled or job.status == JobStatus.CANCELLED:
+                raise JobCancelledError("Job cancelled by user")
+            job.update_progress(50, "working")
+            time.sleep(0.05)
+
+    monkeypatch.setattr(owner, "_get_job_executor", lambda job_type: fake_executor)
+    try:
+        job_id = submit.add_job(JobType.VALIDATION, "long", "cancel across processes")
+        owner.start()
+        assert running.wait(timeout=5.0), "the owner never started the job"
+
+        assert submit.cancel_job(job_id) is True
+        assert _wait_for_terminal(owner, job_id) is JobStatus.CANCELLED
+        assert _wait_for_db_status(db_path, job_id, "cancelled")
+    finally:
+        owner.stop()
+        submit.stop()
+
