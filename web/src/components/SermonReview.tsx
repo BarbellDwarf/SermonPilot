@@ -10,7 +10,7 @@ import { TranscriptViewer } from "./TranscriptViewer";
 import { sermonActionMatrix } from "./sermonActions";
 import { Button, Chip, ConfirmDialog } from "./ui";
 
-const planStatusLabel: Record<PlanStatus, string> = {
+export const planStatusLabel: Record<PlanStatus, string> = {
   draft: "Draft",
   pending_review: "Pending review",
   applied_local: "Applied — local",
@@ -163,6 +163,7 @@ export interface SermonReviewProps {
   onToast: (msg: string) => void;
   onUpload?: () => void;
   enhanceDefault?: boolean;
+  onShowCompleted?: () => void;
 }
 
 function CollapsibleSection({
@@ -239,6 +240,7 @@ export function SermonReview({
   onToast,
   onUpload,
   enhanceDefault = true,
+  onShowCompleted,
 }: SermonReviewProps) {
   const [plan, setPlan] = useState(initial);
   const [startText, setStartText] = useState(formatCut(initial.startSec));
@@ -634,6 +636,14 @@ export function SermonReview({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {onShowCompleted ? (
+              <Button
+                data-testid="show-completed-view"
+                onClick={onShowCompleted}
+              >
+                Back to finished view
+              </Button>
+            ) : null}
             {statusChip}
             {headerActions}
           </div>
@@ -1304,7 +1314,7 @@ export function SermonReview({
   );
 }
 
-function artifactLabel(kind: string): string {
+export function artifactLabel(kind: string): string {
   switch (kind) {
     case "source":
       return "Source media";
@@ -1329,7 +1339,7 @@ function artifactLabel(kind: string): string {
   }
 }
 
-function preferredKind(media: SermonMediaData): string {
+export function preferredKind(media: SermonMediaData): string {
   const order = [media.primary, "processed", "keeper", "source", media.audio, ...media.items.map((i) => i.kind)];
   for (const kind of order) {
     if (kind && media.byKind[kind]?.available) return kind;
