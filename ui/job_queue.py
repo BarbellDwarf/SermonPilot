@@ -13,8 +13,12 @@ Features:
 - UI-friendly status reporting
 """
 
+from __future__ import annotations
+
 import json
 import logging
+import os
+import sqlite3
 import sys
 import threading
 import time
@@ -84,23 +88,40 @@ def _strip_secrets(value: Any) -> Any:
     return value
 
 
-def _ensure_user_id_column(conn) -> bool:
+_JOB_OPTIONAL_COLUMNS: dict[str, str] = {
+    "user_id": "TEXT",
+    "cancelled": "INTEGER DEFAULT 0",
+}
+
+
+def _ensure_job_columns(conn) -> set[str]:
+    """Add optional background_jobs columns on demand; return those present.
+
+    Both columns are additive migrations for databases created before they
+    existed. A caller that cannot read the schema (table absent) gets an empty
+    set and must fall back to the baseline column list.
+    """
     try:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(background_jobs)").fetchall()}
     except Exception:
-        return False
-    if "user_id" not in cols:
+        return set()
+    present = set(cols)
+    for name, decl in _JOB_OPTIONAL_COLUMNS.items():
+        if name in cols:
+            continue
         try:
-            conn.execute("ALTER TABLE background_jobs ADD COLUMN user_id TEXT")
+            conn.execute(f"ALTER TABLE background_jobs ADD COLUMN {name} {decl}")
+            present.add(name)
         except Exception:
-            return False
-    try:
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_background_jobs_user_id ON background_jobs(user_id)"
-        )
-    except Exception:
-        pass
-    return True
+            pass
+    if "user_id" in present:
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_background_jobs_user_id ON background_jobs(user_id)"
+            )
+        except Exception:
+            pass
+    return present
 
 
 class JobType(Enum):
@@ -134,6 +155,140 @@ class JobCancelledError(Exception):
 _TERMINAL_JOB_STATUSES = frozenset({
     JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED,
 })
+
+# States where a worker owned the job. A worker thread is a daemon that dies
+# with the process, so after a restart none of these can still be running.
+# QUEUED is deliberately absent: a fresh worker can and should claim it.
+IN_FLIGHT_JOB_STATUSES = frozenset({JobStatus.RUNNING, JobStatus.PAUSED})
+
+# Stable phrase used in the result payload so the write-path guard can tell a
+# restart-reconciled job from one that completed on its own.
+INTERRUPTED_BY_RESTART_MARKER = "interrupted by app restart"
+_INTERRUPTED_LOG_LINE = "Job interrupted by app restart"
+
+
+def _interruption_result(cancelled: bool) -> JobResult:
+    """Honest terminal outcome for a job whose worker died with the process.
+
+    No artifact is registered: the result carries no output paths, so a
+    partially written file is never recorded as finished work.
+    """
+    if cancelled:
+        return JobResult(
+            success=False,
+            message=f"Job cancelled and {INTERRUPTED_BY_RESTART_MARKER}",
+            error=(
+                f"Job cancelled and {INTERRUPTED_BY_RESTART_MARKER}: a cancel was "
+                "requested before the app restarted, so this job is marked cancelled. "
+                "Any completed output was kept."
+            ),
+        )
+    return JobResult(
+        success=False,
+        message=f"Job {INTERRUPTED_BY_RESTART_MARKER}",
+        error=(
+            f"Job {INTERRUPTED_BY_RESTART_MARKER}: the app restarted while this job "
+            "was running and its worker no longer exists. Completed output was kept; "
+            "a partially written output was not registered. Retry to run it again."
+        ),
+    )
+
+
+def _append_log_line(existing_json: str | None, line: str) -> str:
+    """Append a timestamped line to a persisted logs JSON array, never wiping it."""
+    try:
+        logs = json.loads(existing_json) if existing_json else []
+    except (json.JSONDecodeError, TypeError):
+        logs = []
+    if not isinstance(logs, list):
+        logs = []
+    stamp = datetime.now().strftime("%H:%M:%S")
+    logs.append(f"[{stamp}] {line}")
+    return json.dumps(logs)
+
+
+def _mark_job_interrupted(job: Job) -> None:
+    """Flip an in-memory in-flight job to its restart-terminal state."""
+    was_cancelled = bool(job.cancelled)
+    job.status = JobStatus.CANCELLED if was_cancelled else JobStatus.FAILED
+    job.completed_at = datetime.now()
+    job.add_log(_INTERRUPTED_LOG_LINE)
+    job.result = _interruption_result(was_cancelled)
+
+
+def _resolve_reconcile_db_path(db_path: str | None = None) -> str:
+    """Resolve the SQLite file to reconcile, tolerating a sqlite:/// URL."""
+    raw = (
+        db_path
+        or os.environ.get("SERMONPILOT_DB")
+        or os.environ.get("DATABASE_URL")
+        or "sermon_processor.db"
+    )
+    if raw.startswith("sqlite:///"):
+        remainder = raw[len("sqlite:///"):]
+        if not remainder.startswith("/"):
+            remainder = "/" + remainder
+        return remainder
+    return raw
+
+
+def reconcile_interrupted_jobs(db_path: str | None = None) -> int:
+    """Mark in-flight jobs whose worker cannot exist in this process terminal.
+
+    This is the startup reconciliation for a process that does not hold the
+    jobs in memory (the API bridge reads the store directly). It is idempotent:
+    a second run finds no in-flight rows and changes nothing. Terminal rows are
+    never touched. Existing logs are preserved and appended to, and the result
+    is replaced with an interruption outcome that registers no artifact.
+    """
+    path = _resolve_reconcile_db_path(db_path)
+    statuses = tuple(sorted(status.value for status in IN_FLIGHT_JOB_STATUSES))
+    placeholders = ",".join("?" for _ in statuses)
+    reconciled = 0
+    try:
+        conn = sqlite3.connect(path, timeout=30.0)
+    except sqlite3.Error:
+        logger.error("Could not open job store for reconciliation: %s", path)
+        return 0
+    try:
+        conn.row_factory = sqlite3.Row
+        present = _ensure_job_columns(conn)
+        select_cols = "id, logs" + (", cancelled" if "cancelled" in present else "")
+        rows = conn.execute(
+            f"SELECT {select_cols} FROM background_jobs WHERE status IN ({placeholders})",
+            statuses,
+        ).fetchall()
+        for row in rows:
+            cancelled = bool(row["cancelled"]) if "cancelled" in present else False
+            target = JobStatus.CANCELLED.value if cancelled else JobStatus.FAILED.value
+            result_json = json.dumps(_result_for_persistence(_interruption_result(cancelled)))
+            logs_json = _append_log_line(row["logs"], _INTERRUPTED_LOG_LINE)
+            cursor = conn.execute(
+                "UPDATE background_jobs SET status = ?, completed_at = ?, result = ?, logs = ?"
+                f" WHERE id = ? AND status IN ({placeholders})",
+                (
+                    target,
+                    datetime.now().isoformat(),
+                    result_json,
+                    logs_json,
+                    row["id"],
+                    *statuses,
+                ),
+            )
+            reconciled += max(cursor.rowcount, 0)
+        conn.commit()
+    except sqlite3.OperationalError:
+        return 0
+    except Exception:
+        logger.exception("Startup job reconciliation failed")
+        return reconciled
+    finally:
+        conn.close()
+    if reconciled:
+        logger.warning(
+            "Reconciled %d interrupted job(s) left by a previous restart.", reconciled
+        )
+    return reconciled
 
 
 @dataclass
@@ -320,10 +475,11 @@ class JobQueue:
                         completed_at TIMESTAMP,
                         can_cancel BOOLEAN DEFAULT 1,
                         can_retry BOOLEAN DEFAULT 1,
-                        priority INTEGER DEFAULT 5
+                        priority INTEGER DEFAULT 5,
+                        cancelled INTEGER DEFAULT 0
                     )
                 """)
-                _ensure_user_id_column(conn)
+                _ensure_job_columns(conn)
                 conn.commit()
         except Exception as e:
             logger.error(f"Failed to initialize job database: {e}")
@@ -365,25 +521,20 @@ class JobQueue:
         logger.info(f"Job queue started with {self.max_workers} workers")
 
     def _recover_orphaned_jobs(self):
-        """Reset jobs stuck in RUNNING state from a previous crash/restart.
+        """Reconcile in-flight jobs left by a previous crash or restart.
 
-        Worker threads are daemon threads and die when the process dies.
-        Jobs left in RUNNING state after a crash would never be picked up
-        because _get_next_job() only looks for QUEUED status. Mark them
-        as FAILED so the user can review and retry from the Jobs page.
+        Worker threads are daemon threads and die when the process dies. A job
+        left in RUNNING (or PAUSED) state would never be picked up because
+        _get_next_job() only looks for QUEUED status. Mark each one terminal,
+        as CANCELLED when its cancel flag was already set, so the operator can
+        review and retry from the Jobs page. Existing logs are appended to,
+        never replaced.
         """
         recovered_jobs = []
         with self._queue_lock:
             for job in self._jobs.values():
-                if job.status == JobStatus.RUNNING:
-                    job.status = JobStatus.FAILED
-                    job.completed_at = datetime.now()
-                    job.add_log("Job interrupted: service restarted during processing")
-                    job.result = JobResult(
-                        success=False,
-                        message="Service restarted during processing",
-                        error="Job was interrupted by a service restart. Please retry.",
-                    )
+                if job.status in IN_FLIGHT_JOB_STATUSES:
+                    _mark_job_interrupted(job)
                     recovered_jobs.append(job)
 
         for job in recovered_jobs:
@@ -391,8 +542,8 @@ class JobQueue:
 
         if recovered_jobs:
             logger.warning(
-                f"Recovered {len(recovered_jobs)} orphaned job(s) left in RUNNING state "
-                f"from a previous restart. Marked as FAILED — retry from the Jobs page."
+                f"Reconciled {len(recovered_jobs)} interrupted job(s) left by a "
+                f"previous restart."
             )
 
     def prune_old_jobs(self, days: int = JOB_RETENTION_DAYS) -> int:
@@ -867,9 +1018,9 @@ class JobQueue:
                     parameters_json = (
                         json.dumps(_strip_secrets(job.parameters)) if job.parameters else None
                     )
-                    has_owner = _ensure_user_id_column(conn)
+                    present = _ensure_job_columns(conn)
                     user_id = job.user_id
-                    if has_owner and user_id is None:
+                    if "user_id" in present and user_id is None:
                         try:
                             existing = conn.execute(
                                 "SELECT user_id FROM background_jobs WHERE id = ?", (job.id,)
@@ -878,42 +1029,34 @@ class JobQueue:
                                 user_id = existing["user_id"]
                         except Exception:
                             pass
-                    if has_owner:
-                        conn.execute("""
-                            INSERT OR REPLACE INTO background_jobs (
-                                id, type, title, description, status, progress,
-                                parameters, result, logs, created_at, started_at,
-                                completed_at, can_cancel, can_retry, priority, user_id
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            job.id, job.type.value, job.title, job.description,
-                            job.status.value, job.progress,
-                            parameters_json,
-                            json.dumps(_result_for_persistence(job.result)) if job.result else None,
-                            json.dumps(logs) if logs else None,
-                            job.created_at.isoformat() if job.created_at else None,
-                            job.started_at.isoformat() if job.started_at else None,
-                            job.completed_at.isoformat() if job.completed_at else None,
-                            job.can_cancel, job.can_retry, job.priority, user_id
-                        ))
-                    else:
-                        conn.execute("""
-                            INSERT OR REPLACE INTO background_jobs (
-                                id, type, title, description, status, progress,
-                                parameters, result, logs, created_at, started_at,
-                                completed_at, can_cancel, can_retry, priority
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            job.id, job.type.value, job.title, job.description,
-                            job.status.value, job.progress,
-                            parameters_json,
-                            json.dumps(_result_for_persistence(job.result)) if job.result else None,
-                            json.dumps(logs) if logs else None,
-                            job.created_at.isoformat() if job.created_at else None,
-                            job.started_at.isoformat() if job.started_at else None,
-                            job.completed_at.isoformat() if job.completed_at else None,
-                            job.can_cancel, job.can_retry, job.priority
-                        ))
+                    fields = [
+                        "id", "type", "title", "description", "status", "progress",
+                        "parameters", "result", "logs", "created_at", "started_at",
+                        "completed_at", "can_cancel", "can_retry", "priority",
+                    ]
+                    values: list[Any] = [
+                        job.id, job.type.value, job.title, job.description,
+                        job.status.value, job.progress,
+                        parameters_json,
+                        json.dumps(_result_for_persistence(job.result)) if job.result else None,
+                        json.dumps(logs) if logs else None,
+                        job.created_at.isoformat() if job.created_at else None,
+                        job.started_at.isoformat() if job.started_at else None,
+                        job.completed_at.isoformat() if job.completed_at else None,
+                        job.can_cancel, job.can_retry, job.priority,
+                    ]
+                    if "user_id" in present:
+                        fields.append("user_id")
+                        values.append(user_id)
+                    if "cancelled" in present:
+                        fields.append("cancelled")
+                        values.append(1 if job.cancelled else 0)
+                    placeholders = ",".join("?" for _ in fields)
+                    conn.execute(
+                        f"INSERT OR REPLACE INTO background_jobs ({','.join(fields)}) "
+                        f"VALUES ({placeholders})",
+                        values,
+                    )
                     conn.commit()
         except Exception as e:
             logger.error(f"Failed to save job {job.id} to database: {e}")
@@ -926,8 +1069,13 @@ class JobQueue:
                 owner = row["user_id"] if "user_id" in row.keys() else None
             except Exception:
                 owner = None
+            try:
+                was_cancelled = bool(row["cancelled"]) if "cancelled" in row.keys() else False
+            except Exception:
+                was_cancelled = False
             job_data = {
                 "user_id": owner,
+                "cancelled": was_cancelled,
                 'id': row['id'],
                 'type': JobType(row['type']),
                 'title': row['title'],
