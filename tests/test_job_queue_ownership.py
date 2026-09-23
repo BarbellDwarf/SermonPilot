@@ -175,6 +175,25 @@ def test_reconciliation_reaps_a_stale_lease_holder(db_path: Path) -> None:
     assert _read_status(db_path, "j-stale") == "failed"
 
 
+def test_a_fresh_lease_from_a_previous_boot_is_not_live(db_path: Path) -> None:
+    _init_schema(db_path)
+    _insert_job(db_path, "j-reboot", owner="old-worker")
+    _insert_lease(db_path, "old-worker", datetime.now())
+    conn = _connect(db_path)
+    try:
+        conn.execute(
+            f"UPDATE {_JOB_LEASE_TABLE} SET boot_id = 'a-previous-boot' WHERE id = 1"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    reconciled = reconcile_interrupted_jobs(db_path=str(db_path))
+
+    assert reconciled == 1
+    assert _read_status(db_path, "j-reboot") == "failed"
+
+
 def test_submit_only_queue_runs_no_worker_and_takes_no_lease(db_path: Path) -> None:
     db = SermonDatabase(db_path=str(db_path))
     import ui.database as dm

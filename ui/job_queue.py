@@ -123,22 +123,45 @@ def _ensure_lease_table(conn) -> bool:
             " id INTEGER PRIMARY KEY CHECK (id = 1),"
             " worker_id TEXT NOT NULL,"
             " acquired_at TEXT NOT NULL,"
-            " heartbeat_at TEXT NOT NULL)"
+            " heartbeat_at TEXT NOT NULL,"
+            " boot_id TEXT)"
         )
+        try:
+            conn.execute(f"ALTER TABLE {_JOB_LEASE_TABLE} ADD COLUMN boot_id TEXT")
+        except Exception:
+            pass
         return True
     except Exception:
         return False
+
+
+def _current_boot_id() -> str | None:
+    """A value that changes when the host/container reboots, when available."""
+    try:
+        from pathlib import Path
+
+        return Path("/proc/sys/kernel/random/boot_id").read_text(encoding="utf-8").strip() or None
+    except Exception:
+        return None
 
 
 def _read_live_lease_owner(conn) -> str | None:
     """Return the worker id holding a fresh lease, or None when there is none."""
     try:
         row = conn.execute(
-            f"SELECT worker_id, heartbeat_at FROM {_JOB_LEASE_TABLE} WHERE id = 1"
+            f"SELECT worker_id, heartbeat_at, boot_id FROM {_JOB_LEASE_TABLE} WHERE id = 1"
         ).fetchone()
     except Exception:
         return None
     if row is None:
+        return None
+    boot_id = _current_boot_id()
+    try:
+        recorded_boot = row["boot_id"]
+    except (IndexError, KeyError):
+        recorded_boot = None
+    if boot_id is not None and recorded_boot is not None and recorded_boot != boot_id:
+        # The lease was written before this boot: its owner cannot be alive.
         return None
     try:
         heartbeat = datetime.fromisoformat(row["heartbeat_at"])
@@ -550,6 +573,7 @@ class JobQueue:
         self._persist_lock = threading.Lock()
         self._persist_wake = threading.Event()
         self._persister: threading.Thread | None = None
+        self._lease_watcher: threading.Thread | None = None
         self._last_heartbeat_at = 0.0
         self._last_cancel_poll_at = 0.0
 
@@ -617,16 +641,24 @@ class JobQueue:
             return
 
         self._owns_lease = self._acquire_worker_lease()
-        if not self._owns_lease:
-            logger.warning(
-                "Job queue did not start a worker: another live worker owns the lease"
-            )
+        if self._owns_lease:
+            self._start_workers()
             return
 
-        # Recover orphaned jobs left in RUNNING state by a previous owner
-        self._recover_orphaned_jobs()
+        # Another process holds a fresh lease. Keep watching: if it dies (a
+        # process restart inside the same boot), this process takes over once
+        # the heartbeat goes stale.
+        logger.warning(
+            "Job queue waiting for the worker lease; another live worker owns it"
+        )
+        self._lease_watcher = threading.Thread(
+            target=self._lease_watch_loop, name="JobLeaseWatcher", daemon=True
+        )
+        self._lease_watcher.start()
 
-        # Start worker threads
+    def _start_workers(self) -> None:
+        """Recover orphans and start the worker and persister threads."""
+        self._recover_orphaned_jobs()
         for i in range(self.max_workers):
             worker = threading.Thread(
                 target=self._worker_loop,
@@ -635,14 +667,22 @@ class JobQueue:
             )
             worker.start()
             self._workers.append(worker)
-
-        # Flush debounced job state while workers are blocked in a stage.
         self._persister = threading.Thread(
             target=self._persist_loop, name="JobPersister", daemon=True
         )
         self._persister.start()
-
         logger.info(f"Job queue started with {self.max_workers} workers")
+
+    def _lease_watch_loop(self) -> None:
+        """Take over the lease once the current holder's heartbeat is stale."""
+        while self._running and not self._shutdown_event.is_set():
+            self._shutdown_event.wait(JOB_HEARTBEAT_INTERVAL_SECONDS)
+            if not self._running or self._shutdown_event.is_set():
+                return
+            if self._acquire_worker_lease():
+                self._owns_lease = True
+                self._start_workers()
+                return
 
     def _acquire_worker_lease(self) -> bool:
         """Take the single worker lease when no live worker holds it."""
@@ -650,23 +690,32 @@ class JobQueue:
             return True
         now = datetime.now()
         stale_before = now - timedelta(seconds=JOB_LEASE_TIMEOUT_SECONDS)
+        boot_id = _current_boot_id()
         try:
             with self.db.get_connection() as conn:
                 _ensure_lease_table(conn)
                 row = conn.execute(
-                    f"SELECT worker_id, heartbeat_at FROM {_JOB_LEASE_TABLE} WHERE id = 1"
+                    f"SELECT worker_id, heartbeat_at, boot_id FROM {_JOB_LEASE_TABLE}"
+                    " WHERE id = 1"
                 ).fetchone()
-                if row is not None:
+                if row is not None and row["worker_id"] != self.worker_id:
                     try:
                         heartbeat = datetime.fromisoformat(row["heartbeat_at"])
                     except (TypeError, ValueError):
                         heartbeat = stale_before
-                    if heartbeat > stale_before and row["worker_id"] != self.worker_id:
+                    recorded_boot = row["boot_id"]
+                    same_boot = not (
+                        boot_id is not None
+                        and recorded_boot is not None
+                        and recorded_boot != boot_id
+                    )
+                    if same_boot and heartbeat > stale_before:
                         return False
                 conn.execute(
                     f"INSERT OR REPLACE INTO {_JOB_LEASE_TABLE}"
-                    " (id, worker_id, acquired_at, heartbeat_at) VALUES (1, ?, ?, ?)",
-                    (self.worker_id, now.isoformat(), now.isoformat()),
+                    " (id, worker_id, acquired_at, heartbeat_at, boot_id)"
+                    " VALUES (1, ?, ?, ?, ?)",
+                    (self.worker_id, now.isoformat(), now.isoformat(), boot_id),
                 )
                 conn.commit()
             self._last_heartbeat_at = time.monotonic()
@@ -788,6 +837,10 @@ class JobQueue:
         self._running = False
         self._shutdown_event.set()
         self._persist_wake.set()
+
+        if self._lease_watcher is not None:
+            self._lease_watcher.join(timeout=JOB_HEARTBEAT_INTERVAL_SECONDS + 2.0)
+            self._lease_watcher = None
 
         if self._persister is not None:
             self._persister.join(timeout=5.0)
