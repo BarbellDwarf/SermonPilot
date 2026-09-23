@@ -79,10 +79,12 @@ published without a description.
 
 ## Console
 
-The review page shows **Upload existing render** next to the approve actions.
-It is enabled only when a rendered artifact is present and hidden once the
-sermon is published. The refusal message is surfaced as a toast, or as the
-confirmation dialog for an empty description.
+The review page shows **Upload existing render** next to the approve actions on
+wide viewports. On narrow viewports the primary Approve action stays pinned and
+the action moves into the "More actions" overflow menu, alongside the other
+secondary actions. It is enabled only when a rendered artifact is present and
+hidden once the sermon is published. The refusal message is surfaced as a
+toast, or as the confirmation dialog for an empty description.
 
 ## Tests
 
