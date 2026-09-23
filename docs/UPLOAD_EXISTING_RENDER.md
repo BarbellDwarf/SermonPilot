@@ -79,12 +79,25 @@ published without a description.
 
 ## Console
 
-The review page shows **Upload existing render** next to the approve actions on
-wide viewports. On narrow viewports the primary Approve action stays pinned and
-the action moves into the "More actions" overflow menu, alongside the other
-secondary actions. It is enabled only when a rendered artifact is present and
-hidden once the sermon is published. The refusal message is surfaced as a
-toast, or as the confirmation dialog for an empty description.
+The review page builds its action row from the record's current state, so it
+only offers actions that can succeed for that state:
+
+- **Upload existing render** appears only when the record is not published and a
+  rendered artifact is present. On wide viewports it sits next to the approve
+  actions; on narrow viewports it moves into the "More actions" overflow menu,
+  while the primary apply action stays pinned.
+- **Push to SermonAudio** (the legacy full-publish path) is hidden once the
+  record is published, since there is nothing left to push.
+- The two apply actions both re-render, so they remain for every state. On a
+  published record they read **Re-render · Render-only** and **Re-render ·
+  Render+upload** so the framing matches a re-edit rather than a first review.
+- The plan chip is labelled **Plan: …** to separate the plan's review state from
+  the record's own status chip.
+
+A hidden control never relaxes the API guards: each refusal still runs in the
+router, so a control hidden behind a race is refused correctly. The refusal
+message is surfaced as a toast, or as the confirmation dialog for an empty
+description.
 
 ## Tests
 
@@ -98,5 +111,7 @@ toast, or as the confirmation dialog for an empty description.
 - `tests/unit/test_job_labels.py`: the job states it is uploading the existing
   render.
 - `web/src/components/SermonReview.test.tsx`: the console queues the upload,
-  handles the empty-description confirmation, hides the action when published,
-  and disables it when there is no render.
+  handles the empty-description confirmation, hides the action when published or
+  when there is no render, and gates the legacy push on the record state.
+- `web/src/pages/LibraryDetail.actions.test.tsx`: the page header drops the
+  legacy push for a published sermon and keeps it for a locally rendered one.
