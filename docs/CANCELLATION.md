@@ -83,3 +83,41 @@ retry path the partial is rebuilt rather than reused.
 A retried job re-processes its uploaded copy. `_cleanup_job_files` keeps the
 uploaded file on a cancel so the retry has a source, and moves only the derived
 `_enhanced` and `_cleaned` siblings into trash.
+
+## Restart reconciliation
+
+A cancel needs a live worker to signal. A container recreate (deploy, crash,
+manual recreate) kills the worker thread, which is a daemon, while its
+`background_jobs` row stays at `running`. The row then blocks a new job for the
+same sermon, and `POST /api/jobs/<id>/cancel` has nothing to signal, so it
+answers `{"cancelled": false}`.
+
+Startup reconciliation is the backstop for that case. Every process that loads
+the job store finds rows in an in-flight state (`running` or `paused`, never
+`queued`: a fresh worker can claim a queued row) and marks them terminal:
+
+- status `failed`, or `cancelled` when the row's cancel flag was already set;
+- `completed_at` set to the reconciliation time;
+- a `Job interrupted by app restart` line appended to the existing log, which is
+  never wiped;
+- the result replaced with an interruption outcome. It carries no output paths,
+  so a partially written file is not registered as finished work. Completed
+  artifacts are left where they are.
+
+`ui/job_queue.py::reconcile_interrupted_jobs` performs this against the store
+directly. The queue loader calls it through `_recover_orphaned_jobs`, and the
+API startup hook calls it so the console sees the terminal row before the first
+request, not only after some later write. Both paths write the same fields, and
+the operation is idempotent: a second run finds no in-flight rows and changes
+nothing, so the two processes cannot disagree.
+
+The write-path guard (`server/api/routers/writes.py::_active_job_for`) skips a
+restart-reconciled row in its `_ACTIVE_JOB_GRACE_SECONDS` window. That window
+exists to catch a double-click behind a job that completed on its own; an
+interrupted job did not complete behind the click, so it must not block the
+next apply.
+
+Reconciliation assumes the process that owns the store has restarted, so no
+worker anywhere can still be running those rows. It is not a liveness protocol
+for two processes sharing a database while both are up.
+
