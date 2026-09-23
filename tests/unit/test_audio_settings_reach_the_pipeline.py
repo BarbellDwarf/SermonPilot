@@ -32,6 +32,7 @@ import pytest
 
 import sermon_updater as su
 import ui.auto_edit_apply as core
+from ui.config_utils import ENV_CONFIG_MAP
 from ui.database import SermonDatabase, SermonRepository
 
 SID = "draft_audio_cfg_0001"
@@ -313,3 +314,36 @@ def test_source_guard_pins_the_single_audio_settings_resolution() -> None:
         assert literal not in call, (
             f"the enhancer call must not carry a hard-coded audio setting ({literal})"
         )
+
+
+def test_settings_saved_through_the_api_reach_the_enhancer_kwargs(
+    client, scoped_setup, monkeypatch, tmp_path
+) -> None:
+    """A value written on the console Audio section is what the enhancer gets."""
+    for var in ENV_CONFIG_MAP:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.delenv("SERMONPILOT_VARIANT", raising=False)
+    monkeypatch.setenv("SA_UPDATER_CONFIG", str(tmp_path / "absent-config.yaml"))
+
+    headers = scoped_setup["a"]["headers"]
+    saved = client.put(
+        "/api/config/sections/audio",
+        json={
+            "values": {
+                "audio_normalize": False,
+                "audio_target_level_db": -16.0,
+                "audio_noise_reduction": False,
+                "audio_gain_db": 2.5,
+            }
+        },
+        headers=headers,
+    )
+    assert saved.status_code == 200, saved.text
+
+    from ui.config_utils import resolve_config
+
+    kwargs = su.audio_processing_settings(resolve_config())
+    assert kwargs["normalize"] is False
+    assert kwargs["target_level_db"] == pytest.approx(-16.0)
+    assert kwargs["noise_reduction"] is False
+    assert kwargs["gain_db"] == pytest.approx(2.5)
