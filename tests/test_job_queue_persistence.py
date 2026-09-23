@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
 import threading
 import time
 from pathlib import Path
@@ -16,6 +17,7 @@ from pathlib import Path
 import pytest
 
 import ui.database as database_module
+from src.supervised_process import run_supervised
 from ui.database import SermonDatabase
 from ui.job_queue import (
     JOB_CANCEL_POLL_INTERVAL_SECONDS,
@@ -241,5 +243,61 @@ def test_cancel_releases_queue_and_starts_next_job_within_bound(
     finally:
         queue.stop()
 
+    row = _read_row(db_path, long_id)
+    assert row is not None and row["status"] == "cancelled"
+
+
+def test_cancel_stops_a_real_child_and_releases_the_queue(
+    queue: JobQueue, db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A job blocked on a long child stops it and frees the worker.
+
+    The child is a real ``sleep 600`` stand-in; the executor's cancel hook is
+    the same ``_raise_if_job_cancelled`` the pipeline uses. Before the fix the
+    child ran to completion and the queued follow-up never started.
+    """
+    from ui.job_executors import _raise_if_job_cancelled
+
+    next_started = threading.Event()
+    child_running = threading.Event()
+
+    def fake_executor(job: Job) -> JobResult:
+        if job.title == "long":
+            child_running.set()
+            run_supervised(
+                [sys.executable, "-c", "import time; time.sleep(600)"],
+                cancel_check=lambda: _raise_if_job_cancelled(job),
+                log=job.add_log,
+                step="edit render",
+                poll_interval=0.05,
+                terminate_grace=2.0,
+            )
+            return JobResult(success=True, message="unexpected completion")
+        next_started.set()
+        return JobResult(success=True, message="done")
+
+    monkeypatch.setattr(queue, "_get_job_executor", lambda job_type: fake_executor)
+    long_id = queue.add_job(JobType.VALIDATION, "long", "cancel me")
+    next_id = queue.add_job(JobType.VALIDATION, "next", "follow-up")
+
+    queue.start()
+    try:
+        assert child_running.wait(timeout=5.0), "the supervised child never started"
+
+        started_at = time.monotonic()
+        assert queue.cancel_job(long_id) is True
+        assert next_started.wait(timeout=8.0), "the queued follow-up never started"
+        elapsed = time.monotonic() - started_at
+        assert elapsed <= 8.0, f"cancel took {elapsed:.2f}s to release the queue"
+
+        assert _wait_for_terminal(queue, long_id) is JobStatus.CANCELLED
+        assert _wait_for_terminal(queue, next_id) is JobStatus.COMPLETED
+    finally:
+        queue.stop()
+
+    job = queue.get_job(long_id)
+    assert job is not None and job.status is JobStatus.CANCELLED
+    assert any("Cancel requested - stopping edit render" in line for line in job.logs)
+    assert any("Cancelled during edit render" in line for line in job.logs)
     row = _read_row(db_path, long_id)
     assert row is not None and row["status"] == "cancelled"

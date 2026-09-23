@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import logging
 import shutil
-import subprocess
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+try:  # src package import (project root on sys.path)
+    from src.supervised_process import ProcessCancelled, run_supervised
+except ImportError:  # src dir placed directly on sys.path
+    from supervised_process import ProcessCancelled, run_supervised  # type: ignore[no-redef]
 
 logger = logging.getLogger(__name__)
 
@@ -62,18 +67,34 @@ def _ensure_face_model(cache_dir: Path) -> tuple[str, str] | None:
     return None
 
 
-def _extract_frames(video: Path, start: float, duration: float) -> np.ndarray | None:
+def _extract_frames(
+    video: Path,
+    start: float,
+    duration: float,
+    *,
+    cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
+) -> np.ndarray | None:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         return None
     out = Path("/tmp/av_sync_frames.raw")
     try:
-        subprocess.run(
+        run_supervised(
             [ffmpeg, "-y", "-v", "error", "-ss", str(start), "-t", str(duration), "-i",
              str(video), "-vf", f"fps={FPS},scale={FRAME_W}:{FRAME_H}", "-pix_fmt", "bgr24",
              "-f", "rawvideo", str(out)],
-            check=True, capture_output=True, timeout=600,
+            cancel_check=cancel_check,
+            log=cancel_log,
+            step="A/V frame extraction",
+            partial_paths=[out],
+            partial_reason="cancelled_render_partial",
+            check=True,
+            capture_output=True,
+            timeout=600,
         )
+    except ProcessCancelled:
+        raise
     except Exception as e:
         logger.warning("av_sync: frame extraction failed: %s", e)
         return None
@@ -82,17 +103,33 @@ def _extract_frames(video: Path, start: float, duration: float) -> np.ndarray | 
     return raw[: n * FRAME_W * FRAME_H * 3].reshape(n, FRAME_H, FRAME_W, 3)
 
 
-def _audio_envelope(video: Path, start: float, duration: float) -> np.ndarray | None:
+def _audio_envelope(
+    video: Path,
+    start: float,
+    duration: float,
+    *,
+    cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
+) -> np.ndarray | None:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         return None
     out = Path("/tmp/av_sync_env.raw")
     try:
-        subprocess.run(
+        run_supervised(
             [ffmpeg, "-y", "-v", "error", "-ss", str(start), "-t", str(duration), "-i",
              str(video), "-vn", "-ac", "1", "-ar", str(FPS * 10), "-f", "s16le", str(out)],
-            check=True, capture_output=True, timeout=600,
+            cancel_check=cancel_check,
+            log=cancel_log,
+            step="A/V audio extraction",
+            partial_paths=[out],
+            partial_reason="cancelled_render_partial",
+            check=True,
+            capture_output=True,
+            timeout=600,
         )
+    except ProcessCancelled:
+        raise
     except Exception as e:
         logger.warning("av_sync: audio extraction failed: %s", e)
         return None
@@ -199,14 +236,28 @@ def measure_content_offset(
     window_seconds: float = 90.0,
     transcript_starts: list[float] | None = None,
     model_dir: Path | None = None,
+    cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
 ) -> OffsetMeasurement:
     """Measure the audio-lead offset of a video from mouth motion vs speech onsets."""
     cv2 = _load_cv2()
     if cv2 is None:
         return OffsetMeasurement(None, 0.0, False, "content", "opencv unavailable")
 
-    frames = _extract_frames(video, start_seconds, window_seconds)
-    envelope = _audio_envelope(video, start_seconds, window_seconds)
+    frames = _extract_frames(
+        video,
+        start_seconds,
+        window_seconds,
+        cancel_check=cancel_check,
+        cancel_log=cancel_log,
+    )
+    envelope = _audio_envelope(
+        video,
+        start_seconds,
+        window_seconds,
+        cancel_check=cancel_check,
+        cancel_log=cancel_log,
+    )
     if frames is None or envelope is None or len(frames) < 50:
         return OffsetMeasurement(None, 0.0, False, "content", "extraction failed")
 
@@ -263,8 +314,14 @@ def resolve_audio_correction(
     return float(auto_offset), "auto-corrected"
 
 
-def measure_waveform_offset(reference: Path, candidate: Path,
-                            sample_rate: int = 8000) -> OffsetMeasurement:
+def measure_waveform_offset(
+    reference: Path,
+    candidate: Path,
+    sample_rate: int = 8000,
+    *,
+    cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
+) -> OffsetMeasurement:
     """Reliable waveform cross-correlation between two audio timelines."""
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -273,12 +330,21 @@ def measure_waveform_offset(reference: Path, candidate: Path,
     for path in (reference, candidate):
         out = Path("/tmp/av_sync_wav.raw")
         try:
-            subprocess.run(
+            run_supervised(
                 [ffmpeg, "-y", "-v", "error", "-ss", "30", "-t", "120", "-i", str(path),
                  "-vn", "-ac", "1", "-ar", str(sample_rate),
                  "-af", "highpass=f=200,lowpass=f=3500", "-f", "s16le", str(out)],
-                check=True, capture_output=True, timeout=600,
+                cancel_check=cancel_check,
+                log=cancel_log,
+                step="A/V waveform extraction",
+                partial_paths=[out],
+                partial_reason="cancelled_render_partial",
+                check=True,
+                capture_output=True,
+                timeout=600,
             )
+        except ProcessCancelled:
+            raise
         except Exception as e:
             return OffsetMeasurement(None, 0.0, False, "waveform", f"extraction failed: {e}")
         arrays.append(np.fromfile(out, dtype=np.int16).astype(np.float64))

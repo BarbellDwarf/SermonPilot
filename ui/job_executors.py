@@ -304,7 +304,13 @@ def _rclone_copyto(
             time.sleep(0.5)
         proc.wait()
     except JobCancelledError:
+        stop_started = time.monotonic()
+        job.add_log("Cancel requested - stopping cloud fetch")
         _terminate_process(proc)
+        job.add_log(
+            "Cancelled during cloud fetch "
+            f"(stopped after {time.monotonic() - stop_started:.0f}s)"
+        )
         raise
     finally:
         reader.join(timeout=5)
@@ -314,6 +320,19 @@ def _rclone_copyto(
     if not dest.is_file() or dest.stat().st_size <= 0:
         return "cloud fetch produced an empty file"
     return None
+
+
+def _trash_partial_download(dest: Path, job: Job) -> None:
+    """Move an incomplete staged download to trash instead of unlinking it."""
+    try:
+        trash_local(
+            dest,
+            reason="cancelled_cloud_stage_partial",
+            job_id=getattr(job, "id", None),
+            stage="cloud_ingest_cleanup",
+        )
+    except Exception as exc:
+        logger.warning("Failed to trash partial cloud download %s: %s", dest, exc)
 
 
 def _stage_cloud_source(
@@ -345,13 +364,13 @@ def _stage_cloud_source(
         try:
             error = _rclone_copyto(user_id, name, sub, dest, job, cancel_check)
         except JobCancelledError:
-            dest.unlink(missing_ok=True)
+            _trash_partial_download(dest, job)
             raise
         except Exception as exc:
-            dest.unlink(missing_ok=True)
+            _trash_partial_download(dest, job)
             return None, f"cloud fetch failed: {exc}"
         if error:
-            dest.unlink(missing_ok=True)
+            _trash_partial_download(dest, job)
             return None, error
         return str(dest), None
 
@@ -364,10 +383,10 @@ def _stage_cloud_source(
     try:
         _download_url(source, dest, job, cancel_check)
     except JobCancelledError:
-        dest.unlink(missing_ok=True)
+        _trash_partial_download(dest, job)
         raise
     except Exception as exc:
-        dest.unlink(missing_ok=True)
+        _trash_partial_download(dest, job)
         return None, f"cloud fetch failed: {exc}"
     return str(dest), None
 
@@ -484,11 +503,17 @@ def _upload_cloud_output(
             time.sleep(0.1)
     finally:
         if proc.poll() is None:
+            stop_started = time.monotonic()
+            job.add_log("Cancel requested - stopping cloud upload")
             proc.terminate()
             try:
                 proc.wait(timeout=5)
             except Exception:
                 proc.kill()
+            job.add_log(
+                "Cancelled during cloud upload "
+                f"(stopped after {time.monotonic() - stop_started:.0f}s)"
+            )
     reader.join(timeout=3)
     if proc.returncode != 0:
         detail = state["last"] or f"rclone exited with code {proc.returncode}"
@@ -1038,6 +1063,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             progress_callback=progress_cb,
             auto_edit_mode=auto_edit_mode,
             cancel_check=lambda: _raise_if_job_cancelled(job),
+            cancel_log=job.add_log,
             existing_sermon_id=job.parameters.get("sermon_id"),
         )
         processing_temp_dir = result.get('processing_temp_dir')
@@ -1691,6 +1717,7 @@ def execute_auto_edit_apply_job(job: Job) -> JobResult:
                 auto_edit_mode='auto',
                 edit_plan_file=str(plan_file),
                 cancel_check=lambda: _raise_if_job_cancelled(job),
+                cancel_log=job.add_log,
             )
             if result.get('cancelled'):
                 job.add_log("Auto-edit apply cancelled by user")
@@ -1918,6 +1945,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
             plan_id=plan_id,
             progress_callback=progress_cb,
             cancel_check=lambda: _raise_if_job_cancelled(job),
+            cancel_log=job.add_log,
             config=config or None,
             enhance_audio=request_enhance,
         )
