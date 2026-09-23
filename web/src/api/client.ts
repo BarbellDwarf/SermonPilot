@@ -153,6 +153,29 @@ export class AuthError extends Error {
   }
 }
 
+export interface ApiErrorDetail {
+  code?: string;
+  message?: string;
+  job_id?: string;
+  can_regenerate?: boolean;
+}
+
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  jobId?: string;
+  canRegenerate: boolean;
+  constructor(message: string, status: number, detail?: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    const parsed = (detail ?? {}) as ApiErrorDetail;
+    if (typeof parsed.code === "string") this.code = parsed.code;
+    if (typeof parsed.job_id === "string") this.jobId = parsed.job_id;
+    this.canRegenerate = parsed.can_regenerate === true;
+  }
+}
+
 function authHeaders(extra?: HeadersInit): Record<string, string> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (extra) {
@@ -314,13 +337,23 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T>
   });
   if (res.status === 204) return undefined as T;
   if (!res.ok) {
-    let detail = `${method} ${path} failed with ${res.status}`;
+    let message = `${method} ${path} failed with ${res.status}`;
+    let detail: unknown;
     try {
       const parsed = (await res.json()) as { detail?: unknown };
-      if (typeof parsed.detail === "string") detail = parsed.detail;
+      detail = parsed.detail;
+      if (typeof parsed.detail === "string") {
+        message = parsed.detail;
+      } else if (
+        parsed.detail &&
+        typeof parsed.detail === "object" &&
+        typeof (parsed.detail as ApiErrorDetail).message === "string"
+      ) {
+        message = (parsed.detail as ApiErrorDetail).message as string;
+      }
     } catch {
     }
-    throw new Error(detail);
+    throw new ApiError(message, res.status, detail);
   }
   return (await res.json()) as T;
 }
@@ -451,6 +484,12 @@ export const backupApi = {
 export const writeApi = {
   applyPlan: (id: string, body: { start: number; end: number; audio_offset: number; render_only: boolean; re_detect?: boolean; enhance_audio?: boolean }) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/plan/apply`, "POST", body),
+  uploadOnly: (id: string, body?: { confirm_missing_description?: boolean }) =>
+    send<{ job_id: string; status: string; render?: { name: string; size: number; size_human: string } }>(
+      `/api/sermons/${encodeURIComponent(id)}/plan/apply`,
+      "POST",
+      { upload_only: true, confirm_missing_description: body?.confirm_missing_description ?? false },
+    ),
   refinePlan: (id: string, notes: string) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/plan/refine`, "POST", { notes }),
   reDetectPlan: (id: string) =>
