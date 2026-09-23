@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+import types
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -160,8 +162,33 @@ def test_pause_with_keeper_retains_media_and_skips_processed_copy(tmp_path, monk
         path.write_bytes(b"clip")
         return [path]
 
+    def fake_mux(_video, _audio, out, *_args, **_kwargs):
+        out = Path(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"mux")
+        return []
+
+    fake_audio = types.ModuleType("src.audio_processing")
+
+    class _FakeProcessor:
+        enhancement_method = "deepfilternet"
+
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def process_sermon_audio(self, _source, out):
+            Path(out).write_bytes(b"wav")
+            return True, {}
+
+        def release_gpu(self):
+            pass
+
+    fake_audio.AudioProcessor = _FakeProcessor
+
     monkeypatch.setattr(auto_edit_mod, "transcode_to_keeper", fake_keeper)
     monkeypatch.setattr(review_media, "render_bounded_snippets", fake_snippets)
+    monkeypatch.setattr(su, "_mux_video_with_audio", fake_mux)
+    monkeypatch.setitem(sys.modules, "src.audio_processing", fake_audio)
 
     video = tmp_path / "sermon.mp4"
     video.write_bytes(b"fake video bytes")

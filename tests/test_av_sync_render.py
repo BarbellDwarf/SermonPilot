@@ -103,7 +103,13 @@ def _run_pipeline(tmp_path: Path, monkeypatch, **overrides) -> tuple[dict, Mock,
     _fake_audio_processor(monkeypatch)
     _stub_measurements(monkeypatch, content=0.7)
 
-    mux = Mock(side_effect=lambda _v, _a, out, *_args, **_kw: (Path(out).write_bytes(b"mux"), [])[1])
+    def _fake_mux(_video, _audio, out, *_args, **_kwargs):
+        out = Path(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"mux")
+        return []
+
+    mux = Mock(side_effect=_fake_mux)
     monkeypatch.setattr(su, "_mux_video_with_audio", mux)
 
     captured: dict = {}

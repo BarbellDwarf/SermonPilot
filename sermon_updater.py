@@ -2814,8 +2814,20 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             audio_was_enhanced = enhanced_audio_path != audio_path and enhanced_audio_path.exists()
             if audio_was_enhanced:
                 try:
-                    final_video = original_input_path.with_name(
-                        f"{original_input_path.stem}_enhanced{original_input_path.suffix}"
+                    if temp_dir is None:
+                        processing_root = Path(
+                            config.get('processing_temp_dir')
+                            or (default_cache_root() / "sermon_processing")
+                        )
+                        temp_dir = processing_root / _uuid.uuid4().hex
+                        temp_dir.mkdir(parents=True, exist_ok=True)
+                        result['processing_temp_dir'] = str(temp_dir)
+                    # Build the mux in the per-job scratch dir: the render
+                    # consumes it (or the upload reads it), then it is cleaned
+                    # with the job. It is never left orphaned beside the source.
+                    final_video = temp_dir / (
+                        f"{original_input_path.stem}_enhanced"
+                        f"{original_input_path.suffix or '.mp4'}"
                     )
                     # Encode the enhancer's WAV directly rather than remuxing
                     # an AAC copy: a second AAC generation carries encoder
@@ -2911,6 +2923,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                             raise
                         except Exception as e:
                             logger.warning("av_sync measurement failed: %s", e)
+                            av_reason = "measurement failed"
 
                     if manual_explicit:
                         av_render_offset = manual_offset
@@ -2925,8 +2938,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     mux_correction = 0.0 if gate_active else av_render_offset
                     if abs(av_render_offset) > 1e-6:
                         console_print(
-                            f"🎯 A/V correction for render: {av_render_offset:+.3f}s "
-                            f"({av_reason})"
+                            f"🎯 A/V correction: {av_render_offset:+.3f}s ({av_reason})"
                         )
 
                     mux_video_input = audio_path if keeper_used else original_input_path
