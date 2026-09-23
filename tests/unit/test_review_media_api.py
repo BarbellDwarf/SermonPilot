@@ -7,9 +7,9 @@ import types
 from pathlib import Path
 from unittest.mock import Mock
 
-import sermon_updater as su
-
 import pytest
+
+import sermon_updater as su
 
 
 @pytest.fixture(autouse=True)

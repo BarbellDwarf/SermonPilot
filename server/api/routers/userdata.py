@@ -10,6 +10,7 @@ stored key; restores reject masked values.
 from __future__ import annotations
 
 import base64
+import logging
 import os
 import secrets
 import sqlite3
@@ -29,6 +30,8 @@ from server.api.accounts import (
 from server.api.routers.auth import require_user
 
 router = APIRouter(prefix="/api/me/connections", tags=["connections"])
+
+logger = logging.getLogger(__name__)
 
 _LLM_KEY = "connections.llm"
 _SA_KEY = "connections.sermonaudio"
