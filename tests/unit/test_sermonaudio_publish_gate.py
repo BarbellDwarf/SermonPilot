@@ -123,6 +123,23 @@ def test_dry_run_upload_is_allowed_without_an_account(client, scoped_setup, tmp_
     assert r.status_code == 201, r.text
 
 
+def test_interactive_auto_edit_is_allowed_without_an_account(
+    client, scoped_setup, tmp_path, monkeypatch
+):
+    s = scoped_setup
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path / "raw"))
+    _create_account(client, s["a"]["headers"])
+
+    r = _upload(
+        client,
+        s["b"]["headers"],
+        auto_edit_enabled=True,
+        auto_edit_mode="interactive",
+    )
+
+    assert r.status_code == 201, r.text
+
+
 def test_stored_job_parameters_never_contain_the_key(client, scoped_setup, tmp_path, monkeypatch):
     s = scoped_setup
     monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path / "raw"))

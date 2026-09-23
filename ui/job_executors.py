@@ -979,7 +979,15 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
         job.update_progress(5, "Initializing sermon processing...")
 
         form_data = job.parameters.get('form_data') or {}
-        if not bool(form_data.get('dry_run', False)) and bool(form_data.get('publish', True)):
+        reviews_before_upload = (
+            bool(job.parameters.get('auto_edit_enabled'))
+            and job.parameters.get('auto_edit_mode') == 'interactive'
+        )
+        if (
+            not bool(form_data.get('dry_run', False))
+            and not reviews_before_upload
+            and bool(form_data.get('publish', True))
+        ):
             refusal = sermonaudio_refusal(job)
             if refusal is not None:
                 job.add_log(refusal.error or "")

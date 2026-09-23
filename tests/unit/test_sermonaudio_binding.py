@@ -176,6 +176,28 @@ def test_publish_executor_refuses_without_an_account(
     process.assert_not_called()
 
 
+def test_interactive_auto_edit_is_not_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = tmp_path / "settings.db"
+    _seed(db, "u-a", [_account("sa-a", "Alpha", "key-alpha-1111", "alpha")], "sa-a")
+    _point_at(monkeypatch, db)
+    process = Mock(return_value=SUCCESS_RESULT)
+    monkeypatch.setattr("sermon_updater.process_new_sermon", process)
+
+    job = _job(
+        "u-b",
+        form_data=FORM_DATA,
+        uploaded_file_path=AUDIO_FILE,
+        auto_edit_enabled=True,
+        auto_edit_mode="interactive",
+    )
+    result = execute_sermon_processing_job(job)
+
+    assert result.success is True
+    process.assert_called_once()
+
+
 def test_publish_executor_uses_the_owners_credentials(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

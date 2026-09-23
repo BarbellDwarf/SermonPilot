@@ -679,7 +679,7 @@ async def upload_sermon(
         raise HTTPException(
             status_code=422, detail=f"missing required fields: {', '.join(missing)}"
         )
-    if not dry_run:
+    if not dry_run and not (auto_edit_enabled and auto_edit_mode == "interactive"):
         _require_sermonaudio_connection(user.get("id"))
     original = Path(file.filename or "").name
     ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
@@ -823,7 +823,9 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
         raise HTTPException(
             status_code=422, detail=f"missing required fields: {', '.join(missing)}"
         )
-    if not body.dry_run:
+    if not body.dry_run and not (
+        body.auto_edit_enabled and body.auto_edit_mode == "interactive"
+    ):
         _require_sermonaudio_connection(user.get("id"))
     if body.container_path.strip().startswith("remote:"):
         from server.api.routers.cloud import (

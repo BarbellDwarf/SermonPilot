@@ -135,7 +135,9 @@ applies only while no user has stored a connection anywhere. Once any account
 exists, a user without one resolves to an empty credential and the publish is
 refused with "Connect your SermonAudio account in Settings before publishing."
 The console refuses before a job is queued, and the executor refuses as a
-second line of defence. A dry run or a local render is never blocked.
+second line of defence. A dry run, a local render, and an interactive
+auto-edit pass that stops for review are never blocked; the gate applies when
+the job actually publishes.
 
 `GET /api/me/sermonaudio-connection` returns the resolved connection for the
 current user as `configured`, `source`, `account_name`, `broadcaster_id`,
