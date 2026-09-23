@@ -35,6 +35,11 @@ export interface ApiSermonDetail extends ApiSermonListItem {
   files: ApiSermonFile[];
   transcript_available: boolean;
   transcript_length: number;
+  sermonaudio_id: string | null;
+  upload_date: string | null;
+  upload_status: string | null;
+  bible_text: string | null;
+  scripture_reference: string | null;
 }
 
 export interface SermonDetailsPatch {

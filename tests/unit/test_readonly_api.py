@@ -195,6 +195,35 @@ def test_sermon_detail_flags(client: TestClient) -> None:
     assert plain["transcript_length"] == 0
 
 
+def test_sermon_detail_publication_fields(client: TestClient, fixture_db: str) -> None:
+    conn = sqlite3.connect(fixture_db)
+    conn.execute(
+        "INSERT INTO upload_info (sermon_id, sermonaudio_id, upload_date, upload_status)"
+        " VALUES (?, ?, ?, ?)",
+        ("s-01", "SA-9001", "2026-09-07 08:30:00", "success"),
+    )
+    conn.execute(
+        "UPDATE sermons SET bible_text = ?, scripture_reference = ? WHERE id = 's-01'",
+        ("A placeholder passage.", "Sample 1:1"),
+    )
+    conn.commit()
+    conn.close()
+
+    body = client.get("/api/sermons/s-01").json()
+    assert body["sermonaudio_id"] == "SA-9001"
+    assert body["upload_date"] == "2026-09-07 08:30:00"
+    assert body["upload_status"] == "success"
+    assert body["bible_text"] == "A placeholder passage."
+    assert body["scripture_reference"] == "Sample 1:1"
+
+    plain = client.get("/api/sermons/s-02").json()
+    assert plain["sermonaudio_id"] is None
+    assert plain["upload_date"] is None
+    assert plain["upload_status"] is None
+    assert plain["bible_text"] is None
+    assert plain["scripture_reference"] is None
+
+
 def test_sermon_detail_404(client: TestClient) -> None:
     assert client.get("/api/sermons/nope").status_code == 404
 

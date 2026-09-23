@@ -197,6 +197,11 @@ export interface SermonDetailData {
   files: { file_type: string; file_path: string; file_size: number | null }[];
   transcriptAvailable: boolean;
   transcriptLength: number;
+  sermonaudioId: string | null;
+  uploadedAt: string | null;
+  uploadStatus: string | null;
+  bibleText: string | null;
+  scriptureReference: string | null;
 }
 
 export function useSermonDetail(id: string | undefined) {
@@ -211,7 +216,19 @@ export function useSermonDetail(id: string | undefined) {
   if (!isLive) {
     return {
       data: mockSermon
-        ? ({ sermon: mockSermon, description: null, descriptionNeedsReview: false, files: [], transcriptAvailable: false, transcriptLength: 0 } as SermonDetailData)
+        ? ({
+            sermon: mockSermon,
+            description: null,
+            descriptionNeedsReview: false,
+            files: [],
+            transcriptAvailable: false,
+            transcriptLength: 0,
+            sermonaudioId: null,
+            uploadedAt: null,
+            uploadStatus: null,
+            bibleText: null,
+            scriptureReference: null,
+          } as SermonDetailData)
         : null,
       isLoading: false,
       error: null as string | null,
@@ -227,6 +244,11 @@ export function useSermonDetail(id: string | undefined) {
           files: live.data.files,
           transcriptAvailable: live.data.transcript_available,
           transcriptLength: live.data.transcript_length,
+          sermonaudioId: live.data.sermonaudio_id,
+          uploadedAt: live.data.upload_date,
+          uploadStatus: live.data.upload_status,
+          bibleText: live.data.bible_text,
+          scriptureReference: live.data.scripture_reference,
         } as SermonDetailData)
       : null,
     isLoading: live.isPending,
