@@ -108,17 +108,27 @@ def _candidate_is_full_length(path: str | Path, reference_duration: float | None
 def config_enhancement_enabled(config: dict[str, Any] | None) -> bool:
     """Whether app settings ask for audio enhancement.
 
-    ``metadata_processing.process_audio`` is the pipeline's boolean switch and
-    ``audio_enhancement_method == "none"`` is the console's way of saying the
-    same. Absent settings mean enhancement is on, the pipeline default, so an
-    apply never reads silence as "skip".
+    ``audio_enhancement_method == "none"`` means skip, and it wins over the
+    legacy ``metadata_processing.process_audio`` boolean, matching the fresh-run
+    path where the method also decides. When the two disagree the log names the
+    winner once per resolution. Absent settings mean enhancement is on, the
+    pipeline default, so an apply never reads silence as "skip".
     """
     cfg = config or {}
+    method = cfg.get("audio_enhancement_method")
+    none_method = isinstance(method, str) and method.strip().lower() == "none"
     metadata = cfg.get("metadata_processing")
     if isinstance(metadata, dict) and "process_audio" in metadata:
-        return bool(metadata.get("process_audio"))
-    method = cfg.get("audio_enhancement_method")
-    if isinstance(method, str) and method.strip().lower() == "none":
+        legacy = bool(metadata.get("process_audio"))
+        if none_method:
+            if legacy:
+                logger.info(
+                    "Apply settings: audio_enhancement_method=none wins over legacy "
+                    "metadata_processing.process_audio=true; audio enhancement is skipped"
+                )
+            return False
+        return legacy
+    if none_method:
         return False
     return True
 
