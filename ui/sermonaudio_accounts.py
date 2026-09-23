@@ -76,7 +76,9 @@ def _deobfuscate(stored: object) -> str:
         return ""
 
 
-def _open(path: str) -> sqlite3.Connection:
+def _open(path: str) -> sqlite3.Connection | None:
+    if not os.path.exists(path):
+        return None
     conn = sqlite3.connect(path, timeout=30.0)
     conn.row_factory = sqlite3.Row
     return conn
@@ -128,10 +130,8 @@ def user_connection(
     """The usable account a user owns, or None when they have none."""
     if not user_id:
         return None
-    try:
-        conn = _open(path or db_path())
-    except sqlite3.Error as exc:
-        logger.warning("Could not open settings database for SermonAudio lookup: %s", exc)
+    conn = _open(path or db_path())
+    if conn is None:
         return None
     try:
         blob = _blob_for_user(conn, user_id)
@@ -146,10 +146,8 @@ def user_connection(
 
 def any_user_connection(path: str | None = None) -> bool:
     """True when any user has stored at least one SermonAudio account."""
-    try:
-        conn = _open(path or db_path())
-    except sqlite3.Error as exc:
-        logger.warning("Could not open settings database for SermonAudio lookup: %s", exc)
+    conn = _open(path or db_path())
+    if conn is None:
         return False
     try:
         rows = conn.execute(

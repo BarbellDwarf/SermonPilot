@@ -153,3 +153,18 @@ def test_describe_reports_the_refusal_message_without_an_account(
 
     assert view["configured"] is False
     assert view["message"] == sa.CONNECT_ACCOUNT_MESSAGE
+
+
+def test_missing_database_falls_back_without_creating_a_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    missing = tmp_path / "absent.db"
+    fallback = sa.SermonAudioConnection(
+        api_key="bootstrap-key", broadcaster_id="bootstrap", source="db"
+    )
+    monkeypatch.setattr(sa, "bootstrap_connection", lambda: fallback)
+
+    resolved = sa.resolve_connection("u-a", str(missing))
+
+    assert resolved.api_key == "bootstrap-key"
+    assert not missing.exists()
