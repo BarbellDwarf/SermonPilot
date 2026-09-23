@@ -4040,7 +4040,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 pass  # Ignore cleanup errors
 
 
-def publish_dry_run_sermon(dry_run_id: str, publish: bool = True) -> dict[str, Any]:
+def publish_dry_run_sermon(
+    dry_run_id: str, publish: bool = True, upload_path: str | None = None
+) -> dict[str, Any]:
     """Publish a locally-saved dry run sermon to SermonAudio.
 
     Creates a new sermon via the SermonAudio API using the dry run's stored
@@ -4049,6 +4051,11 @@ def publish_dry_run_sermon(dry_run_id: str, publish: bool = True) -> dict[str, A
 
     Args:
         dry_run_id: The local dry run sermon ID (e.g. ``draft_<speaker>_<date>_<title>``).
+        publish: Whether to publish the remote sermon after the media upload.
+        upload_path: Optional explicit media file to upload instead of the
+            path stored on the sermon row. The upload-only flow resolves the
+            stored render and passes it here so the exact file it inspected is
+            the file that is uploaded.
 
     Returns:
         Dict with keys: ``success``, ``sermon_id`` (new), ``error``.
@@ -4085,7 +4092,13 @@ def publish_dry_run_sermon(dry_run_id: str, publish: bool = True) -> dict[str, A
 
         file_paths = sermon_data.get('file_paths', {}) or {}
         audio_path_str = file_paths.get('audio', '') or ''
-        if not audio_path_str or not Path(audio_path_str).exists():
+        explicit_upload_path = str(upload_path) if upload_path else ''
+        if explicit_upload_path:
+            if not Path(explicit_upload_path).exists():
+                result['error'] = f"Audio file not found: {explicit_upload_path}"
+                return result
+            audio_path_str = explicit_upload_path
+        elif not audio_path_str or not Path(audio_path_str).exists():
             # Fall back to looking in processed_sermons/{speaker}/{series}/{title}/ directory
             output_root = Path(config.get('output_directory', 'processed_sermons'))
             if not output_root.is_absolute():
@@ -4148,37 +4161,45 @@ def publish_dry_run_sermon(dry_run_id: str, publish: bool = True) -> dict[str, A
         if series_id is not None:
             set_sermon_series(new_sermon_id, series_id)
 
-        # Determine upload type from metadata.json (stored during dry run)
+        # Determine upload type from metadata.json (stored during dry run). An
+        # explicit upload_path keeps the exact resolved render; metadata only
+        # decides audio vs video here.
         upload_type = "original-audio"
-        upload_path = Path(audio_path_str)
+        resolved_upload_path = Path(audio_path_str)
         metadata_path_str = file_paths.get('metadata', '')
         if metadata_path_str and Path(metadata_path_str).exists():
             import json as _json
             try:
                 with open(metadata_path_str) as _f:
                     meta = _json.load(_f)
-                if meta.get('is_video') and meta.get('upload_type') == 'original-video':
+                meta_upload_type = meta.get('upload_type')
+                if meta_upload_type == 'original-video' or (
+                    meta.get('is_video') and meta_upload_type == 'original-video'
+                ):
                     upload_type = "original-video"
-                    processed = meta.get('processed_file')
-                    if processed and Path(processed).exists():
-                        upload_path = Path(processed)
-                elif meta.get('upload_type') == 'original-video':
-                    upload_type = "original-video"
-                    original = meta.get('original_file')
-                    if original and Path(original).exists():
-                        upload_path = Path(original)
-                    else:
-                        processed = meta.get('processed_file')
-                        if processed and Path(processed).exists():
-                            upload_path = Path(processed)
                 elif is_video_file(audio_path_str):
                     upload_type = "original-video"
+                if not explicit_upload_path:
+                    if meta.get('is_video') and meta_upload_type == 'original-video':
+                        processed = meta.get('processed_file')
+                        if processed and Path(processed).exists():
+                            resolved_upload_path = Path(processed)
+                    elif meta_upload_type == 'original-video':
+                        original = meta.get('original_file')
+                        if original and Path(original).exists():
+                            resolved_upload_path = Path(original)
+                        else:
+                            processed = meta.get('processed_file')
+                            if processed and Path(processed).exists():
+                                resolved_upload_path = Path(processed)
             except Exception:
                 pass
 
         media_label = "video" if upload_type == "original-video" else "audio"
         console_print(f"Uploading {media_label}...")
-        upload_success = upload_media_file(new_sermon_id, str(upload_path), upload_type)
+        upload_success = upload_media_file(
+            new_sermon_id, str(resolved_upload_path), upload_type
+        )
 
         if upload_success:
             console_print(f"{media_label.capitalize()} uploaded successfully")
@@ -4191,7 +4212,7 @@ def publish_dry_run_sermon(dry_run_id: str, publish: bool = True) -> dict[str, A
         # in a single transaction so a failure cannot leave duplicates or neither
         duration = sermon_data.get('duration', 0)
         new_file_paths = {
-            'audio': str(upload_path),
+            'audio': str(resolved_upload_path),
             'metadata': str(file_paths.get('metadata', '')),
         }
         try:

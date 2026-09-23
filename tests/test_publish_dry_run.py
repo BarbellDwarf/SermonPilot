@@ -9,6 +9,7 @@ from __future__ import annotations
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import Mock
 
 import sermon_updater as su
 
@@ -212,3 +213,45 @@ def test_publish_dry_run_sermon_missing_audio_returns_error(tmp_path: Path, monk
 
     assert result["success"] is False
     assert "not found" in result["error"]
+
+
+def test_publish_dry_run_uploads_the_explicit_path_without_rendering(
+    tmp_path: Path, monkeypatch
+) -> None:
+    render_file = tmp_path / "Teaching - Processed.mp3"
+    render_file.write_bytes(b"rendered bytes")
+    stored_file = tmp_path / "stored.mp3"
+    stored_file.write_bytes(b"stored bytes")
+
+    import ui.database as db
+
+    fake_repo = _fake_repo(stored_file)
+    fake_repo.db.conn.execute(
+        "INSERT INTO sermons (id, title, status) VALUES (?, ?, ?)",
+        ("draft_test", "Test Title", "draft"),
+    )
+    fake_repo.db.conn.commit()
+    monkeypatch.setattr(db, "SermonRepository", lambda: fake_repo)
+    monkeypatch.setattr(su, "config", {"output_directory": str(tmp_path / "output")})
+    monkeypatch.setattr(su, "resolve_speaker_id", lambda name: None)
+    monkeypatch.setattr(su, "create_new_sermon_api", lambda **kwargs: "12345")
+    monkeypatch.setattr(su, "find_sermon_dir", lambda *args, **kwargs: None)
+
+    uploaded: dict = {}
+
+    def fake_upload(sermon_id, path, upload_type):
+        uploaded["path"] = path
+        return True
+
+    monkeypatch.setattr(su, "upload_media_file", fake_upload)
+    process = Mock(side_effect=AssertionError("render must not run"))
+    detect = Mock(side_effect=AssertionError("cut detection must not run"))
+    monkeypatch.setattr(su, "process_new_sermon", process)
+    monkeypatch.setattr(su, "detect_cut_points", detect)
+
+    result = su.publish_dry_run_sermon("draft_test", upload_path=str(render_file))
+
+    assert result["success"] is True
+    assert uploaded["path"] == str(render_file)
+    process.assert_not_called()
+    detect.assert_not_called()
