@@ -249,9 +249,9 @@ def _sermon_owner(sermon_id: str) -> str | None:
 
 
 def _queue():
-    from ui.job_queue import get_job_queue
+    from ui.job_queue import get_submit_job_queue
 
-    return get_job_queue()
+    return get_submit_job_queue()
 
 
 def _sermon_label_fields(sermon_id: str) -> dict[str, Any]:
