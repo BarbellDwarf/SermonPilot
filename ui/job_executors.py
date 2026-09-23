@@ -625,6 +625,53 @@ def _log_job_llm_source(
         )
 
 
+def _scope_sermonaudio_to_user(config: dict, user_id: str | None) -> dict:
+    """Bind SermonAudio credentials to the job owner's own account.
+
+    A job with no owner keeps the resolved global fallback (legacy and
+    Streamlit jobs). A job with an owner gets that owner's account, or an
+    explicit empty credential when they have none, so a publish fails with a
+    connect-your-account message instead of borrowing another user's account.
+    The marker records the source for diagnostics and never carries a key.
+    """
+    if not user_id:
+        return config
+    from ui.sermonaudio_accounts import resolve_connection
+
+    connection = resolve_connection(user_id)
+    scoped = dict(config)
+    scoped["api_key"] = connection.api_key if connection.usable else ""
+    scoped["broadcaster_id"] = connection.broadcaster_id if connection.usable else ""
+    scoped["sermonaudio_connection"] = {
+        "configured": connection.usable,
+        "source": connection.source,
+        "account_id": connection.account_id,
+        "account_name": connection.account_name,
+    }
+    return scoped
+
+
+def sermonaudio_refusal(job: Job) -> JobResult | None:
+    """A failed result when the job owner has no SermonAudio account.
+
+    Jobs without an owner keep the global fallback. Callers invoke this only
+    on paths that actually publish, so a dry run or a local render is never
+    blocked by a missing account.
+    """
+    user_id = _job_user_id(job)
+    if not user_id:
+        return None
+    from ui.sermonaudio_accounts import CONNECT_ACCOUNT_MESSAGE, resolve_connection
+
+    if resolve_connection(user_id).usable:
+        return None
+    return JobResult(
+        success=False,
+        message=CONNECT_ACCOUNT_MESSAGE,
+        error=CONNECT_ACCOUNT_MESSAGE,
+    )
+
+
 def resolve_job_config(job: Job) -> dict[str, Any]:
     """Effective config for a job: the resolved app config with job values on top.
 
@@ -632,6 +679,8 @@ def resolve_job_config(job: Job) -> dict[str, Any]:
     the UI can carry a stale one, so the executor resolves the application
     configuration itself (file + database + env) and merges the job's config
     over it. A job-provided value always wins; resolved values fill the gaps.
+    The SermonAudio credentials are then rebound to the job owner's own
+    account, so a job can never publish as another user.
     """
     parameters = job.parameters or {}
     raw_job_config = parameters.get('config')
@@ -644,6 +693,7 @@ def resolve_job_config(job: Job) -> dict[str, Any]:
     except Exception as exc:
         logger.warning("Could not resolve app config for job %s: %s", job.id, exc)
     effective_config = _merge_config_layers(resolved_config, job_config)
+    effective_config = _scope_sermonaudio_to_user(effective_config, _job_user_id(job))
     _log_job_llm_source(job, job_config, resolved_config, effective_config)
     return effective_config
 
@@ -929,6 +979,11 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
         job.update_progress(5, "Initializing sermon processing...")
 
         form_data = job.parameters.get('form_data') or {}
+        if not bool(form_data.get('dry_run', False)) and bool(form_data.get('publish', True)):
+            refusal = sermonaudio_refusal(job)
+            if refusal is not None:
+                job.add_log(refusal.error or "")
+                return refusal
         config = resolve_job_config(job)
         output_override = job.parameters.get('output_dir')
         cloud_output: str | None = None
@@ -1543,6 +1598,10 @@ def execute_metadata_update_job(job: Job) -> JobResult:
     try:
         sermon_ids = job.parameters.get('sermon_ids', [])
         actions = job.parameters.get('actions', {})
+        refusal = sermonaudio_refusal(job)
+        if refusal is not None:
+            job.add_log(refusal.error or "")
+            return refusal
         config = resolve_job_config(job)
 
         if not sermon_ids:
@@ -1683,6 +1742,11 @@ def execute_auto_edit_apply_job(job: Job) -> JobResult:
         logo_path = job.parameters.get('logo_path')
         re_edit = bool(job.parameters.get('re_edit', False))
         form_data = job.parameters.get('form_data') or {}
+        if not bool(form_data.get('dry_run', False)):
+            refusal = sermonaudio_refusal(job)
+            if refusal is not None:
+                job.add_log(refusal.error or "")
+                return refusal
         config = resolve_job_config(job)
         audio_file = job.parameters.get('audio_file') or form_data.get('audio_file')
 
@@ -1990,6 +2054,11 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
         render_only = bool(params.get("render_only", False))
         re_detect = bool(params.get("re_detect", False))
         plan_id = params.get("plan_id")
+        if not render_only:
+            refusal = sermonaudio_refusal(job)
+            if refusal is not None:
+                job.add_log(refusal.error or "")
+                return refusal
         config = resolve_job_config(job)
         actions = dict(params.get("actions") or {})
         if params.get("enhance_audio") is not None:
@@ -2154,6 +2223,10 @@ def execute_sermon_publish_job(job: Job) -> JobResult:
                 message="Missing sermon_id for publish",
                 error="Missing sermon_id in job parameters",
             )
+        refusal = sermonaudio_refusal(job)
+        if refusal is not None:
+            job.add_log(refusal.error or "")
+            return refusal
         if job.parameters.get("upload_only"):
             return _execute_upload_existing(job, str(sermon_id))
         job.update_progress(10, f"Publishing {sermon_id} to SermonAudio...")
