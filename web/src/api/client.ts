@@ -448,7 +448,7 @@ export const backupApi = {
 };
 
 export const writeApi = {
-  applyPlan: (id: string, body: { start: number; end: number; audio_offset: number; render_only: boolean; re_detect?: boolean }) =>
+  applyPlan: (id: string, body: { start: number; end: number; audio_offset: number; render_only: boolean; re_detect?: boolean; enhance_audio?: boolean }) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/plan/apply`, "POST", body),
   refinePlan: (id: string, notes: string) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/plan/refine`, "POST", { notes }),

@@ -2072,7 +2072,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       publish: bool = True,
                       existing_sermon_id: str | None = None,
                       reuse_transcript: str | None = None,
-                      reuse_transcript_segments: list | None = None) -> dict:
+                      reuse_transcript_segments: list | None = None,
+                      keeper_prepared: bool = False,
+                      enhanced_audio_file: str | None = None,
+                      require_enhancement: bool = False) -> dict:
     """Process a new sermon from audio file with automatic metadata generation.
 
     Args:
@@ -2102,6 +2105,13 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             is a valid retained transcript.
         reuse_transcript_segments: Timestamped segments for the reused
             transcript, persisted alongside it.
+        keeper_prepared: True when ``audio_file`` is already the retained
+            keeper, so the keeper transcode is skipped without touching the
+            enhancement decision.
+        enhanced_audio_file: A retained, full-length enhancement to reuse
+            instead of running the enhancer. Used only when it exists.
+        require_enhancement: When True an enhancement run that fails is a
+            hard error, not a silent fallback to the un-enhanced source.
 
     Returns:
         Dict with keys: success, sermon_id, title, description, hashtags,
@@ -2193,12 +2203,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
     if input_is_video:
         keeper_cfg = config.get('auto_edit', {}).get('keeper', {})
-        if skip_audio:
+        if skip_audio or keeper_prepared:
             console_print(
                 "⏭️ Keeper skipped for apply render "
-                "(source is already a processed artifact)"
+                "(source is already the prepared keeper)"
             )
-            logger.info("Keeper transcode skipped: skip_audio/apply flow")
+            logger.info("Keeper transcode skipped: apply render source is prepared")
         elif bool(keeper_cfg.get('enabled', True)):
             min_source_gb = float(keeper_cfg.get('min_source_gb', 2.0))
             keeper_root = Path(config.get('output_directory', 'processed_sermons'))
@@ -2272,13 +2282,28 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
     from ui.config_utils import default_cache_root
 
     try:
-        # Step 1: Process the audio (or skip if requested)
-        if skip_audio:
-            console_print("Skipping audio enhancement (--skip-audio enabled)")
-            logger.info("Skipping audio enhancement per user request")
+        # Step 1: reuse a retained enhancement, run the enhancer, or skip.
+        reused_enhancement = False
+        if enhanced_audio_file:
+            reuse_candidate = Path(enhanced_audio_file)
+            if reuse_candidate.exists():
+                enhanced_audio_path = reuse_candidate
+                reused_enhancement = True
+                console_print(
+                    f"Reusing retained audio enhancement ({reuse_candidate.name})"
+                )
+                logger.info("Reusing retained audio enhancement %s", reuse_candidate)
+                _report(
+                    20,
+                    f"Reusing retained enhancement ({reuse_candidate.name}, full length)",
+                )
+
+        if not reused_enhancement and skip_audio and not require_enhancement:
+            console_print("Skipping audio enhancement (not requested)")
+            logger.info("Skipping audio enhancement (not requested)")
             _report(20, "Skipping audio enhancement (using file as-is)")
             enhanced_audio_path = audio_path
-        else:
+        elif not reused_enhancement:
             console_print("Processing audio...")
             _report(10, "Initializing audio processor...")
             if audio_processor_available:
@@ -2332,6 +2357,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     str(enhanced_audio_path)
                 )
                 if not success or not enhanced_audio_path.exists():
+                    if require_enhancement:
+                        logger.error(
+                            "Audio enhancement failed for a render that required it"
+                        )
+                        result['error'] = "Audio enhancement failed"
+                        return result
                     logger.warning("Audio processing failed, using original file")
                     _report(20, "Audio processing failed, falling back to original")
                     enhanced_audio_path = audio_path
@@ -2344,6 +2375,14 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 except Exception:
                     pass
             else:
+                if require_enhancement:
+                    logger.error(
+                        "Audio enhancement required but AudioProcessor is unavailable"
+                    )
+                    result['error'] = (
+                        "Audio enhancement required but AudioProcessor is unavailable"
+                    )
+                    return result
                 logger.warning("AudioProcessor unavailable, skipping enhancement")
                 enhanced_audio_path = audio_path
 
@@ -2878,6 +2917,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'status': status,
                 'source_path': source_path,
                 'notes': notes,
+                'actions': {
+                    'enhance_audio': bool(enhanced_audio_file)
+                    or enhanced_audio_path != audio_path,
+                },
             })
 
         if auto_edit_mode is not None:

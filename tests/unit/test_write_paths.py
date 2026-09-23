@@ -81,6 +81,40 @@ def test_apply_queues_job_with_attribution_and_guard(client, scoped_setup, monke
     assert foreign.status_code == 404
 
 
+def test_apply_request_carries_enhance_audio_to_job_parameters(
+    client, scoped_setup, monkeypatch
+):
+    s = scoped_setup
+    import ui.database as dbmod
+
+    created = client.post(
+        "/api/sermons",
+        json={"title": "Enhance Me", "speaker": "S", "recorded_date": "2026-09-13"},
+        headers=s["a"]["headers"],
+    ).json()
+    sid = created["id"]
+
+    monkeypatch.setattr(dbmod, "_db", None)
+    monkeypatch.setenv("DATABASE_URL", get_db_path())
+    monkeypatch.setattr("ui.job_queue.JobQueue._resources_available", lambda self: False)
+
+    r = client.post(
+        f"/api/sermons/{sid}/plan/apply",
+        json={"start": 10.0, "end": 20.0, "render_only": True, "enhance_audio": False},
+        headers=s["a"]["headers"],
+    )
+    assert r.status_code == 202, r.text
+    job_id = r.json()["job_id"]
+
+    conn = sqlite3.connect(get_db_path())
+    row = conn.execute(
+        "SELECT parameters FROM background_jobs WHERE id = ?", (job_id,)
+    ).fetchone()
+    conn.close()
+    params = json.loads(row[0])
+    assert params["enhance_audio"] is False
+
+
 def _insert_completed_apply(sermon_id: str, user_id: str, completed_at: datetime) -> str:
     conn = sqlite3.connect(get_db_path())
     conn.execute(
