@@ -63,13 +63,14 @@ def _repo_with_sermon(tmp_path: Path) -> tuple[SermonRepository, str, int, str]:
     return repo, sermon_id, plan_id, str(media)
 
 
-def _apply_job(sermon_id: str, plan_id: int, revision: int) -> Job:
+def _apply_job(sermon_id: str, plan_id: int, revision: int, enhance_audio=None) -> Job:
     try:
         import auto_edit_apply as core
     except ImportError:
         from ui import auto_edit_apply as core
     params = core.build_apply_job_params(
-        sermon_id, plan_id, revision, 10.0, 60.0, 0.0, True, False, {}
+        sermon_id, plan_id, revision, 10.0, 60.0, 0.0, True, False, {},
+        enhance_audio=enhance_audio,
     )
     return Job(
         id="job-apply-1",
@@ -135,6 +136,60 @@ def test_executor_render_only_marks_applied_local(tmp_path, monkeypatch) -> None
     current = repo.get_current_edit_plan(sermon_id)
     assert current["status"] == "applied_local"
     assert current["applied_media_id"] == "draft_rendered_1"
+
+
+def test_executor_forwards_enhancement_off_to_the_pipeline(tmp_path, monkeypatch) -> None:
+    repo, sermon_id, plan_id, _media = _repo_with_sermon(tmp_path)
+    revision = repo.get_current_edit_plan(sermon_id)["revision"]
+    rendered = {
+        "success": True,
+        "sermon_id": "draft_rendered_1",
+        "edit_plan_status": "auto_applied",
+        "auto_edit_applied": True,
+        "error": None,
+    }
+    process = Mock(return_value=dict(rendered))
+    monkeypatch.setattr("sermon_updater.process_new_sermon", process)
+    import ui.database as db
+
+    monkeypatch.setattr(db, "SermonRepository", lambda *a, **k: repo)
+
+    from ui.job_executors import execute_library_auto_edit_apply_job
+
+    result = execute_library_auto_edit_apply_job(
+        _apply_job(sermon_id, plan_id, revision, enhance_audio=False)
+    )
+
+    assert result.success is True
+    kwargs = process.call_args.kwargs
+    assert kwargs["skip_audio"] is True
+    assert "enhanced_audio_file" not in kwargs
+
+
+def test_executor_defaults_to_settings_enhancement(tmp_path, monkeypatch) -> None:
+    repo, sermon_id, plan_id, _media = _repo_with_sermon(tmp_path)
+    revision = repo.get_current_edit_plan(sermon_id)["revision"]
+    rendered = {
+        "success": True,
+        "sermon_id": "draft_rendered_1",
+        "edit_plan_status": "auto_applied",
+        "auto_edit_applied": True,
+        "error": None,
+    }
+    process = Mock(return_value=dict(rendered))
+    monkeypatch.setattr("sermon_updater.process_new_sermon", process)
+    import ui.database as db
+
+    monkeypatch.setattr(db, "SermonRepository", lambda *a, **k: repo)
+
+    from ui.job_executors import execute_library_auto_edit_apply_job
+
+    result = execute_library_auto_edit_apply_job(_apply_job(sermon_id, plan_id, revision))
+
+    assert result.success is True
+    kwargs = process.call_args.kwargs
+    assert kwargs["skip_audio"] is False
+    assert kwargs["require_enhancement"] is True
 
 
 def test_dedupe_blocks_second_enqueue_for_same_revision(tmp_path) -> None:

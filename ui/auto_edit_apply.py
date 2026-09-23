@@ -80,6 +80,137 @@ def _candidate_covers_plan(path: str | Path, min_duration: float | None) -> bool
     return float(min_duration) <= float(duration) + 1.0
 
 
+def config_enhancement_enabled(config: dict[str, Any] | None) -> bool:
+    """Whether app settings ask for audio enhancement.
+
+    ``metadata_processing.process_audio`` is the pipeline's boolean switch and
+    ``audio_enhancement_method == "none"`` is the console's way of saying the
+    same. Absent settings mean enhancement is on, the pipeline default, so an
+    apply never reads silence as "skip".
+    """
+    cfg = config or {}
+    metadata = cfg.get("metadata_processing")
+    if isinstance(metadata, dict) and "process_audio" in metadata:
+        return bool(metadata.get("process_audio"))
+    method = cfg.get("audio_enhancement_method")
+    if isinstance(method, str) and method.strip().lower() == "none":
+        return False
+    return True
+
+
+def plan_enhancement(plan: dict[str, Any] | None) -> bool | None:
+    """The enhancement flag a plan recorded, or None when it recorded none."""
+    if not isinstance(plan, dict):
+        return None
+    actions = plan.get("actions")
+    if isinstance(actions, str):
+        try:
+            actions = json.loads(actions)
+        except (json.JSONDecodeError, TypeError):
+            actions = None
+    if isinstance(actions, dict) and "enhance_audio" in actions:
+        return bool(actions.get("enhance_audio"))
+    return None
+
+
+def resolve_enhancement(
+    config: dict[str, Any] | None,
+    request_value: bool | None = None,
+    plan: dict[str, Any] | None = None,
+) -> tuple[bool, str]:
+    """Resolve the enhancement action from request, then plan, then settings.
+
+    Silence is never consent to skip: when no layer states a preference the app
+    config decides, and its default is on.
+    """
+    if request_value is not None:
+        return bool(request_value), "request"
+    plan_value = plan_enhancement(plan)
+    if plan_value is not None:
+        return plan_value, "plan"
+    return config_enhancement_enabled(config), "settings"
+
+
+def enhancement_run_message(reason: str) -> str:
+    return f"Running audio enhancement (requested by {reason})"
+
+
+def enhancement_skip_message(reason: str) -> str:
+    detail = {
+        "request": "request turned it off",
+        "plan": "plan turned it off",
+        "settings": "settings have it off",
+    }.get(reason, "not requested")
+    return f"Skipping audio enhancement (not requested; {detail})"
+
+
+def _matches_apply_source(
+    enhanced_path: str | Path,
+    media_path: str | Path,
+    metadata: dict[str, Any] | None,
+) -> bool:
+    """True when a retained enhancement came from the media the apply renders."""
+    try:
+        media = Path(str(media_path)).resolve()
+    except OSError:
+        return False
+    recorded: list[Path] = []
+    if isinstance(metadata, dict):
+        for key in ("original_file", "keeper_file"):
+            value = metadata.get(key)
+            if value:
+                try:
+                    recorded.append(Path(str(value)).resolve())
+                except OSError:
+                    continue
+    if recorded:
+        return media in recorded
+    try:
+        return Path(str(enhanced_path)).resolve().parent == media.parent
+    except OSError:
+        return False
+
+
+def _enhanced_artifact_usable(
+    enhanced_path: str | None,
+    media_path: str | Path,
+    metadata: dict[str, Any] | None,
+    min_duration: float | None,
+) -> bool:
+    """A retained enhancement is reusable only if present, current and matched."""
+    if not enhanced_path:
+        return False
+    candidate = Path(str(enhanced_path))
+    try:
+        if not candidate.exists():
+            return False
+    except OSError:
+        return False
+    if not _candidate_covers_plan(candidate, min_duration):
+        return False
+    return _matches_apply_source(candidate, media_path, metadata)
+
+
+def _select_enhanced_artifact(
+    media_path: str,
+    source_is_enhanced: bool,
+    enhanced_path: str | None,
+    metadata: dict[str, Any] | None,
+    min_duration: float | None,
+) -> str | None:
+    """The enhanced material the apply can reuse, or None to run enhancement.
+
+    A processed source already carries the enhanced audio, so it counts as
+    reusable. A retained ``enhanced_file`` counts only when it exists, covers
+    the approved plan, and came from the same source.
+    """
+    if source_is_enhanced:
+        return media_path
+    if _enhanced_artifact_usable(enhanced_path, media_path, metadata, min_duration):
+        return str(enhanced_path)
+    return None
+
+
 def build_apply_job_params(
     sermon_id: str,
     plan_id: int | None,
@@ -90,6 +221,7 @@ def build_apply_job_params(
     render_only: bool = False,
     re_detect: bool = False,
     config: dict[str, Any] | None = None,
+    enhance_audio: bool | None = None,
 ) -> dict[str, Any]:
     mode = "render_only" if render_only else "upload"
     return {
@@ -103,6 +235,7 @@ def build_apply_job_params(
         "mode": mode,
         "re_detect": bool(re_detect),
         "config": config or {},
+        "enhance_audio": enhance_audio,
     }
 
 
@@ -275,6 +408,9 @@ def _build_apply_kwargs(
     stored_metadata: dict[str, Any] | None = None,
     reuse_transcript: str | None = None,
     reuse_transcript_segments: list | None = None,
+    enhanced_audio_file: str | None = None,
+    require_enhancement: bool = False,
+    keeper_prepared: bool = False,
 ) -> dict[str, Any]:
     stored = stored_metadata or {}
 
@@ -309,6 +445,12 @@ def _build_apply_kwargs(
         kwargs["existing_sermon_id"] = str(existing_sermon_id)
     if config:
         kwargs["config"] = config
+    if enhanced_audio_file:
+        kwargs["enhanced_audio_file"] = str(enhanced_audio_file)
+    if require_enhancement:
+        kwargs["require_enhancement"] = True
+    if keeper_prepared:
+        kwargs["keeper_prepared"] = True
     if reuse_transcript is not None:
         kwargs["reuse_transcript"] = reuse_transcript
         kwargs["reuse_transcript_segments"] = list(reuse_transcript_segments or [])
@@ -446,24 +588,21 @@ def _retained_transcript(
 
 def _log_reuse_lines(
     media_path: str,
-    already_enhanced: bool,
+    source_is_enhanced: bool,
     keeper_path: str | None,
     enhanced_path: str | None,
     reuse_transcript: str | None,
     stored_metadata: dict[str, Any],
 ) -> None:
     """Name every retained artifact the apply reuses, and every empty field."""
-    if already_enhanced:
+    if source_is_enhanced:
         logger.info(
-            "Apply reuses retained processed media %s; keeper transcode and "
-            "audio enhancement skipped",
+            "Apply reuses retained processed media %s; it already carries "
+            "enhanced audio",
             media_path,
         )
-    if keeper_path and not already_enhanced:
-        logger.info(
-            "Apply found retained keeper %s; audio enhancement skipped",
-            keeper_path,
-        )
+    if keeper_path:
+        logger.info("Apply found retained keeper %s", keeper_path)
     if enhanced_path:
         logger.info("Apply found retained enhanced audio %s", enhanced_path)
     if reuse_transcript is not None:
@@ -547,6 +686,18 @@ def _finalize_review_dir(review_dir: Path | None, outcome: str) -> None:
         logger.warning("Could not finalize review media %s: %s", review_dir, exc)
 
 
+def _emit_enhancement_decision(
+    progress_callback: Callable[[float, str], None] | None, message: str
+) -> None:
+    """Put the enhancement decision and its reason in the operator's log."""
+    logger.info("Apply enhancement decision: %s", message)
+    if progress_callback is not None:
+        try:
+            progress_callback(20, message)
+        except Exception:
+            pass
+
+
 def run_library_apply(
     repo: Any,
     sermon_id: str,
@@ -559,6 +710,7 @@ def run_library_apply(
     progress_callback: Callable[[float, str], None] | None = None,
     cancel_check: Callable[[], None] | None = None,
     config: dict[str, Any] | None = None,
+    enhance_audio: bool | None = None,
 ) -> dict[str, Any]:
     sermon_id = str(sermon_id or "")
     plan = _find_plan(repo, sermon_id, plan_id)
@@ -586,7 +738,9 @@ def run_library_apply(
     keeper_path = _retained_keeper(full_sermon, repo)
     enhanced_path = _retained_enhanced(full_sermon, repo)
     config = _merge_auto_edit_prefs(config, metadata)
-    media_path, already_enhanced = _resolve_apply_source(full_sermon, repo, min_duration=float(end))
+    media_path, source_is_enhanced = _resolve_apply_source(
+        full_sermon, repo, min_duration=float(end)
+    )
     if not media_path:
         if plan_file:
             Path(plan_file).unlink(missing_ok=True)
@@ -594,12 +748,14 @@ def run_library_apply(
             "success": False,
             "error": "Original media file not found locally. Cannot apply the edit.",
         }
-    if keeper_path and not already_enhanced:
+    keeper_used = False
+    if keeper_path and not source_is_enhanced:
         # The review pass already transcoded and retained the compact
-        # full-length base; apply from it instead of re-transcoding and
-        # re-enhancing the raw source.
+        # full-length base; apply from it instead of re-transcoding the raw
+        # source. The keeper is not enhanced, so it does not decide the
+        # enhancement step.
         media_path = keeper_path
-        already_enhanced = True
+        keeper_used = True
 
     if plan_file is not None:
         source_duration = _source_duration(media_path)
@@ -616,9 +772,37 @@ def run_library_apply(
                 ),
             }
 
+    enhance, reason = resolve_enhancement(config, request_value=enhance_audio, plan=plan)
+    enhanced_input = (
+        _select_enhanced_artifact(
+            media_path,
+            source_is_enhanced,
+            enhanced_path,
+            metadata,
+            float(end),
+        )
+        if enhance
+        else None
+    )
+    run_enhancement = enhance and enhanced_input is None
+    skip_audio = not run_enhancement
+    if run_enhancement:
+        _emit_enhancement_decision(
+            progress_callback, enhancement_run_message(reason)
+        )
+    elif enhance:
+        _emit_enhancement_decision(
+            progress_callback,
+            f"Reusing retained enhancement ({Path(str(enhanced_input)).name}, full length)",
+        )
+    else:
+        _emit_enhancement_decision(
+            progress_callback, enhancement_skip_message(reason)
+        )
+
     _log_reuse_lines(
         media_path,
-        already_enhanced,
+        source_is_enhanced,
         keeper_path,
         enhanced_path,
         reuse_transcript,
@@ -633,12 +817,15 @@ def run_library_apply(
         plan_file,
         bool(render_only),
         float(audio_offset or 0.0),
-        skip_audio=already_enhanced,
+        skip_audio=skip_audio,
         config=config,
         existing_sermon_id=sermon_id,
         stored_metadata=stored_metadata,
         reuse_transcript=reuse_transcript,
         reuse_transcript_segments=reuse_transcript_segments,
+        enhanced_audio_file=enhanced_input,
+        require_enhancement=run_enhancement,
+        keeper_prepared=keeper_used,
     )
     if progress_callback is not None:
         apply_kwargs["progress_callback"] = progress_callback

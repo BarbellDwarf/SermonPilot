@@ -267,6 +267,7 @@ class ApplyBody(BaseModel):
     render_only: bool = True
     re_detect: bool = False
     plan_id: str | None = None
+    enhance_audio: bool | None = None
 
 
 class RefineBody(BaseModel):
@@ -357,6 +358,7 @@ def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(r
             "render_only": body.render_only,
             "re_detect": body.re_detect,
             "plan_id": body.plan_id,
+            "enhance_audio": body.enhance_audio,
             "config": _resolved_job_config(),
         },
         user_id=user.get("id"),
