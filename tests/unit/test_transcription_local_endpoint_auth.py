@@ -20,7 +20,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src import transcription as tr  # noqa: E402
 from src.transcription import TranscriptionError  # noqa: E402
 
-_KEY_ENV_VARS = ("OPENAI_API_KEY", "WHISPER_OPENAI_API_KEY", "OPENROUTER_API_KEY")
+_KEY_ENV_VARS = ("OPENAI_API_KEY", "WHISPER_OPENAI_API_KEY")
 
 
 class _FakeResponse:

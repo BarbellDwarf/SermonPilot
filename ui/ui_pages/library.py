@@ -2558,10 +2558,10 @@ def display_sermon_details(sermon):
             )
             rp_backend = st.selectbox(
                 "Transcription Backend",
-                options=["whisper_local", "whisper_openai", "whisper_openrouter"],
+                options=["whisper_local", "whisper_openai"],
                 index=1,
                 key=f"rp_backend_{sermon['id']}",
-                help="Local Whisper (runs on your machine) or OpenAI/OpenRouter API"
+                help="Local Whisper (runs on your machine) or an OpenAI-compatible API"
             )
             rp_col1, rp_col2 = st.columns(2)
             with rp_col1:

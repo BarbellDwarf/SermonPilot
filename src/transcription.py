@@ -3,8 +3,7 @@
 Transcription abstraction layer for SermonPilot.
 Supports multiple backends:
 - whisper_local: Uses OpenAI Whisper via the `whisper` Python package.
-- whisper_openrouter: Calls OpenRouter's Whisper endpoint (compatible with OpenAI API).
-- whisper_openai: Calls OpenAI's Whisper endpoint.
+- whisper_openai: Calls an OpenAI-compatible Whisper endpoint.
 - faster_whisper_local: Uses faster-whisper (CTranslate2) for faster transcription.
 The backend is selected via the `transcription.backend` entry in the config file.
 All backends return a plain transcript string (or empty string on failure).
@@ -848,42 +847,6 @@ def _transcribe_faster_whisper_local_segments(
     return timed
 
 
-def _transcribe_openrouter(
-    audio_path: str,
-    api_key: str,
-    base_url: str,
-    model: str,
-    progress_callback=None,
-    key_path: str = "transcription.whisper_openrouter.api_key",
-    raw_api_key: Any = None,
-) -> str:
-    """Transcribe using OpenRouter's Whisper endpoint.
-
-    OpenRouter follows the OpenAI API shape: POST /audio/transcriptions.
-    A local base URL is called without auth when no usable key is resolved.
-    """
-    effective_base = base_url.rstrip("/") if base_url else "https://openrouter.ai/api/v1"
-    headers = _auth_headers(api_key, effective_base, key_path, raw_api_key)
-    files = {"file": open(audio_path, "rb")}
-    data = {"model": model}
-    try:
-        url = f"{effective_base}/audio/transcriptions"
-        logger.info("Calling OpenRouter Whisper at %s", url)
-        if progress_callback:
-            progress_callback(5, f"Uploading audio to {url}")
-        resp = requests.post(url, headers=headers, data=data, files=files, timeout=600)
-        resp.raise_for_status()
-        transcript = resp.json().get("text", "").strip()
-        if progress_callback:
-            progress_callback(90, "Transcription received")
-        logger.info("OpenRouter transcription succeeded (%d characters)", len(transcript))
-        return transcript
-    except requests.RequestException as e:
-        raise TranscriptionError(f"OpenRouter transcription failed: {e}") from e
-    finally:
-        files["file"].close()
-
-
 def _parse_verbose_json_segments(resp: requests.Response) -> list[dict[str, float | str]]:
     """Extract timed segments from a verbose_json transcription response."""
     try:
@@ -1074,24 +1037,6 @@ def transcribe(
         return _transcribe_faster_whisper_local(
             audio_path, model, device_pref, compute_type=compute_type, language=language
         )
-    elif backend == "whisper_openrouter":
-        or_cfg = transcription_cfg.get("whisper_openrouter", {})
-        cfg_key = or_cfg.get("api_key", "")
-        api_key = _resolve_transcription_api_key("OPENROUTER_API_KEY", cfg_key)
-        base_url = or_cfg.get("base_url", "https://openrouter.ai/api/v1")
-        model = (
-            model_size
-            if _is_cloud_model_override(model_size)
-            else or_cfg.get("model", "openai/whisper-large-v3")
-        )
-        return _transcribe_openrouter(
-            audio_path,
-            api_key,
-            base_url,
-            model,
-            progress_callback=progress_callback,
-            raw_api_key=cfg_key,
-        )
     elif backend == "whisper_openai":
         oi_cfg = transcription_cfg.get("whisper_openai", {})
         cfg_key = oi_cfg.get("api_key", "")
@@ -1180,8 +1125,6 @@ def transcribe_segments(
                 cancel_check=cancel_check,
             )
         )
-    elif backend == "whisper_openrouter":
-        return []
     elif backend == "whisper_openai":
         oi_cfg = transcription_cfg.get("whisper_openai", {})
         cfg_key = oi_cfg.get("api_key", "")

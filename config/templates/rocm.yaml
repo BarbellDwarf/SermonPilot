@@ -138,9 +138,5 @@ transcription:
     model: base  # Options: tiny, base, small, medium, large
   whisper_openai:
     api_key: ${OPENAI_API_KEY}  # OpenAI API key
-    base_url: https://api.openai.com/v1  # OpenAI API base URL
+    base_url: https://api.openai.com/v1  # OpenAI-compatible API base URL
     model: whisper-1  # Options: whisper-1
-  whisper_openrouter:
-    api_key: ${OPENROUTER_API_KEY}  # OpenRouter API key
-    base_url: https://openrouter.ai/api/v1  # OpenRouter API base URL
-    model: openai/whisper-large-v3  # Options: openai/whisper-large-v3, etc.

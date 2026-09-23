@@ -1897,7 +1897,6 @@ def _resolve_api_language_code(cfg: dict | None) -> str:
             'whisper_local',
             'faster_whisper_local',
             'whisper_openai',
-            'whisper_openrouter',
         ):
             lang = (trans_cfg.get(section) or {}).get('language')
             if lang:

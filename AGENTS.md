@@ -104,7 +104,7 @@ Line numbers verified against `release/v1.6.2` (08a324f).
 - **Push dual behavior:** `push_sermon_metadata_to_api()` in `library.py:51` detects `status == 'draft'` -> calls `publish_dry_run_sermon()` to create+upload on SermonAudio; `status == 'error'` re-uploads local media; otherwise updates existing sermon metadata
 - **Auto-refresh in Jobs:** the Active tab in `ui/ui_pages/jobs.py` renders inside an `@st.fragment(run_every=2.0)` (`_render_active_tab`, line 137), so running/queued job lists update without a full page rerun; the sidebar "Refresh" button calls `st.rerun()`
 - **Transcript fallback:** `generate_ai_content()` in `library.py:158` tries the SermonAudio transcript first via `sermon_updater.get_sermon_transcript()`, falls back to the local transcript
-- **Transcription backends:** `transcription.py` supports whisper-local (`whisper_local`, the code default), faster-whisper (`faster_whisper_local`, CTranslate2), and OpenAI / OpenRouter cloud backends; device detection (`_detect_device`) maps AMD ROCm to `cuda` for torch-based whisper but passes `allow_rocm=False` for faster-whisper because CTranslate2 has no ROCm support, so it lands on CPU
+- **Transcription backends:** `transcription.py` supports whisper-local (`whisper_local`, the code default), faster-whisper (`faster_whisper_local`, CTranslate2), and an OpenAI-compatible cloud backend (`whisper_openai`); device detection (`_detect_device`) maps AMD ROCm to `cuda` for torch-based whisper but passes `allow_rocm=False` for faster-whisper because CTranslate2 has no ROCm support, so it lands on CPU
 
 ## Versioning & Release Process
 

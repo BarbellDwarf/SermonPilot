@@ -124,7 +124,7 @@ metadata_processing:
 # Both local backends run on the GPU with float16 compute; the code
 # falls back to CPU automatically when torch cannot see a CUDA device.
 transcription:
-  backend: faster_whisper_local  # Options: whisper_local, faster_whisper_local, whisper_openai, whisper_openrouter
+  backend: faster_whisper_local  # Options: whisper_local, faster_whisper_local, whisper_openai
   whisper_local:
     device: cuda  # NVIDIA GPU; "auto" resolves to the same target when a GPU is present
     language: en  # Language code (en, es, fr, etc.) or None for auto-detection
@@ -136,9 +136,5 @@ transcription:
     model: base  # Options: tiny, base, small, medium, large
   whisper_openai:
     api_key: ${OPENAI_API_KEY}  # OpenAI API key
-    base_url: https://api.openai.com/v1  # OpenAI API base URL
+    base_url: https://api.openai.com/v1  # OpenAI-compatible API base URL
     model: whisper-1  # Options: whisper-1
-  whisper_openrouter:
-    api_key: ${OPENROUTER_API_KEY}  # OpenRouter API key
-    base_url: https://openrouter.ai/api/v1  # OpenRouter API base URL
-    model: openai/whisper-large-v3  # Options: openai/whisper-large-v3, etc.

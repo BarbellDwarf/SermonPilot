@@ -11,9 +11,8 @@ UI:
 2. **`src/audio_processing.py`** - Audio enhancement. Supports DeepFilterNet
    (PyTorch) and Clear (ONNX, desert-ant-labs) models, plus custom Clear
    models and no enhancement.
-3. **`src/transcription.py`** - Whisper transcription with four backends:
-   `whisper_local`, `faster_whisper_local`, `whisper_openai`,
-   `whisper_openrouter`.
+3. **`src/transcription.py`** - Whisper transcription with three backends:
+   `whisper_local`, `faster_whisper_local`, `whisper_openai`.
 4. **`src/llm_manager.py`** - Multi-provider LLM abstraction (Ollama,
    OpenAI-compatible, Anthropic, xAI, Google, Groq, OpenRouter) with
    primary/fallback/validator providers.
@@ -183,8 +182,8 @@ setup examples.
 
 `transcription.backend` values: `whisper_local` (OpenAI Whisper package),
 `faster_whisper_local` (faster-whisper, CTranslate2), `whisper_openai`
-(OpenAI API), `whisper_openrouter` (OpenRouter API). Local backends accept
-`model`, `device`, `compute_type`, and `language` sub-keys.
+(OpenAI-compatible API). Local backends accept `model`, `device`,
+`compute_type`, and `language` sub-keys.
 
 ### File Structure Conventions
 

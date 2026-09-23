@@ -251,21 +251,17 @@ def _show_processing_section():
         if transcribe:
             transcription_backend_label = st.radio(
                 "Backend", key="transcription_backend_radio",
-                options=["Faster Whisper (Local)", "OpenAI Whisper API", "OpenRouter Whisper API"],
+                options=["Faster Whisper (Local)", "OpenAI Whisper API"],
                 index=0, horizontal=True,
-                help="Faster Whisper (local, CTranslate2), OpenAI API, or OpenRouter API"
+                help="Faster Whisper (local, CTranslate2) or an OpenAI-compatible API"
             )
             if transcription_backend_label == "Faster Whisper (Local)":
                 transcription_backend = "faster_whisper_local"
-            elif transcription_backend_label == "OpenAI Whisper API":
-                transcription_backend = "whisper_openai"
             else:
-                transcription_backend = "whisper_openrouter"
+                transcription_backend = "whisper_openai"
             st.session_state.selected_backend = transcription_backend
             if transcription_backend == "whisper_openai":
                 _show_openai_whisper_ui()
-            elif transcription_backend == "whisper_openrouter":
-                _show_openrouter_whisper_ui()
             else:
                 st.selectbox(
                     "Model", key="whisper_model_local",
@@ -457,19 +453,6 @@ def _show_openai_whisper_ui():
         st.session_state.setdefault('whisper_model_openai', 'whisper-1')
         st.text_input("Model", key="whisper_model_openai",
                       help="Model name (e.g. whisper-1, openai/whisper-large-v3)")
-
-
-def _show_openrouter_whisper_ui():
-    config = st.session_state.get('config', {})
-    or_cfg = config.get('transcription', {}).get('whisper_openrouter', {})
-    api_key = or_cfg.get('api_key', '') or os.environ.get('OPENROUTER_API_KEY', '')
-    if not api_key:
-        st.warning("OpenRouter API key not configured. Set OPENROUTER_API_KEY in .env or config.")
-    st.session_state.setdefault(
-        'whisper_model_openrouter', or_cfg.get('model', 'openai/whisper-large-v3')
-    )
-    st.text_input("Model", key="whisper_model_openrouter",
-                  help="Model name (e.g. openai/whisper-large-v3)")
 
 
 def _show_start_section():
@@ -707,10 +690,6 @@ def start_enhanced_processing():
         backend = st.session_state.get('selected_backend', 'faster_whisper_local')
         if backend == 'whisper_openai':
             whisper_model = st.session_state.get('whisper_model_openai', 'whisper-1')
-        elif backend == 'whisper_openrouter':
-            whisper_model = st.session_state.get(
-                'whisper_model_openrouter', 'openai/whisper-large-v3'
-            )
         else:
             whisper_model = st.session_state.get('whisper_model_local', 'large')
 
@@ -796,7 +775,7 @@ def reset_enhanced_form():
         'sermon_series_select', 'sermon_series_custom', 'sermon_series_id', 'sermon_series',
         'enhance_audio', 'transcribe', 'enhancement_method',
         'transcription_backend_radio', 'selected_backend',
-        'whisper_model_local', 'whisper_model_openai', 'whisper_model_openrouter',
+        'whisper_model_local', 'whisper_model_openai',
         'custom_repo', 'custom_file',
         'generate_title', 'generate_description', 'generate_hashtags',
         'validate_description', 'generate_short_title', 'dry_run', 'publish_on_complete',

@@ -57,9 +57,6 @@ SECTIONS: dict[str, dict[str, str]] = {
         "transcription.whisper_openai.base_url": "str",
         "transcription.whisper_openai.model": "str",
         "transcription.whisper_openai.api_key": "secret",
-        "transcription.whisper_openrouter.base_url": "str",
-        "transcription.whisper_openrouter.model": "str",
-        "transcription.whisper_openrouter.api_key": "secret",
     },
     "validation": {
         "metadata_processing.description.validation.enabled": "bool",

@@ -26,6 +26,7 @@ try:
         coerce_value,
         env_var_for_path,
         expand_env_value,
+        migrate_removed_transcription_backends,
     )
 except ImportError:  # src dir placed directly on sys.path
     from core.config import (  # type: ignore[no-redef]
@@ -36,6 +37,7 @@ except ImportError:  # src dir placed directly on sys.path
         coerce_value,
         env_var_for_path,
         expand_env_value,
+        migrate_removed_transcription_backends,
     )
 
 try:
@@ -591,7 +593,32 @@ def _resolve_layers(db=None) -> tuple[dict[str, Any], dict[str, Any]]:
         _deep_merge(config, db_layer)
     _expand_env_placeholders(config)
     apply_env_overrides(config)
+    _migrate_removed_transcription_backend(config, db_layer, db)
     return config, db_layer or {}
+
+
+def _migrate_removed_transcription_backend(config, db_layer, db) -> None:
+    """Rewrite a removed transcription backend in the effective and stored config.
+
+    The OpenRouter-named Whisper backend was removed; a stored or
+    environment-supplied value that still names it becomes ``whisper_openai``
+    so an existing install keeps transcribing. The rewrite is persisted to the
+    settings database when the stored layer carried the old value.
+    """
+    migrated = migrate_removed_transcription_backends(config)
+    if not migrated:
+        return
+    old, new = migrated
+    logger.info("Migrated removed transcription backend '%s' -> '%s'", old, new)
+    if isinstance(db_layer, dict):
+        stored = migrate_removed_transcription_backends(db_layer)
+        if stored and db is not None:
+            try:
+                db.save_config(db_layer)
+            except Exception as exc:
+                logger.warning(
+                    "Could not persist transcription backend migration: %s", exc
+                )
 
 
 def resolve_config(db=None) -> dict[str, Any]:

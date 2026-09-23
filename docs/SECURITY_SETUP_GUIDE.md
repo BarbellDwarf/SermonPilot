@@ -79,7 +79,7 @@ See `.env.example` for the complete list of available environment variables. Key
 - `OPENAI_API_KEY` - OpenAI GPT models (also backs `transcription.whisper_openai`)
 - `XAI_API_KEY` - xAI Grok models
 - `GROQ_API_KEY` - Groq fast inference
-- `OPENROUTER_API_KEY` - OpenRouter models (also backs `transcription.whisper_openrouter`)
+- `OPENROUTER_API_KEY` - OpenRouter LLM models
 - `ANTHROPIC_API_KEY` - Anthropic Claude models
 - `GOOGLE_API_KEY` - Google Gemini models
 - `AUTO_EDIT_LLM_API_KEY` / `AUTO_EDIT_LLM_BASE_URL` - dedicated auto-edit endpoint (`llm.operations.auto_edit`)
@@ -99,11 +99,11 @@ See `.env.example` for the complete list of available environment variables. Key
 
 The full override table lives in code at `src/core/config.py`
 (`ConfigManager._override_from_env`); direct `os.getenv` readers are
-`src/transcription.py` (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`),
+`src/transcription.py` (`OPENAI_API_KEY`),
 `src/llm_manager.py` (provider `ENV_KEY`s plus `${VAR}` placeholder
 resolution), `sermon_updater.get_api_headers` (`SERMONAUDIO_API_KEY`),
 and `ui/ui_pages/new_sermon_enhanced.py`
-(`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_BASE_URL`).
+(`OPENAI_API_KEY`, `OPENAI_BASE_URL`).
 
 ### API-Key Storage Contract
 

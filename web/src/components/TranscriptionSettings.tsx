@@ -7,7 +7,6 @@ const BACKENDS = [
   { id: "whisper_local", label: "Local Whisper (openai-whisper)" },
   { id: "faster_whisper_local", label: "Local Whisper (Faster Whisper)" },
   { id: "whisper_openai", label: "OpenAI Whisper API" },
-  { id: "whisper_openrouter", label: "OpenRouter Whisper API" },
 ];
 
 const LOCAL_MODELS = [
@@ -41,8 +40,6 @@ interface TranscriptionState {
   language: string;
   openaiBaseUrl: string;
   openaiModel: string;
-  openrouterBaseUrl: string;
-  openrouterModel: string;
 }
 
 const FALLBACK: Record<string, unknown> = {
@@ -56,8 +53,6 @@ const FALLBACK: Record<string, unknown> = {
   "transcription.faster_whisper_local.language": "en",
   "transcription.whisper_openai.base_url": "https://api.openai.com/v1",
   "transcription.whisper_openai.model": "whisper-1",
-  "transcription.whisper_openrouter.base_url": "https://openrouter.ai/api/v1",
-  "transcription.whisper_openrouter.model": "openai/whisper-large-v3",
 };
 
 function localPrefix(backend: string): string {
@@ -77,12 +72,6 @@ function stateFromFields(fields: Record<string, ApiConfigField>): TranscriptionS
       fieldValue(fields, "transcription.whisper_openai.base_url", "https://api.openai.com/v1"),
     ),
     openaiModel: String(fieldValue(fields, "transcription.whisper_openai.model", "whisper-1")),
-    openrouterBaseUrl: String(
-      fieldValue(fields, "transcription.whisper_openrouter.base_url", "https://openrouter.ai/api/v1"),
-    ),
-    openrouterModel: String(
-      fieldValue(fields, "transcription.whisper_openrouter.model", "openai/whisper-large-v3"),
-    ),
   };
 }
 
@@ -103,7 +92,6 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
   const savedKey = JSON.stringify(saved);
   const [cur, setCur] = useState<TranscriptionState>(saved);
   const [openaiKey, setOpenaiKey] = useState("");
-  const [openrouterKey, setOpenrouterKey] = useState("");
 
   useEffect(() => {
     setCur(saved);
@@ -113,12 +101,10 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
   const set = <K extends keyof TranscriptionState>(k: K, v: TranscriptionState[K]) =>
     setCur((c) => ({ ...c, [k]: v }));
 
-  const dirty =
-    JSON.stringify(cur) !== savedKey || openaiKey !== "" || openrouterKey !== "";
+  const dirty = JSON.stringify(cur) !== savedKey || openaiKey !== "";
 
   const urlOk = (u: string) => u.trim() === "" || /^https?:\/\/.{3,}/.test(u.trim());
-  const valid =
-    urlOk(cur.openaiBaseUrl) && urlOk(cur.openrouterBaseUrl) && cur.language.trim() !== "";
+  const valid = urlOk(cur.openaiBaseUrl) && cur.language.trim() !== "";
 
   const localKeyExpr = `transcription.${localPrefix(cur.backend)}`;
   const isLocal = LOCAL_BACKENDS.has(cur.backend);
@@ -129,8 +115,6 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
       "transcription.compute_type": cur.computeType,
       "transcription.whisper_openai.base_url": cur.openaiBaseUrl,
       "transcription.whisper_openai.model": cur.openaiModel,
-      "transcription.whisper_openrouter.base_url": cur.openrouterBaseUrl,
-      "transcription.whisper_openrouter.model": cur.openrouterModel,
     };
     if (isLocal) {
       values[`${localKeyExpr}.model`] = cur.localModel;
@@ -138,11 +122,9 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
       values[`${localKeyExpr}.language`] = cur.language;
     }
     if (openaiKey.trim()) values["transcription.whisper_openai.api_key"] = openaiKey;
-    if (openrouterKey.trim()) values["transcription.whisper_openrouter.api_key"] = openrouterKey;
     void save(values)
       .then(() => {
         setOpenaiKey("");
-        setOpenrouterKey("");
         show(isLive ? "Transcription settings saved." : "Transcription settings saved (mock).");
       })
       .catch((e) => show(`Could not save: ${(e as Error).message}`));
@@ -268,46 +250,6 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
               id="tr-oai-model"
               value={cur.openaiModel}
               onChange={(e) => set("openaiModel", e.target.value)}
-              className={`${inputCls} font-mono`}
-              autoComplete="off"
-            />
-          </Field>
-        </div>
-      ) : null}
-
-      {cur.backend === "whisper_openrouter" ? (
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field
-            label="OpenRouter API key"
-            htmlFor="tr-or-key"
-            hint="Write-only. Only the last 4 characters ever display."
-          >
-            <input
-              id="tr-or-key"
-              type="password"
-              value={openrouterKey}
-              onChange={(e) => setOpenrouterKey(e.target.value)}
-              className={`${inputCls} font-mono`}
-              autoComplete="new-password"
-              placeholder="••••••••"
-            />
-            <SecretStatus field={fields["transcription.whisper_openrouter.api_key"]} />
-          </Field>
-          <Field label="Base URL" htmlFor="tr-or-url" hint="OpenRouter API endpoint.">
-            <input
-              id="tr-or-url"
-              value={cur.openrouterBaseUrl}
-              onChange={(e) => set("openrouterBaseUrl", e.target.value)}
-              className={`${inputCls} font-mono`}
-              autoComplete="off"
-              inputMode="url"
-            />
-          </Field>
-          <Field label="Model" htmlFor="tr-or-model" hint="API model name.">
-            <input
-              id="tr-or-model"
-              value={cur.openrouterModel}
-              onChange={(e) => set("openrouterModel", e.target.value)}
               className={`${inputCls} font-mono`}
               autoComplete="off"
             />
