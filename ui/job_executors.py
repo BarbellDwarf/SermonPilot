@@ -2053,7 +2053,13 @@ def _execute_auto_edit_dispatch(job: Job) -> JobResult:
 
 
 def execute_sermon_publish_job(job: Job) -> JobResult:
-    """Upload a draft sermon to SermonAudio via publish_dry_run_sermon."""
+    """Upload a draft sermon to SermonAudio via publish_dry_run_sermon.
+
+    When the job carries ``upload_only`` it routes to the stored-render path
+    instead: resolve the render the operator already accepted, apply the
+    refusal guards, and hand that exact file to the same uploader. No render,
+    enhancement or cut detection runs.
+    """
     try:
         if job.cancelled or job.status == JobStatus.CANCELLED:
             raise JobCancelledError("Job cancelled by user")
@@ -2064,6 +2070,8 @@ def execute_sermon_publish_job(job: Job) -> JobResult:
                 message="Missing sermon_id for publish",
                 error="Missing sermon_id in job parameters",
             )
+        if job.parameters.get("upload_only"):
+            return _execute_upload_existing(job, str(sermon_id))
         job.update_progress(10, f"Publishing {sermon_id} to SermonAudio...")
         from sermon_updater import publish_dry_run_sermon
 
@@ -2085,6 +2093,64 @@ def execute_sermon_publish_job(job: Job) -> JobResult:
         raise
     except Exception as e:
         return JobResult(success=False, message="Publish failed", error=str(e))
+
+
+def _execute_upload_existing(job: Job, sermon_id: str) -> JobResult:
+    """Upload the render already on disk through the existing uploader."""
+    from ui.database import SermonRepository
+    from ui.upload_only import run_upload_existing
+
+    config = resolve_job_config(job)
+    if config:
+        _inject_sermon_updater_config(config)
+
+    def progress_cb(pct, msg):
+        job.add_log(msg)
+        try:
+            job.update_progress(pct, msg)
+        except Exception:
+            pass
+
+    job.update_progress(5, "Preparing the existing render for upload")
+    result = run_upload_existing(
+        SermonRepository(),
+        sermon_id,
+        confirm_missing_description=bool(
+            job.parameters.get("confirm_missing_description")
+        ),
+        progress_callback=progress_cb,
+    )
+    if result.get("success"):
+        _stamp_sermon_owner(result.get("sermon_id") or sermon_id, _job_user_id(job))
+        name = result.get("render_name") or "render"
+        size = result.get("render_size_human") or "?"
+        new_id = result.get("sermon_id") or sermon_id
+        job.update_progress(100, f"Uploaded {name} ({size}) as {new_id}")
+        return JobResult(
+            success=True,
+            message=(
+                f"Uploaded the existing render {name} ({size}) to SermonAudio "
+                f"as {new_id}"
+            ),
+            data={
+                "sermon_id": new_id,
+                "render_path": result.get("render_path"),
+                "render_name": name,
+                "render_size": result.get("render_size"),
+                "render_size_human": size,
+            },
+        )
+    error = result.get("error") or "Upload failed"
+    job.add_log(error)
+    return JobResult(
+        success=False,
+        message=f"Upload-only refused: {error}",
+        error=error,
+        data={
+            "error_code": result.get("error_code"),
+            "can_regenerate": bool(result.get("can_regenerate")),
+        },
+    )
 
 
 # Job executor registry

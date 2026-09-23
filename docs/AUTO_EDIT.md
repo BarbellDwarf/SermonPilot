@@ -137,6 +137,7 @@ The Library review panel exposes the same loop as background jobs, so a long det
 
 - **Reject with notes** sends the new note plus every note from earlier rejections, in revision order, together with the previous proposal. The detector re-proposes start and end, and the result is saved as a new revision. The old revision is superseded, and the panel lists each note next to the revision it produced.
 - **Re-detect from scratch** starts a clean revision with no notes and no previous proposal. Earlier revisions stay in the history.
+- **Upload existing render** publishes a render that was already accepted locally, without re-rendering. It is the action to reach for after "Approve · Render-only"; see `docs/UPLOAD_EXISTING_RENDER.md`.
 
 Both buttons enqueue a job and reuse the retained review media, so neither re-runs enhancement or transcription. Preview clips are re-rendered from the retained keeper or original; a failed detection clears them and shows the `unavailable` banner.
 

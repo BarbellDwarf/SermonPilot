@@ -36,6 +36,7 @@ _VARIANT_ACTIONS: dict[str, str] = {
     "re_detect": "Re-detect cuts",
     "refine": "Refine cuts",
     "force_import": "Re-import",
+    "upload_only": "Upload existing render",
 }
 
 
@@ -129,6 +130,12 @@ def build_job_description(
             return f"Rendering the approved cut for {subject} and uploading it to SermonAudio."
         return f"Rendering the approved cut for {subject}."
     if kind == "sermon_publish":
+        if variant == "upload_only":
+            title_text = _text(title) or UNTITLED_SERMON
+            speaker_text = _text(speaker)
+            if speaker_text:
+                return f'Uploading the existing render for "{title_text}" ({speaker_text}).'
+            return f'Uploading the existing render for "{title_text}".'
         return f"Uploading {subject} to SermonAudio."
     if kind == "metadata_update":
         if many:
@@ -242,6 +249,8 @@ def variant_from_params(job_type: Any, params: Any) -> str | None:
             return "auto_edit"
         if isinstance(form, dict) and form.get("auto_edit_enabled"):
             return "auto_edit"
+    if kind == "sermon_publish" and params.get("upload_only"):
+        return "upload_only"
     if kind == "sermon_import" and params.get("force_reimport"):
         return "force_import"
     return None
