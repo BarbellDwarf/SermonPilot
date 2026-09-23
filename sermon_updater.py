@@ -2721,15 +2721,20 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     **audio_processing_settings(config),
                 )
                 if not success or not enhanced_audio_path.exists():
-                    if require_enhancement:
-                        logger.error(
-                            "Audio enhancement failed for a render that required it"
-                        )
-                        result['error'] = "Audio enhancement failed"
-                        return result
-                    logger.warning("Audio processing failed, using original file")
-                    _report(20, "Audio processing failed, falling back to original")
-                    enhanced_audio_path = audio_path
+                    # This branch only runs when enhancement was requested, so
+                    # shipping the raw audio would silently drop the requested
+                    # processing. Fail and keep the source for review.
+                    logger.error(
+                        "Audio enhancement was requested but failed; refusing "
+                        "to continue with the raw audio"
+                    )
+                    result['error'] = (
+                        "Audio enhancement failed; the raw audio will not be "
+                        "published in its place"
+                    )
+                    result['needs_review'] = True
+                    result['review_reason'] = "audio_enhancement_failed"
+                    return result
                 else:
                     _report(30, "Audio enhancement complete")
                     log_cuda_memory("after audio enhancement")
@@ -2739,16 +2744,18 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 except Exception:
                     pass
             else:
-                if require_enhancement:
-                    logger.error(
-                        "Audio enhancement required but AudioProcessor is unavailable"
-                    )
-                    result['error'] = (
-                        "Audio enhancement required but AudioProcessor is unavailable"
-                    )
-                    return result
-                logger.warning("AudioProcessor unavailable, skipping enhancement")
-                enhanced_audio_path = audio_path
+                # Enhancement was requested but the processor could not even be
+                # constructed; the same no-silent-fallback rule applies.
+                logger.error(
+                    "Audio enhancement was requested but AudioProcessor is unavailable"
+                )
+                result['error'] = (
+                    "Audio enhancement requested but AudioProcessor is unavailable; "
+                    "the raw audio will not be published in its place"
+                )
+                result['needs_review'] = True
+                result['review_reason'] = "audio_enhancement_unavailable"
+                return result
 
         # The enhancer writes WAV regardless of the input container. An
         # audio-only source is transcoded back to its format so the saved and
@@ -2948,8 +2955,18 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     raise
                 except Exception as e:
                     enhancement_mux_failed = True
-                    logger.warning("Video muxing failed, falling back to audio upload: %s", e)
-                    console_print("Video mux failed, uploading audio only")
+                    # A video service must not silently become an audio-only
+                    # upload; that drops the picture and hides the failure.
+                    logger.error(
+                        "Video muxing failed; refusing an audio-only downgrade: %s", e
+                    )
+                    result['error'] = (
+                        f"Video mux failed ({e}); an audio-only upload would "
+                        "drop the video"
+                    )
+                    result['needs_review'] = True
+                    result['review_reason'] = "video_mux_failed"
+                    return result
             else:
                 console_print("Uploading original video (no audio enhancement)")
                 final_upload_path = original_input_path

@@ -209,7 +209,7 @@ def test_render_source_unchanged_when_enhancement_skipped(
     assert f"Rendering from {video}" in caplog.text
 
 
-def test_mux_failure_renders_unenhanced_and_warns(
+def test_mux_failure_stops_before_render_and_flags_review(
     tmp_path: Path, monkeypatch, caplog
 ) -> None:
     video = _make_video(tmp_path)
@@ -220,8 +220,9 @@ def test_mux_failure_renders_unenhanced_and_warns(
     with caplog.at_level(logging.INFO, logger="sermon_updater"):
         result = _run(video)
 
-    assert result["success"] is True
+    assert result["success"] is False
+    assert result["needs_review"] is True
+    assert result["review_reason"] == "video_mux_failed"
     assert counter["enhance"] == 1
-    assert recorder.edit_render_input() == str(video)
-    assert "enhancement was NOT applied to the render" in caplog.text
-    assert "Rendering from the enhanced audio" not in caplog.text
+    assert all(step != "edit render" for step, _cmd in recorder.commands)
+    assert "refusing an audio-only downgrade" in caplog.text
