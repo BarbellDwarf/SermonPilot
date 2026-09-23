@@ -7,6 +7,7 @@ import { formatBytes } from "../utils/files";
 import { MediaPlayer, type PlayWindow } from "./MediaPlayer";
 import { Timeline, type TimelineClip } from "./Timeline";
 import { TranscriptViewer } from "./TranscriptViewer";
+import { sermonActionMatrix } from "./sermonActions";
 import { Button, Chip, ConfirmDialog } from "./ui";
 
 const planStatusLabel: Record<PlanStatus, string> = {
@@ -377,7 +378,8 @@ export function SermonReview({
   const dirty = start !== plan.startSec || end !== plan.endSec || offset !== plan.offsetSec;
 
   const processedAvailable = !!media.byKind.processed?.available;
-  const alreadyPublished = sermon.status === "processed";
+  const actions = sermonActionMatrix({ status: sermon.status, hasRender: processedAvailable });
+  const applyVerb = actions.published ? "Re-render" : "Approve";
 
   const uploadExisting = (confirmMissingDescription: boolean) => {
     if (uploading) return;
@@ -552,7 +554,7 @@ export function SermonReview({
 
   const statusPills = (
     <div className="flex flex-wrap items-center gap-2">
-      <Chip tone={planStatusTone[plan.status]}>{planStatusLabel[plan.status]}</Chip>
+      <Chip tone={planStatusTone[plan.status]}>Plan: {planStatusLabel[plan.status]}</Chip>
       <span className="font-mono text-xs text-muted">
         revision {plan.revision} of {plan.revisionsTotal}
       </span>
@@ -668,7 +670,7 @@ export function SermonReview({
               disabled={errors.length > 0 || applying}
               aria-busy={applying}
             >
-              {applying ? "Queueing…" : "Approve"}
+              {applying ? "Queueing…" : applyVerb}
             </Button>
             <div ref={moreRef} className="relative shrink-0">
               <Button
@@ -697,9 +699,9 @@ export function SermonReview({
                     }}
                     disabled={errors.length > 0 || applying}
                   >
-                    Approve · Render-only
+                    {applyVerb} · Render-only
                   </button>
-                  {alreadyPublished ? null : (
+                  {actions.canUploadExisting ? (
                     <button
                       type="button"
                       role="menuitem"
@@ -709,11 +711,11 @@ export function SermonReview({
                         setMoreOpen(false);
                         uploadExisting(false);
                       }}
-                      disabled={!processedAvailable || applying || uploading}
+                      disabled={applying || uploading}
                     >
                       {uploading ? "Uploading…" : "Upload existing render"}
                     </button>
-                  )}
+                  ) : null}
                   <button
                     type="button"
                     role="menuitem"
@@ -752,7 +754,7 @@ export function SermonReview({
                   >
                     History
                   </button>
-                  {onUpload ? (
+                  {onUpload && actions.canPublishLegacy ? (
                     <button
                       type="button"
                       role="menuitem"
@@ -774,29 +776,25 @@ export function SermonReview({
             {statusPills}
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="primary" onClick={() => approve(true)} disabled={errors.length > 0 || applying} aria-busy={applying}>
-                {applying ? "Queueing…" : "Approve · Render-only"}
+                {applying ? "Queueing…" : `${applyVerb} · Render-only`}
               </Button>
               <Button
                 onClick={() => approve(false)}
                 disabled={errors.length > 0 || applying}
               >
-                Approve · Render+upload
+                {applyVerb} · Render+upload
               </Button>
-              {alreadyPublished ? null : (
+              {actions.canUploadExisting ? (
                 <Button
                   data-testid="upload-existing-render"
                   onClick={() => uploadExisting(false)}
-                  disabled={!processedAvailable || applying || uploading}
+                  disabled={applying || uploading}
                   aria-busy={uploading}
-                  title={
-                    processedAvailable
-                      ? "Publish the render already on disk without re-rendering."
-                      : "No rendered output yet. Render the approved cut first."
-                  }
+                  title="Publish the render already on disk without re-rendering."
                 >
                   {uploading ? "Uploading…" : "Upload existing render"}
                 </Button>
-              )}
+              ) : null}
               <Button
                 className="w-full min-[480px]:w-auto"
                 onClick={() => setNotesOpen((v) => !v)}

@@ -474,7 +474,7 @@ describe("SermonReview mobile layout", () => {
 
     const summary = screen.getByTestId("approval-summary");
     expect(summary.className).not.toContain("sticky");
-    expect(summary.textContent).toContain("Pending review");
+    expect(summary.textContent).toContain("Plan: Pending review");
     expect(summary.textContent).toContain("QA: Pass");
 
     const player = document.getElementById("player-plan");
@@ -870,7 +870,7 @@ describe("SermonReview upload existing render", () => {
     expect(screen.queryByTestId("upload-existing-render")).toBeNull();
   });
 
-  it("disables the upload action when no render exists", () => {
+  it("omits the upload action when no render exists", () => {
     const source = media();
     const withoutProcessed = {
       ...source,
@@ -879,7 +879,7 @@ describe("SermonReview upload existing render", () => {
     delete withoutProcessed.byKind.processed;
     renderReview(
       <SermonReview
-        sermon={sermon({ status: "rendered" })}
+        sermon={sermon({ status: "draft" })}
         description="A description."
         plan={plan()}
         media={withoutProcessed}
@@ -888,8 +888,86 @@ describe("SermonReview upload existing render", () => {
       />,
     );
 
-    expect(
-      (screen.getByTestId("upload-existing-render") as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect(screen.queryByTestId("upload-existing-render")).toBeNull();
+  });
+
+  it("keeps the upload action for a draft that has a render", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon({ status: "draft" })}
+        description="A description."
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    expect(screen.getByTestId("upload-existing-render")).toBeTruthy();
+  });
+});
+
+describe("SermonReview state-aware action row", () => {
+  it("drops the publish-only actions and keeps the re-render actions for a published record", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon({ status: "processed" })}
+        description="A description."
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+        onUpload={noop}
+      />,
+    );
+
+    const bar = screen.getByTestId("approval-bar");
+    expect(within(bar).queryByTestId("upload-existing-render")).toBeNull();
+    expect(within(bar).getByRole("button", { name: /Re-render · Render-only/ })).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: /Re-render · Render\+upload/ })).toBeTruthy();
+    expect(within(bar).queryByRole("button", { name: /Approve/ })).toBeNull();
+  });
+
+  it("hides the legacy push in the mobile overflow for a published record", async () => {
+    setViewportWidth(390);
+    const user = userEvent.setup();
+    renderReview(
+      <SermonReview
+        sermon={sermon({ status: "processed" })}
+        description="A description."
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+        onUpload={noop}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+    const menu = screen.getByTestId("more-actions");
+    expect(within(menu).queryByRole("menuitem", { name: "Upload" })).toBeNull();
+    expect(within(menu).queryByTestId("upload-existing-render")).toBeNull();
+    expect(within(menu).getByRole("menuitem", { name: /Re-render · Render-only/ })).toBeTruthy();
+  });
+
+  it("keeps the legacy push in the mobile overflow for a record that is not published", async () => {
+    setViewportWidth(390);
+    const user = userEvent.setup();
+    renderReview(
+      <SermonReview
+        sermon={sermon({ status: "rendered" })}
+        description="A description."
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+        onUpload={noop}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+    const menu = screen.getByTestId("more-actions");
+    expect(within(menu).getByRole("menuitem", { name: "Upload" })).toBeTruthy();
+    expect(within(menu).getByRole("menuitem", { name: /Approve · Render-only/ })).toBeTruthy();
   });
 });

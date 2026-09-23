@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { SermonReview, type DetailsPatch, type TranscriptState } from "../components/SermonReview";
+import { sermonActionMatrix } from "../components/sermonActions";
 import { sermonStatusLabel, sermonStatusTone } from "./Library";
 import { Button, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast, buttonClass } from "../components/ui";
 import { QueryError, useSermonDetail, useSermonMedia, useSermonPlan, useSermonTranscript } from "../api/hooks";
@@ -221,9 +222,14 @@ export function LibraryDetail() {
     },
   };
 
+  const actions = sermonActionMatrix({
+    status: sermon.status,
+    hasRender: !!media.byKind["processed"]?.available,
+  });
+
   const headerActions = (
     <>
-      {sermon.status !== "draft" ? (
+      {actions.canPublishLegacy ? (
         <Button variant="primary" onClick={push} disabled={pushing} aria-busy={pushing}>
           {pushing ? "Pushing…" : "Push to SermonAudio"}
         </Button>
