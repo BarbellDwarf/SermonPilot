@@ -19,6 +19,33 @@ afterEach(() => {
   cleanup();
 });
 
+type DialogProto = { showModal?: () => void; close?: () => void };
+
+const dialogProto = (
+  typeof HTMLDialogElement !== "undefined"
+    ? HTMLDialogElement.prototype
+    : typeof HTMLUnknownElement !== "undefined"
+      ? HTMLUnknownElement.prototype
+      : null
+) as unknown as DialogProto | null;
+
+if (dialogProto && typeof dialogProto.showModal !== "function") {
+  Object.defineProperty(dialogProto, "showModal", {
+    configurable: true,
+    writable: true,
+    value(this: Element) {
+      this.setAttribute("open", "");
+    },
+  });
+  Object.defineProperty(dialogProto, "close", {
+    configurable: true,
+    writable: true,
+    value(this: Element) {
+      this.removeAttribute("open");
+    },
+  });
+}
+
 if (typeof HTMLMediaElement !== "undefined") {
   Object.defineProperty(HTMLMediaElement.prototype, "play", {
     configurable: true,
