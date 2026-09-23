@@ -378,7 +378,7 @@ class Job:
         return data
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> 'Job':
+    def from_dict(cls, data: dict[str, Any]) -> Job:
         """Create job from dictionary"""
         # Convert strings back to enums
         data['type'] = JobType(data['type'])
