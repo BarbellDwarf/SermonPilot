@@ -981,7 +981,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
         form_data = job.parameters.get('form_data') or {}
         reviews_before_upload = (
             bool(job.parameters.get('auto_edit_enabled'))
-            and job.parameters.get('auto_edit_mode') == 'interactive'
+            and job.parameters.get('auto_edit_mode') != 'auto'
         )
         if (
             not bool(form_data.get('dry_run', False))
@@ -1606,10 +1606,6 @@ def execute_metadata_update_job(job: Job) -> JobResult:
     try:
         sermon_ids = job.parameters.get('sermon_ids', [])
         actions = job.parameters.get('actions', {})
-        refusal = sermonaudio_refusal(job)
-        if refusal is not None:
-            job.add_log(refusal.error or "")
-            return refusal
         config = resolve_job_config(job)
 
         if not sermon_ids:
@@ -1625,6 +1621,11 @@ def execute_metadata_update_job(job: Job) -> JobResult:
                 message="No configuration provided",
                 error="Missing config parameter"
             )
+
+        refusal = sermonaudio_refusal(job)
+        if refusal is not None:
+            job.add_log(refusal.error or "")
+            return refusal
 
         if job.cancelled or job.status == JobStatus.CANCELLED:
             job.add_log("Metadata update cancelled by user")
