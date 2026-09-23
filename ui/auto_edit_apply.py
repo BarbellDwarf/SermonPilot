@@ -20,10 +20,14 @@ Source-resolution contract (metadata.json fields):
   repointing it at the trimmed render, or the next apply resolves its own
   trimmed output and trips plan validation.
 - ``processed_file`` is the latest render output and may be a trimmed cut.
-  ``_resolve_apply_source`` must skip any candidate whose duration is
-  shorter than the approved plan end (``min_duration``) so a poisoned
-  ``processed_file`` pointer can never become the next apply's source while
-  the retained full-length file still exists.
+  ``_resolve_apply_source`` treats a recorded render as the render base only
+  when its duration matches the retained full-length original or keeper
+  (within a small tolerance), so a previous cut can never become the next
+  apply's source while a full-length file still exists. A render whose
+  duration cannot be measured is never trusted as full length. With no
+  retained full-length file at all there is nothing to compare against, so
+  resolution keeps its historical best-effort order and the pipeline's
+  plan-end check stays the guard.
 """
 
 from __future__ import annotations
@@ -39,6 +43,11 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 ACTIVE_APPLY_STATUSES = ("queued", "running")
+
+_FULL_SOURCE = "full"
+_RENDER_SOURCE = "render"
+
+_FULL_LENGTH_TOLERANCE_SECONDS = 3.0
 
 _MEDIA_EXTENSIONS = frozenset(
     {
@@ -78,6 +87,22 @@ def _candidate_covers_plan(path: str | Path, min_duration: float | None) -> bool
     if duration is None:
         return True
     return float(min_duration) <= float(duration) + 1.0
+
+
+def _candidate_is_full_length(path: str | Path, reference_duration: float | None) -> bool:
+    """True when a candidate spans the whole service, not a previous cut.
+
+    The retained full-length original or keeper supplies the reference. A
+    candidate whose duration cannot be measured is never trusted, and neither
+    is one materially shorter than the reference.
+    """
+    duration = _source_duration(path)
+    if duration is None or reference_duration is None:
+        return False
+    return (
+        abs(float(duration) - float(reference_duration))
+        <= _FULL_LENGTH_TOLERANCE_SECONDS
+    )
 
 
 def config_enhancement_enabled(config: dict[str, Any] | None) -> bool:
@@ -334,7 +359,7 @@ def _resolve_apply_source(
     sermon: dict[str, Any], repo: Any, min_duration: float | None = None
 ) -> tuple[str | None, bool]:
     full = _full_sermon_or_none(sermon, repo)
-    ordered: list[tuple[str, bool]] = []
+    ordered: list[tuple[str, bool, str]] = []
     for source in (sermon, full):
         if not isinstance(source, dict):
             continue
@@ -343,27 +368,28 @@ def _resolve_apply_source(
         if processed:
             path = Path(str(processed))
             if path.exists():
-                ordered.append((str(path), True))
+                ordered.append((str(path), True, _RENDER_SOURCE))
     for source in (full, sermon):
         if not isinstance(source, dict):
             continue
         audio = (source.get("file_paths") or {}).get("audio") or ""
         if audio and _looks_like_processed_artifact(audio) and Path(str(audio)).exists():
-            ordered.append((str(audio), True))
+            ordered.append((str(audio), True, _RENDER_SOURCE))
     for source in (sermon, full):
         if not isinstance(source, dict):
             continue
         metadata = _read_edit_plan_metadata(source)
-        original = metadata.get("original_file")
-        if original:
-            path = Path(str(original))
-            if path.exists():
-                ordered.append((str(path), False))
+        for key in ("original_file", "keeper_file"):
+            value = metadata.get(key)
+            if value:
+                path = Path(str(value))
+                if path.exists():
+                    ordered.append((str(path), False, _FULL_SOURCE))
         file_paths = source.get("file_paths") or {}
-        for key in ("original_audio", "original_video", "audio"):
+        for key in ("original_audio", "original_video", "keeper_audio", "keeper", "audio"):
             value = file_paths.get(key)
             if value and Path(str(value)).exists():
-                ordered.append((str(value), False))
+                ordered.append((str(value), False, _FULL_SOURCE))
     for source in (sermon, full):
         if not isinstance(source, dict):
             continue
@@ -380,18 +406,33 @@ def _resolve_apply_source(
         except OSError:
             continue
         for original in originals:
-            ordered.append((str(original), False))
+            ordered.append((str(original), False, _FULL_SOURCE))
     seen: set[str] = set()
-    deduped: list[tuple[str, bool]] = []
-    for path, enhanced in ordered:
+    deduped: list[tuple[str, bool, str]] = []
+    for path, enhanced, role in ordered:
         if path not in seen:
             seen.add(path)
-            deduped.append((path, enhanced))
-    for path, enhanced in deduped:
-        if _candidate_covers_plan(path, min_duration):
+            deduped.append((path, enhanced, role))
+    full_paths = [path for path, _enhanced, role in deduped if role == _FULL_SOURCE]
+    reference_duration: float | None = None
+    for path in full_paths:
+        duration = _source_duration(path)
+        if duration is not None and (
+            reference_duration is None or duration > reference_duration
+        ):
+            reference_duration = float(duration)
+    for path, enhanced, role in deduped:
+        if not _candidate_covers_plan(path, min_duration):
+            continue
+        if role == _FULL_SOURCE:
+            return path, enhanced
+        if not full_paths or _candidate_is_full_length(path, reference_duration):
+            return path, enhanced
+    for path, enhanced, role in deduped:
+        if role == _FULL_SOURCE:
             return path, enhanced
     if deduped:
-        return deduped[0]
+        return deduped[0][0], deduped[0][1]
     media_path = _resolve_edit_media_path(sermon, repo)
     return media_path, False
 
