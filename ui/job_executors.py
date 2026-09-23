@@ -1524,7 +1524,7 @@ def execute_metadata_update_job(job: Job) -> JobResult:
                     progress, f"Processing sermon {sermon_id} ({i+1}/{len(sermon_ids)})"
                 )
 
-                sermon_updater.process_single_sermon(
+                result = sermon_updater.process_single_sermon(
                     sermon_id,
                     no_upload=False,
                     verbose=False,
@@ -1535,8 +1535,19 @@ def execute_metadata_update_job(job: Job) -> JobResult:
                     config=config,
                 )
 
-                results['completed'] += 1
-                job.add_log(f"Sermon {sermon_id}: Updated")
+                if result and result.get('description_needs_review'):
+                    results['failed'] += 1
+                    reason = result.get('description_error') or 'description needs review'
+                    job.add_log(
+                        f"Sermon {sermon_id}: description generation failed - retry ({reason})"
+                    )
+                    logger.warning(
+                        "Metadata update for %s: description generation failed - retry (%s)",
+                        sermon_id, reason,
+                    )
+                else:
+                    results['completed'] += 1
+                    job.add_log(f"Sermon {sermon_id}: Updated")
 
             except Exception as e:
                 results['failed'] += 1

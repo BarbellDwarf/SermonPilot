@@ -209,6 +209,13 @@ class SermonDatabase:
             except Exception:
                 pass
 
+            try:
+                conn.execute(
+                    "ALTER TABLE sermons ADD COLUMN description_needs_review INTEGER DEFAULT 0"
+                )
+            except Exception:
+                pass
+
             # CA5: qa_normalization was removed; drop its dormant table. The
             # processing_info columns stay (additive-only policy), only writes stop.
             conn.execute("DROP TABLE IF EXISTS qa_segments")
@@ -1474,7 +1481,7 @@ class SermonRepository:
                         bible_text = excluded.bible_text,
                         series_title = excluded.series_title,
                         scripture_reference = excluded.scripture_reference,
-                        description = excluded.description,
+                        description = COALESCE(excluded.description, sermons.description),
                         duration = excluded.duration,
                         status = excluded.status,
                         edit_status = COALESCE(excluded.edit_status, sermons.edit_status),
@@ -1508,6 +1515,23 @@ class SermonRepository:
                         conn.execute(
                             "UPDATE sermons SET user_id = ? WHERE id = ? AND user_id IS NULL",
                             (sermon_data.get('user_id'), sermon_data.get('id')),
+                        )
+
+                if 'description_needs_review' in sermon_data:
+                    try:
+                        cols = {
+                            row[1]
+                            for row in conn.execute("PRAGMA table_info(sermons)").fetchall()
+                        }
+                    except Exception:
+                        cols = set()
+                    if 'description_needs_review' in cols:
+                        conn.execute(
+                            "UPDATE sermons SET description_needs_review = ? WHERE id = ?",
+                            (
+                                1 if sermon_data.get('description_needs_review') else 0,
+                                sermon_data.get('id'),
+                            ),
                         )
 
                 # Save file paths
@@ -1551,21 +1575,31 @@ class SermonRepository:
                         json.dumps(processing_info.get('processing_logs', {}))
                     ))
 
-                # Save content for full-text search
+                # Save content for full-text search. Only supplied (non-None)
+                # fields are written, so a metadata-only run cannot blank a
+                # stored description, hashtags, or transcript.
                 content = sermon_data.get('content', {})
                 if content:
-                    conn.execute("""
-                        INSERT OR REPLACE INTO sermon_content
-                        (sermon_id, transcript_text, description, hashtags, key_topics, summary)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (
-                        sermon_data.get('id'),
-                        content.get('transcript_text'),
-                        content.get('description'),
-                        content.get('hashtags'),
-                        json.dumps(content.get('key_topics', [])),
-                        content.get('summary')
-                    ))
+                    content_cols = [
+                        col
+                        for col in ('transcript_text', 'description', 'hashtags',
+                                    'key_topics', 'summary')
+                        if content.get(col) is not None
+                    ]
+                    if content_cols:
+                        values = [
+                            json.dumps(content[col]) if col == 'key_topics' else content[col]
+                            for col in content_cols
+                        ]
+                        placeholders = ", ".join(["?" for _ in content_cols])
+                        set_expr = ", ".join(f"{col} = excluded.{col}" for col in content_cols)
+                        conn.execute(f"""
+                            INSERT INTO sermon_content
+                            (sermon_id, {', '.join(content_cols)})
+                            VALUES (?, {placeholders})
+                            ON CONFLICT(sermon_id) DO UPDATE SET
+                                {set_expr}
+                        """, [sermon_data.get('id'), *values])
 
                 # Rebuild full-text search index (always, so title/speaker are searchable)
                 self._rebuild_fts_row(conn, sermon_data.get('id'))
