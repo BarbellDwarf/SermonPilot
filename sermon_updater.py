@@ -2502,6 +2502,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                             input_offset = measure_content_offset(
                                 original_input_path,
                                 model_dir=Path(av_cfg.get('model_dir') or '/tmp/av_sync_models'),
+                                cancel_check=_check_cancelled,
+                                cancel_log=cancel_log,
                             )
                             if input_offset.available and input_offset.offset_seconds is not None:
                                 console_print(
@@ -2516,7 +2518,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                                     f"🎯 Input A/V offset not measured ({input_offset.detail})"
                                 )
                             enh_offset = measure_waveform_offset(
-                                original_input_path, mux_audio_input
+                                original_input_path,
+                                mux_audio_input,
+                                cancel_check=_check_cancelled,
+                                cancel_log=cancel_log,
                             )
                             if enh_offset.available and enh_offset.offset_seconds is not None:
                                 console_print(
@@ -2555,6 +2560,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                                     f"manual {manual_offset:+.2f}s -> {av_reason}"
                                 )
                             result['av_sync_offset_seconds'] = correction
+                        except ProcessCancelled:
+                            raise
                         except Exception as e:
                             logger.warning("av_sync measurement failed: %s", e)
 

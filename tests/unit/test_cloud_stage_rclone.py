@@ -233,6 +233,33 @@ def test_rclone_cancel_mid_copy_kills_and_cleans_partial(staging, monkeypatch):
     assert list(staging.iterdir()) == []
 
 
+def test_rclone_cancel_moves_partial_to_trash(staging, tmp_path, monkeypatch):
+    seen: list = []
+    _stub_process(monkeypatch, seen)
+    monkeypatch.setenv("SERMONPILOT_TRASH_DIR", str(tmp_path / "trash"))
+    job = _job(_params("remote:cloud-remote:big.mkv", user_id="user-a"))
+
+    def on_poll(polls: int) -> None:
+        if polls >= 2:
+            job.cancelled = True
+
+    _install_fake_rclone(
+        monkeypatch,
+        rc=None,
+        write=lambda dest: dest.write_bytes(b"z" * 4096),
+        on_poll=on_poll,
+    )
+
+    with pytest.raises(JobCancelledError):
+        execute_sermon_processing_job(job)
+
+    moved = list((tmp_path / "trash").rglob("2026-09-20_09-45-58.mkv"))
+    assert moved, "the cancelled download partial was not moved to trash"
+    assert any(
+        "Cancel requested - stopping cloud fetch" in line for line in job.logs
+    ), job.logs
+
+
 def test_remote_without_user_id_errors_before_spawn(staging, monkeypatch):
     seen: list = []
     _stub_process(monkeypatch, seen)
