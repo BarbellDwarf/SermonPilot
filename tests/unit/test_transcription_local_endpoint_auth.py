@@ -201,7 +201,7 @@ def test_placeholder_and_dummy_keys_still_resolve_to_unset() -> None:
     "base_url",
     [
         "http://10.0.0.5:8780/v1/",
-        "http://192.168.1.20:8780/v1/",
+        "http://192.168.1.1:8780/v1/",
         "http://172.16.0.9:8780/v1/",
         "http://127.0.0.1:8780/v1/",
         "http://localhost:8780/v1/",
