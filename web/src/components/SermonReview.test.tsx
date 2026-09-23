@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
 import { SermonReview, type DetailsPatch, type TranscriptState } from "./SermonReview";
-import { writeApi } from "../api/client";
+import { writeApi, ApiError } from "../api/client";
 import type { SermonMediaData } from "../api/hooks";
 import type { ApiMediaItem } from "../api/client";
 import type { EditPlan, LibrarySermon } from "../mock/data";
@@ -790,5 +790,106 @@ describe("SermonReview description review", () => {
 
     expect(screen.queryByText(/Description generation failed - retry/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Retry generation" })).toBeNull();
+  });
+});
+
+describe("SermonReview upload existing render", () => {
+  it("queues the stored render without touching the plan", async () => {
+    const user = userEvent.setup();
+    const upload = vi
+      .spyOn(writeApi, "uploadOnly")
+      .mockResolvedValue({ job_id: "j-up", status: "queued" });
+    const onToast = vi.fn();
+    renderReview(
+      <SermonReview
+        sermon={sermon({ status: "rendered" })}
+        description="A description."
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={onToast}
+      />,
+    );
+
+    await user.click(screen.getByTestId("upload-existing-render"));
+
+    await waitFor(() =>
+      expect(upload).toHaveBeenCalledWith("s-1", { confirm_missing_description: false }),
+    );
+    expect(onToast).toHaveBeenCalledWith(expect.stringContaining("existing render"));
+  });
+
+  it("refuses an empty description, then uploads after explicit confirmation", async () => {
+    const user = userEvent.setup();
+    const upload = vi
+      .spyOn(writeApi, "uploadOnly")
+      .mockRejectedValueOnce(
+        new ApiError("The description is empty, so uploading would publish a SermonAudio entry without one. Regenerate the description from the transcript, then upload.", 422, {
+          code: "missing_description",
+          message:
+            "The description is empty, so uploading would publish a SermonAudio entry without one. Regenerate the description from the transcript, then upload.",
+          can_regenerate: true,
+        }),
+      )
+      .mockResolvedValueOnce({ job_id: "j-up", status: "queued" });
+    renderReview(
+      <SermonReview
+        sermon={sermon({ status: "rendered" })}
+        description=""
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    await user.click(screen.getByTestId("upload-existing-render"));
+
+    const confirm = await screen.findByRole("button", { name: "Upload anyway" });
+    const dialog = confirm.closest("dialog");
+    await waitFor(() => expect(dialog?.hasAttribute("open")).toBe(true));
+    expect(dialog?.textContent).toContain("Regenerate the description");
+
+    await user.click(confirm);
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+    expect(upload.mock.calls[1][1]).toMatchObject({ confirm_missing_description: true });
+  });
+
+  it("hides the upload action once the teaching is published", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon({ status: "processed" })}
+        description="A description."
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    expect(screen.queryByTestId("upload-existing-render")).toBeNull();
+  });
+
+  it("disables the upload action when no render exists", () => {
+    const source = media();
+    const withoutProcessed = {
+      ...source,
+      byKind: { ...source.byKind },
+    };
+    delete withoutProcessed.byKind.processed;
+    renderReview(
+      <SermonReview
+        sermon={sermon({ status: "rendered" })}
+        description="A description."
+        plan={plan()}
+        media={withoutProcessed}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    expect(
+      (screen.getByTestId("upload-existing-render") as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 });
