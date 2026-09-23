@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import { SermonReview, type DetailsPatch } from "./SermonReview";
+import { SermonReview, type DetailsPatch, type TranscriptState } from "./SermonReview";
 import { writeApi } from "../api/client";
 import type { SermonMediaData } from "../api/hooks";
 import type { ApiMediaItem } from "../api/client";
@@ -127,8 +127,62 @@ function media(): SermonMediaData {
 
 const noop = () => {};
 
+const transcriptState: TranscriptState = {
+  open: false,
+  onToggle: noop,
+  loading: false,
+  error: null,
+  plainText: "",
+  totalLength: 0,
+  truncated: false,
+  timestampsAvailable: false,
+  copied: false,
+  onCopy: noop,
+};
+
+const originalMatchMedia = window.matchMedia;
+
+function setViewportWidth(width: number) {
+  window.matchMedia = ((query: string) => {
+    const max = /max-width:\s*(\d+)px/.exec(query);
+    const min = /min-width:\s*(\d+)px/.exec(query);
+    const matches = (!max || width <= Number(max[1])) && (!min || width >= Number(min[1]));
+    return {
+      matches,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    } as unknown as MediaQueryList;
+  }) as typeof window.matchMedia;
+}
+
+function withUnavailablePreviews(source: SermonMediaData): SermonMediaData {
+  const items = source.items.map((item) =>
+    item.kind.startsWith("snippet_") ? { ...item, available: false, size: null } : item,
+  );
+  return {
+    ...source,
+    items,
+    byKind: Object.fromEntries(items.map((item) => [item.kind, item])),
+  };
+}
+
+function withoutPreviews(source: SermonMediaData): SermonMediaData {
+  const items = source.items.filter((item) => !item.kind.startsWith("snippet_"));
+  return {
+    ...source,
+    items,
+    byKind: Object.fromEntries(items.map((item) => [item.kind, item])),
+  };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
+  window.matchMedia = originalMatchMedia;
 });
 
 describe("SermonReview single player and plan", () => {
@@ -240,7 +294,7 @@ describe("SermonReview single player and plan", () => {
 });
 
 describe("SermonReview artifacts", () => {
-  it("shows three primary rows and collapses the rest behind the disclosure", async () => {
+  it("groups media rows and reveals preview cards behind the disclosure", async () => {
     const user = userEvent.setup();
     renderReview(
       <SermonReview
@@ -254,18 +308,125 @@ describe("SermonReview artifacts", () => {
     );
 
     expect(screen.getAllByTestId("artifact-primary-row").length).toBe(3);
+    expect(screen.getByTestId("artifact-group-files-media")).toBeTruthy();
+    expect(screen.getByTestId("artifact-group-files-transcripts")).toBeTruthy();
 
     const disclosure = screen.getByTestId("artifacts-disclosure");
-    const other = document.getElementById("all-files");
+    const hidden = document.getElementById("all-files");
     expect(disclosure.textContent).toContain("Show all files");
     expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-    expect(other?.hasAttribute("hidden")).toBe(true);
+    expect(hidden?.hasAttribute("hidden")).toBe(true);
 
     await user.click(disclosure);
 
+    expect(disclosure.textContent).toContain("Hide files");
     expect(disclosure.getAttribute("aria-expanded")).toBe("true");
-    expect(other?.hasAttribute("hidden")).toBe(false);
-    expect(screen.getAllByTestId("artifact-other-row").length).toBe(5);
+    expect(hidden?.hasAttribute("hidden")).toBe(false);
+    expect(screen.getByTestId("artifact-group-files-previews")).toBeTruthy();
+    expect(screen.getAllByTestId("artifact-preview-row").length).toBe(3);
+  });
+
+  it("omits the files disclosure when nothing is hidden", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={withoutPreviews(media())}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    expect(screen.queryByTestId("artifacts-disclosure")).toBeNull();
+  });
+
+  it("renders no preview card when the previews are unavailable, and explains instead", async () => {
+    const user = userEvent.setup();
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={withUnavailablePreviews(media())}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    await user.click(screen.getByTestId("artifacts-disclosure"));
+
+    expect(screen.queryAllByTestId("artifact-preview-row").length).toBe(0);
+    expect(screen.getByTestId("previews-empty").textContent).toContain("Previews appear after a render");
+  });
+
+  it("shows exactly one transcript entry point", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        transcript={transcriptState}
+        onToast={noop}
+      />,
+    );
+
+    expect(screen.getAllByTestId("transcript-entry").length).toBe(1);
+    expect(screen.getAllByRole("button", { name: /transcript/i }).length).toBe(1);
+    expect(screen.queryByText("Plain-text transcript of the teaching.")).toBeNull();
+  });
+});
+
+describe("SermonReview mobile layout", () => {
+  it("orders the player before the details and files regions on a narrow viewport", () => {
+    setViewportWidth(390);
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    const player = document.getElementById("player-plan");
+    const details = document.getElementById("details");
+    const files = document.getElementById("files");
+    expect(player).toBeTruthy();
+    expect(details).toBeTruthy();
+    expect(files).toBeTruthy();
+    expect(
+      player!.compareDocumentPosition(details!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      player!.compareDocumentPosition(files!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("makes the approval row sticky and collapses files and cut adjusts on a narrow viewport", () => {
+    setViewportWidth(390);
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    expect(screen.getByTestId("approval-bar").className).toContain("sticky");
+    expect(document.getElementById("files-body")?.hasAttribute("hidden")).toBe(true);
+    expect(document.getElementById("history-body")?.hasAttribute("hidden")).toBe(true);
+
+    const adjust = screen.getByTestId("adjust-cuts-disclosure");
+    expect(adjust.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByTestId("adjust-cuts-summary").textContent).toContain("Start");
   });
 });
 

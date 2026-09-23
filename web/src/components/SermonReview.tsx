@@ -1,5 +1,5 @@
-import { useMemo, useState, type ReactNode } from "react";
-import { mediaStreamUrl, writeApi } from "../api/client";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { mediaStreamUrl, writeApi, type ApiMediaItem } from "../api/client";
 import type { SermonMediaData } from "../api/hooks";
 import type { EditPlan, LibrarySermon, PlanStatus } from "../mock/data";
 import { formatCut, parseCut } from "../utils/time";
@@ -26,6 +26,86 @@ const planStatusTone: Record<PlanStatus, string> = {
 };
 
 const PRIMARY_KINDS = ["source", "processed", "keeper"] as const;
+
+const PREVIEW_KINDS = ["snippet_start", "snippet_end", "snippet_ending"] as const;
+
+const TRANSCRIPT_KINDS = ["transcript", "transcript_timestamps"] as const;
+
+const MOBILE_BREAKPOINT_PX = 1024;
+
+function useIsNarrow(breakpoint = MOBILE_BREAKPOINT_PX): boolean {
+  const query = `(max-width: ${breakpoint - 1}px)`;
+  const read = () =>
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia(query).matches
+      : false;
+  const [narrow, setNarrow] = useState(read);
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mql = window.matchMedia(query);
+    const onChange = () => setNarrow(mql.matches);
+    mql.addEventListener?.("change", onChange);
+    return () => mql.removeEventListener?.("change", onChange);
+  }, [query]);
+  return narrow;
+}
+
+function ArtifactGroup({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+  return (
+    <section data-testid={`artifact-group-${id}`} aria-labelledby={`${id}-group-h`} className="flex flex-col gap-2">
+      <h3
+        id={`${id}-group-h`}
+        className="text-xs font-semibold uppercase tracking-wide text-muted"
+      >
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+function ArtifactRow({
+  sermonId,
+  item,
+  testId,
+  live,
+  onOpen,
+}: {
+  sermonId: string;
+  item: ApiMediaItem;
+  testId: string;
+  live: boolean;
+  onOpen?: (kind: string) => void;
+}) {
+  const linkClass =
+    "inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted";
+  return (
+    <li
+      data-testid={testId}
+      className="flex min-w-0 flex-col gap-1 rounded-md border border-line bg-ink p-3 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div className="min-w-0">
+        <p className="text-sm font-semibold">{item.label || artifactLabel(item.kind)}</p>
+        <p className="text-xs text-muted">
+          {ARTIFACT_NOTES[item.kind] ?? "Additional processing artifact."} ·{" "}
+          {item.available ? formatBytes(item.size) : "not available"}
+        </p>
+      </div>
+      <div className="flex shrink-0 flex-wrap gap-2">
+        {item.available && live ? (
+          <a href={mediaStreamUrl(sermonId, item.kind)} download className={linkClass}>
+            Download
+          </a>
+        ) : null}
+        {item.available && live && onOpen ? (
+          <button type="button" onClick={() => onOpen(item.kind)} className={linkClass}>
+            Open in player
+          </button>
+        ) : null}
+      </div>
+    </li>
+  );
+}
 
 const ARTIFACT_NOTES: Record<string, string> = {
   source: "The original recording as it was ingested.",
@@ -83,6 +163,7 @@ function CollapsibleSection({
   defaultOpen = true,
   open,
   onToggle,
+  className = "",
   children,
 }: {
   id: string;
@@ -91,6 +172,7 @@ function CollapsibleSection({
   defaultOpen?: boolean;
   open?: boolean;
   onToggle?: (next: boolean) => void;
+  className?: string;
   children: ReactNode;
 }) {
   const [internal, setInternal] = useState(defaultOpen);
@@ -104,7 +186,7 @@ function CollapsibleSection({
     <section
       id={id}
       aria-labelledby={`${id}-h`}
-      className="rounded-lg border border-line bg-surface"
+      className={`rounded-lg border border-line bg-surface ${className}`}
     >
       <div className="flex items-center justify-between gap-2 p-3">
         <div className="min-w-0">
@@ -166,6 +248,9 @@ export function SermonReview({
   const [allFilesOpen, setAllFilesOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const narrow = useIsNarrow();
+  const [filesOpen, setFilesOpen] = useState(!narrow);
+  const [adjustOpen, setAdjustOpen] = useState(!narrow);
   const [form, setForm] = useState({
     title: sermon.title,
     speaker: sermon.speaker,
@@ -227,12 +312,21 @@ export function SermonReview({
   const activeKind = media.byKind[playerKind]?.available ? playerKind : preferredKind(media);
   const activeItem = media.byKind[activeKind];
 
-  const availablePrimary = PRIMARY_KINDS.map((kind) => ({ kind, item: media.byKind[kind] })).filter(
-    (row) => row.item?.available,
+  const primaryArtifacts = PRIMARY_KINDS.map((kind) => media.byKind[kind]).filter(
+    (item): item is ApiMediaItem => !!item?.available,
   );
-  const otherArtifacts = media.items.filter(
-    (item) => !(PRIMARY_KINDS as readonly string[]).includes(item.kind),
+  const extraMediaArtifacts = media.items.filter(
+    (item) =>
+      item.available &&
+      !(PRIMARY_KINDS as readonly string[]).includes(item.kind) &&
+      !(TRANSCRIPT_KINDS as readonly string[]).includes(item.kind) &&
+      !(PREVIEW_KINDS as readonly string[]).includes(item.kind),
   );
+  const previewArtifacts = PREVIEW_KINDS.map((kind) => media.byKind[kind]).filter(
+    (item): item is ApiMediaItem => !!item,
+  );
+  const availablePreviews = previewArtifacts.filter((item) => item.available);
+  const hasHiddenFiles = previewArtifacts.length > 0;
 
   const requestSeek = (sec: number) => setSeek((previous) => ({ sec, n: (previous?.n ?? 0) + 1 }));
 
@@ -388,7 +482,7 @@ export function SermonReview({
     form.description !== (description ?? "");
 
   return (
-    <div className="flex flex-col gap-4">
+    <div data-testid="sermon-review" className="flex flex-col gap-4">
       <header className="flex min-w-0 flex-col gap-2">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
@@ -404,7 +498,11 @@ export function SermonReview({
         </div>
       </header>
 
-      <section aria-label="Approval" className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-3">
+      <section
+        aria-label="Approval"
+        data-testid="approval-bar"
+        className="sticky top-16 z-20 flex flex-col gap-2 rounded-lg border border-line bg-surface p-3 shadow-lg lg:static lg:z-auto lg:shadow-none"
+      >
         <div className="flex flex-wrap items-center gap-2">
           <Chip tone={planStatusTone[plan.status]}>{planStatusLabel[plan.status]}</Chip>
           <span className="font-mono text-xs text-muted">
@@ -427,13 +525,14 @@ export function SermonReview({
             Approve · Render+upload
           </Button>
           <Button
+            className="w-full min-[480px]:w-auto"
             onClick={() => setNotesOpen((v) => !v)}
             aria-expanded={notesOpen}
             aria-controls="refine-notes"
           >
             Reject with notes
           </Button>
-          <Button onClick={reDetect} disabled={refining}>
+          <Button className="w-full min-[480px]:w-auto" onClick={reDetect} disabled={refining}>
             Re-detect
           </Button>
           <Button onClick={() => setHistoryOpen((v) => !v)} aria-expanded={historyOpen} aria-controls="history">
@@ -495,7 +594,7 @@ export function SermonReview({
       </section>
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="order-2 flex min-w-0 flex-col gap-4 lg:order-1">
+        <div className="flex min-w-0 flex-col gap-4 lg:order-1">
           <CollapsibleSection id="player-plan" title="Player & plan">
             <div className="flex min-w-0 flex-col gap-3">
               {live ? (
@@ -559,60 +658,84 @@ export function SermonReview({
                   </button>
                 ))}
               </div>
-              <fieldset>
-                <legend className="text-sm font-semibold">Adjust cuts</legend>
-                <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div>
-                    <label htmlFor="cut-start" className="text-xs font-medium text-muted">
-                      Start (mm:ss.s or seconds)
-                    </label>
-                    <input
-                      id="cut-start"
-                      value={startText}
-                      onChange={(e) => setStartText(e.target.value)}
-                      inputMode="decimal"
-                      className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 font-mono text-sm text-mist"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="cut-end" className="text-xs font-medium text-muted">
-                      End (mm:ss.s or seconds)
-                    </label>
-                    <input
-                      id="cut-end"
-                      value={endText}
-                      onChange={(e) => setEndText(e.target.value)}
-                      inputMode="decimal"
-                      className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 font-mono text-sm text-mist"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="cut-offset" className="text-xs font-medium text-muted">
-                      Audio offset, s (±5, 0.1 steps)
-                    </label>
-                    <input
-                      id="cut-offset"
-                      value={offsetText}
-                      onChange={(e) => setOffsetText(e.target.value)}
-                      inputMode="decimal"
-                      step={0.1}
-                      className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 font-mono text-sm text-mist"
-                    />
-                  </div>
-                </div>
-                <p className="mt-2 font-mono text-xs text-muted" aria-live="polite">
-                  Computed duration: {duration !== null ? formatCut(duration) : "—"}
-                </p>
-                {errors.length > 0 ? (
-                  <ul className="mt-2 flex flex-col gap-1" role="alert">
-                    {errors.map((e) => (
-                      <li key={e} className="text-xs text-danger">
-                        {e}
-                      </li>
-                    ))}
-                  </ul>
+              <div className="rounded-md border border-line bg-ink">
+                <button
+                  type="button"
+                  data-testid="adjust-cuts-disclosure"
+                  onClick={() => setAdjustOpen((v) => !v)}
+                  aria-expanded={adjustOpen}
+                  aria-controls="adjust-cuts-body"
+                  className="flex min-h-[44px] w-full items-center justify-between gap-2 px-3 text-left text-sm font-semibold text-mist"
+                >
+                  <span>Adjust cuts</span>
+                  <span aria-hidden="true" className="font-mono text-xs text-muted">
+                    {adjustOpen ? "Hide" : "Show"}
+                  </span>
+                </button>
+                {!adjustOpen ? (
+                  <p
+                    data-testid="adjust-cuts-summary"
+                    className="border-t border-line px-3 py-2 font-mono text-xs text-muted"
+                  >
+                    Start {formatCut(safeStart)} · End {formatCut(safeEnd)} ·{" "}
+                    {duration !== null ? formatCut(duration) : "—"}
+                  </p>
                 ) : null}
-              </fieldset>
+                <fieldset id="adjust-cuts-body" hidden={!adjustOpen} className="border-t border-line p-3">
+                  <legend className="sr-only">Adjust cuts</legend>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div>
+                      <label htmlFor="cut-start" className="text-xs font-medium text-muted">
+                        Start (mm:ss.s or seconds)
+                      </label>
+                      <input
+                        id="cut-start"
+                        value={startText}
+                        onChange={(e) => setStartText(e.target.value)}
+                        inputMode="decimal"
+                        className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 font-mono text-sm text-mist"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="cut-end" className="text-xs font-medium text-muted">
+                        End (mm:ss.s or seconds)
+                      </label>
+                      <input
+                        id="cut-end"
+                        value={endText}
+                        onChange={(e) => setEndText(e.target.value)}
+                        inputMode="decimal"
+                        className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 font-mono text-sm text-mist"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="cut-offset" className="text-xs font-medium text-muted">
+                        Audio offset, s (±5, 0.1 steps)
+                      </label>
+                      <input
+                        id="cut-offset"
+                        value={offsetText}
+                        onChange={(e) => setOffsetText(e.target.value)}
+                        inputMode="decimal"
+                        step={0.1}
+                        className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 font-mono text-sm text-mist"
+                      />
+                    </div>
+                  </div>
+                  <p className="mt-2 font-mono text-xs text-muted" aria-live="polite">
+                    Computed duration: {duration !== null ? formatCut(duration) : "—"}
+                  </p>
+                  {errors.length > 0 ? (
+                    <ul className="mt-2 flex flex-col gap-1" role="alert">
+                      {errors.map((e) => (
+                        <li key={e} className="text-xs text-danger">
+                          {e}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </fieldset>
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Button onClick={reset} disabled={!dirty || applying}>
                   Reset to plan values
@@ -624,95 +747,47 @@ export function SermonReview({
             </div>
           </CollapsibleSection>
 
-          <CollapsibleSection id="files" title="Files">
+          <CollapsibleSection
+            id="files"
+            title="Files"
+            open={filesOpen}
+            onToggle={setFilesOpen}
+          >
             <div className="flex flex-col gap-3">
-              {availablePrimary.length === 0 ? (
-                <p className="text-sm text-muted">No source, render, or keeper files recorded yet.</p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {availablePrimary.map(({ kind, item }) => (
-                    <li
-                      key={kind}
-                      data-testid="artifact-primary-row"
-                      className="flex min-w-0 flex-col gap-1 rounded-md border border-line bg-ink p-3 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold">
-                          {item?.label ?? artifactLabel(kind)}
-                        </p>
-                        <p className="text-xs text-muted">
-                          {ARTIFACT_NOTES[kind]} · {formatBytes(item?.size)}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 flex-wrap gap-2">
-                        {item?.available && live ? (
-                          <a
-                            href={mediaStreamUrl(sermon.id, kind)}
-                            download
-                            className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted"
-                          >
-                            Download
-                          </a>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <button
-                type="button"
-                data-testid="artifacts-disclosure"
-                onClick={() => setAllFilesOpen((v) => !v)}
-                aria-expanded={allFilesOpen}
-                aria-controls="all-files"
-                className="inline-flex min-h-[44px] w-fit items-center rounded-md border border-line px-3 text-sm font-medium text-mist transition-colors hover:border-muted"
-              >
-                {allFilesOpen ? "Hide all files" : "Show all files"}
-              </button>
-              <div id="all-files" hidden={!allFilesOpen} className="flex flex-col gap-3">
-                <ul className="flex flex-col gap-2">
-                  {otherArtifacts.length === 0 ? (
-                    <li className="text-sm text-muted">No other artifacts recorded.</li>
-                  ) : (
-                    otherArtifacts.map((item) => (
-                      <li
+              <ArtifactGroup id="files-media" title="Media">
+                {primaryArtifacts.length === 0 && extraMediaArtifacts.length === 0 ? (
+                  <p className="text-sm text-muted">No source, render, or keeper files recorded yet.</p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {primaryArtifacts.map((item) => (
+                      <ArtifactRow
                         key={item.kind}
-                        data-testid="artifact-other-row"
-                        className="flex min-w-0 flex-col gap-1 rounded-md border border-line bg-ink p-3 sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold">{item.label || artifactLabel(item.kind)}</p>
-                          <p className="text-xs text-muted">
-                            {ARTIFACT_NOTES[item.kind] ?? "Additional processing artifact."} ·{" "}
-                            {item.available ? formatBytes(item.size) : "not available"}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 flex-wrap gap-2">
-                          {item.available && live ? (
-                            <a
-                              href={mediaStreamUrl(sermon.id, item.kind)}
-                              download
-                              className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted"
-                            >
-                              Download
-                            </a>
-                          ) : null}
-                          {item.available && live ? (
-                            <button
-                              type="button"
-                              onClick={() => setPlayerKind(item.kind)}
-                              className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted"
-                            >
-                              Open in player
-                            </button>
-                          ) : null}
-                        </div>
-                      </li>
-                    ))
-                  )}
-                </ul>
+                        sermonId={sermon.id}
+                        item={item}
+                        testId="artifact-primary-row"
+                        live={live}
+                      />
+                    ))}
+                    {extraMediaArtifacts.map((item) => (
+                      <ArtifactRow
+                        key={item.kind}
+                        sermonId={sermon.id}
+                        item={item}
+                        testId="artifact-other-row"
+                        live={live}
+                        onOpen={setPlayerKind}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </ArtifactGroup>
+
+              <ArtifactGroup id="files-transcripts" title="Transcripts">
                 {transcript ? (
-                  <div className="rounded-md border border-line bg-ink p-3">
+                  <div
+                    data-testid="transcript-entry"
+                    className="rounded-md border border-line bg-ink p-3"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-semibold">Transcript</p>
                       <div className="flex flex-wrap items-center gap-2">
@@ -765,8 +840,47 @@ export function SermonReview({
                       </div>
                     ) : null}
                   </div>
-                ) : null}
-              </div>
+                ) : (
+                  <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
+                )}
+              </ArtifactGroup>
+
+              {hasHiddenFiles ? (
+                <div className="flex flex-col gap-3">
+                  <button
+                    type="button"
+                    data-testid="artifacts-disclosure"
+                    onClick={() => setAllFilesOpen((v) => !v)}
+                    aria-expanded={allFilesOpen}
+                    aria-controls="all-files"
+                    className="inline-flex min-h-[44px] w-fit items-center rounded-md border border-line px-3 text-sm font-medium text-mist transition-colors hover:border-muted"
+                  >
+                    {allFilesOpen ? "Hide files" : "Show all files"}
+                  </button>
+                  <div id="all-files" hidden={!allFilesOpen} className="flex flex-col gap-3">
+                    <ArtifactGroup id="files-previews" title="Previews">
+                      {availablePreviews.length === 0 ? (
+                        <p data-testid="previews-empty" className="text-sm text-muted">
+                          Previews appear after a render.
+                        </p>
+                      ) : (
+                        <ul className="flex flex-col gap-2">
+                          {availablePreviews.map((item) => (
+                            <ArtifactRow
+                              key={item.kind}
+                              sermonId={sermon.id}
+                              item={item}
+                              testId="artifact-preview-row"
+                              live={live}
+                              onOpen={setPlayerKind}
+                            />
+                          ))}
+                        </ul>
+                      )}
+                    </ArtifactGroup>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </CollapsibleSection>
 
@@ -818,7 +932,7 @@ export function SermonReview({
           </CollapsibleSection>
         </div>
 
-        <aside id="details" aria-labelledby="details-h" className="order-1 lg:order-2 lg:sticky lg:top-4 lg:self-start">
+        <aside id="details" aria-labelledby="details-h" className="lg:order-2 lg:sticky lg:top-4 lg:self-start">
           <button
             type="button"
             onClick={() => setDetailsOpen((v) => !v)}
