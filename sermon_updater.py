@@ -4387,6 +4387,108 @@ _DESCRIPTION_RETRY_INSTRUCTION = (
     "the text or its length."
 )
 
+_DESCRIPTION_MAX_ATTEMPTS = 2
+
+
+class DescriptionGenerationError(RuntimeError):
+    """Raised when no usable description could be generated.
+
+    Distinct from ``LLMTimeoutError`` and the model-availability errors: the
+    provider chain answered (or exhausted itself) without producing usable
+    prose. Callers must treat this as "no description": never persist the
+    reason as content, leave the stored field untouched, and mark the record
+    for review. The provider identity and elapsed wall-clock ride along so the
+    operator can act on the real cause.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str | None = None,
+        elapsed_seconds: float | None = None,
+        attempts: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.provider = provider
+        self.elapsed_seconds = elapsed_seconds
+        self.attempts = attempts
+
+
+def _description_provider_label() -> str:
+    try:
+        return _llm_target_label()
+    except Exception:
+        return "unknown model"
+
+
+def _description_chat_with_retry(
+    messages: list[dict[str, str]],
+    *,
+    prompt_chars: int,
+) -> str:
+    """Run one description chat, retrying once on a transient failure.
+
+    ``llm_manager.chat`` already walks the configured primary then fallback
+    chain inside a single call. This adds one retry for a transient error that
+    chain did not absorb, logs the provider and elapsed time per attempt, and
+    converts a terminal failure into a typed ``DescriptionGenerationError``
+    instead of a string the caller might store.
+    """
+    provider = _description_provider_label()
+    last_error: Exception | None = None
+    started = time.time()
+    for attempt in range(1, _DESCRIPTION_MAX_ATTEMPTS + 1):
+        attempt_started = time.time()
+        try:
+            response = llm_manager.chat(messages, operation="description_generation")
+        except (LLMModelNotFoundError, LLMModelNotConfiguredError):
+            raise
+        except Exception as exc:
+            last_error = exc
+            elapsed = time.time() - attempt_started
+            if attempt < _DESCRIPTION_MAX_ATTEMPTS:
+                logger.warning(
+                    "Description generation attempt %d/%d failed after %.1fs "
+                    "(provider=%s, prompt=%d chars): %s; retrying once",
+                    attempt,
+                    _DESCRIPTION_MAX_ATTEMPTS,
+                    elapsed,
+                    provider,
+                    prompt_chars,
+                    exc,
+                )
+            else:
+                logger.error(
+                    "Description generation failed after %d attempts "
+                    "(%.1fs total, provider=%s, prompt=%d chars, "
+                    "timeout=%.0fs/attempt): %s",
+                    attempt,
+                    time.time() - started,
+                    provider,
+                    prompt_chars,
+                    float(getattr(llm_manager, "call_timeout_seconds", 0.0) or 0.0),
+                    exc,
+                )
+            continue
+        logger.debug(
+            "Description generation attempt %d/%d returned %d chars in %.1fs "
+            "(provider=%s)",
+            attempt,
+            _DESCRIPTION_MAX_ATTEMPTS,
+            len(response or ""),
+            time.time() - attempt_started,
+            provider,
+        )
+        return response
+
+    raise DescriptionGenerationError(
+        f"description generation failed: {last_error}",
+        provider=provider,
+        elapsed_seconds=time.time() - started,
+        attempts=_DESCRIPTION_MAX_ATTEMPTS,
+    ) from last_error
+
 
 def generate_summary(
     transcript: str,
@@ -4488,17 +4590,24 @@ def generate_summary(
             "- Start directly with the description."
         )
         messages = [{'role': 'user', 'content': prompt}]
+    prompt_chars = sum(len(m.get('content') or '') for m in messages)
+    started = time.time()
+    provider = _description_provider_label()
     try:
-        provider_info = llm_manager.get_provider_info()
-        primary_provider = provider_info.get('primary', {}).get('type', 'unknown')
-        logger.debug("Generating summary using %s LLM...", primary_provider)
-        response = llm_manager.chat(messages)
+        logger.debug(
+            "Generating summary using %s (prompt=%d chars, timeout=%.0fs)...",
+            provider,
+            prompt_chars,
+            float(getattr(llm_manager, "call_timeout_seconds", 0.0) or 0.0),
+        )
+        response = _description_chat_with_retry(messages, prompt_chars=prompt_chars)
 
         response, description_needs_review = clean_description_with_retry(
             _clean_llm_thinking_response(response),
             regenerate=lambda: _clean_llm_thinking_response(
-                llm_manager.chat(
-                    [*messages, {'role': 'user', 'content': _DESCRIPTION_RETRY_INSTRUCTION}]
+                _description_chat_with_retry(
+                    [*messages, {'role': 'user', 'content': _DESCRIPTION_RETRY_INSTRUCTION}],
+                    prompt_chars=prompt_chars,
                 )
             ),
         )
@@ -4507,7 +4616,15 @@ def generate_summary(
         if description_needs_review:
             logger.warning(
                 "Description flagged needs_review after cleanup and one retry (%d chars)",
-                len(response),
+                len(response or ""),
+            )
+
+        if not (response or "").strip():
+            raise DescriptionGenerationError(
+                "description generation produced no usable text after cleanup",
+                provider=provider,
+                elapsed_seconds=time.time() - started,
+                attempts=_DESCRIPTION_MAX_ATTEMPTS,
             )
 
         # Ensure the response doesn't exceed SermonAudio's character limit
@@ -4519,13 +4636,31 @@ def generate_summary(
 
             response = trim_to_sentence(response, max_chars)
 
-        logger.debug("Summary generated (%d chars)", len(response))
+        logger.info(
+            "Description generated (provider=%s, chars=%d, elapsed=%.1fs)",
+            provider,
+            len(response),
+            time.time() - started,
+        )
         return response
     except (LLMTimeoutError, LLMModelNotFoundError, LLMModelNotConfiguredError):
         raise
+    except DescriptionGenerationError:
+        raise
     except Exception as e:  # pragma: no cover
-        logger.error("LLM summary generation failed: %s", e)
-        return "Summary generation failed"
+        logger.error(
+            "Description generation failed after %.1fs (provider=%s, prompt=%d chars): %s",
+            time.time() - started,
+            provider,
+            prompt_chars,
+            e,
+        )
+        raise DescriptionGenerationError(
+            f"description generation failed: {e}",
+            provider=provider,
+            elapsed_seconds=time.time() - started,
+            attempts=_DESCRIPTION_MAX_ATTEMPTS,
+        ) from e
 
 
 def verify_hashtags(initial_hashtags: str, original_text: str) -> str:
