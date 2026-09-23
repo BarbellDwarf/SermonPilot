@@ -4,7 +4,14 @@ import json
 import os
 import sqlite3
 
+import pytest
+
 from server.api.accounts import get_db_path
+
+
+@pytest.fixture(autouse=True)
+def _allow_tmp_as_ingest(tmp_path, monkeypatch):
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
 
 
 def _server_path_body(path, **overrides):
@@ -120,6 +127,37 @@ def test_server_path_stat_reports_real_file(client, scoped_setup, tmp_path):
     ).json()
     assert gone["exists"] is False
     assert client.get("/api/sermons/server-path/stat", params={"path": str(src)}).status_code == 401
+
+
+def test_server_path_rejects_sources_outside_allowed_roots(
+    client, scoped_setup, tmp_path
+):
+    s = scoped_setup
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    src = outside / "talk.mp3"
+    src.write_bytes(b"ID3")
+
+    r = client.post(
+        "/api/sermons/server-path", json=_server_path_body(src), headers=s["a"]["headers"]
+    )
+    assert r.status_code == 403, r.text
+
+    stat = client.get(
+        "/api/sermons/server-path/stat",
+        params={"path": str(src)},
+        headers=s["a"]["headers"],
+    )
+    assert stat.status_code == 403
+
+    traversal = client.post(
+        "/api/sermons/server-path",
+        json=_server_path_body(
+            str(tmp_path / ".." / f"{tmp_path.name}-outside" / "talk.mp3")
+        ),
+        headers=s["a"]["headers"],
+    )
+    assert traversal.status_code == 403
 
 
 def test_branding_upload_stores_per_user_with_tight_perms(

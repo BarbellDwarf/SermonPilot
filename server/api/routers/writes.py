@@ -641,6 +641,50 @@ def _ingest_base() -> Path:
     return Path(os.environ.get("SERMONPILOT_RAW_INGEST", "/data/raw_ingest"))
 
 
+def _server_path_roots() -> list[Path]:
+    """Local roots a server-path source may live under: raw ingest + input dir."""
+    from server.api.routers.userdata import _resolve_output_path
+
+    candidates = [_ingest_base()]
+    try:
+        from ui.config_utils import resolve_config
+
+        configured = str((resolve_config() or {}).get("input_directory") or "").strip()
+        if configured and not configured.startswith("remote:"):
+            candidates.append(_resolve_output_path(configured))
+    except Exception as exc:
+        logger.warning("Could not resolve input_directory for server paths: %s", exc)
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except (OSError, RuntimeError):
+            continue
+        if str(resolved) not in seen:
+            seen.add(str(resolved))
+            roots.append(resolved)
+    return roots
+
+
+def _resolve_server_path(value: str) -> Path:
+    """Resolve a server-path source, refusing traversal outside the input roots."""
+    raw = (value or "").strip()
+    if not raw.startswith("/"):
+        raise HTTPException(status_code=422, detail="container_path must be absolute")
+    try:
+        candidate = Path(raw).expanduser().resolve()
+    except (OSError, RuntimeError):
+        raise HTTPException(status_code=422, detail="container_path is not a valid path") from None
+    roots = _server_path_roots()
+    if not any(candidate == root or root in candidate.parents for root in roots):
+        raise HTTPException(
+            status_code=403,
+            detail="container_path is outside the allowed input directories",
+        )
+    return candidate
+
+
 def _upload_cap_bytes() -> int:
     try:
         gb = float(os.environ.get("SERMONPILOT_UPLOAD_GB", "30"))
@@ -806,10 +850,9 @@ class ServerPathBody(BaseModel):
 
 @router.get("/sermons/server-path/stat")
 def server_path_stat(path: str = "", user=Depends(require_user)) -> dict[str, Any]:
-    candidate = Path(path.strip()).expanduser() if path.strip() else None
-    if candidate is None or not path.strip().startswith("/"):
+    if not path.strip():
         return {"exists": False, "size": None, "size_human": "—", "ext": "", "kind": "—", "name": ""}  # noqa: E501
-    return _stat_path(candidate)
+    return _stat_path(_resolve_server_path(path))
 
 
 @router.post("/sermons/server-path", status_code=201)
@@ -855,9 +898,7 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
         info = {"size": None, "size_human": "—", "ext": ext, "kind": _kind_for_ext(ext)}
         source_path = ref
     else:
-        if not body.container_path.strip().startswith("/"):
-            raise HTTPException(status_code=422, detail="container_path must be absolute")
-        source = Path(body.container_path.strip()).expanduser()
+        source = _resolve_server_path(body.container_path)
         info = _stat_path(source)
         if not info["exists"] or not source.is_file():
             raise HTTPException(status_code=422, detail="container_path does not exist")
