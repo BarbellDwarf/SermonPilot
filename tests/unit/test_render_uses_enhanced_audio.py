@@ -154,6 +154,12 @@ def test_render_source_is_enhanced_mux_when_enhancement_runs(
     assert recorder.edit_render_input() == str(expected)
     assert "Rendering from the enhanced audio" in caplog.text
 
+    from ui.database import SermonRepository
+
+    row = SermonRepository().get_current_edit_plan(result["sermon_id"])
+    assert row is not None
+    assert row["source_path"] == str(expected)
+
 
 def test_render_source_is_enhanced_mux_when_retained_enhancement_reused(
     tmp_path: Path, monkeypatch, caplog

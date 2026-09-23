@@ -3026,6 +3026,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
         if gate_active:
             edit_source = audio_path if keeper_used else original_input_path
+            trash_source = edit_source
             if enhanced_render_source is not None and enhanced_render_source.exists():
                 edit_source = enhanced_render_source
                 console_print(f"Rendering from the enhanced audio ({edit_source})")
@@ -3158,6 +3159,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             auto_edit_state = {
                 'plan': gate_plan,
                 'source_path': str(edit_source),
+                'trash_source_path': str(trash_source),
                 'edited_path': str(edited_path),
                 'notes': gate_notes,
             }
@@ -3980,7 +3982,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             if auto_edit_state:
                 _persist_auto_edit_applied_plan(sermon_id)
-                edit_original = Path(auto_edit_state['source_path'])
+                edit_original = Path(
+                    auto_edit_state.get('trash_source_path')
+                    or auto_edit_state['source_path']
+                )
                 edit_keeper = audio_path if keeper_used else edit_original
                 try:
                     record = trash_original_after_edit(
