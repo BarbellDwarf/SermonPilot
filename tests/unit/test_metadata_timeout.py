@@ -110,17 +110,25 @@ def test_pipeline_continues_when_metadata_times_out(
     assert result["description"] != "Summary generation failed"
 
 
+GOOD_DESCRIPTION = (
+    "A faithful exposition of grace and mercy for the listener, tracing the "
+    "Apostle Paul's argument that salvation is a gift received by faith apart "
+    "from works. The speaker applies this to daily life, urging the hearer to "
+    "rest in Christ's finished work and to let gratitude, not guilt, drive "
+    "obedience. The message closes with a call to extend that same mercy to "
+    "neighbors and to keep the gospel central in every season."
+)
+
+
 def test_generate_summary_returns_metadata_on_a_normal_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    manager = _manager_with(
-        _WorkingProvider("A faithful exposition of grace and mercy for the listener.")
-    )
+    manager = _manager_with(_WorkingProvider(GOOD_DESCRIPTION))
     monkeypatch.setattr(su, "llm_manager", manager)
 
     summary = su.generate_summary("grace mercy peace " * 20)
 
-    assert summary == "A faithful exposition of grace and mercy for the listener."
+    assert summary == GOOD_DESCRIPTION
 
 
 def test_generate_hashtags_returns_metadata_on_a_normal_call(
