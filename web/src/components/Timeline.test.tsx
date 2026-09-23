@@ -112,6 +112,13 @@ describe("Timeline", () => {
     expect(start.getAttribute("aria-valuemax")).toBe("2512.3");
   });
 
+  it("gives each drag handle a 44px-wide touch target", () => {
+    render(<Timeline {...baseProps()} />);
+    for (const id of ["timeline-handle-start", "timeline-handle-end"]) {
+      expect(screen.getByTestId(id).className).toContain("w-11");
+    }
+  });
+
   it("map helpers clamp to the span", () => {
     expect(timelineSpan(100, 90, 95, clips)).toBe(2512.3);
     expect(timelinePercent(-5, 100)).toBe(0);

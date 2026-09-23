@@ -428,6 +428,28 @@ describe("SermonReview mobile layout", () => {
     expect(adjust.getAttribute("aria-expanded")).toBe("false");
     expect(screen.getByTestId("adjust-cuts-summary").textContent).toContain("Start");
   });
+
+  it("stacks the note and re-detect buttons full-width with 44px tap targets below 480px", () => {
+    setViewportWidth(390);
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    const reject = screen.getByRole("button", { name: "Reject with notes" });
+    const reDetect = screen.getByRole("button", { name: "Re-detect" });
+    for (const button of [reject, reDetect]) {
+      expect(button.className).toContain("w-full");
+      expect(button.className).toContain("min-[480px]:w-auto");
+      expect(button.className).toContain("min-h-[44px]");
+    }
+  });
 });
 
 describe("SermonReview enhancement choice", () => {
