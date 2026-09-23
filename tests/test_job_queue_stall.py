@@ -28,7 +28,7 @@ def _skip_resource_gate(monkeypatch: pytest.MonkeyPatch) -> None:
 def queue(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> JobQueue:
     db = SermonDatabase(db_path=str(tmp_path / "jobs.db"))
     monkeypatch.setattr(database_module, "_db", db)
-    return JobQueue(worker_id="stall-test-worker")
+    return JobQueue()
 
 
 def _wait_for_terminal(queue: JobQueue, job_id: str, timeout: float = 10.0) -> JobStatus:
@@ -40,6 +40,13 @@ def _wait_for_terminal(queue: JobQueue, job_id: str, timeout: float = 10.0) -> J
         time.sleep(0.02)
     job = queue.get_job(job_id)
     raise AssertionError(f"job {job_id} did not finish, last status: {job.status if job else None}")
+
+
+def _patch_stall_bound(monkeypatch: pytest.MonkeyPatch, seconds: float = 0.3) -> None:
+    monkeypatch.setattr(
+        "ui.config_utils.resolve_config",
+        lambda db=None: {"job_queue": {"stall_timeout_seconds": seconds}},
+    )
 
 
 def test_hung_stage_fails_with_the_stage_named_and_queue_moves_on(
@@ -55,7 +62,7 @@ def test_hung_stage_fails_with_the_stage_named_and_queue_moves_on(
         next_started.set()
         return JobResult(success=True, message="done")
 
-    monkeypatch.setattr(queue, "_stall_timeout_seconds", lambda: 0.3)
+    _patch_stall_bound(monkeypatch)
     monkeypatch.setattr(queue, "_get_job_executor", lambda job_type: fake_executor)
 
     hung_id = queue.add_job(JobType.VALIDATION, "hung", "stage hangs")
@@ -85,7 +92,7 @@ def test_a_progressing_job_is_never_stalled(
             time.sleep(0.1)
         return JobResult(success=True, message="done")
 
-    monkeypatch.setattr(queue, "_stall_timeout_seconds", lambda: 0.3)
+    _patch_stall_bound(monkeypatch)
     monkeypatch.setattr(queue, "_get_job_executor", lambda job_type: fake_executor)
 
     job_id = queue.add_job(JobType.VALIDATION, "progressing", "keeps logging")
