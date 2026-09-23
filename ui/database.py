@@ -440,6 +440,16 @@ class SermonDatabase:
         except Exception as exc:
             logger.warning("Sermon identity dedupe skipped: %s", exc)
 
+        try:
+            repaired = SermonRepository(self).repair_published_owners()
+            if repaired["repaired"]:
+                logger.warning(
+                    "Repaired %d published sermon owner(s) from publish records",
+                    len(repaired["repaired"]),
+                )
+        except Exception as exc:
+            logger.warning("Published owner repair skipped: %s", exc)
+
     @contextmanager
     def get_connection(self):
         """Get database connection with automatic cleanup"""
@@ -904,6 +914,68 @@ def _like_snippet(row: sqlite3.Row, query_text: str) -> str:
     return ''
 
 
+def repair_ownerless_sermons(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Assign a NULL sermon owner from its unambiguous publish job record.
+
+    Publishing a draft to SermonAudio migrates the row to the remote id. The
+    publish job (``background_jobs.type = 'sermon_publish'``) stores the new id
+    in its result and the publishing user in ``user_id``. When exactly one such
+    job names a NULL-owned sermon, that job's owner is the owner of the draft
+    the row came from. Anything else (no publish record, or conflicting owners)
+    is left untouched and reported. Idempotent: a repaired row no longer has a
+    NULL owner, so a second run finds nothing to do.
+    """
+    summary: dict[str, Any] = {"repaired": [], "unresolved": []}
+    tables = {
+        row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    if 'sermons' not in tables or 'background_jobs' not in tables:
+        return summary
+    sermon_cols = {row[1] for row in conn.execute("PRAGMA table_info(sermons)")}
+    if 'user_id' not in sermon_cols:
+        return summary
+    ownerless = [
+        str(row[0]) for row in conn.execute("SELECT id FROM sermons WHERE user_id IS NULL")
+    ]
+    if not ownerless:
+        return summary
+
+    owners_by_published: dict[str, set[str]] = {}
+    jobs = conn.execute(
+        "SELECT result, user_id FROM background_jobs"
+        " WHERE type = 'sermon_publish' AND user_id IS NOT NULL AND result IS NOT NULL"
+    ).fetchall()
+    for job in jobs:
+        try:
+            payload = json.loads(job['result'] or '{}')
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        data = payload.get('data') if isinstance(payload.get('data'), dict) else {}
+        published_id = data.get('sermon_id') or payload.get('sermon_id')
+        if not published_id:
+            continue
+        owners_by_published.setdefault(str(published_id), set()).add(str(job['user_id']))
+
+    for sermon_id in ownerless:
+        owners = owners_by_published.get(sermon_id)
+        if owners and len(owners) == 1:
+            conn.execute(
+                "UPDATE sermons SET user_id = ? WHERE id = ? AND user_id IS NULL",
+                (next(iter(owners)), sermon_id),
+            )
+            summary['repaired'].append(
+                {"sermon_id": sermon_id, "user_id": next(iter(owners))}
+            )
+        else:
+            summary['unresolved'].append({
+                "sermon_id": sermon_id,
+                "reason": "conflicting publish owners" if owners else "no publish record",
+            })
+    return summary
+
+
 class SermonRepository:
     """Repository for managing sermon records with Q&A information"""
 
@@ -1251,6 +1323,14 @@ class SermonRepository:
                 summary["groups"] += 1
                 summary["merged"].append({"kept": survivor['id'], "removed": removed})
         return summary
+
+    def repair_published_owners(self) -> dict[str, Any]:
+        """Heal NULL owners on rows migrated by a draft publish. See
+        :func:`repair_ownerless_sermons`. Idempotent."""
+        with self.db.get_connection() as conn:
+            summary = repair_ownerless_sermons(conn)
+            conn.commit()
+            return summary
 
     def save_edit_plan_revision(self, sermon_id: str, plan: dict[str, Any]) -> int:
         with self.db.get_connection() as conn:
