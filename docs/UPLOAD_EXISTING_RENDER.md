@@ -90,6 +90,9 @@ toast, or as the confirmation dialog for an empty description.
 
 - `tests/unit/test_upload_only.py`: the router and executor use the stored
   render, skip the pipeline, and return each documented refusal.
+- `tests/unit/test_publish_owner_repair.py`: the publish migration keeps the
+  draft owner and the owner check accepts the published row; the NULL-owner
+  repair is idempotent and leaves ambiguous rows alone.
 - `tests/test_publish_dry_run.py`: the uploader uploads the explicit path and
   does not render.
 - `tests/unit/test_job_labels.py`: the job states it is uploading the existing

@@ -4213,6 +4213,8 @@ def publish_dry_run_sermon(
             'audio': str(resolved_upload_path),
             'metadata': str(file_paths.get('metadata', '')),
         }
+        carried_file_paths = dict(file_paths)
+        carried_file_paths.update(new_file_paths)
         try:
             with repo.db.get_connection() as conn:
                 sermons_cols = [
@@ -4237,6 +4239,15 @@ def publish_dry_run_sermon(
                 original_created_at = sermon_data.get('created_at')
                 if original_created_at and 'created_at' in sermons_cols:
                     col_values['created_at'] = original_created_at
+                for carry in (
+                    'user_id',
+                    'church_name',
+                    'is_favorite',
+                    'notes',
+                    'description_needs_review',
+                ):
+                    if carry in sermons_cols and carry in sermon_data:
+                        col_values[carry] = sermon_data.get(carry)
                 columns = [c for c in col_values if c in sermons_cols]
                 placeholders = ", ".join("?" for _ in columns)
                 conn.execute(
@@ -4244,7 +4255,7 @@ def publish_dry_run_sermon(
                     f"VALUES ({placeholders})",
                     [col_values[c] for c in columns],
                 )
-                for file_type, file_path in new_file_paths.items():
+                for file_type, file_path in carried_file_paths.items():
                     if not file_path:
                         continue
                     file_size = 0
@@ -4259,13 +4270,16 @@ def publish_dry_run_sermon(
                         (sermon_id, file_type, file_path, file_size)
                         VALUES (?, ?, ?, ?)
                     """, (new_sermon_id, file_type, file_path, file_size))
+                key_topics = content.get('key_topics')
+                if key_topics is not None and not isinstance(key_topics, str):
+                    key_topics = json.dumps(key_topics)
                 conn.execute("""
                     INSERT OR REPLACE INTO sermon_content
                     (sermon_id, transcript_text, description, hashtags, key_topics, summary)
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (
                     new_sermon_id, transcript or '', description or '', hashtags or '',
-                    '[]', None
+                    key_topics if key_topics is not None else '[]', content.get('summary')
                 ))
                 try:
                     upload_cols = [
