@@ -77,6 +77,14 @@ JOB_CANCEL_POLL_INTERVAL_SECONDS = 1.0
 JOB_LEASE_TIMEOUT_SECONDS = 30.0
 JOB_HEARTBEAT_INTERVAL_SECONDS = 5.0
 
+# A job that reports no progress at all for this long is treated as stalled and
+# failed, so one hung native call cannot wedge the single worker forever. The
+# bound is on silence, not total runtime: a long transcription that keeps
+# emitting segment progress is never stalled. Large files are normal, so the
+# default is generous; a single legitimately silent native call must finish
+# inside it. Set to 0 to disable the watchdog.
+JOB_STALL_TIMEOUT_SECONDS = 1800.0
+
 
 def _is_secret_key(key: str) -> bool:
     """Return True if a parameter key should never be persisted."""
@@ -198,6 +206,14 @@ class JobStatus(Enum):
 
 class JobCancelledError(Exception):
     """Raised when a job is cancelled while it is executing."""
+
+
+class JobStalledError(Exception):
+    """Raised when a job makes no progress for longer than the stall bound."""
+
+    def __init__(self, stage: str):
+        self.stage = stage or "unknown stage"
+        super().__init__(self.stage)
 
 
 _TERMINAL_JOB_STATUSES = frozenset({
@@ -407,11 +423,17 @@ class Job:
         # coordination above, so the dataclass and persisted schema are
         # unchanged; reconciliation reads it to tell a live job from an orphan.
         self._owner_id: str | None = None
+        # Watchdog activity: the monotonic time of the last progress/log line
+        # and the stage named by the last one.
+        self._last_activity_at = time.monotonic()
+        self._last_stage = "starting"
 
     def add_log(self, message: str):
         """Append a log line and notify the persister."""
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.logs.append(f"[{timestamp}] {message}")
+        if message:
+            self._last_stage = str(message)
         self._notify_update()
 
     def update_progress(self, progress: float, message: str = ""):
@@ -433,6 +455,7 @@ class Job:
 
     def _notify_update(self):
         """Invoke the queue's persistence hook when one is registered."""
+        self._last_activity_at = time.monotonic()
         hook = self._on_update
         if hook is None:
             return
@@ -1205,6 +1228,55 @@ class JobQueue:
         job.status = JobStatus.CANCELLED
         job.completed_at = datetime.now()
 
+    def _stall_timeout_seconds(self) -> float:
+        """No-progress bound for a running job; 0 disables the watchdog."""
+        timeout = JOB_STALL_TIMEOUT_SECONDS
+        try:
+            from ui.config_utils import resolve_config
+
+            queue_cfg = resolve_config().get("job_queue", {}) or {}
+            timeout = float(queue_cfg.get("stall_timeout_seconds", timeout))
+        except Exception:
+            pass
+        return max(0.0, timeout)
+
+    def _run_executor_with_watchdog(self, job: Job, executor: Callable) -> JobResult:
+        """Run the executor in a child thread, abandoning it when it stalls.
+
+        The worker waits on the child in short slices and only gives up when
+        the job has reported no progress for the stall bound, so a legitimately
+        long stage that keeps logging is left to finish. On a stall the child
+        is abandoned (a daemon thread, so it cannot keep the process alive) and
+        the job is failed with its last named stage, freeing the worker for the
+        next job.
+        """
+        holder: dict[str, Any] = {}
+
+        def _run() -> None:
+            try:
+                holder["result"] = executor(job)
+            except BaseException as exc:  # re-raised on the worker thread
+                holder["exc"] = exc
+
+        child = threading.Thread(
+            target=_run, name=f"JobExecutor-{job.id[:8]}", daemon=True
+        )
+        child.start()
+        timeout = self._stall_timeout_seconds()
+        while child.is_alive():
+            child.join(1.0)
+            if child.is_alive() and timeout > 0:
+                if time.monotonic() - job._last_activity_at >= timeout:
+                    job._on_update = None
+                    raise JobStalledError(job._last_stage)
+
+        if "exc" in holder:
+            raise holder["exc"]
+        result = holder.get("result")
+        if result is None:
+            raise RuntimeError("job executor returned no result")
+        return result
+
     def _execute_job(self, job: Job):
         """Execute a specific job"""
         job._on_update = self._on_job_update
@@ -1215,14 +1287,16 @@ class JobQueue:
                 return
 
             job.add_log(f"Executing {job.type.value} job")
+            job._last_activity_at = time.monotonic()
+            job._last_stage = f"Executing {job.type.value} job"
 
             # Get the appropriate job executor
             executor = self._get_job_executor(job.type)
             if not executor:
                 raise ValueError(f"No executor found for job type: {job.type.value}")
 
-            # Execute the job
-            result = executor(job)
+            # Execute the job under a no-progress watchdog
+            result = self._run_executor_with_watchdog(job, executor)
             job._on_update = None
 
             with self._queue_lock:
@@ -1248,6 +1322,25 @@ class JobQueue:
             with self._queue_lock:
                 self._mark_cancelled(job)
             job.add_log("Job cancelled by user")
+
+        except JobStalledError as e:
+            job._on_update = None
+            timeout = self._stall_timeout_seconds()
+            with self._queue_lock:
+                if job.status not in _TERMINAL_JOB_STATUSES:
+                    job.status = JobStatus.FAILED
+                    job.completed_at = datetime.now()
+                    job.result = JobResult(
+                        success=False,
+                        message=f"Job stalled at stage: {e.stage}",
+                        error=(
+                            f"No progress at stage '{e.stage}' for {timeout:.0f}s. "
+                            "The job was stopped so the queue can continue; any "
+                            "completed output was kept. Retry when the stage is healthy."
+                        ),
+                    )
+            job.add_log(f"Job stalled at stage: {e.stage}")
+            logger.error("Job %s stalled at stage %s", job.id, e.stage)
 
         except MemoryError as e:
             job._on_update = None
