@@ -253,6 +253,7 @@ def _sermon_label_fields(sermon_id: str) -> dict[str, Any]:
 def _active_job_for(sermon_id: str) -> dict[str, Any] | None:
     try:
         from server.api.db import ReadOnlySermonDatabase
+        from ui.job_queue import INTERRUPTED_BY_RESTART_MARKER
 
         cutoff = (datetime.now() - timedelta(seconds=_ACTIVE_JOB_GRACE_SECONDS)).isoformat()
         with ReadOnlySermonDatabase().get_connection() as conn:
@@ -261,12 +262,14 @@ def _active_job_for(sermon_id: str) -> dict[str, Any] | None:
                 " WHERE (status IN (?, ?)"
                 "        OR (status IN ('completed', 'failed')"
                 "            AND completed_at IS NOT NULL"
-                "            AND datetime(completed_at) >= datetime(?)))"
+                "            AND datetime(completed_at) >= datetime(?)"
+                "            AND (result IS NULL OR result NOT LIKE ?)))"
                 " AND (parameters LIKE ? OR parameters LIKE ?)"
                 " ORDER BY created_at DESC LIMIT 1",
                 (
                     *_ACTIVE_STATUSES,
                     cutoff,
+                    f"%{INTERRUPTED_BY_RESTART_MARKER}%",
                     f'%"{sermon_id}"%',
                     f"%{sermon_id}%",
                 ),
