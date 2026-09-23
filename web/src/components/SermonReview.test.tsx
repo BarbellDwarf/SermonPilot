@@ -660,3 +660,42 @@ describe("SermonReview refine controls", () => {
     expect(screen.getByRole("button", { name: "Re-detect" })).toBeTruthy();
   });
 });
+
+describe("SermonReview description review", () => {
+  it("shows the failure state and retries the description generation", async () => {
+    const user = userEvent.setup();
+    const regenerate = vi.fn();
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        descriptionNeedsReview
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+        onRegenerateDescription={regenerate}
+      />,
+    );
+
+    expect(screen.getByText(/Description generation failed - retry/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Retry generation" }));
+    expect(regenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not show the retry state when the description is fine", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description="A good description."
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    expect(screen.queryByText(/Description generation failed - retry/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry generation" })).toBeNull();
+  });
+});
