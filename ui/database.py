@@ -1803,13 +1803,17 @@ class SermonRepository:
             with self.db.get_connection() as conn:
                 sermon_cols = ('title', 'subtitle', 'speaker', 'event_type', 'recorded_date',
                                'bible_text', 'series_title', 'description', 'scripture_reference',
-                               'church_name', 'is_favorite', 'notes', 'status', 'duration')
+                               'church_name', 'is_favorite', 'notes', 'status', 'duration',
+                               'description_needs_review')
                 set_parts = []
                 params = []
                 for col in sermon_cols:
                     if col in metadata:
                         set_parts.append(f"{col} = ?")
-                        params.append(metadata[col])
+                        value = metadata[col]
+                        if col == 'description_needs_review':
+                            value = 1 if value else 0
+                        params.append(value)
                 if set_parts:
                     set_parts.append("updated_at = ?")
                     params.append(utcnow())

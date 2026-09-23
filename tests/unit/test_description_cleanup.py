@@ -81,15 +81,15 @@ def test_commentary_only_triggers_exactly_one_retry(
     assert notes["description_needs_review"] is False
 
 
-def test_failed_retry_marks_review_and_keeps_best(
+def test_failed_retry_rejects_junk_and_marks_review(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     provider = _ScriptedProvider([NARRATION, "A short but real description."])
     monkeypatch.setattr(su, "llm_manager", _manager_with(provider))
     notes: dict = {}
 
-    summary = su.generate_summary("grace mercy peace " * 20, notes=notes)
+    with pytest.raises(su.DescriptionGenerationError):
+        su.generate_summary("grace mercy peace " * 20, notes=notes)
 
-    assert summary == "A short but real description."
     assert provider.calls == 2
     assert notes["description_needs_review"] is True

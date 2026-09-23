@@ -30,6 +30,18 @@ sys.path.insert(0, str(src_dir))
 
 logger = logging.getLogger(__name__)
 
+try:
+    from src.metadata_cleanup import validate_description
+except ImportError:  # pragma: no cover - src is on sys.path in every real run
+    from metadata_cleanup import validate_description
+
+_DESCRIPTION_RETRY_INSTRUCTION = (
+    "That reply was not usable as a description. Rewrite it and reply with ONLY "
+    "the description: one paragraph of plain prose. Do not include reasoning, "
+    "character or word counting, headings, labels, quotes, or any notes about "
+    "the text or its length."
+)
+
 
 def _set_feedback(message, kind="success", details=None):
     """Persist feedback in session state so it survives reruns"""
@@ -162,6 +174,74 @@ def _get_transcript(sermon):
     return transcript
 
 
+def generate_library_description(
+    llm, transcript: str, event_type: str, speaker_name: str
+) -> tuple[str | None, str | None]:
+    """Generate one Library description through the shared validator.
+
+    Mirrors the pipeline prompt, then routes the reply through
+    ``metadata_cleanup.validate_description`` so both generators share the same
+    rejection rule. Returns ``(description, rejection_reason)``; a rejected
+    reply yields ``(None, reason)`` and the caller keeps the stored text.
+    """
+    is_class = any(c.lower() in (event_type or '').lower() for c in [
+        'Sunday School', 'Midweek Service', 'Bible Study', 'Teaching', 'Class',
+        'Devotional', 'Conference', 'Camp Meeting', 'Children', 'Youth',
+        'Question & Answer',
+    ])
+    role_desc = (
+        'Bible class summarization assistant' if is_class
+        else 'sermon summarization assistant'
+    )
+    body_desc = (
+        'Sunday School, Midweek, or class/lecture event' if is_class else 'sermon'
+    )
+
+    speaker_instruction = (
+        f"- The speaker's name is {speaker_name}\n"
+        if speaker_name
+        else "- Identify the primary speaker from the transcript\n"
+    )
+
+    desc_prompt = (
+        f"You are a {role_desc}. Read the following {body_desc} transcript "
+        f"and write a single, "
+        f"concise description of the main message and application. Focus on what "
+        f"the speaker wanted the audience to understand, believe, or do. "
+        f"Avoid generic statements; "
+        f"emphasize unique focus.\n\nTranscript:\n{transcript}\n\nGuidelines:\n"
+        f"- One paragraph of plain prose: cover the main message, the key "
+        f"scripture, and the practical application\n"
+        f"- Four to six sentences is usually enough; keep it under 1400 "
+        f"characters so the upload is accepted\n"
+        + speaker_instruction +
+        "- No intro or closing words\n- No markdown or bullets\n"
+        "- Do not prefix with 'Summary:' or any other label\n"
+        "- If the transcript is incomplete, infer the likely main message\n"
+        "- Use the actual speaker name, not placeholder text\n"
+        "- Reply with the description ONLY: no reasoning, no commentary, no "
+        "character or word counting, no headings, no quotes, and no notes "
+        "about the text or its length\n"
+        "- Start directly with the description."
+    )
+
+    from src.llm_manager import extract_final_answer, trim_to_sentence
+
+    def _ask(prompt: str) -> str:
+        return extract_final_answer(
+            llm.chat([{'role': 'user', 'content': prompt}])
+        ) or ""
+
+    retry_prompt = desc_prompt + "\n\n" + _DESCRIPTION_RETRY_INSTRUCTION
+    description, rejection = validate_description(
+        _ask(desc_prompt),
+        regenerate=lambda: _ask(retry_prompt),
+    )
+    if description is not None and len(description) > 1600:
+        description = trim_to_sentence(description, 1600)
+    return description, rejection
+
+
 def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
     """Generate AI description and/or hashtags from sermon transcript"""
     sermon_id = sermon.get('id') or sermon.get('sermon_id')
@@ -230,66 +310,16 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
 
         description = None
         hashtags = None
+        description_rejection = None
 
         if gen_description:
             with st.spinner("Generating description..."):
-                event_type = sermon.get('event_type', '')
-                speaker_name = sermon.get('speaker', '')
-
-                # Build description prompt (mirrors sermon_updater.generate_summary)
-                is_class = any(c.lower() in (event_type or '').lower() for c in [
-                    'Sunday School', 'Midweek Service', 'Bible Study', 'Teaching', 'Class',
-                    'Devotional', 'Conference', 'Camp Meeting', 'Children', 'Youth',
-                    'Question & Answer',
-                ])
-                role_desc = (
-                    'Bible class summarization assistant' if is_class
-                    else 'sermon summarization assistant'
+                description, description_rejection = generate_library_description(
+                    llm,
+                    transcript,
+                    sermon.get('event_type', ''),
+                    sermon.get('speaker', ''),
                 )
-                body_desc = (
-                    'Sunday School, Midweek, or class/lecture event' if is_class else 'sermon'
-                )
-
-                speaker_instruction = (
-                    f"- The speaker's name is {speaker_name}\n"
-                    if speaker_name
-                    else "- Identify the primary speaker from the transcript\n"
-                )
-
-                desc_prompt = (
-                    f"You are a {role_desc}. Read the following {body_desc} transcript "
-                    f"and write a single, "
-                    f"concise description of the main message and application. Focus on what "
-                    f"the speaker wanted the audience to understand, believe, or do. "
-                    f"Avoid generic statements; "
-                    f"emphasize unique focus.\n\nTranscript:\n{transcript}\n\nGuidelines:\n"
-                    f"- One paragraph of plain prose: cover the main message, the key "
-                    f"scripture, and the practical application\n"
-                    f"- Four to six sentences is usually enough; keep it under 1400 "
-                    f"characters so the upload is accepted\n"
-                    + speaker_instruction +
-                    "- No intro or closing words\n- No markdown or bullets\n"
-                    "- Do not prefix with 'Summary:' or any other label\n"
-                    "- If the transcript is incomplete, infer the likely main message\n"
-                    "- Use the actual speaker name, not placeholder text\n"
-                    "- Reply with the description ONLY: no reasoning, no commentary, no "
-                    "character or word counting, no headings, no quotes, and no notes "
-                    "about the text or its length\n"
-                    "- Start directly with the description."
-                )
-
-                raw_description = llm.chat([{'role': 'user', 'content': desc_prompt}])
-                from src.llm_manager import extract_final_answer
-                from src.metadata_cleanup import clean_description
-
-                description = clean_description(
-                    extract_final_answer(raw_description) or raw_description
-                )
-
-                if len(description) > 1600:
-                    from src.llm_manager import trim_to_sentence
-
-                    description = trim_to_sentence(description, 1600)
 
         if gen_hashtags:
             with st.spinner("Generating hashtags..."):
@@ -326,6 +356,12 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
                 update_data['description'] = description
             if hashtags:
                 update_data['hashtags'] = hashtags
+            if description_rejection is not None:
+                # A rejected reply must never become content: leave the stored
+                # description untouched and flag the record for review.
+                update_data['description_needs_review'] = True
+            elif description:
+                update_data['description_needs_review'] = False
             if update_data:
                 repo.update_sermon_metadata(sermon_id, update_data)
 
@@ -367,12 +403,21 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
                 """, (sermon_id, title, speaker, cur_transcript, cur_description, cur_hashtags))
                 conn.commit()
 
-            parts = []
-            if description:
-                parts.append("description")
-            if hashtags:
-                parts.append("hashtags")
-            _set_feedback(f"AI {' and '.join(parts)} generated and saved!")
+            if description_rejection is not None:
+                _set_feedback(
+                    f"Description generation rejected ({description_rejection}); "
+                    "the existing description was kept and the sermon is flagged "
+                    "for review.",
+                    kind="warning",
+                )
+            else:
+                parts = []
+                if description:
+                    parts.append("description")
+                if hashtags:
+                    parts.append("hashtags")
+                if parts:
+                    _set_feedback(f"AI {' and '.join(parts)} generated and saved!")
             # Refresh session state with updated data
             st.session_state.selected_sermon = repo.get_sermon(sermon_id)
 

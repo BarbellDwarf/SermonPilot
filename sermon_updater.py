@@ -114,9 +114,9 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     from llm_manager import _call_with_deadline as _llm_call_with_deadline
     from metadata_cleanup import (
         clean_description,
-        clean_description_with_retry,
         clean_hashtags,
         clean_title,
+        validate_description,
     )
     from processing.orchestrator import (
         ArgumentsNormalizer,
@@ -4772,7 +4772,7 @@ def generate_summary(
         )
         response = _description_chat_with_retry(messages, prompt_chars=prompt_chars)
 
-        response, description_needs_review = clean_description_with_retry(
+        response, rejection_reason = validate_description(
             _clean_llm_thinking_response(response),
             regenerate=lambda: _clean_llm_thinking_response(
                 _description_chat_with_retry(
@@ -4782,16 +4782,19 @@ def generate_summary(
             ),
         )
         if notes is not None:
-            notes['description_needs_review'] = description_needs_review
-        if description_needs_review:
+            notes['description_needs_review'] = rejection_reason is not None
+            if rejection_reason is not None:
+                notes['description_error'] = (
+                    f"description generation produced unusable text: {rejection_reason}"
+                )
+        if rejection_reason is not None:
             logger.warning(
-                "Description flagged needs_review after cleanup and one retry (%d chars)",
-                len(response or ""),
+                "Description rejected after cleanup and one retry (%s); not stored",
+                rejection_reason,
             )
-
-        if not (response or "").strip():
             raise DescriptionGenerationError(
-                "description generation produced no usable text after cleanup",
+                "description generation produced no usable text after cleanup "
+                f"({rejection_reason})",
                 provider=provider,
                 elapsed_seconds=time.time() - started,
                 attempts=_DESCRIPTION_MAX_ATTEMPTS,
