@@ -46,8 +46,8 @@ The console runs in a browser. There is no command line for the operator.
 5. Open the sermon in **Library** to review the proposed cuts, then approve.
    Follow the run under **Jobs**.
 
-Standing the server up, the image, the environment, the volumes, and the first
-boot, is covered in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the image, environment,
+volumes, and first boot.
 
 ## Documentation
 
@@ -63,7 +63,8 @@ OAuth client.
   JSON.
 - **API server** (`server/api/`): FastAPI. Serves the console bundle and the
   `/api/*` routes, reads the SQLite database, and queues jobs. Account sessions
-  gate every route except health, login, bootstrap, and the OAuth callback.
+  gate every route except health, login, bootstrap, the cutover metadata, and the
+  OAuth callback.
 - **Job queue** (`ui/job_queue.py`, `ui/job_executors.py`): jobs run in a
   background queue, serialized by default, with cancel and per-job logs.
 - **Media pipeline** (`sermon_updater.py`, `src/`): clean, enhance, mux,
