@@ -17,7 +17,7 @@ enumeration of environment variables.
 |---|---|---|
 | General | API Key (`api_key`) | SermonAudio Accounts, per-account `api_key`; Single-account fallback for the seeded/env value |
 | General | Broadcaster ID (`broadcaster_id`) | SermonAudio Accounts, per-account `broadcaster_id`; Single-account fallback for the seeded/env value |
-| General | Test API Connection | SermonAudio Accounts, "Test" |
+| General | Test API Connection | Removed (see below) |
 | General | Dry Run Mode (`dry_run`) | General |
 | General | Debug Mode (`debug`) | General |
 | General | Hashtag Verification (`hashtag_verification`) | General |
@@ -105,6 +105,10 @@ surface, not migrations.
   transformer download helper. Whisper weights are fetched inside the
   processing container on first use, and the console states that limitation
   instead of offering a mock download button.
+- **Test API Connection.** The legacy General tab had a button that called the
+  SermonAudio API with the saved credentials. The console has no server-side
+  credential check endpoint, so the button was removed rather than kept as a
+  fake success path. Credentials are exercised for real when a sermon uploads.
 
 ## Environment override display
 
