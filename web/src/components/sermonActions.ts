@@ -1,8 +1,26 @@
-import type { LibrarySermonStatus } from "../mock/data";
+import type { LibrarySermonStatus, PlanStatus } from "../mock/data";
 
 export interface SermonActionState {
   status: LibrarySermonStatus;
   hasRender: boolean;
+}
+
+export type SermonViewMode = "editing" | "completed";
+
+/**
+ * A sermon is finished once it has been published (record status ``processed``)
+ * or its edit plan has reached ``processed``. Every other combination still has
+ * edit work pending, so it keeps the editing interface.
+ */
+export function sermonViewMode({
+  status,
+  planStatus,
+}: {
+  status: LibrarySermonStatus;
+  planStatus?: PlanStatus | null;
+}): SermonViewMode {
+  if (status === "processed" || planStatus === "processed") return "completed";
+  return "editing";
 }
 
 export interface SermonActions {
