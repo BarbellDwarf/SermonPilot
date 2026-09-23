@@ -143,6 +143,7 @@ export interface TranscriptState {
 export interface SermonReviewProps {
   sermon: LibrarySermon;
   description: string | null;
+  descriptionNeedsReview?: boolean;
   plan: EditPlan;
   history?: EditPlan[];
   media: SermonMediaData;
@@ -151,6 +152,7 @@ export interface SermonReviewProps {
   headerActions?: ReactNode;
   transcript?: TranscriptState;
   onSaveDetails?: (patch: DetailsPatch) => Promise<void> | void;
+  onRegenerateDescription?: () => void;
   onRefresh?: () => void;
   onToast: (msg: string) => void;
   enhanceDefault?: boolean;
@@ -216,6 +218,7 @@ function CollapsibleSection({
 export function SermonReview({
   sermon,
   description,
+  descriptionNeedsReview = false,
   plan: initial,
   history: planHistory,
   media,
@@ -224,6 +227,7 @@ export function SermonReview({
   headerActions,
   transcript,
   onSaveDetails,
+  onRegenerateDescription,
   onRefresh,
   onToast,
   enhanceDefault = true,
@@ -1022,6 +1026,19 @@ export function SermonReview({
                   rows={4}
                   className="mt-1 w-full min-w-0 rounded-md border border-line bg-ink px-3 py-2 text-sm text-mist"
                 />
+                {descriptionNeedsReview ? (
+                  <div
+                    role="alert"
+                    className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-danger bg-ink p-3 text-sm text-danger"
+                  >
+                    <span className="font-semibold">Description generation failed - retry.</span>
+                    {onRegenerateDescription ? (
+                      <Button variant="secondary" onClick={onRegenerateDescription}>
+                        Retry generation
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Button type="submit" variant="primary" disabled={!detailsDirty || saveState === "saving"}>

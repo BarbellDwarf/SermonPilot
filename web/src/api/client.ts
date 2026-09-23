@@ -31,6 +31,7 @@ export interface ApiSermonFile {
 export interface ApiSermonDetail extends ApiSermonListItem {
   duration_seconds: number | null;
   description: string | null;
+  description_needs_review: boolean;
   files: ApiSermonFile[];
   transcript_available: boolean;
   transcript_length: number;
@@ -456,6 +457,8 @@ export const writeApi = {
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/plan/re-detect`, "POST"),
   uploadNow: (id: string) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/upload`, "POST"),
+  regenerateDescription: (id: string) =>
+    send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/description/regenerate`, "POST"),
   cancelJob: (id: string) => send<{ cancelled: boolean; job_id: string }>(`/api/jobs/${encodeURIComponent(id)}/cancel`, "POST"),
 };
 

@@ -44,6 +44,7 @@ class SermonDetailOut(BaseModel):
     series: str
     status: str
     description: str | None = None
+    description_needs_review: bool = False
     files: list[SermonFileOut] = []
     transcript_available: bool = False
     transcript_length: int = 0

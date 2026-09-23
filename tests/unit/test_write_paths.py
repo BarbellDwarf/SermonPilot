@@ -220,6 +220,55 @@ def test_upload_now_queues_publish_job(client, scoped_setup, monkeypatch):
     assert json.loads(row[2]).get("sermon_id") == sid
 
 
+def test_regenerate_description_queues_metadata_job(client, scoped_setup, monkeypatch):
+    s = scoped_setup
+    import ui.database as dbmod
+
+    monkeypatch.setattr(dbmod, "_db", None)
+    monkeypatch.setenv("DATABASE_URL", get_db_path())
+    monkeypatch.setattr("ui.job_queue.JobQueue._resources_available", lambda self: False)
+
+    r = client.post("/api/sermons/s-a/description/regenerate", headers=s["a"]["headers"])
+    assert r.status_code == 202, r.text
+    job_id = r.json()["job_id"]
+
+    conn = sqlite3.connect(get_db_path())
+    row = conn.execute(
+        "SELECT type, user_id, parameters FROM background_jobs WHERE id = ?", (job_id,)
+    ).fetchone()
+    conn.close()
+    assert row is not None
+    assert row[0] == "metadata_update"
+    assert row[1] == s["a"]["id"]
+    params = json.loads(row[2])
+    assert params["sermon_ids"] == ["s-a"]
+    assert params["actions"]["generate_description"] is True
+
+    duplicate = client.post(
+        "/api/sermons/s-a/description/regenerate", headers=s["a"]["headers"]
+    )
+    assert duplicate.status_code == 409
+
+    foreign = client.post(
+        "/api/sermons/s-a/description/regenerate", headers=s["b"]["headers"]
+    )
+    assert foreign.status_code == 404
+
+
+def test_sermon_detail_surfaces_description_needs_review(client, scoped_setup):
+    s = scoped_setup
+    conn = sqlite3.connect(get_db_path())
+    conn.execute("UPDATE sermons SET description_needs_review = 1 WHERE id = 's-a'")
+    conn.commit()
+    conn.close()
+
+    body = client.get("/api/sermons/s-a", headers=s["a"]["headers"]).json()
+    assert body["description_needs_review"] is True
+
+    other = client.get("/api/sermons/s-b", headers=s["b"]["headers"]).json()
+    assert other["description_needs_review"] is False
+
+
 def test_cancel_isolated_queue_fresh_instance(tmp_path, monkeypatch):
     import ui.database as dbmod
     import ui.job_queue as jqmod

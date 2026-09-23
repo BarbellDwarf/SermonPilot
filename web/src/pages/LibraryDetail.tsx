@@ -161,6 +161,27 @@ export function LibraryDetail() {
     }, 1200);
   };
 
+  const regenerateDescription = () => {
+    if (!id) return;
+    if (isLive) {
+      void writeApi
+        .regenerateDescription(id)
+        .then(() => {
+          showToast("Description regeneration queued.");
+        })
+        .catch((e) => {
+          const msg = (e as Error).message;
+          showToast(
+            /409/.test(msg)
+              ? "A job is already running for this teaching."
+              : `Could not queue: ${msg}`,
+          );
+        });
+      return;
+    }
+    showToast("Description regeneration queued (mock).");
+  };
+
   const saveDetails = (patch: DetailsPatch) => {
     if (!id) return Promise.resolve();
     if (isLive) {
@@ -227,6 +248,7 @@ export function LibraryDetail() {
         <SermonReview
           sermon={sermon}
           description={detail?.description ?? null}
+          descriptionNeedsReview={detail?.descriptionNeedsReview ?? false}
           plan={plan}
           history={planHistory}
           media={media}
@@ -235,6 +257,7 @@ export function LibraryDetail() {
           headerActions={headerActions}
           transcript={transcriptState}
           onSaveDetails={saveDetails}
+          onRegenerateDescription={regenerateDescription}
           onRefresh={retryPlan}
           onToast={showToast}
           enhanceDefault={enhanceDefault}
