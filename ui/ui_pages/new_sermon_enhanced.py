@@ -749,13 +749,20 @@ def start_enhanced_processing():
         form_data['uploaded_file_path'] = str(saved_path)
         form_data['original_filename'] = original_name
 
+        from ui.job_labels import build_job_labels
+
         job_queue = get_job_queue()
+        label_title, label_description = build_job_labels(
+            JobType.SERMON_PROCESSING,
+            title=form_data.get('title') or original_name,
+            speaker=form_data.get('speaker_name'),
+            recorded_date=form_data.get('recorded_date'),
+            variant="auto_edit" if auto_edit_enabled else None,
+        )
         job_id = job_queue.add_job(
             job_type=JobType.SERMON_PROCESSING,
-            title=f"New Sermon: {form_data.get('title') or 'Untitled'}",
-            description=(
-                f"Processing new sermon by {form_data.get('speaker_name', 'Unknown Speaker')}"
-            ),
+            title=label_title,
+            description=label_description,
             parameters={
                 'form_data': form_data,
                 'config': job_config,

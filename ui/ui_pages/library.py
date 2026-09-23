@@ -469,11 +469,20 @@ def _batch_push(sermon_ids):
     """Push multiple sermons to API via job queue"""
     try:
         from job_queue import JobType, get_job_queue
+
+        from ui.job_labels import build_job_labels, sermon_fields_for
+
         job_queue = get_job_queue()
+        name, description = build_job_labels(
+            JobType.BATCH_PROCESSING,
+            count=len(sermon_ids),
+            variant="push",
+            **sermon_fields_for(sermon_ids),
+        )
         job_id = job_queue.add_job(
             job_type=JobType.BATCH_PROCESSING,
-            title=f"Batch Push: {len(sermon_ids)} sermons",
-            description=f"Pushing {len(sermon_ids)} sermons to SermonAudio API",
+            title=name,
+            description=description,
             parameters={
                 'sermon_ids': sermon_ids,
                 'actions': {'generate_description': True, 'generate_hashtags': True},
@@ -491,11 +500,20 @@ def _batch_generate_ai(sermon_ids):
     """Generate AI content for multiple sermons via job queue"""
     try:
         from job_queue import JobType, get_job_queue
+
+        from ui.job_labels import build_job_labels, sermon_fields_for
+
         job_queue = get_job_queue()
+        name, description = build_job_labels(
+            JobType.METADATA_UPDATE,
+            count=len(sermon_ids),
+            variant="batch_ai",
+            **sermon_fields_for(sermon_ids),
+        )
         job_id = job_queue.add_job(
             job_type=JobType.METADATA_UPDATE,
-            title=f"Batch AI Gen: {len(sermon_ids)} sermons",
-            description=f"Generating AI descriptions and hashtags for {len(sermon_ids)} sermons",
+            title=name,
+            description=description,
             parameters={
                 'sermon_ids': sermon_ids,
                 'actions': {'generate_description': True, 'generate_hashtags': True},
@@ -1245,11 +1263,18 @@ def _enqueue_edit_refine(sermon_id: str, notes: str = "") -> str | None:
     try:
         from job_queue import JobType, get_job_queue
 
+        from ui.job_labels import build_job_labels, sermon_fields_for
+
         job_queue = get_job_queue()
+        name, description = build_job_labels(
+            JobType.AUTO_EDIT,
+            variant="refine",
+            **sermon_fields_for([sermon_id]),
+        )
         return job_queue.add_job(
             job_type=JobType.AUTO_EDIT,
-            title=f"Re-detect cut points: {sermon_id}",
-            description="Re-run cut detection with reviewer notes",
+            title=name,
+            description=description,
             parameters={
                 'refine': True,
                 'sermon_id': sermon_id,
@@ -1350,18 +1375,28 @@ def _enqueue_apply_job(
     )
     try:
         full = _full_sermon_or_none(sermon, repo) or sermon
-        title = str(full.get("title") or sermon_id)
     except Exception:
-        title = sermon_id
+        full = sermon
+    if not isinstance(full, dict):
+        full = sermon
+    fields = {
+        "title": full.get("title"),
+        "speaker": full.get("speaker"),
+        "recorded_date": full.get("recorded_date"),
+    }
     try:
+        from ui.job_labels import build_job_labels
+
+        name, description = build_job_labels(
+            JobType.AUTO_EDIT_APPLY,
+            variant="render_only" if render_only else "upload",
+            **fields,
+        )
         job_queue = get_job_queue()
         return job_queue.add_job(
             job_type=JobType.AUTO_EDIT_APPLY,
-            title=f"Apply edit: {title}",
-            description=(
-                f"Render only {start:.1f}s-{end:.1f}s" if render_only
-                else f"Apply edit {start:.1f}s-{end:.1f}s and upload"
-            ),
+            title=name,
+            description=description,
             parameters=params,
             priority=7,
         )
@@ -2502,10 +2537,19 @@ def display_sermon_details(sermon):
                             or file_paths.get('audio')
                             or ''
                         )
+                        from ui.job_labels import build_job_labels
+
+                        name, description = build_job_labels(
+                            JobType.BATCH_PROCESSING,
+                            variant="reprocess",
+                            title=(full_sermon or sermon).get('title'),
+                            speaker=(full_sermon or sermon).get('speaker'),
+                            recorded_date=(full_sermon or sermon).get('recorded_date'),
+                        )
                         job_id = job_queue.add_job(
                             job_type=JobType.BATCH_PROCESSING,
-                            title=f"Re-process: {sermon.get('title', sermon['id'])}",
-                            description=f"Re-processing sermon {sermon['id']}",
+                            title=name,
+                            description=description,
                             parameters={
                                 'sermon_ids': [sermon['id']],
                                 'config': st.session_state.get('config', {}),

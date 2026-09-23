@@ -171,6 +171,7 @@ def _enqueue_sermon_processing(
     output_dir: str | None = None,
     user_id: str | None,
 ) -> str:
+    from ui.job_labels import build_job_labels
     from ui.job_queue import JobType
 
     if auto_edit_enabled and auto_edit_mode not in ("interactive", "auto"):
@@ -197,10 +198,17 @@ def _enqueue_sermon_processing(
         "uploaded_file_path": source_path,
         "original_filename": original_name,
     }
+    name, description = build_job_labels(
+        JobType.SERMON_PROCESSING,
+        title=title.strip() or original_name,
+        speaker=speaker.strip(),
+        recorded_date=recorded_date.strip(),
+        variant="auto_edit" if auto_edit_enabled else None,
+    )
     return _queue().add_job(
         JobType.SERMON_PROCESSING,
-        f"New Sermon: {title.strip() or original_name}",
-        f"Processing new sermon by {speaker.strip()}",
+        name,
+        description,
         parameters={
             "sermon_id": sermon_id,
             "form_data": form_data,
@@ -232,6 +240,14 @@ def _queue():
     from ui.job_queue import get_job_queue
 
     return get_job_queue()
+
+
+def _sermon_label_fields(sermon_id: str) -> dict[str, Any]:
+    """Title/speaker/date for a job label, read through the read-only repo."""
+    from server.api.db import get_repository
+    from ui.job_labels import sermon_fields_for
+
+    return sermon_fields_for([sermon_id], repo=get_repository())
 
 
 def _active_job_for(sermon_id: str) -> dict[str, Any] | None:
@@ -286,13 +302,18 @@ def _enqueue_plan_refine(
                 "job_id": active["id"],
             },
         )
+    from ui.job_labels import build_job_labels
     from ui.job_queue import JobType
 
-    title = f"Re-detect cuts: {sermon_id}" if re_detect else f"Refine cuts: {sermon_id}"
+    name, description = build_job_labels(
+        JobType.AUTO_EDIT,
+        variant="re_detect" if re_detect else "refine",
+        **_sermon_label_fields(sermon_id),
+    )
     job_id = _queue().add_job(
         JobType.AUTO_EDIT,
-        title,
-        f"Cut review re-detection for {sermon_id}",
+        name,
+        description,
         parameters={
             "refine": True,
             "re_detect": re_detect,
@@ -344,12 +365,18 @@ def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(r
                 "job_id": active["id"],
             },
         )
+    from ui.job_labels import build_job_labels
     from ui.job_queue import JobType
 
+    name, description = build_job_labels(
+        JobType.AUTO_EDIT_APPLY,
+        variant="render_only" if body.render_only else "upload",
+        **_sermon_label_fields(sermon_id),
+    )
     job_id = _queue().add_job(
         JobType.AUTO_EDIT_APPLY,
-        f"Apply edit: {sermon_id}",
-        f"Library apply for {sermon_id}",
+        name,
+        description,
         parameters={
             "sermon_id": sermon_id,
             "start": body.start,
@@ -391,12 +418,17 @@ def upload_now(sermon_id: str, user=Depends(require_user)):
                 "job_id": active["id"],
             },
         )
+    from ui.job_labels import build_job_labels
     from ui.job_queue import JobType
 
+    name, description = build_job_labels(
+        JobType.SERMON_PUBLISH,
+        **_sermon_label_fields(sermon_id),
+    )
     job_id = _queue().add_job(
         JobType.SERMON_PUBLISH,
-        f"Publish: {sermon_id}",
-        f"Upload draft to SermonAudio for {sermon_id}",
+        name,
+        description,
         parameters={"sermon_id": sermon_id},
         user_id=user.get("id"),
     )
