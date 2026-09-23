@@ -928,6 +928,22 @@ describe("SermonReview state-aware action row", () => {
     expect(within(bar).queryByRole("button", { name: /Approve/ })).toBeNull();
   });
 
+  it("labels the plan chip so a published record is not read as pending review", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon({ status: "processed" })}
+        description="A description."
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    const bar = screen.getByTestId("approval-bar");
+    expect(within(bar).getByText(/Plan: Pending review/)).toBeTruthy();
+  });
+
   it("hides the legacy push in the mobile overflow for a published record", async () => {
     setViewportWidth(390);
     const user = userEvent.setup();
