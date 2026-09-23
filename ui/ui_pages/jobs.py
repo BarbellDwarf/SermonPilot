@@ -615,10 +615,13 @@ def show_job_card_compact(job, job_queue, show_actions=True, highlight_errors=Fa
                         new_form_data['dry_run'] = new_dry_run
                         new_form_data['whisper_model'] = new_whisper_model
                         new_params['form_data'] = new_form_data
+                        from ui.job_labels import labels_from_job
+
+                        retry_title, retry_description = labels_from_job(job)
                         new_job_id = job_queue.add_job(
                             job_type=job.type,
-                            title=f"(Retry) {job.title}",
-                            description=job.description,
+                            title=f"(Retry) {retry_title}",
+                            description=retry_description,
                             parameters=new_params,
                             priority=job.priority,
                         )
