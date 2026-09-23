@@ -22,6 +22,7 @@ import pytest
 from ui import sermonaudio_accounts as sa
 from ui.job_executors import (
     execute_sermon_processing_job,
+    execute_sermon_publish_job,
     resolve_job_config,
     sermonaudio_refusal,
 )
@@ -224,3 +225,37 @@ def test_refusal_is_none_when_the_owner_has_an_account(
     _point_at(monkeypatch, db)
 
     assert sermonaudio_refusal(_job("u-a")) is None
+
+
+def test_publish_job_injects_the_owners_credentials(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = tmp_path / "settings.db"
+    _seed(db, "u-a", [_account("sa-a", "Alpha", "key-alpha-1111", "alpha")], "sa-a")
+    _seed(db, "u-b", [_account("sa-b", "Beta", "key-beta-2222", "beta")], "sa-b")
+    _point_at(monkeypatch, db)
+    monkeypatch.setattr("ui.config_utils.resolve_config", lambda db=None: _global_config())
+    injected: dict[str, Any] = {}
+    monkeypatch.setattr(
+        "ui.job_executors._inject_sermon_updater_config", lambda c: injected.update(c)
+    )
+    monkeypatch.setattr(
+        "sermon_updater.publish_dry_run_sermon",
+        Mock(return_value={"success": True, "sermon_id": "999"}),
+    )
+
+    job = Job(
+        id="job-publish",
+        type=JobType.SERMON_PUBLISH,
+        title="Publish",
+        description="Publish",
+        status=JobStatus.RUNNING,
+        progress=0.0,
+        created_at=datetime.now(),
+        parameters={"sermon_id": "s-b", "user_id": "u-b"},
+    )
+    result = execute_sermon_publish_job(job)
+
+    assert result.success is True
+    assert injected["api_key"] == "key-beta-2222"
+    assert injected["broadcaster_id"] == "beta"

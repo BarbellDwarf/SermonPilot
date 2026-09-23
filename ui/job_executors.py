@@ -2229,6 +2229,10 @@ def execute_sermon_publish_job(job: Job) -> JobResult:
             return refusal
         if job.parameters.get("upload_only"):
             return _execute_upload_existing(job, str(sermon_id))
+        config = resolve_job_config(job)
+        if config:
+            _inject_sermon_updater_config(config)
+            job.add_log("Config injected for this job")
         job.update_progress(10, f"Publishing {sermon_id} to SermonAudio...")
         from sermon_updater import publish_dry_run_sermon
 
