@@ -177,6 +177,8 @@ python sermon_updater.py new-sermon service.mkv \
 
 The Jobs page has an Auto Edit job type. A run job carries `auto_edit_enabled`, `auto_edit_mode`, and `edit_plan_file`. When a run stops at `pending_review`, an apply continuation job picks it up afterward with the plan id and the final numbers. If the sermon re-lands in `pending_review`, the continuation job reports failure and leaves the plan approved so you can retry from the Library without losing state.
 
+Cancelling an apply stops its ffmpeg render rather than waiting for the encode to finish: the render child is supervised, the partial output moves to the trash area, and the queue picks up the next job within seconds. See `docs/CANCELLATION.md`.
+
 ## Media viewing
 
 Recordings and edited outputs are viewable in the browser without exposing files directly: a localhost sidecar serves media over HTTP range requests, and players use tokenized URLs. The review panel shows short video snippets around the proposed cut points so you can see what would be removed, and the sermon detail page has a full player.
