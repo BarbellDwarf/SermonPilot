@@ -53,9 +53,10 @@ What was checked per page (`/`, `/library`, `/library/:id`, `/jobs`, `/new`,
   approve transitions plan state, toasts appear, confirms block, drawer opens at
   390px, deep link `/library/:id` loads directly in live mode.
 
-Full captures land in `web/validation/phase4b/` (gitignored); four representative
-shots are committed: live home, live detail (applied_local plan), live failed job
-with Retry, live library in the light theme.
+Full captures land in `web/validation/phase4b/` (gitignored); two
+representative shots are committed: live detail (applied_local plan) and
+live failed job with Retry. The home and library captures were dropped
+because they embedded instance-specific record counts.
 
 ## Design tokens
 
