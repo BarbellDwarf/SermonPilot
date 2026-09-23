@@ -773,12 +773,16 @@ def run_library_apply(
             }
 
     enhance, reason = resolve_enhancement(config, request_value=enhance_audio, plan=plan)
-    enhanced_input = _select_enhanced_artifact(
-        media_path,
-        source_is_enhanced,
-        enhanced_path,
-        metadata,
-        float(end),
+    enhanced_input = (
+        _select_enhanced_artifact(
+            media_path,
+            source_is_enhanced,
+            enhanced_path,
+            metadata,
+            float(end),
+        )
+        if enhance
+        else None
     )
     run_enhancement = enhance and enhanced_input is None
     skip_audio = not run_enhancement
