@@ -99,6 +99,7 @@ def test_apply_queues_job_with_attribution_and_guard(client, scoped_setup, monke
         headers=s["a"]["headers"],
     )
     assert duplicate.status_code == 409
+    assert duplicate.json()["detail"]["code"] == "job_active"
 
     foreign = client.post(
         f"/api/sermons/{sid}/plan/apply",

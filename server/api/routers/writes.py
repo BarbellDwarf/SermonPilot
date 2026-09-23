@@ -322,6 +322,7 @@ def _enqueue_plan_refine(
             detail={
                 "message": "an active job already exists for this sermon",
                 "job_id": active["id"],
+                "code": "job_active",
             },
         )
     from ui.job_labels import build_job_labels
@@ -473,6 +474,7 @@ def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(r
             detail={
                 "message": "an active job already exists for this sermon",
                 "job_id": active["id"],
+                "code": "job_active",
             },
         )
     if not body.render_only:
@@ -528,6 +530,7 @@ def upload_now(sermon_id: str, user=Depends(require_user)):
             detail={
                 "message": "an active job already exists for this sermon",
                 "job_id": active["id"],
+                "code": "job_active",
             },
         )
     _require_sermonaudio_connection(user.get("id"))
@@ -561,6 +564,7 @@ def regenerate_description(sermon_id: str, user=Depends(require_user)):
             detail={
                 "message": "an active job already exists for this sermon",
                 "job_id": active["id"],
+                "code": "job_active",
             },
         )
     _require_sermonaudio_connection(user.get("id"))
