@@ -90,6 +90,8 @@ remote name and the basename, because the folder trail can identify a church.
 | Review snippets and staged files | `src/review_media.py` | move to local trash |
 | Job temp files and staging dirs | `ui/job_executors.py` | move to local trash |
 | Replaced original after auto-edit | `src/auto_edit.py::trash_original_after_edit` | move to local trash |
+| Partial output of a cancelled child process | `src/supervised_process.py` | move to local trash |
+| Incomplete staged cloud download after cancel | `ui/job_executors.py::_trash_partial_download` | move to local trash |
 | Dry-run old output directory | `sermon_updater.py` | move to local trash |
 | Library single and batch delete | `ui/ui_pages/library.py` | move local media, keep cloud |
 | Library delete API | `server/api/routers/sermons.py` | move local media, keep cloud |

@@ -65,6 +65,10 @@ from src.sermon_paths import (  # noqa: E402
     read_transcript_timestamps,
     save_transcript_timestamps,
 )
+from src.supervised_process import (  # noqa: E402
+    ProcessCancelled,
+    run_supervised,
+)
 
 print("   Loading AI components...")
 # Suppress ML library import noise
@@ -1799,13 +1803,18 @@ def _mux_audio_codec_args(audio_path: str | Path) -> list[str]:
     return ['-c:a', 'aac', '-b:a', '192k']
 
 
-def _transcode_media(src: Path, dst: Path) -> bool:
+def _transcode_media(
+    src: Path,
+    dst: Path,
+    *,
+    cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
+) -> bool:
     """Transcode an audio file into the container implied by dst's extension.
 
     Returns True when the converted file exists. Falls back to ffmpeg's
     default encoder for the container, then gives up (caller keeps src).
     """
-    import subprocess
     codec_args = _TRANSCODE_CODEC_ARGS.get(dst.suffix.lower(), [])
     attempts: list[list[str]] = []
     if codec_args:
@@ -1814,9 +1823,22 @@ def _transcode_media(src: Path, dst: Path) -> bool:
     last_err: Exception | None = None
     for cmd in attempts:
         try:
-            subprocess.run(cmd, capture_output=True, text=True, timeout=3600, check=True)
+            run_supervised(
+                cmd,
+                cancel_check=cancel_check,
+                log=cancel_log,
+                step="audio transcode",
+                partial_paths=[dst],
+                partial_reason="cancelled_render_partial",
+                capture_output=True,
+                text=True,
+                timeout=3600,
+                check=True,
+            )
             if dst.exists() and dst.stat().st_size > 0:
                 return True
+        except ProcessCancelled:
+            raise
         except Exception as e:
             last_err = e
     logger.warning("Transcoding %s to %s failed: %s", src.name, dst.name, last_err)
@@ -2069,6 +2091,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       edit_plan_file: str | None = None,
                       audio_offset: float | None = None,
                       cancel_check: Callable[[], None] | None = None,
+                      cancel_log: Callable[[str], None] | None = None,
                       publish: bool = True,
                       existing_sermon_id: str | None = None,
                       reuse_transcript: str | None = None,
@@ -2098,6 +2121,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         cancel_check: Optional zero-argument callable invoked at cancellation
             checkpoints (before the remote create and before the local save).
             Any exception it raises is converted to ProcessingCancelledError.
+        cancel_log: Optional callable(str) the supervised child stages use to
+            report "Cancel requested - stopping <step>" and the stop timing on
+            the owning job's log.
         existing_sermon_id: When set, every save upserts this row instead of
             deriving a new deterministic id.
         reuse_transcript: A transcript retained from an earlier review pass.
@@ -2218,7 +2244,18 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             _report(6, "Preparing keeper transcode...")
             from src.auto_edit import transcode_to_keeper
 
-            kept_path = transcode_to_keeper(audio_path, keeper_path, config)
+            try:
+                kept_path = transcode_to_keeper(
+                    audio_path,
+                    keeper_path,
+                    config,
+                    cancel_check=_check_cancelled,
+                    cancel_log=cancel_log,
+                )
+            except ProcessCancelled:
+                result['error'] = "Processing cancelled"
+                result['cancelled'] = True
+                return result
             if kept_path == audio_path:
                 if audio_path.stat().st_size >= min_source_gb * 1024**3:
                     console_print("⚠️ Keeper transcode failed, using original video")
@@ -2250,7 +2287,17 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         ]
         logger.info("Running: %s", " ".join(cmd))
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
+            proc = run_supervised(
+                cmd,
+                cancel_check=_check_cancelled,
+                log=cancel_log,
+                step="clean-audio",
+                partial_paths=[clean_output],
+                partial_reason="cancelled_render_partial",
+                capture_output=True,
+                text=True,
+                timeout=1800,
+            )
             if proc.returncode != 0:
                 logger.error("clean-audio.py failed: %s", proc.stderr)
                 result['error'] = f"clean-audio.py failed: {proc.stderr[:200]}"
@@ -2263,6 +2310,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             audio_path = clean_output
             console_print(f"clean-audio.py done: {clean_output.name}")
             _report(7, "clean-audio.py complete")
+        except ProcessCancelled:
+            logger.info("clean-audio.py cancelled by user request")
+            result['error'] = "Processing cancelled"
+            result['cancelled'] = True
+            return result
         except subprocess.TimeoutExpired:
             logger.error("clean-audio.py timed out after 30 minutes")
             result['error'] = "clean-audio.py timed out"
@@ -2276,7 +2328,6 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
     _report(5, f"Loaded audio file: {audio_path.name}")
 
     temp_dir = None
-    import subprocess as _subprocess
     import uuid as _uuid
 
     from ui.config_utils import default_cache_root
@@ -2323,14 +2374,21 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     _report(12, "Extracting audio from video...")
                     extracted_wav = temp_dir / "extracted_audio.wav"
                     try:
-                        _subprocess.run(
+                        run_supervised(
                             ["ffmpeg", "-y", "-i", str(audio_path),
                              "-vn", "-acodec", "pcm_s16le", "-ar", "48000",
                              "-ac", "1", str(extracted_wav)],
+                            cancel_check=_check_cancelled,
+                            log=cancel_log,
+                            step="audio extraction",
+                            partial_paths=[extracted_wav],
+                            partial_reason="cancelled_render_partial",
                             capture_output=True, text=True, timeout=300, check=True
                         )
                         process_input = extracted_wav
                         _report(14, "Audio extracted from video")
+                    except ProcessCancelled:
+                        raise
                     except Exception as e:
                         logger.warning("Failed to extract audio from video: %s", e)
                         _report(14, "Audio extraction failed, using original file")
@@ -2397,7 +2455,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             target_ext = audio_path.suffix.lower()
             if target_ext and enhanced_audio_path.suffix.lower() != target_ext:
                 converted_path = temp_dir / f"enhanced_audio{target_ext}"
-                if _transcode_media(Path(enhanced_audio_path), converted_path):
+                if _transcode_media(
+                    Path(enhanced_audio_path),
+                    converted_path,
+                    cancel_check=_check_cancelled,
+                    cancel_log=cancel_log,
+                ):
                     console_print(
                         f"Converted enhanced audio to {target_ext.lstrip('.').upper()}"
                     )
@@ -2412,7 +2475,6 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             audio_was_enhanced = enhanced_audio_path != audio_path and enhanced_audio_path.exists()
             if audio_was_enhanced:
                 try:
-                    import subprocess as mux_proc
                     final_video = original_input_path.with_name(
                         f"{original_input_path.stem}_enhanced{original_input_path.suffix}"
                     )
@@ -2440,6 +2502,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                             input_offset = measure_content_offset(
                                 original_input_path,
                                 model_dir=Path(av_cfg.get('model_dir') or '/tmp/av_sync_models'),
+                                cancel_check=_check_cancelled,
+                                cancel_log=cancel_log,
                             )
                             if input_offset.available and input_offset.offset_seconds is not None:
                                 console_print(
@@ -2454,7 +2518,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                                     f"🎯 Input A/V offset not measured ({input_offset.detail})"
                                 )
                             enh_offset = measure_waveform_offset(
-                                original_input_path, mux_audio_input
+                                original_input_path,
+                                mux_audio_input,
+                                cancel_check=_check_cancelled,
+                                cancel_log=cancel_log,
                             )
                             if enh_offset.available and enh_offset.offset_seconds is not None:
                                 console_print(
@@ -2493,6 +2560,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                                     f"manual {manual_offset:+.2f}s -> {av_reason}"
                                 )
                             result['av_sync_offset_seconds'] = correction
+                        except ProcessCancelled:
+                            raise
                         except Exception as e:
                             logger.warning("av_sync measurement failed: %s", e)
 
@@ -2509,7 +2578,18 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         str(final_video),
                     ]
                     logger.info("Muxing enhanced audio into video: %s", " ".join(mux_cmd))
-                    mux_proc.run(mux_cmd, capture_output=True, text=True, timeout=600, check=True)
+                    run_supervised(
+                        mux_cmd,
+                        cancel_check=_check_cancelled,
+                        log=cancel_log,
+                        step="video mux",
+                        partial_paths=[final_video],
+                        partial_reason="cancelled_render_partial",
+                        capture_output=True,
+                        text=True,
+                        timeout=600,
+                        check=True,
+                    )
                     sync_problems = _verify_mux_av_sync(final_video)
                     if sync_problems:
                         logger.warning(
@@ -2522,6 +2602,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     final_upload_path = final_video
                     upload_type = "original-video"
                     console_print(f"Muxed enhanced audio into video: {final_video.name}")
+                except ProcessCancelled:
+                    raise
                 except Exception as e:
                     logger.warning("Video muxing failed, falling back to audio upload: %s", e)
                     console_print("Video mux failed, uploading audio only")
@@ -3029,7 +3111,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     logo_path=edit_logo_path,
                     fade_to_black=edit_fade_to_black,
                     fade_out_tail_seconds=edit_fade_out_tail,
+                    cancel_check=_check_cancelled,
+                    cancel_log=cancel_log,
                 )
+            except ProcessCancelled:
+                raise
             except Exception as e:
                 logger.error("Auto edit apply failed: %s", e)
                 if edit_plan_file:
@@ -3883,7 +3969,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 _persist_auto_edit_applied_plan(sermon_id, upload_failed=True)
             return result
 
-    except ProcessingCancelledError:
+    except (ProcessingCancelledError, ProcessCancelled):
         logger.info("Sermon processing cancelled by user request")
         result['error'] = "Processing cancelled"
         result['cancelled'] = True
