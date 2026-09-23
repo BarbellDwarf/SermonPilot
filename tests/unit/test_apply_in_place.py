@@ -142,7 +142,7 @@ def pipeline(monkeypatch) -> dict:
         def __init__(self, *_args, **_kwargs):
             pass
 
-        def process_sermon_audio(self, _source, out):
+        def process_sermon_audio(self, _source, out, **_kwargs):
             calls["enhance"] += 1
             Path(out).write_bytes(b"wav")
             return True, {}

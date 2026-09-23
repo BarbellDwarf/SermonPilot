@@ -234,6 +234,50 @@ def refresh_runtime_config(config_override: dict | None = None) -> dict:
     return config
 
 
+def audio_processing_settings(config: dict | None) -> dict[str, Any]:
+    """The enhancer kwargs the saved audio settings ask for.
+
+    Read under the keys the settings page writes, so a saved change reaches
+    ``process_sermon_audio`` instead of the enhancer's own defaults. Only the
+    keys ``process_sermon_audio`` accepts are returned; an absent key keeps
+    that parameter's default (signature defaults shown).
+    """
+    cfg = config or {}
+    return {
+        'noise_reduction': cfg.get('audio_noise_reduction', True),
+        'amplify': cfg.get('audio_amplify', True),
+        'normalize': cfg.get('audio_normalize', True),
+        'gain_db': cfg.get('audio_gain_db', 0.0),
+        'target_level_db': cfg.get('audio_target_level_db', -22.0),
+    }
+
+
+def audio_enhancement_method(config: dict | None) -> str:
+    """The enhancement method the settings name, ``none`` meaning skip.
+
+    ``metadata_processing.process_audio`` is a legacy boolean switch from the
+    pre-console pipeline. The console's ``audio_enhancement_method`` wins, and
+    when the two disagree the log names the winner and the losing value.
+    """
+    cfg = config or {}
+    method = cfg.get('audio_enhancement_method') or 'deepfilternet'
+    metadata = cfg.get('metadata_processing')
+    if isinstance(metadata, dict) and 'process_audio' in metadata:
+        legacy = bool(metadata.get('process_audio'))
+        if method.strip().lower() == 'none' and legacy:
+            logger.info(
+                "audio_enhancement_method=none wins over legacy "
+                "metadata_processing.process_audio=true: audio enhancement is skipped"
+            )
+        elif legacy and method.strip().lower() != 'none':
+            logger.info(
+                "metadata_processing.process_audio=true is ignored: "
+                "audio_enhancement_method=%s decides the enhancement method",
+                method,
+            )
+    return method
+
+
 refresh_runtime_config()
 
 BASE_URL = 'https://api.sermonaudio.com/v2/'
@@ -2354,6 +2398,16 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             logger.info("Skipping audio enhancement (not requested)")
             _report(20, "Skipping audio enhancement (using file as-is)")
             enhanced_audio_path = audio_path
+        elif not reused_enhancement and not enhancement_method and (
+            audio_enhancement_method(config).strip().lower() == "none"
+        ):
+            console_print("Skipping audio enhancement (method none)")
+            logger.info(
+                "Skipping audio enhancement: audio_enhancement_method=none means "
+                "no enhancement pass"
+            )
+            _report(20, "Skipping audio enhancement (method set to none)")
+            enhanced_audio_path = audio_path
         elif not reused_enhancement:
             console_print("Processing audio...")
             _report(10, "Initializing audio processor...")
@@ -2396,10 +2450,15 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 processor = AudioProcessor(
                     enhancement_method=(
                         enhancement_method
-                        or config.get('audio_enhancement_method', 'deepfilternet')
+                        or audio_enhancement_method(config)
                     ),
                     config=config,
                 )
+                if enhancement_method:
+                    logger.info(
+                        "Using per-run enhancement method %s for this job",
+                        enhancement_method,
+                    )
                 if enhancement_method == "custom" and custom_repo and custom_file:
                     processor.config['clear_custom_repo'] = custom_repo
                     processor.config['clear_custom_file'] = custom_file
@@ -2412,7 +2471,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 # bounded by the enhancement call itself, not by the queue poll.
                 success, proc_result = processor.process_sermon_audio(
                     str(process_input),
-                    str(enhanced_audio_path)
+                    str(enhanced_audio_path),
+                    **audio_processing_settings(config),
                 )
                 if not success or not enhanced_audio_path.exists():
                     if require_enhancement:

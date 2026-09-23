@@ -139,7 +139,7 @@ def pipeline(monkeypatch) -> dict:
         def __init__(self, *_args, **_kwargs):
             pass
 
-        def process_sermon_audio(self, source, out):
+        def process_sermon_audio(self, source, out, **_kwargs):
             calls["enhance"] += 1
             calls["enhance_inputs"].append(str(source))
             Path(out).write_bytes(b"wav")
@@ -320,7 +320,7 @@ def test_requested_enhancement_failure_fails_loud(repo, review, pipeline, tmp_pa
         def __init__(self, *_args, **_kwargs):
             pass
 
-        def process_sermon_audio(self, _source, _out):
+        def process_sermon_audio(self, _source, _out, **_kwargs):
             return False, {}
 
         def release_gpu(self):
