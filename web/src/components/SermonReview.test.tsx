@@ -225,6 +225,73 @@ describe("SermonReview single player and plan", () => {
     expect(keep.getAttribute("data-end-sec")).toBe("2512.3");
   });
 
+  it("keeps the timeline span on the source duration when the end changes", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan({ startSec: 100, endSec: 1200 })}
+        media={media()}
+        isLive={false}
+        sourceDurationSec={3000}
+        onToast={noop}
+      />,
+    );
+
+    const track = screen.getByTestId("timeline-track");
+    expect(track.getAttribute("data-span-sec")).toBe("3000");
+
+    fireEvent.change(screen.getByLabelText(/^End \(/), { target: { value: "1600" } });
+
+    expect(track.getAttribute("data-span-sec")).toBe("3000");
+    const ending = screen.getByTestId("timeline-region-ending");
+    expect(ending.getAttribute("data-start-sec")).toBe("1600");
+    expect(ending.getAttribute("data-end-sec")).toBe("1600");
+    expect(parseFloat(ending.style.left)).toBeCloseTo((1600 / 3000) * 100, 4);
+  });
+
+  it("moves the end handle right and left against the source scale", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan({ startSec: 100, endSec: 1000 })}
+        media={media()}
+        isLive={false}
+        sourceDurationSec={3000}
+        onToast={noop}
+      />,
+    );
+
+    const track = screen.getByTestId("timeline-track");
+    vi.spyOn(track, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 56,
+      width: 1000,
+      height: 56,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    const handle = screen.getByTestId("timeline-handle-end");
+    fireEvent.pointerDown(handle, { pointerId: 1, clientX: 250 });
+    fireEvent.pointerMove(track, { pointerId: 1, clientX: 700 });
+
+    expect(track.getAttribute("data-span-sec")).toBe("3000");
+    expect(handle.getAttribute("aria-valuenow")).toBe("2100");
+    expect(parseFloat(handle.style.left)).toBeCloseTo(70, 4);
+
+    fireEvent.pointerMove(track, { pointerId: 1, clientX: 300 });
+
+    expect(track.getAttribute("data-span-sec")).toBe("3000");
+    expect(handle.getAttribute("aria-valuenow")).toBe("900");
+    expect(parseFloat(handle.style.left)).toBeCloseTo(30, 4);
+    fireEvent.pointerUp(track);
+  });
+
   it("moves the start marker when the start field changes, with no programmatic scrolling", () => {
     const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView");
     const scrollBefore = window.scrollY;

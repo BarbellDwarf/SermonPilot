@@ -119,8 +119,12 @@ describe("Timeline", () => {
     }
   });
 
+  it("uses the supplied duration as the stable scale", () => {
+    expect(timelineSpan(2400, 1000, 1000, clips)).toBe(2400);
+  });
+
   it("map helpers clamp to the span", () => {
-    expect(timelineSpan(100, 90, 95, clips)).toBe(2512.3);
+    expect(timelineSpan(100, 90, 95, clips)).toBe(100);
     expect(timelinePercent(-5, 100)).toBe(0);
     expect(timelinePercent(150, 100)).toBe(100);
     expect(timelinePercent(50, 100)).toBe(50);

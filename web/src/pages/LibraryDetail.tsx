@@ -307,6 +307,7 @@ export function LibraryDetail() {
           descriptionNeedsReview={detail?.descriptionNeedsReview ?? false}
           plan={plan}
           history={planHistory}
+          sourceDurationSec={detail?.durationSeconds}
           media={media}
           isLive={isLive}
           statusChip={<Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>}

@@ -34,10 +34,19 @@ function roundTenths(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-export function timelineSpan(durationSec: number, endSec: number, endingSec: number, clips: TimelineClip[]): number {
-  const candidates = [durationSec, endSec, endingSec, ...clips.map((clip) => clip.endSec)];
-  const largest = candidates.reduce((acc, value) => (Number.isFinite(value) && value > acc ? value : acc), 1);
-  return largest;
+export function timelineSpan(
+  durationSec: number | null | undefined,
+  _endSec: number,
+  _endingSec: number,
+  clips: TimelineClip[],
+): number {
+  if (typeof durationSec === "number" && Number.isFinite(durationSec) && durationSec > 0) {
+    return durationSec;
+  }
+  return clips.reduce(
+    (acc, clip) => (Number.isFinite(clip.endSec) && clip.endSec > acc ? clip.endSec : acc),
+    1,
+  );
 }
 
 export function timelinePercent(sec: number, span: number): number {
