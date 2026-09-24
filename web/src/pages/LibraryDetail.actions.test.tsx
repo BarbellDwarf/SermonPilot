@@ -99,10 +99,11 @@ function mediaData(hasRender: boolean) {
   return { items, byKind, primary: hasRender ? "processed" : null, audio: null, isLoading: false, error: null, retry: () => {} };
 }
 
-function setSermon(status: LibrarySermon["status"], hasRender: boolean) {
+function setSermon(status: LibrarySermon["status"], hasRender: boolean, durationSeconds: number | null = null) {
   mocks.detail.mockReturnValue({
     data: {
       sermon: sermon(status),
+      durationSeconds,
       description: "A description.",
       descriptionNeedsReview: false,
       files: [],
@@ -158,5 +159,12 @@ describe("LibraryDetail state-aware header actions", () => {
     renderDetail();
 
     expect(screen.getByRole("button", { name: "Push to SermonAudio" })).toBeTruthy();
+  });
+
+  it("passes the detail duration to the review timeline", () => {
+    setSermon("rendered", false, 3600);
+    renderDetail();
+
+    expect(screen.getByTestId("timeline-track").getAttribute("data-span-sec")).toBe("3600");
   });
 });
