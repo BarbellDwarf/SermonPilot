@@ -76,6 +76,7 @@ function plan(): EditPlan {
     evidence: "Silence gate at both ends.",
     startSec: 8.5,
     endSec: 2512.3,
+    removeSegments: [],
     offsetSec: 0.4,
     detectionStatus: "ok",
     reasoning: "Teaching starts after the welcome.",

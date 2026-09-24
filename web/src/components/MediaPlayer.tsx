@@ -11,6 +11,8 @@ export interface PlayWindow {
   startSec: number;
   endSec: number;
   nonce: number;
+  jumpAtSec?: number;
+  jumpToSec?: number;
 }
 
 interface MediaPlayerProps {
@@ -74,7 +76,20 @@ export function MediaPlayer({
     } catch {
       // metadata not loaded yet; playback starts from the beginning
     }
+    let jumped = false;
     const stopAt = () => {
+      if (
+        playWindow.jumpAtSec !== undefined &&
+        playWindow.jumpToSec !== undefined &&
+        !jumped &&
+        element.currentTime >= playWindow.jumpAtSec
+      ) {
+        jumped = true;
+        try {
+          element.currentTime = Math.max(0, playWindow.jumpToSec);
+        } catch {
+        }
+      }
       if (element.currentTime >= playWindow.endSec) {
         try {
           element.pause();

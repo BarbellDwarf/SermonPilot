@@ -61,6 +61,10 @@ export function toEditPlan(p: ApiEditPlan): EditPlan {
     evidence: p.evidence,
     startSec: p.start_sec ?? 0,
     endSec: p.end_sec ?? 0,
+    removeSegments: (p.remove_segments ?? []).map((segment) => ({
+      startSec: Number(segment.start_sec),
+      endSec: Number(segment.end_sec),
+    })),
     offsetSec: p.offset_sec,
     detectionStatus: p.detection_status === "unavailable" ? "unavailable" : "ok",
     reasoning: p.reasoning ?? "",

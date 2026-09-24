@@ -101,6 +101,30 @@ describe("MediaPlayer", () => {
     expect(pauseSpy).toHaveBeenCalled();
   });
 
+  it("jumps over a join while playing a removal preview", () => {
+    const { rerender } = render(
+      <MediaPlayer sermonId="s-1" kind="source" contentType="video/mp4" available />,
+    );
+    const element = document.querySelector("video") as HTMLVideoElement;
+    const pauseSpy = vi.spyOn(element, "pause");
+
+    rerender(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="source"
+        contentType="video/mp4"
+        available
+        playWindow={{ startSec: 10, endSec: 50, nonce: 1, jumpAtSec: 20, jumpToSec: 30 }}
+      />,
+    );
+    element.currentTime = 21;
+    fireEvent.timeUpdate(element);
+    expect(element.currentTime).toBe(30);
+
+    element.currentTime = 51;
+    fireEvent.timeUpdate(element);
+    expect(pauseSpy).toHaveBeenCalled();
+  });
   it("reports playback time through onTime", () => {
     const onTime = vi.fn();
     render(
