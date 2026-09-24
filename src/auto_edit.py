@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import shutil
 import subprocess
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -87,6 +88,7 @@ class EditPlan:
     qa_judgment: str = "cut"
     reasoning: str = ""
     audio_offset: float = 0.0
+    remove_segments: list[dict[str, float]] = field(default_factory=list)
     detection_status: str = DETECTION_OK
 
 
@@ -481,6 +483,68 @@ def detect_cut_points(
     return plan
 
 
+MIN_REMOVE_SEGMENT_SECONDS = 0.25
+
+
+def normalize_remove_segments(
+    segments: Any, start: float, end: float
+) -> tuple[list[dict[str, float]], list[str]]:
+    problems: list[str] = []
+    if segments is None:
+        segments = []
+    if not isinstance(segments, list):
+        return [], ["remove_segments must be a list"]
+
+    parsed: list[tuple[int, float, float]] = []
+    for index, segment in enumerate(segments):
+        if not isinstance(segment, dict):
+            problems.append(f"remove segment {index + 1} must be an object")
+            continue
+        try:
+            raw_start = segment.get("start_sec")
+            raw_end = segment.get("end_sec")
+            if isinstance(raw_start, bool) or isinstance(raw_end, bool):
+                raise ValueError
+            start_sec = float(raw_start)
+            end_sec = float(raw_end)
+        except (TypeError, ValueError):
+            problems.append(
+                f"remove segment {index + 1} needs numeric start_sec and end_sec"
+            )
+            continue
+        if not (math.isfinite(start_sec) and math.isfinite(end_sec)):
+            problems.append(f"remove segment {index + 1} has non-finite seconds")
+            continue
+        if end_sec <= start_sec:
+            problems.append(f"remove segment {index + 1} end must be greater than start")
+            continue
+        if end_sec - start_sec + 1e-9 < MIN_REMOVE_SEGMENT_SECONDS:
+            problems.append(
+                f"remove segment {index + 1} must be at least "
+                f"{MIN_REMOVE_SEGMENT_SECONDS:.2f}s"
+            )
+            continue
+        if start_sec <= start or end_sec >= end:
+            problems.append(
+                f"remove segment {index + 1} must be inside the keep window "
+                "and not touch its edges"
+            )
+            continue
+        parsed.append((index, start_sec, end_sec))
+
+    parsed.sort(key=lambda item: (item[1], item[2], item[0]))
+    normalized: list[dict[str, float]] = []
+    for index, start_sec, end_sec in parsed:
+        if normalized and start_sec < normalized[-1]["end_sec"]:
+            problems.append(f"remove segment {index + 1} overlaps another removal")
+            continue
+        if normalized and start_sec == normalized[-1]["end_sec"]:
+            normalized[-1]["end_sec"] = end_sec
+        else:
+            normalized.append({"start_sec": start_sec, "end_sec": end_sec})
+    return normalized, problems
+
+
 def validate_plan(
     plan: EditPlan, duration: float | None = None, min_sermon_seconds: float = 600.0
 ) -> list[str]:
@@ -503,11 +567,24 @@ def validate_plan(
 
     if plan.end - plan.start <= 0:
         problems.append("end must be greater than start")
-    elif plan.end - plan.start < min_sermon_seconds:
-        problems.append(
-            f"planned duration {plan.end - plan.start:.1f}s is below minimum "
-            f"{min_sermon_seconds:.1f}s"
+
+    normalized, segment_problems = normalize_remove_segments(
+        plan.remove_segments, plan.start, plan.end
+    )
+    problems.extend(segment_problems)
+    if not segment_problems:
+        plan.remove_segments = normalized
+
+    if plan.end - plan.start > 0 and not segment_problems:
+        kept_duration = plan.end - plan.start - sum(
+            segment["end_sec"] - segment["start_sec"] for segment in normalized
         )
+        if kept_duration < min_sermon_seconds:
+            label = "kept duration" if normalized else "planned duration"
+            problems.append(
+                f"{label} {kept_duration:.1f}s is below minimum "
+                f"{min_sermon_seconds:.1f}s"
+            )
 
     return problems
 
