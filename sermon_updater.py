@@ -2471,6 +2471,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         # If the original input was a video, mux the enhanced audio back in
         final_upload_path = enhanced_audio_path
         upload_type = "original-audio"
+        enhanced_render_source: Path | None = None
+        enhancement_mux_failed = False
         if input_is_video:
             audio_was_enhanced = enhanced_audio_path != audio_path and enhanced_audio_path.exists()
             if audio_was_enhanced:
@@ -2601,10 +2603,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         console_print("✅ A/V sync check passed (A/V within 0.2s)")
                     final_upload_path = final_video
                     upload_type = "original-video"
+                    enhanced_render_source = final_video
                     console_print(f"Muxed enhanced audio into video: {final_video.name}")
                 except ProcessCancelled:
                     raise
                 except Exception as e:
+                    enhancement_mux_failed = True
                     logger.warning("Video muxing failed, falling back to audio upload: %s", e)
                     console_print("Video mux failed, uploading audio only")
             else:
@@ -3022,6 +3026,24 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
         if gate_active:
             edit_source = audio_path if keeper_used else original_input_path
+            trash_source = edit_source
+            if enhanced_render_source is not None and enhanced_render_source.exists():
+                edit_source = enhanced_render_source
+                console_print(f"Rendering from the enhanced audio ({edit_source})")
+                logger.info("Rendering from the enhanced audio (%s)", edit_source)
+            elif enhanced_render_source is not None or enhancement_mux_failed:
+                console_print(
+                    "Video mux failed; enhancement was NOT applied to the render",
+                    level="warning",
+                )
+                logger.warning(
+                    "Video mux failed; enhancement was NOT applied to the render; "
+                    "rendering from %s",
+                    edit_source,
+                )
+            else:
+                console_print(f"Rendering from {edit_source}")
+                logger.info("Rendering from %s", edit_source)
             plan_duration = _ffprobe_duration(edit_source)
 
             if edit_plan_file:
@@ -3137,6 +3159,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             auto_edit_state = {
                 'plan': gate_plan,
                 'source_path': str(edit_source),
+                'trash_source_path': str(trash_source),
                 'edited_path': str(edited_path),
                 'notes': gate_notes,
             }
@@ -3959,7 +3982,10 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             if auto_edit_state:
                 _persist_auto_edit_applied_plan(sermon_id)
-                edit_original = Path(auto_edit_state['source_path'])
+                edit_original = Path(
+                    auto_edit_state.get('trash_source_path')
+                    or auto_edit_state['source_path']
+                )
                 edit_keeper = audio_path if keeper_used else edit_original
                 try:
                     record = trash_original_after_edit(
