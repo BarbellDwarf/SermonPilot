@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -123,6 +124,21 @@ def _row_to_list_item(row: dict) -> SermonListItem:
     )
 
 
+def _row_remove_segments(row: dict, start: float, end: float) -> list[dict[str, float]]:
+    raw = row.get("remove_segments")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            raw = []
+    if not isinstance(raw, list):
+        return []
+    from src.auto_edit import normalize_remove_segments
+
+    normalized, problems = normalize_remove_segments(raw, start, end)
+    return [] if problems else normalized
+
+
 def _row_to_plan(sermon_id: str, row: dict, revisions_total: int) -> EditPlanOut:
     start = row.get("proposed_start")
     if start is None:
@@ -140,6 +156,9 @@ def _row_to_plan(sermon_id: str, row: dict, revisions_total: int) -> EditPlanOut
         evidence=str(row.get("evidence") or ""),
         start_sec=float(start) if start is not None else None,
         end_sec=float(end) if end is not None else None,
+        remove_segments=_row_remove_segments(
+            row, float(start or 0.0), float(end or 0.0)
+        ),
         offset_sec=float(row.get("audio_offset") or 0.0),
         detection_status=str(row.get("detection_status") or "ok"),
         reasoning=str(row.get("reasoning") or ""),

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class HealthOut(BaseModel):
@@ -55,6 +55,11 @@ class SermonDetailOut(BaseModel):
     scripture_reference: str | None = None
 
 
+class RemoveSegmentOut(BaseModel):
+    start_sec: float
+    end_sec: float
+
+
 class EditPlanOut(BaseModel):
     sermon_id: str
     status: str
@@ -65,6 +70,7 @@ class EditPlanOut(BaseModel):
     evidence: str
     start_sec: float | None = None
     end_sec: float | None = None
+    remove_segments: list[RemoveSegmentOut] = Field(default_factory=list)
     offset_sec: float = 0.0
     detection_status: str = "ok"
     reasoning: str = ""

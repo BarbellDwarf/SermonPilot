@@ -2113,6 +2113,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
         start = params.get("start")
         end = params.get("end")
         audio_offset = params.get("audio_offset", 0.0) or 0.0
+        remove_segments = params.get("remove_segments")
         render_only = bool(params.get("render_only", False))
         re_detect = bool(params.get("re_detect", False))
         plan_id = params.get("plan_id")
@@ -2174,6 +2175,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
             cancel_log=job.add_log,
             config=config or None,
             enhance_audio=request_enhance,
+            remove_segments=remove_segments,
         )
 
         if result.get("cancelled"):

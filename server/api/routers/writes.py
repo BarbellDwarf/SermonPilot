@@ -11,6 +11,7 @@ job that completed between the two clicks.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -22,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from server.api.routers.auth import require_user
 from server.api.scoping import is_admin, may_claim, visible
@@ -303,6 +304,11 @@ def _active_job_for(sermon_id: str) -> dict[str, Any] | None:
         return None
 
 
+class RemoveSegmentBody(BaseModel):
+    start_sec: float
+    end_sec: float
+
+
 class ApplyBody(BaseModel):
     start: float = 0.0
     end: float = 0.0
@@ -310,9 +316,51 @@ class ApplyBody(BaseModel):
     render_only: bool = True
     re_detect: bool = False
     plan_id: str | None = None
+    remove_segments: list[RemoveSegmentBody] = Field(default_factory=list)
     enhance_audio: bool | None = None
     upload_only: bool = False
     confirm_missing_description: bool = False
+
+
+def _record_apply_revision(
+    sermon_id: str,
+    body: ApplyBody,
+    remove_segments: list[dict[str, float]],
+) -> tuple[int, int]:
+    from server.api.accounts import get_db_path
+    from ui.database import SermonDatabase, SermonRepository
+
+    repo = SermonRepository(SermonDatabase(db_path=get_db_path()))
+    current = repo.get_current_edit_plan(sermon_id) or {}
+    actions = current.get("actions")
+    if isinstance(actions, str):
+        try:
+            actions = json.loads(actions)
+        except (json.JSONDecodeError, TypeError):
+            actions = None
+    plan_id = repo.save_edit_plan_revision(
+        sermon_id,
+        {
+            "proposed_start": float(body.start),
+            "proposed_end": float(body.end),
+            "final_start": float(body.start),
+            "final_end": float(body.end),
+            "audio_offset": float(body.audio_offset or 0.0),
+            "remove_segments": list(remove_segments),
+            "confidence": float(current.get("confidence") or 1.0),
+            "needs_review": False,
+            "evidence": str(current.get("evidence") or "approved in console"),
+            "qa_judgment": str(current.get("qa_judgment") or "approved"),
+            "reasoning": str(current.get("reasoning") or ""),
+            "detection_status": str(current.get("detection_status") or "ok"),
+            "status": "approved",
+            "source_path": current.get("source_path"),
+            "notes": str(current.get("notes") or ""),
+            "actions": actions,
+        },
+    )
+    saved = repo.get_current_edit_plan(sermon_id) or {}
+    return plan_id, int(saved.get("revision") or 0)
 
 
 class RefineBody(BaseModel):
@@ -474,6 +522,26 @@ def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(r
         )
     if body.end <= body.start:
         raise HTTPException(status_code=422, detail="end must be greater than start")
+
+    from src.auto_edit import EditPlan, validate_plan
+
+    candidate = EditPlan(
+        start=float(body.start),
+        end=float(body.end),
+        audio_offset=float(body.audio_offset or 0.0),
+        remove_segments=[
+            {"start_sec": float(item.start_sec), "end_sec": float(item.end_sec)}
+            for item in body.remove_segments
+        ],
+    )
+    problems = validate_plan(candidate, min_sermon_seconds=0.0)
+    if problems:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "invalid edit plan", "problems": problems},
+        )
+    normalized_remove_segments = candidate.remove_segments
+
     active = _active_job_for(sermon_id)
     if active:
         raise HTTPException(
@@ -486,6 +554,10 @@ def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(r
         )
     if not body.render_only:
         _require_sermonaudio_connection(user.get("id"))
+
+    plan_id, plan_revision = _record_apply_revision(
+        sermon_id, body, normalized_remove_segments
+    )
     from ui.job_labels import build_job_labels
     from ui.job_queue import JobType
 
@@ -503,15 +575,23 @@ def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(r
             "start": body.start,
             "end": body.end,
             "audio_offset": body.audio_offset,
+            "remove_segments": normalized_remove_segments,
             "render_only": body.render_only,
             "re_detect": body.re_detect,
-            "plan_id": body.plan_id,
+            "plan_id": plan_id,
+            "plan_revision": plan_revision,
             "enhance_audio": body.enhance_audio,
             "config": _resolved_job_config(),
         },
         user_id=user.get("id"),
     )
-    return {"job_id": job_id, "status": "queued"}
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "plan_id": plan_id,
+        "revision": plan_revision,
+        "remove_segments": normalized_remove_segments,
+    }
 
 
 @router.post("/jobs/{job_id}/cancel")
