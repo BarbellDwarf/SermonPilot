@@ -650,6 +650,143 @@ def _resolve_tail(source: Path, end: float, d_pos: float, fade_out_tail_seconds:
     return min(wanted, max(0.0, src_dur - end - d_pos))
 
 
+def _apply_edit_with_removals(
+    source: Path,
+    plan: EditPlan,
+    out: Path,
+    logo_path: Path | None,
+    fade_to_black: bool,
+    fade_out_tail_seconds: float,
+    cancel_check: Callable[[], None] | None,
+    cancel_log: Callable[[str], None] | None,
+) -> Path:
+    problems = validate_plan(plan, min_sermon_seconds=0.0)
+    if problems:
+        raise ValueError(f"invalid edit plan: {'; '.join(problems)}")
+
+    fade_in = max(plan.fade_in, 0.0)
+    logo_hold = max(plan.logo_hold, 0.0)
+    audio_offset = float(plan.audio_offset or 0.0)
+    d_pos = max(audio_offset, 0.0)
+    tail = _resolve_tail(source, plan.end, d_pos, fade_out_tail_seconds)
+    last_end = plan.end + tail + d_pos
+    kept_spans: list[tuple[float, float]] = []
+    cursor = plan.start
+    for segment in plan.remove_segments:
+        kept_spans.append((cursor, segment["start_sec"]))
+        cursor = segment["end_sec"]
+    kept_spans.append((cursor, last_end))
+
+    removed_total = sum(
+        segment["end_sec"] - segment["start_sec"] for segment in plan.remove_segments
+    )
+    out_len = plan.end - plan.start - removed_total + tail + d_pos
+    fade_out_start = max(out_len - fade_in, 0.0)
+    fade_in_filter = f"fade=t=in:st=0.000:d={_fmt(fade_in)}"
+    pts_shift = ""
+    if abs(audio_offset) > 1e-6:
+        sign = "+" if audio_offset > 0 else "-"
+        pts_shift = f",asetpts=PTS{sign}{abs(audio_offset):.3f}/TB"
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    cmd: list[str] = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        _fmt(plan.start),
+        "-i",
+        str(source),
+    ]
+    filters: list[str] = []
+    for index, (window_start, window_end) in enumerate(kept_spans):
+        relative_start = window_start - plan.start
+        relative_end = window_end - plan.start
+        filters.append(
+            f"[0:v]trim=start={_fmt(relative_start)}:end={_fmt(relative_end)},"
+            f"setpts=PTS-STARTPTS[v{index}]"
+        )
+        filters.append(
+            f"[0:a]atrim=start={_fmt(relative_start)}:end={_fmt(relative_end)},"
+            f"asetpts=PTS-STARTPTS[a{index}]"
+        )
+    concat_inputs = "".join(
+        f"[v{index}][a{index}]" for index in range(len(kept_spans))
+    )
+    filters.append(
+        f"{concat_inputs}concat=n={len(kept_spans)}:v=1:a=1[vjoined][ajoined]"
+    )
+
+    if logo_path is not None and logo_hold > 0:
+        cmd += ["-loop", "1", "-t", _fmt(logo_hold), "-i", str(logo_path)]
+        ffprobe = shutil.which("ffprobe")
+        src_fps = _ffprobe_frame_rate(ffprobe, source) if ffprobe else None
+        fps_expr = src_fps or "30"
+        tb_expr = f"1/{fps_expr.split('/')[0]}"
+        total = out_len + logo_hold - XFADE_SECONDS
+        filters.append(
+            f"[vjoined]setpts=PTS-STARTPTS,{fade_in_filter},"
+            f"fade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},"
+            f"fps={fps_expr},settb={tb_expr}[cv]"
+        )
+        filters.append("[1:v][cv]scale2ref=w=iw:h=ih[lg0][cvr]")
+        filters.append(f"[lg0]fps={fps_expr},settb={tb_expr}[lg]")
+        filters.append(
+            f"[cvr][lg]xfade=transition=fade:duration={XFADE_SECONDS:.3f}"
+            f":offset={_fmt(out_len - XFADE_SECONDS)}[xv]"
+        )
+        if fade_to_black:
+            end_fade_start = max(total - fade_in, 0.0)
+            filters.append(f"[xv]fade=t=out:st={_fmt(end_fade_start)}:d={_fmt(fade_in)}[vout]")
+        else:
+            filters.append("[xv]null[vout]")
+        filters.append(
+            f"[ajoined]afade=t=in:st=0.000:d={_fmt(fade_in)}{pts_shift},"
+            f"afade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)},apad[aout]"
+        )
+    else:
+        total = out_len
+        video_chain = f"[vjoined]{fade_in_filter}"
+        if fade_to_black and out_len > 0:
+            video_chain += f",fade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)}"
+        filters.append(video_chain + "[vout]")
+        audio_chain = f"[ajoined]afade=t=in:st=0.000:d={_fmt(fade_in)}{pts_shift}"
+        if fade_to_black and out_len > 0:
+            audio_chain += f",afade=t=out:st={_fmt(fade_out_start)}:d={_fmt(fade_in)}"
+        filters.append(audio_chain + ",apad[aout]")
+
+    cmd += [
+        "-filter_complex",
+        ";".join(filters),
+        "-map",
+        "[vout]",
+        "-map",
+        "[aout]",
+        "-t",
+        _fmt(total),
+        "-c:v",
+        "libx264",
+        "-crf",
+        "20",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "160k",
+        str(out),
+    ]
+    _run_ffmpeg(
+        cmd,
+        cancel_check=cancel_check,
+        cancel_log=cancel_log,
+        partial_paths=[out],
+        step="edit render",
+    )
+    return out
+
+
 def apply_edit(
     source: Path,
     plan: EditPlan,
@@ -664,6 +801,17 @@ def apply_edit(
         fade_to_black = plan.fade_to_black
     if plan.start < 0 or plan.end <= plan.start:
         raise ValueError(f"invalid edit plan: start={plan.start} end={plan.end}")
+    if plan.remove_segments:
+        return _apply_edit_with_removals(
+            source,
+            plan,
+            out,
+            logo_path,
+            bool(fade_to_black),
+            fade_out_tail_seconds,
+            cancel_check,
+            cancel_log,
+        )
 
     fade_in = max(plan.fade_in, 0.0)
     logo_hold = max(plan.logo_hold, 0.0)
