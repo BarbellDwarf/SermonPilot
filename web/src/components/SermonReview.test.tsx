@@ -180,6 +180,15 @@ function withoutPreviews(source: SermonMediaData): SermonMediaData {
   };
 }
 
+function withoutArtifactDurations(source: SermonMediaData): SermonMediaData {
+  const items = source.items.map(({ start_sec: _startSec, end_sec: _endSec, ...item }) => item);
+  return {
+    ...source,
+    items,
+    byKind: Object.fromEntries(items.map((item) => [item.kind, item])),
+  };
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   window.matchMedia = originalMatchMedia;
@@ -248,6 +257,30 @@ describe("SermonReview single player and plan", () => {
     expect(ending.getAttribute("data-start-sec")).toBe("1600");
     expect(ending.getAttribute("data-end-sec")).toBe("1600");
     expect(parseFloat(ending.style.left)).toBeCloseTo((1600 / 3000) * 100, 4);
+  });
+
+  it("keeps a known fallback duration stable when source duration is unavailable", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan({ startSec: 100, endSec: 1200 })}
+        media={withoutArtifactDurations(withoutPreviews(media()))}
+        isLive={false}
+        sourceDurationSec={null}
+        onToast={noop}
+      />,
+    );
+
+    const track = screen.getByTestId("timeline-track");
+    expect(track.getAttribute("data-span-sec")).toBe("1200");
+
+    fireEvent.change(screen.getByLabelText(/^End \(/), { target: { value: "1000" } });
+
+    expect(track.getAttribute("data-span-sec")).toBe("1200");
+    const ending = screen.getByTestId("timeline-region-ending");
+    expect(ending.getAttribute("data-end-sec")).toBe("1000");
+    expect(parseFloat(ending.style.left)).toBeCloseTo((1000 / 1200) * 100, 4);
   });
 
   it("moves the end handle right and left against the source scale", () => {
