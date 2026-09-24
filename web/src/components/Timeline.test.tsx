@@ -150,6 +150,24 @@ describe("Timeline", () => {
     expect(onChangeEnd).toHaveBeenCalledWith(3000);
   });
 
+  it("clamps the start bound when an incoming end exceeds the source duration", async () => {
+    const user = userEvent.setup();
+    const onChangeStart = vi.fn();
+    render(
+      <Timeline
+        {...baseProps()}
+        durationSec={3000}
+        startSec={2999}
+        endSec={3500}
+        onChangeStart={onChangeStart}
+      />,
+    );
+
+    screen.getByTestId("timeline-handle-start").focus();
+    await user.keyboard("{ArrowRight}");
+    expect(onChangeStart).toHaveBeenCalledWith(2999.9);
+  });
+
   it("exposes slider semantics on both handles", () => {
     render(<Timeline {...baseProps()} />);
     const start = screen.getByRole("slider", { name: "Keep start" });

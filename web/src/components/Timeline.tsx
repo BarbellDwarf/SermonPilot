@@ -72,8 +72,10 @@ export function Timeline({
   const dragRef = useRef<"start" | "end" | null>(null);
   const ending = endingSec ?? endSec;
   const span = timelineSpan(durationSec, endSec, ending, clips);
-  const startMax = roundTenths(clamp(endSec - MIN_GAP_SEC, 0, span));
-  const endMin = roundTenths(clamp(startSec + MIN_GAP_SEC, 0, span));
+  const boundedStart = clamp(startSec, 0, span);
+  const boundedEnd = clamp(endSec, 0, span);
+  const startMax = roundTenths(clamp(boundedEnd - MIN_GAP_SEC, 0, span));
+  const endMin = roundTenths(clamp(boundedStart + MIN_GAP_SEC, 0, span));
   const pct = (sec: number) => timelinePercent(sec, span);
   const keepLeft = pct(startSec);
   const keepRight = pct(endSec);
