@@ -124,6 +124,7 @@ def pipeline(monkeypatch) -> dict:
         "summary": 0,
         "hashtags": 0,
         "apply_sources": [],
+        "mux_sources": [],
     }
 
     import src.auto_edit as auto_edit_mod
@@ -165,6 +166,15 @@ def pipeline(monkeypatch) -> dict:
     monkeypatch.setattr(su, "generate_hashtags", _count("hashtags", "#generated"))
     monkeypatch.setattr(su, "_reuse_existing_transcript", Mock(return_value=""))
     monkeypatch.setattr(su, "_reuse_existing_transcript_segments", Mock(return_value=[]))
+
+    def _fake_mux(video_input, _audio_input, out, *_args, **_kwargs):
+        calls["mux_sources"].append(str(video_input))
+        out = Path(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"mux")
+        return []
+
+    monkeypatch.setattr(su, "_mux_video_with_audio", Mock(side_effect=_fake_mux))
 
     def _fake_apply(source, _plan, out, **_kwargs):
         calls["apply_sources"].append(str(source))
@@ -239,7 +249,8 @@ def test_apply_skips_keeper_transcode_and_enhancement(repo, review, pipeline, tm
     assert result["success"] is True
     assert pipeline["keeper"] == 0
     assert pipeline["enhance"] == 0
-    assert pipeline["apply_sources"] == [str(review["keeper"])]
+    assert pipeline["mux_sources"] == [str(review["keeper"])]
+    assert Path(pipeline["apply_sources"][0]).name == "Keeper_enhanced.mp4"
 
 
 def test_apply_keeps_one_record_and_advances_lifecycle(
@@ -273,7 +284,8 @@ def test_re_edit_renders_from_retained_full_length_source(
 
     first = _apply(repo, plan_id, tmp_path)
     assert first["success"] is True
-    assert pipeline["apply_sources"] == [str(review["keeper"])]
+    assert pipeline["mux_sources"] == [str(review["keeper"])]
+    assert Path(pipeline["apply_sources"][0]).name == "Keeper_enhanced.mp4"
 
     def _duration(path):
         name = Path(str(path)).name
@@ -282,11 +294,13 @@ def test_re_edit_renders_from_retained_full_length_source(
 
     monkeypatch.setattr(core, "_source_duration", _duration)
     pipeline["apply_sources"].clear()
+    pipeline["mux_sources"].clear()
 
     second = _apply(repo, plan_id, tmp_path)
 
     assert second["success"] is True
-    assert pipeline["apply_sources"] == [str(review["keeper"])]
+    assert pipeline["mux_sources"] == [str(review["keeper"])]
+    assert Path(pipeline["apply_sources"][0]).name == "Keeper_enhanced.mp4"
     assert len(repo.get_all_sermons()) == 1
     assert pipeline["keeper"] == 0
     assert pipeline["enhance"] == 0

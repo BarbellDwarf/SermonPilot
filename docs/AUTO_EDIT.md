@@ -114,6 +114,25 @@ The form's section writes per-run overrides into the job config; with the checkb
 
 If `apply_edit` itself fails, the plan is flagged for review and the sermon lands in the same pending state rather than dying.
 
+### Render base and failures
+
+When audio enhancement runs for a video, the enhanced audio is muxed into the
+retained keeper (or the original when no keeper was made) and the finalized
+render consumes that mux, so the published artifact carries the enhanced audio.
+The mux is built in the job's scratch directory and cleaned with it, never left
+beside the source.
+
+The measured A/V correction reaches the render through the plan's
+`audio_offset`. An explicitly set manual offset always wins; otherwise the
+measured auto correction is used when `av_sync.auto_correct` is on and its
+confidence and range gates pass. The auto value is clamped to the same ±5s
+limit `validate_plan` enforces.
+
+A requested stage that fails never falls back to a wrong artifact. If
+enhancement was requested and fails, the job fails and keeps its source for
+review instead of publishing the raw audio. If the video mux fails, the job
+fails instead of silently uploading audio only.
+
 ## Reviewing in the Library
 
 Open the sermon in the Library and expand the review panel:

@@ -97,6 +97,7 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
         def process_sermon_audio(*args, **kwargs):
             return False
     from auto_edit import (
+        MAX_AUDIO_OFFSET,
         EditPlan,
         apply_edit,
         detect_cut_points,
@@ -2025,12 +2026,68 @@ def _mux_audio_codec_args(audio_path: str | Path) -> list[str]:
 
     Audio already in an AAC-compatible container is stream-copied so the mux
     never re-encodes (and never falls back to ffmpeg's low default bitrate).
-    Anything else is encoded once at 192k, matching the rest of the pipeline.
+    Anything else, a PCM WAV included, is encoded once at 192k. The arguments
+    must describe the same path that is passed to ``-i``; ``_build_mux_command``
+    is the only caller and enforces that.
     """
     suffix = Path(audio_path).suffix.lower()
     if suffix in ('.mp4', '.m4a', '.aac'):
         return ['-c:a', 'copy']
     return ['-c:a', 'aac', '-b:a', '192k']
+
+
+def _build_mux_command(
+    video_input: str | Path,
+    audio_input: str | Path,
+    out: str | Path,
+    correction: float = 0.0,
+) -> list[str]:
+    """Build the ffmpeg command that muxes an enhanced audio track into video.
+
+    The codec arguments come from ``audio_input``, the same path handed to
+    ``-i``, so the stream-copy decision can never disagree with the input and
+    stream-copy a PCM WAV into a video container.
+    """
+    cmd = ["ffmpeg", "-y", "-i", str(video_input)]
+    if abs(correction) > 1e-6:
+        cmd += ["-itsoffset", f"{correction:.3f}"]
+    cmd += [
+        "-i", str(audio_input),
+        "-c:v", "copy",
+        *_mux_audio_codec_args(audio_input),
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-shortest",
+        str(out),
+    ]
+    return cmd
+
+
+def _mux_video_with_audio(
+    video_input: str | Path,
+    audio_input: str | Path,
+    out: str | Path,
+    correction: float = 0.0,
+    *,
+    cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
+) -> list[str]:
+    """Mux, then return A/V stream-bound problems (empty means within tolerance)."""
+    cmd = _build_mux_command(video_input, audio_input, out, correction)
+    logger.info("Muxing enhanced audio into video: %s", " ".join(cmd))
+    run_supervised(
+        cmd,
+        cancel_check=cancel_check,
+        log=cancel_log,
+        step="video mux",
+        partial_paths=[out],
+        partial_reason="cancelled_render_partial",
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=True,
+    )
+    return _verify_mux_av_sync(out)
 
 
 def _transcode_media(
@@ -2664,15 +2721,20 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     **audio_processing_settings(config),
                 )
                 if not success or not enhanced_audio_path.exists():
-                    if require_enhancement:
-                        logger.error(
-                            "Audio enhancement failed for a render that required it"
-                        )
-                        result['error'] = "Audio enhancement failed"
-                        return result
-                    logger.warning("Audio processing failed, using original file")
-                    _report(20, "Audio processing failed, falling back to original")
-                    enhanced_audio_path = audio_path
+                    # This branch only runs when enhancement was requested, so
+                    # shipping the raw audio would silently drop the requested
+                    # processing. Fail and keep the source for review.
+                    logger.error(
+                        "Audio enhancement was requested but failed; refusing "
+                        "to continue with the raw audio"
+                    )
+                    result['error'] = (
+                        "Audio enhancement failed; the raw audio will not be "
+                        "published in its place"
+                    )
+                    result['needs_review'] = True
+                    result['review_reason'] = "audio_enhancement_failed"
+                    return result
                 else:
                     _report(30, "Audio enhancement complete")
                     log_cuda_memory("after audio enhancement")
@@ -2682,22 +2744,28 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 except Exception:
                     pass
             else:
-                if require_enhancement:
-                    logger.error(
-                        "Audio enhancement required but AudioProcessor is unavailable"
-                    )
-                    result['error'] = (
-                        "Audio enhancement required but AudioProcessor is unavailable"
-                    )
-                    return result
-                logger.warning("AudioProcessor unavailable, skipping enhancement")
-                enhanced_audio_path = audio_path
+                # Enhancement was requested but the processor could not even be
+                # constructed; the same no-silent-fallback rule applies.
+                logger.error(
+                    "Audio enhancement was requested but AudioProcessor is unavailable"
+                )
+                result['error'] = (
+                    "Audio enhancement requested but AudioProcessor is unavailable; "
+                    "the raw audio will not be published in its place"
+                )
+                result['needs_review'] = True
+                result['review_reason'] = "audio_enhancement_unavailable"
+                return result
 
-        # The enhancer writes WAV regardless of the input container; transcode
-        # back to the input's format so saved/uploaded files match their
-        # extension and MIME type instead of shipping a 500MB "mp3".
+        # The enhancer writes WAV regardless of the input container. An
+        # audio-only source is transcoded back to its format so the saved and
+        # uploaded file matches its extension and MIME type instead of shipping
+        # a 500MB "mp3". A video source keeps the WAV: the mux encodes it once
+        # to AAC and that mux is the enhanced artifact the render consumes, so
+        # the retained enhancement is the file that was actually muxed.
         if (
-            enhanced_audio_path != audio_path
+            not input_is_video
+            and enhanced_audio_path != audio_path
             and enhanced_audio_path.exists()
             and temp_dir is not None
         ):
@@ -2717,28 +2785,80 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
         result['enhanced_audio_path'] = str(enhanced_audio_path)
 
+        # Resolve the edit gate before the mux: when a render will consume the
+        # mux, the A/V correction belongs in the render's plan, not baked into
+        # the intermediate mux (which the render would then apply twice).
+        if auto_edit_mode is not None:
+            auto_edit_cfg = config.get('auto_edit', {}) if isinstance(config, dict) else {}
+            gate_active = True
+            gate_mode = auto_edit_mode
+        else:
+            auto_edit_cfg = config.get('auto_edit', {}) if isinstance(config, dict) else {}
+            gate_active = bool(auto_edit_cfg.get('enabled', False)) or bool(edit_plan_file)
+            gate_mode = auto_edit_cfg.get('mode') or (
+                'interactive' if bool(auto_edit_cfg.get('require_review', False)) else 'auto'
+            )
+
+        if gate_active and not input_is_video:
+            console_print("⏭️  Auto-edit applies to video inputs only, skipping")
+            gate_active = False
+
         # If the original input was a video, mux the enhanced audio back in
         final_upload_path = enhanced_audio_path
         upload_type = "original-audio"
         enhanced_render_source: Path | None = None
         enhancement_mux_failed = False
+        mux_consumed = False
+        av_render_offset = 0.0
         if input_is_video:
             audio_was_enhanced = enhanced_audio_path != audio_path and enhanced_audio_path.exists()
             if audio_was_enhanced:
                 try:
-                    final_video = original_input_path.with_name(
-                        f"{original_input_path.stem}_enhanced{original_input_path.suffix}"
+                    if temp_dir is None:
+                        processing_root = Path(
+                            config.get('processing_temp_dir')
+                            or (default_cache_root() / "sermon_processing")
+                        )
+                        temp_dir = processing_root / _uuid.uuid4().hex
+                        temp_dir.mkdir(parents=True, exist_ok=True)
+                        result['processing_temp_dir'] = str(temp_dir)
+                    # Build the mux in the per-job scratch dir: the render
+                    # consumes it (or the upload reads it), then it is cleaned
+                    # with the job. It is never left orphaned beside the source.
+                    final_video = temp_dir / (
+                        f"{original_input_path.stem}_enhanced"
+                        f"{original_input_path.suffix or '.mp4'}"
                     )
                     # Encode the enhancer's WAV directly rather than remuxing
-                    # the AAC upload copy: a second AAC generation carries
-                    # encoder priming delay the mux would not compensate.
+                    # an AAC copy: a second AAC generation carries encoder
+                    # priming delay the mux would not compensate. The codec
+                    # arguments are derived from this same path by
+                    # ``_build_mux_command``.
                     mux_audio_input = Path(enhanced_audio_path)
-                    if temp_dir is not None:
-                        wav_candidate = temp_dir / "enhanced_audio.wav"
-                        if wav_candidate.exists():
-                            mux_audio_input = wav_candidate
 
-                    correction = 0.0
+                    # The correction the finalized render must carry.
+                    # Precedence: an explicitly set manual offset always wins;
+                    # otherwise the measured auto correction is used when
+                    # auto_correct is on and its gates pass. The auto value is
+                    # clamped to the same +/-MAX_AUDIO_OFFSET limit that
+                    # validate_plan enforces. A manual value is left unclamped
+                    # so validate_plan can reject it rather than silently
+                    # truncate an operator's explicit choice.
+                    manual_explicit = audio_offset is not None
+                    manual_offset = float(audio_offset or 0.0)
+                    if not manual_explicit and edit_plan_file:
+                        try:
+                            plan_manual = float(
+                                _load_edit_plan_from_file(edit_plan_file).audio_offset or 0.0
+                            )
+                        except Exception:
+                            plan_manual = 0.0
+                        if abs(plan_manual) > 1e-6:
+                            manual_explicit = True
+                            manual_offset = plan_manual
+
+                    auto_correction = 0.0
+                    av_reason = "av_sync disabled"
                     av_cfg = config.get('av_sync') or {}
                     if av_cfg.get('enabled', True):
                         max_offset = float(av_cfg.get('max_offset_seconds', 2.0))
@@ -2785,18 +2905,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                                 measured += input_offset.offset_seconds
                             if enh_offset.available and enh_offset.offset_seconds is not None:
                                 measured += enh_offset.offset_seconds
-                            manual_offset = float(audio_offset or 0.0)
-                            if abs(manual_offset) <= 1e-6 and edit_plan_file:
-                                try:
-                                    manual_offset = float(
-                                        _load_edit_plan_from_file(
-                                            edit_plan_file
-                                        ).audio_offset or 0.0
-                                    )
-                                except Exception:
-                                    manual_offset = 0.0
-                            correction, av_reason = resolve_audio_correction(
-                                manual_offset,
+                            auto_correction, av_reason = resolve_audio_correction(
+                                0.0,
                                 measured,
                                 input_offset.confidence,
                                 auto_correct=auto_correct,
@@ -2805,43 +2915,41 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                             )
                             if "exceeds" in av_reason:
                                 result['av_sync_needs_review'] = True
-                            if abs(measured) > 0.1 or abs(manual_offset) > 1e-6:
+                            if abs(measured) > 0.1:
                                 console_print(
-                                    f"🎯 A/V decision: measured {measured:+.2f}s, "
-                                    f"manual {manual_offset:+.2f}s -> {av_reason}"
+                                    f"🎯 A/V decision: measured {measured:+.2f}s -> {av_reason}"
                                 )
-                            result['av_sync_offset_seconds'] = correction
                         except ProcessCancelled:
                             raise
                         except Exception as e:
                             logger.warning("av_sync measurement failed: %s", e)
+                            av_reason = "measurement failed"
 
-                    mux_cmd = ["ffmpeg", "-y", "-i", str(original_input_path)]
-                    if abs(correction) > 1e-6:
-                        mux_cmd += ["-itsoffset", f"{correction:.3f}"]
-                    mux_cmd += [
-                        "-i", str(mux_audio_input),
-                        "-c:v", "copy",
-                        *_mux_audio_codec_args(enhanced_audio_path),
-                        "-map", "0:v:0",
-                        "-map", "1:a:0",
-                        "-shortest",
-                        str(final_video),
-                    ]
-                    logger.info("Muxing enhanced audio into video: %s", " ".join(mux_cmd))
-                    run_supervised(
-                        mux_cmd,
+                    if manual_explicit:
+                        av_render_offset = manual_offset
+                        av_reason = "manual offset set; auto-correction skipped"
+                    else:
+                        av_render_offset = max(
+                            -MAX_AUDIO_OFFSET, min(MAX_AUDIO_OFFSET, auto_correction)
+                        )
+                    result['av_sync_offset_seconds'] = av_render_offset
+                    # The render applies the correction through the plan, so the
+                    # mux only bakes it in when no render will consume the mux.
+                    mux_correction = 0.0 if gate_active else av_render_offset
+                    if abs(av_render_offset) > 1e-6:
+                        console_print(
+                            f"🎯 A/V correction: {av_render_offset:+.3f}s ({av_reason})"
+                        )
+
+                    mux_video_input = audio_path if keeper_used else original_input_path
+                    sync_problems = _mux_video_with_audio(
+                        mux_video_input,
+                        mux_audio_input,
+                        final_video,
+                        mux_correction,
                         cancel_check=_check_cancelled,
-                        log=cancel_log,
-                        step="video mux",
-                        partial_paths=[final_video],
-                        partial_reason="cancelled_render_partial",
-                        capture_output=True,
-                        text=True,
-                        timeout=600,
-                        check=True,
+                        cancel_log=cancel_log,
                     )
-                    sync_problems = _verify_mux_av_sync(final_video)
                     if sync_problems:
                         logger.warning(
                             "A/V sync check on %s: %s", final_video, "; ".join(sync_problems)
@@ -2853,13 +2961,24 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     final_upload_path = final_video
                     upload_type = "original-video"
                     enhanced_render_source = final_video
+                    mux_consumed = True
                     console_print(f"Muxed enhanced audio into video: {final_video.name}")
                 except ProcessCancelled:
                     raise
                 except Exception as e:
                     enhancement_mux_failed = True
-                    logger.warning("Video muxing failed, falling back to audio upload: %s", e)
-                    console_print("Video mux failed, uploading audio only")
+                    # A video service must not silently become an audio-only
+                    # upload; that drops the picture and hides the failure.
+                    logger.error(
+                        "Video muxing failed; refusing an audio-only downgrade: %s", e
+                    )
+                    result['error'] = (
+                        f"Video mux failed ({e}); an audio-only upload would "
+                        "drop the video"
+                    )
+                    result['needs_review'] = True
+                    result['review_reason'] = "video_mux_failed"
+                    return result
             else:
                 console_print("Uploading original video (no audio enhancement)")
                 final_upload_path = original_input_path
@@ -3285,21 +3404,6 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 },
             })
 
-        if auto_edit_mode is not None:
-            auto_edit_cfg = config.get('auto_edit', {}) if isinstance(config, dict) else {}
-            gate_active = True
-            gate_mode = auto_edit_mode
-        else:
-            auto_edit_cfg = config.get('auto_edit', {}) if isinstance(config, dict) else {}
-            gate_active = bool(auto_edit_cfg.get('enabled', False)) or bool(edit_plan_file)
-            gate_mode = auto_edit_cfg.get('mode') or (
-                'interactive' if bool(auto_edit_cfg.get('require_review', False)) else 'auto'
-            )
-
-        if gate_active and not input_is_video:
-            console_print("⏭️  Auto-edit applies to video inputs only, skipping")
-            gate_active = False
-
         if gate_active:
             edit_source = audio_path if keeper_used else original_input_path
             trash_source = edit_source
@@ -3320,6 +3424,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             else:
                 console_print(f"Rendering from {edit_source}")
                 logger.info("Rendering from %s", edit_source)
+            # The render consumes the enhanced mux when one was produced, so
+            # the published artifact carries the enhanced audio and its
+            # measured A/V correction. Without a mux the retained keeper or
+            # original is the base.
+            render_source = final_upload_path if mux_consumed else edit_source
             plan_duration = _ffprobe_duration(edit_source)
 
             if edit_plan_file:
@@ -3339,6 +3448,19 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             if audio_offset is not None:
                 gate_plan.audio_offset = float(audio_offset)
+                offset_source = "manual"
+            elif abs(float(gate_plan.audio_offset or 0.0)) > 1e-6:
+                offset_source = "plan"
+            else:
+                # No explicit manual offset: the measured correction reaches
+                # the render, which is the published artifact.
+                gate_plan.audio_offset = av_render_offset
+                offset_source = "measured"
+            logger.info(
+                "Edit render A/V offset: %+.3fs (%s)",
+                float(gate_plan.audio_offset or 0.0),
+                offset_source,
+            )
 
             confidence_threshold = _auto_edit_confidence_threshold(auto_edit_cfg)
             min_sermon_seconds = float(auto_edit_cfg.get('min_sermon_seconds', 600))
@@ -3403,7 +3525,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             )
             try:
                 edited_path = apply_edit(
-                    Path(edit_source),
+                    Path(render_source),
                     gate_plan,
                     edited_path,
                     logo_path=edit_logo_path,

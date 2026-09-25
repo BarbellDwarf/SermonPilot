@@ -113,7 +113,13 @@ def _seed(repo: SermonRepository, review: dict, plan: dict | None = None) -> int
 
 @pytest.fixture
 def pipeline(monkeypatch) -> dict:
-    calls: dict = {"enhance": 0, "enhance_inputs": [], "apply_sources": [], "apply_kwargs": []}
+    calls: dict = {
+        "enhance": 0,
+        "enhance_inputs": [],
+        "apply_sources": [],
+        "apply_kwargs": [],
+        "mux_sources": [],
+    }
 
     import src.auto_edit as auto_edit_mod
 
@@ -122,6 +128,15 @@ def pipeline(monkeypatch) -> dict:
         "transcode_to_keeper",
         Mock(side_effect=lambda source, *_a, **_k: source),
     )
+
+    def _fake_mux(video, _audio, out, *_args, **_kwargs):
+        calls["mux_sources"].append(str(video))
+        out = Path(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"mux")
+        return []
+
+    monkeypatch.setattr(su, "_mux_video_with_audio", Mock(side_effect=_fake_mux))
 
     real_process = su.process_new_sermon
 
@@ -226,7 +241,10 @@ def test_requested_enhancement_runs_when_no_retained_artifact(
     assert result["success"] is True
     assert pipeline["enhance"] == 1
     assert pipeline["enhance_inputs"] == [str(review["keeper"])]
-    assert pipeline["apply_sources"] == [str(review["keeper"])]
+    # The render consumes the mux built from the keeper, so the enhanced audio
+    # and its measured correction reach the published artifact.
+    assert pipeline["mux_sources"] == [str(review["keeper"])]
+    assert Path(pipeline["apply_sources"][0]).name == "Keeper_enhanced.mp4"
     kwargs = pipeline["apply_kwargs"][-1]
     assert kwargs["skip_audio"] is False
     assert kwargs["require_enhancement"] is True
@@ -240,7 +258,8 @@ def test_current_retained_enhancement_is_reused(repo, review, pipeline, tmp_path
 
     assert result["success"] is True
     assert pipeline["enhance"] == 0
-    assert pipeline["apply_sources"] == [str(review["keeper"])]
+    assert pipeline["mux_sources"] == [str(review["keeper"])]
+    assert Path(pipeline["apply_sources"][0]).name == "Keeper_enhanced.mp4"
     kwargs = pipeline["apply_kwargs"][-1]
     assert kwargs["enhanced_audio_file"] == str(review["enhanced"])
     assert kwargs["skip_audio"] is True

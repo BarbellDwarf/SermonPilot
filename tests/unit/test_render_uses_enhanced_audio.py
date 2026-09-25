@@ -29,8 +29,11 @@ def _make_video(tmp_path: Path) -> Path:
     return video
 
 
-def _enhanced_mux_path(video: Path) -> Path:
-    return video.with_name(f"{video.stem}_enhanced{video.suffix}")
+def _enhanced_mux_path(recorder: _RunRecorder) -> Path:
+    for step, cmd in recorder.commands:
+        if step == "video mux":
+            return Path(cmd[-1])
+    raise AssertionError("no video mux command was built")
 
 
 class _RunRecorder:
@@ -48,6 +51,12 @@ class _RunRecorder:
         Path(target).parent.mkdir(parents=True, exist_ok=True)
         Path(target).write_bytes(b"x")
         return subprocess.CompletedProcess(list(cmd), 0, stdout="", stderr="")
+
+    def mux_command(self) -> list[str]:
+        for step, cmd in self.commands:
+            if step == "video mux":
+                return list(cmd)
+        raise AssertionError("no video mux command was built")
 
     def edit_render_input(self) -> str:
         for step, cmd in self.commands:
@@ -158,8 +167,10 @@ def test_render_source_is_enhanced_mux_when_enhancement_runs(
 
     assert result["success"] is True
     assert counter["enhance"] == 1
-    expected = _enhanced_mux_path(video)
-    assert expected.exists()
+    expected = _enhanced_mux_path(recorder)
+    assert expected.parent != video.parent
+    assert not expected.exists()
+    assert not list(video.parent.glob("*_enhanced*"))
     assert recorder.edit_render_input() == str(expected)
     assert "Rendering from the enhanced audio" in caplog.text
 
@@ -168,6 +179,30 @@ def test_render_source_is_enhanced_mux_when_enhancement_runs(
     row = SermonRepository().get_current_edit_plan(result["sermon_id"])
     assert row is not None
     assert row["source_path"] == str(expected)
+
+
+def test_mux_command_encodes_the_wav_passed_to_ffmpeg(
+    tmp_path: Path, monkeypatch
+) -> None:
+    video = _make_video(tmp_path)
+    counter = {"enhance": 0}
+    recorder = _RunRecorder()
+    _wire_pipeline(monkeypatch, tmp_path, counter, recorder)
+
+    result = _run(video)
+
+    assert result["success"] is True
+    command = recorder.mux_command()
+    first_input = command.index("-i")
+    audio_input = command[command.index("-i", first_input + 1) + 1]
+    assert Path(audio_input).suffix.lower() == ".wav"
+    video_codec = command.index("-c:v")
+    assert command[video_codec + 2 : video_codec + 6] == [
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+    ]
 
 
 def test_render_source_is_enhanced_mux_when_retained_enhancement_reused(
@@ -185,7 +220,10 @@ def test_render_source_is_enhanced_mux_when_retained_enhancement_reused(
 
     assert result["success"] is True
     assert counter["enhance"] == 0
-    expected = _enhanced_mux_path(video)
+    expected = _enhanced_mux_path(recorder)
+    assert expected.parent != video.parent
+    assert not expected.exists()
+    assert not list(video.parent.glob("*_enhanced*"))
     assert recorder.edit_render_input() == str(expected)
     assert "Rendering from the enhanced audio" in caplog.text
 
@@ -209,7 +247,7 @@ def test_render_source_unchanged_when_enhancement_skipped(
     assert f"Rendering from {video}" in caplog.text
 
 
-def test_mux_failure_renders_unenhanced_and_warns(
+def test_mux_failure_stops_before_render_and_flags_review(
     tmp_path: Path, monkeypatch, caplog
 ) -> None:
     video = _make_video(tmp_path)
@@ -220,8 +258,9 @@ def test_mux_failure_renders_unenhanced_and_warns(
     with caplog.at_level(logging.INFO, logger="sermon_updater"):
         result = _run(video)
 
-    assert result["success"] is True
+    assert result["success"] is False
+    assert result["needs_review"] is True
+    assert result["review_reason"] == "video_mux_failed"
     assert counter["enhance"] == 1
-    assert recorder.edit_render_input() == str(video)
-    assert "enhancement was NOT applied to the render" in caplog.text
-    assert "Rendering from the enhanced audio" not in caplog.text
+    assert all(step != "edit render" for step, _cmd in recorder.commands)
+    assert "refusing an audio-only downgrade" in caplog.text
