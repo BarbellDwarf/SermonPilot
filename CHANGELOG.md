@@ -1,33 +1,10 @@
 # Changelog
 
-All notable changes to SermonPilot are documented here.
+Notable changes are documented here.
 
-## Unreleased
+## v1.8.0
 
-One sermon is one database record.
-
-### Changed
-
-- Sermon ids are deterministic on every creation path: the normalised speaker, recorded date and title plus a source fingerprint, so a re-run updates the existing row instead of inserting a duplicate
-- Re-runs, re-renders and refine loops carry the existing sermon id through the job and apply flow, preserving edit plans, revisions, media and notes
-- Library shows one row per sermon
-- Applying an approved edit updates that row in place and advances a lifecycle status instead of creating a second record
-- Apply reuses the retained keeper, enhanced audio, transcript and stored metadata; the LLM runs only for empty title, description or hashtags
-- Re-edits resolve the retained full-length source, so a previous render never becomes the next render's input
-- Retained-artifact pointers carry into the render metadata, so a later re-edit keeps reusing them
-
-### Added
-
-- `src/sermon_identity.py`: identity normalisation, sampled content fingerprint and id derivation
-- One-time idempotent migration at startup that groups rows by identity, keeps the richest row per group, folds unique plans, media, content and notes onto it, and logs every merge; groups with distinct SermonAudio ids are skipped
-- `docs/SERMON_IDENTITY.md` guide
-- `sermons.edit_status` column tracking `draft`, `pending_review`, `applied`, `rendered`, `uploaded` and `failed` alongside the existing status values
-- Human-readable job labels built from sermon fields (`ui/job_labels.py`): every job queue call site on the Streamlit pages and the console write path now stores a title and description that name the sermon, speaker and batch size instead of a raw sermon id, and the Jobs page retry rebuilds them from the job parameters
-
-### Fixed
-
-- The review page builds its action row from the record state: the legacy Push to SermonAudio control and the upload-only action are hidden once a sermon is published, upload-only appears only when a render exists, and a published record's apply actions read Re-render instead of Approve; the plan chip is labelled Plan: ... so its review state is not read as the record's status
-- A container recreate no longer strands a job at `running`: startup reconciliation marks in-flight jobs terminal (`failed`, or `cancelled` when the cancel flag was already set), appends an interruption line to the existing log, and leaves completed output alone, so the sermon's queue is usable again without editing the database by hand
+The operator-facing release notes are maintained in [docs/RELEASES.md](docs/RELEASES.md#180). Keeping the detailed list in one place avoids two release histories drifting apart.
 
 ## v1.7.0 (2026-09-12)
 
