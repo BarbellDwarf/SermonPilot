@@ -1350,8 +1350,8 @@ class JobQueue:
     def _run_executor_with_watchdog(self, job: Job, executor: Callable) -> JobResult:
         """Run the executor in a child thread, abandoning it when it stalls.
 
-        Activity means any of: a progress update, a new job log line, output
-        from a supervised child, or growth of a supervised child's output file.
+        Activity means any of: a progress update, a new job log line, or growth
+        of a supervised child's output file.
         The worker checks the same monotonic activity clock while the executor
         runs. On a stall the child is abandoned (a daemon thread, so it cannot
         keep the process alive) and the job is failed with its last named stage,
