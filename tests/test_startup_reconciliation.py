@@ -186,12 +186,12 @@ def test_terminal_jobs_untouched_and_reconciliation_is_idempotent(db_path: Path)
     _insert_job(db_path, "j-paused", status="paused", logs=["[10:02:00] paused"])
 
     first = reconcile_interrupted_jobs(db_path=str(db_path))
-    assert first == 2
+    assert first == 1
 
     failed_row = _read_row(db_path, "j-run")
     assert failed_row is not None and failed_row["status"] == "failed"
     paused_row = _read_row(db_path, "j-paused")
-    assert paused_row is not None and paused_row["status"] == "failed"
+    assert paused_row is not None and paused_row["status"] == "paused"
     done_row = _read_row(db_path, "j-done")
     assert done_row is not None and done_row["status"] == "completed"
 
@@ -208,7 +208,7 @@ def test_terminal_jobs_untouched_and_reconciliation_is_idempotent(db_path: Path)
     assert json.loads(failed_again["logs"]) == first_logs
     assert json.loads(failed_again["result"]) == first_result
     assert _read_row(db_path, "j-done")["status"] == "completed"
-    assert _read_row(db_path, "j-paused")["status"] == "failed"
+    assert _read_row(db_path, "j-paused")["status"] == "paused"
 
 
 def test_cancel_flag_round_trips_through_the_store(
