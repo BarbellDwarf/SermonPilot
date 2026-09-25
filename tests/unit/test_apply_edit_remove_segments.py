@@ -174,7 +174,10 @@ def _sample_frequency(path: Path, second: float) -> float:
     ).stdout
     samples = array.array("h")
     samples.frombytes(raw)
-    crossings = sum((left < 0) != (right < 0) for left, right in zip(samples, samples[1:]))
+    crossings = sum(
+        (left < 0) != (right < 0)
+        for left, right in zip(samples, samples[1:], strict=False)
+    )
     return crossings * 8000 / max(len(samples) * 2, 1)
 
 
@@ -187,7 +190,7 @@ def test_two_removals_render_long_input_with_join_markers(tmp_path: Path) -> Non
     colors = ["red", "green", "blue", "yellow", "magenta"]
     durations = [1000, 1000, 2000, 1000, 2200]
     command = ["ffmpeg", "-y"]
-    for color, duration in zip(colors, durations):
+    for color, duration in zip(colors, durations, strict=True):
         command += [
             "-f",
             "lavfi",
@@ -195,7 +198,7 @@ def test_two_removals_render_long_input_with_join_markers(tmp_path: Path) -> Non
             f"color=c={color}:s=160x90:r=1:d={duration}",
         ]
     frequencies = [440, 880, 220, 1320, 660]
-    for frequency, duration in zip(frequencies, durations):
+    for frequency, duration in zip(frequencies, durations, strict=True):
         command += [
             "-f",
             "lavfi",

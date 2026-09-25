@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from sermon_updater import _load_edit_plan_from_file
 from ui.auto_edit_apply import _write_edit_plan_file, build_apply_job_params
 from ui.database import SermonDatabase, SermonRepository
