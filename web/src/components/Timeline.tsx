@@ -34,10 +34,19 @@ function roundTenths(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-export function timelineSpan(durationSec: number, endSec: number, endingSec: number, clips: TimelineClip[]): number {
-  const candidates = [durationSec, endSec, endingSec, ...clips.map((clip) => clip.endSec)];
-  const largest = candidates.reduce((acc, value) => (Number.isFinite(value) && value > acc ? value : acc), 1);
-  return largest;
+export function timelineSpan(
+  durationSec: number | null | undefined,
+  _endSec: number,
+  _endingSec: number,
+  clips: TimelineClip[],
+): number {
+  if (typeof durationSec === "number" && Number.isFinite(durationSec) && durationSec > 0) {
+    return durationSec;
+  }
+  return clips.reduce(
+    (acc, clip) => (Number.isFinite(clip.endSec) && clip.endSec > acc ? clip.endSec : acc),
+    1,
+  );
 }
 
 export function timelinePercent(sec: number, span: number): number {
@@ -63,6 +72,10 @@ export function Timeline({
   const dragRef = useRef<"start" | "end" | null>(null);
   const ending = endingSec ?? endSec;
   const span = timelineSpan(durationSec, endSec, ending, clips);
+  const boundedStart = clamp(startSec, 0, span);
+  const boundedEnd = clamp(endSec, 0, span);
+  const startMax = roundTenths(clamp(boundedEnd - MIN_GAP_SEC, 0, span));
+  const endMin = roundTenths(clamp(boundedStart + MIN_GAP_SEC, 0, span));
   const pct = (sec: number) => timelinePercent(sec, span);
   const keepLeft = pct(startSec);
   const keepRight = pct(endSec);
@@ -93,9 +106,9 @@ export function Timeline({
     event.preventDefault();
     const sec = secFromClientX(event.clientX);
     if (handle === "start") {
-      onChangeStart?.(roundTenths(Math.min(sec, endSec - MIN_GAP_SEC)));
+      onChangeStart?.(roundTenths(clamp(sec, 0, startMax)));
     } else {
-      onChangeEnd?.(roundTenths(Math.max(sec, startSec + MIN_GAP_SEC)));
+      onChangeEnd?.(roundTenths(clamp(sec, endMin, span)));
     }
   };
 
@@ -112,9 +125,9 @@ export function Timeline({
     event.preventDefault();
     onSelect?.(handle);
     if (handle === "start") {
-      onChangeStart?.(roundTenths(clamp(startSec + delta, 0, endSec - MIN_GAP_SEC)));
+      onChangeStart?.(roundTenths(clamp(startSec + delta, 0, startMax)));
     } else {
-      onChangeEnd?.(roundTenths(clamp(endSec + delta, startSec + MIN_GAP_SEC, span)));
+      onChangeEnd?.(roundTenths(clamp(endSec + delta, endMin, span)));
     }
   };
 
@@ -131,7 +144,7 @@ export function Timeline({
         ref={trackRef}
         data-testid="timeline-track"
         data-span-sec={span}
-        className="relative h-14 w-full touch-pan-y select-none overflow-hidden rounded-md border border-line bg-ink"
+        className="relative h-14 w-full touch-pan-y select-none overflow-visible rounded-md border border-line bg-ink"
         onPointerDown={seekFromTrack}
         onPointerMove={moveDrag}
         onPointerUp={endDrag}
@@ -214,8 +227,8 @@ export function Timeline({
           aria-label="Keep start"
           aria-orientation="horizontal"
           aria-valuemin={0}
-          aria-valuemax={span}
-          aria-valuenow={startSec}
+          aria-valuemax={startMax}
+          aria-valuenow={clamp(startSec, 0, startMax)}
           tabIndex={0}
           style={{ left: `${keepLeft}%`, touchAction: "none" }}
           onPointerDown={beginDrag("start")}
@@ -236,9 +249,9 @@ export function Timeline({
           data-testid="timeline-handle-end"
           aria-label="Keep end"
           aria-orientation="horizontal"
-          aria-valuemin={0}
+          aria-valuemin={endMin}
           aria-valuemax={span}
-          aria-valuenow={endSec}
+          aria-valuenow={clamp(endSec, endMin, span)}
           tabIndex={0}
           style={{ left: `${keepRight}%`, touchAction: "none" }}
           onPointerDown={beginDrag("end")}

@@ -152,6 +152,7 @@ export interface SermonReviewProps {
   descriptionNeedsReview?: boolean;
   plan: EditPlan;
   history?: EditPlan[];
+  sourceDurationSec?: number | null;
   media: SermonMediaData;
   isLive: boolean;
   statusChip?: ReactNode;
@@ -229,6 +230,7 @@ export function SermonReview({
   descriptionNeedsReview = false,
   plan: initial,
   history: planHistory,
+  sourceDurationSec,
   media,
   isLive: live,
   statusChip,
@@ -328,6 +330,15 @@ export function SermonReview({
 
   const safeStart = start ?? plan.startSec;
   const safeEnd = end ?? plan.endSec;
+  const sourceDuration =
+    typeof sourceDurationSec === "number" && Number.isFinite(sourceDurationSec) && sourceDurationSec > 0
+      ? sourceDurationSec
+      : null;
+  const knownDuration = [plan.endSec, ...media.items.map((item) => item.end_sec ?? 0)].reduce(
+    (largest, value) => (Number.isFinite(value) && value > largest ? value : largest),
+    1,
+  );
+  const timelineDuration = sourceDuration ?? knownDuration;
   const duration = start !== null && end !== null && end > start ? end - start : null;
   const detectionFailed = plan.detectionStatus === "unavailable";
 
@@ -859,7 +870,7 @@ export function SermonReview({
                 </p>
               )}
               <Timeline
-                durationSec={safeEnd}
+                durationSec={timelineDuration}
                 startSec={safeStart}
                 endSec={safeEnd}
                 offsetSec={offset ?? plan.offsetSec}

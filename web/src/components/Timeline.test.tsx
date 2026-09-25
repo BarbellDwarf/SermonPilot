@@ -93,14 +93,79 @@ describe("Timeline", () => {
     expect(onChangeEnd).toHaveBeenCalledWith(2511.3);
   });
 
-  it("does not let a handle nudge cross the other handle", async () => {
+  it("does not let either handle cross the other handle", async () => {
     const user = userEvent.setup();
     const onChangeStart = vi.fn();
-    render(<Timeline {...baseProps()} startSec={20} endSec={20.5} onChangeStart={onChangeStart} />);
+    const onChangeEnd = vi.fn();
+    render(
+      <Timeline
+        {...baseProps()}
+        startSec={20}
+        endSec={20.5}
+        onChangeStart={onChangeStart}
+        onChangeEnd={onChangeEnd}
+      />,
+    );
 
     screen.getByTestId("timeline-handle-start").focus();
     await user.keyboard("{ArrowRight}");
     expect(onChangeStart).toHaveBeenCalledWith(20.4);
+
+    screen.getByTestId("timeline-handle-end").focus();
+    await user.keyboard("{ArrowLeft}");
+    expect(onChangeEnd).toHaveBeenCalledWith(20.1);
+  });
+
+  it("keeps keyboard nudges inside the source and shared handle bounds", async () => {
+    const user = userEvent.setup();
+    const onChangeStart = vi.fn();
+    const onChangeEnd = vi.fn();
+    const { rerender } = render(
+      <Timeline
+        {...baseProps()}
+        durationSec={3000}
+        startSec={0}
+        endSec={0.05}
+        onChangeStart={onChangeStart}
+        onChangeEnd={onChangeEnd}
+      />,
+    );
+
+    screen.getByTestId("timeline-handle-start").focus();
+    await user.keyboard("{ArrowRight}");
+    expect(onChangeStart).toHaveBeenCalledWith(0);
+
+    rerender(
+      <Timeline
+        {...baseProps()}
+        durationSec={3000}
+        startSec={100}
+        endSec={2999.5}
+        onChangeStart={onChangeStart}
+        onChangeEnd={onChangeEnd}
+      />,
+    );
+    screen.getByTestId("timeline-handle-end").focus();
+    await user.keyboard("{ArrowRight}");
+    expect(onChangeEnd).toHaveBeenCalledWith(3000);
+  });
+
+  it("clamps the start bound when an incoming end exceeds the source duration", async () => {
+    const user = userEvent.setup();
+    const onChangeStart = vi.fn();
+    render(
+      <Timeline
+        {...baseProps()}
+        durationSec={3000}
+        startSec={2999}
+        endSec={3500}
+        onChangeStart={onChangeStart}
+      />,
+    );
+
+    screen.getByTestId("timeline-handle-start").focus();
+    await user.keyboard("{ArrowRight}");
+    expect(onChangeStart).toHaveBeenCalledWith(2999.9);
   });
 
   it("exposes slider semantics on both handles", () => {
@@ -109,7 +174,8 @@ describe("Timeline", () => {
     const end = screen.getByRole("slider", { name: "Keep end" });
     expect(start.getAttribute("aria-valuenow")).toBe("8.5");
     expect(end.getAttribute("aria-valuenow")).toBe("2512.3");
-    expect(start.getAttribute("aria-valuemax")).toBe("2512.3");
+    expect(start.getAttribute("aria-valuemax")).toBe("2512.2");
+    expect(end.getAttribute("aria-valuemin")).toBe("8.6");
   });
 
   it("gives each drag handle a 44px-wide touch target", () => {
@@ -119,8 +185,17 @@ describe("Timeline", () => {
     }
   });
 
+  it("keeps endpoint handle targets outside the track clipping boundary", () => {
+    render(<Timeline {...baseProps()} />);
+    expect(screen.getByTestId("timeline-track").className).toContain("overflow-visible");
+  });
+
+  it("uses the supplied duration as the stable scale", () => {
+    expect(timelineSpan(2400, 1000, 1000, clips)).toBe(2400);
+  });
+
   it("map helpers clamp to the span", () => {
-    expect(timelineSpan(100, 90, 95, clips)).toBe(2512.3);
+    expect(timelineSpan(100, 90, 95, clips)).toBe(100);
     expect(timelinePercent(-5, 100)).toBe(0);
     expect(timelinePercent(150, 100)).toBe(100);
     expect(timelinePercent(50, 100)).toBe(50);
