@@ -2,6 +2,7 @@
 
 Guides for running and understanding SermonPilot.
 
+- [RELEASES.md](RELEASES.md): operator-facing release notes and upgrade notes.
 - [DEPLOYMENT.md](DEPLOYMENT.md): deploy the published container image with Docker Compose, the environment and volumes, and end-to-end verification.
 - [INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md): install from source with uv or pip and choose a requirements file for your hardware.
 - [GPU_INSTALLATION.md](GPU_INSTALLATION.md): CUDA and ROCm setup for GPU acceleration.

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import datetime
-from importlib import metadata
 from typing import Any
 
 from fastapi import APIRouter
 
 from server.api.db import db_is_readable
 from server.api.schemas import HealthOut, StatusOut
+from ui.version import app_version
 
 router = APIRouter(tags=["status"])
 
@@ -37,10 +37,7 @@ def _context_tolerant(key: str, entry: dict[str, Any]) -> dict[str, Any]:
 
 
 def _version() -> str:
-    try:
-        return metadata.version("sermon-audio-updater")
-    except Exception:
-        return "0.0.0"
+    return app_version()
 
 
 def _serialize(value: Any) -> Any:

@@ -39,6 +39,7 @@ from server.api.routers.userdata import (
     router as userdata_router,
 )
 from server.api.routers.writes import router as writes_router
+from ui.version import app_version
 
 DEV_ORIGINS = [
     "http://localhost:5173",
@@ -51,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="SermonPilot read-only bridge")
+    app = FastAPI(title="SermonPilot read-only bridge", version=app_version())
     app.add_middleware(
         CORSMiddleware,
         allow_origins=DEV_ORIGINS,

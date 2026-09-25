@@ -1,10 +1,10 @@
 # SermonPilot Console (web/)
 
-Mock-first rebuild of the SermonPilot UI. The Streamlit app stays live; everything new lands here.
+Mock-first rebuild of the SermonPilot UI. The Streamlit app stays live; the console now has live API wiring as well.
 
 ## Stack
 
-React 18 + Vite 5 + TypeScript (strict) + Tailwind CSS 3 + shadcn-style local primitives (`src/components/ui.tsx`) + TanStack Query. React Router routes; mock data in `src/mock/data.ts`, live data via the read-only FastAPI bridge (`server/api/`).
+React 18 + Vite 5 + TypeScript (strict) + Tailwind CSS 3 + shadcn-style local primitives (`src/components/ui.tsx`) + TanStack Query. React Router routes; mock data in `src/mock/data.ts`, live data via the FastAPI bridge (`server/api/`).
 
 ## Modes
 
@@ -20,9 +20,10 @@ VITE_API_MODE=live VITE_API_BASE=http://127.0.0.1:8504 npm run build   # live bu
 - **Mock mode** (`npx vite preview --port 4173`): all data from `src/mock/data.ts`,
   brief artificial loading, local-only actions with `(mock)` toasts and confirms.
 - **Live mode** (FastAPI bridge serves the live bundle + `/api/*` on port 8504):
-  read-only TanStack Query hooks (`src/api/hooks.tsx`, 5–15 s staleTime, 5 s jobs
-  poll). Mutating actions stay hidden; the failed-job Retry explains the read-only
-  bridge via toast. The header badge reads `live` or `mock` accordingly.
+  TanStack Query hooks (`src/api/hooks.tsx`) poll live data. Mutating actions are
+  live for cancel, start processing, and delete; a failed job's Retry explains the
+  read-only bridge via toast because no retry endpoint exists. The header badge
+  reads `live` or `mock` accordingly.
 
 ## Validation
 
@@ -91,8 +92,9 @@ because they embedded instance-specific record counts.
   ported; the mock history list stands in for it.
 - Templates -> Prompt Templates (`PromptTemplates.tsx`).
 
-All new sections are mock state only (per-section save + dirty-state + toast,
-confirms on destructive reset/apply). Captures:
+These sections started as mock state. SermonAudio accounts, cloud mounts, LLM
+connections, and prompt templates now persist through the API. Config Backup
+remains a mock section. Captures:
 `web/validation/settings-coverage/desktop-1..3.png`.
 
 ## Ownership model (per-user data scoping, P5b)
@@ -124,14 +126,16 @@ so its rows stay `NULL` (admin-visible). Job creation currently lives behind
 UI code, so API-side creation wraps at the API layer when the write-path
 increment lands.
 
-New Sermon is not wired yet (read-only era): creation arrives with the
-write-path increment, at which point `user_id` is stamped from the session.
+New Sermon is wired in the P7 release-readiness scope below. The server stamps
+`user_id` from the session when a draft is created.
 
 ## Roadmap: resumable/interruptible uploads (logged Sep 16)
 Multiparty (chunked) uploads for the web console so large sermon files can be PAUSED and RESUMED across interruptions (browser restart, network drop, machine reboot). Server-side session keeps received chunk offsets; client resumes by querying state. Applies to Browser Upload path in New Sermon; Server Path ingest already handles huge files today. NOT started — design when the write-path phase lands.
 
 ## Roadmap: per-user cloud storage mounts (logged Sep 16)
-Connect cloud storage (Google Drive, Dropbox, OneDrive, and S3-class all at v1 — including Backblaze B2) through the UI to a USER ACCOUNT: OAuth connect flow, files save to the user's mounted drive alongside SermonAudio upload. Builds on the existing host-side rclone Drive ingest design (W1-W5, v1.8.0) — that one is host-level (single mount, detect-and-notify); this is per-user in-app mounts at the accounts (P5) phase. NOT started.
+Per-user cloud storage mounts shipped in v1.8.0. Each user has a separate rclone
+configuration, and the New Sermon picker can browse a connected remote. See the
+root README for the operator-facing summary.
 
 ## Roadmap: scripture overlay + audio disclaimer (logged Sep 16)
 1. SCRIPTURE OVERLAY (automated): when the speaker reads Scripture, fade to a text card showing the exact passage being read (verse lookup via a Bible API — midvash-class or offline public-domain text), paged for long passages, then fade back to the speaker. Builds on existing transcript timestamps + logo-card overlay windows (xfade machinery in auto_edit). Needs: reading-segment detection (LLM + timestamps), verse matching (fuzzy match transcript text -> reference), text-card renderer, review-gate UI for proposed overlays.
