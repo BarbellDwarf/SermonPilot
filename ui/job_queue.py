@@ -239,7 +239,7 @@ class JobCancelledError(Exception):
 
 
 class JobStalledError(Exception):
-    """Raised when a job makes no progress for longer than the stall bound."""
+    """Raised when a job has no liveness signal for longer than the bound."""
 
     def __init__(self, stage: str):
         self.stage = stage or "unknown stage"
