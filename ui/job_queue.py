@@ -448,6 +448,7 @@ class Job:
         # coordination above, so the dataclass and persisted schema are
         # unchanged; reconciliation reads it to tell a live job from an orphan.
         self._owner_id: str | None = None
+        self._retrying = False
         # Watchdog activity: the monotonic time of the last progress/log line
         # and the stage named by the last one.
         self._last_activity_at = time.monotonic()
@@ -1006,7 +1007,11 @@ class JobQueue:
                     logger.info(f"Retrying job {job_id}")
 
         if retried:
-            self._save_job_to_db(job)
+            job._retrying = True
+            try:
+                self._save_job_to_db(job)
+            finally:
+                job._retrying = False
         return retried
 
     def clear_completed_jobs(self) -> int:
@@ -1511,11 +1516,12 @@ class JobQueue:
                         if owner_id is None:
                             owner_id = existing["owner_id"]
                         stored_cancelled = bool(existing["cancelled"])
-                    # A cancel recorded by any process is sticky: a worker's
-                    # periodic save must never clear it before its executor
-                    # notices. Adopt it so the running executor stops too.
-                    if stored_cancelled and not job.cancelled:
+                    preserve_stored_cancel = not job._retrying
+                    if stored_cancelled and preserve_stored_cancel and not job.cancelled:
                         job.cancelled = True
+                        if job.status == JobStatus.RUNNING:
+                            job.status = JobStatus.CANCELLED
+                            job.completed_at = job.completed_at or datetime.now()
                     fields = [
                         "id", "type", "title", "description", "status", "progress",
                         "parameters", "result", "logs", "created_at", "started_at",
@@ -1556,9 +1562,12 @@ class JobQueue:
                         if field == "id":
                             continue
                         if field == "cancelled":
-                            assignments.append(
-                                "cancelled = MAX(background_jobs.cancelled, excluded.cancelled)"
-                            )
+                            if preserve_stored_cancel:
+                                assignments.append(
+                                    "cancelled = MAX(background_jobs.cancelled, excluded.cancelled)"
+                                )
+                            else:
+                                assignments.append("cancelled = excluded.cancelled")
                         else:
                             assignments.append(f"{field} = excluded.{field}")
                     conn.execute(

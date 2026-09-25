@@ -19,6 +19,7 @@ import ui.database as database_module
 from ui.database import SermonDatabase
 from ui.job_queue import (
     _JOB_LEASE_TABLE,
+    Job,
     JobCancelledError,
     JobQueue,
     JobResult,
@@ -318,6 +319,61 @@ def test_concurrent_lease_claims_have_one_owner(
         assert row["worker_id"] == owner.worker_id
     finally:
         owner._release_worker_lease()
+
+
+def test_cancel_status_stays_terminal_until_retry(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = SermonDatabase(db_path=str(db_path))
+    monkeypatch.setattr(database_module, "_db", db)
+    queue = JobQueue(worker_id="owner-1")
+    job = Job(
+        id="j-cancel-status",
+        type=JobType.VALIDATION,
+        title="Cancel status",
+        description="Cancel status",
+        status=JobStatus.RUNNING,
+        progress=0.0,
+        created_at=datetime.now(),
+    )
+    queue._jobs[job.id] = job
+    queue._save_job_to_db(job)
+
+    conn = _connect(db_path)
+    try:
+        conn.execute(
+            "UPDATE background_jobs SET status = 'cancelled', cancelled = 1 WHERE id = ?",
+            (job.id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    job.status = JobStatus.RUNNING
+    job.cancelled = False
+    job.completed_at = None
+    queue._save_job_to_db(job)
+
+    conn = _connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT status, cancelled FROM background_jobs WHERE id = ?", (job.id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row["status"] == "cancelled"
+    assert row["cancelled"] == 1
+
+    assert queue.retry_job(job.id) is True
+    conn = _connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT status, cancelled FROM background_jobs WHERE id = ?", (job.id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row["status"] == "queued"
+    assert row["cancelled"] == 0
 
 
 def test_cancel_through_another_process_stops_the_running_worker(
