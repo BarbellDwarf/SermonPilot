@@ -64,6 +64,34 @@ def _trim_result_payload(result: dict) -> dict:
     return {k: v for k, v in result.items() if k not in _RESULT_TRIM_FIELDS}
 
 
+def _failed_item_names(results: dict) -> list[str]:
+    """Names of per-item failures recorded in a batch result's details."""
+    names: list[str] = []
+    for detail in results.get("details") or []:
+        if not isinstance(detail, dict):
+            continue
+        if detail.get("status") not in ("error", "failed"):
+            continue
+        name = detail.get("sermon_id") or detail.get("name") or detail.get("id")
+        if name:
+            names.append(str(name))
+    return names
+
+
+def _partial_failure_result(
+    kind: str, results: dict, failed_names: list[str]
+) -> JobResult:
+    """Honest outcome for a batch with failed items: never plain success."""
+    completed = int(results.get("completed", 0) or 0)
+    failed = int(results.get("failed", results.get("errors", 0)) or 0)
+    if failed:
+        message = f"{kind}: {completed} succeeded, {failed} failed"
+        if failed_names:
+            message += f" ({', '.join(failed_names)})"
+        return JobResult(success=False, message=message, data=results, error=message)
+    return JobResult(success=True, message=results.get("summary", kind), data=results)
+
+
 def _job_user_id(job: Job) -> str | None:
     params = job.parameters or {}
     return params.get("user_id") or getattr(job, "user_id", None)
@@ -786,14 +814,15 @@ def execute_validation_job(job: Job) -> JobResult:
                             f"Sermon {sermon_id}: Invalid "
                             f"(score: {validation_result.validation_score:.2f})"
                         )
+                    results['completed'] += 1
                 else:
                     results['errors'] += 1
+                    results['details'].append({'sermon_id': sermon_id, 'status': 'error'})
                     job.add_log(f"Sermon {sermon_id}: Validation failed")
-
-                results['completed'] += 1
 
             except Exception as e:
                 results['errors'] += 1
+                results['details'].append({'sermon_id': sermon_id, 'status': 'error'})
                 job.add_log(f"Error validating sermon {sermon_id}: {str(e)}")
                 logger.error(f"Validation error for sermon {sermon_id}: {e}")
 
@@ -805,12 +834,14 @@ def execute_validation_job(job: Job) -> JobResult:
             f"{results['invalid']} invalid, {results['errors']} errors"
         )
         job.update_progress(100, summary)
+        results['summary'] = summary
 
-        return JobResult(
-            success=True,
-            message=summary,
-            data=results
+        outcome = _partial_failure_result(
+            "Validation", results, _failed_item_names(results)
         )
+        if not outcome.success:
+            job.add_log(outcome.message)
+        return outcome
 
     except JobCancelledError:
         raise
@@ -921,10 +952,12 @@ def execute_sermon_import_job(job: Job) -> JobResult:
                     })
                 else:
                     results['errors'] += 1
+                    results['details'].append({'sermon_id': sermon_id, 'status': 'error'})
                     job.add_log(f"Sermon {sermon_id}: Failed to import")
 
             except Exception as e:
                 results['errors'] += 1
+                results['details'].append({'sermon_id': sermon_id, 'status': 'error'})
                 job.add_log(f"Error importing sermon {sermon_id}: {str(e)}")
                 logger.error(f"Import error for sermon {sermon_id}: {e}")
 
@@ -936,12 +969,15 @@ def execute_sermon_import_job(job: Job) -> JobResult:
             f"{results['skipped']} skipped, {results['errors']} errors"
         )
         job.update_progress(100, summary)
+        results['summary'] = summary
+        results['completed'] = results['imported']
 
-        return JobResult(
-            success=True,
-            message=summary,
-            data=results
+        outcome = _partial_failure_result(
+            "Import", results, _failed_item_names(results)
         )
+        if not outcome.success:
+            job.add_log(outcome.message)
+        return outcome
 
     except JobCancelledError:
         raise
@@ -1450,7 +1486,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                         form_data = job.parameters.get('form_data', {})
                         force_update = job.parameters.get('force_update', False)
                         # Use the existing sermon processing function with appropriate flags
-                        sermon_updater.process_single_sermon(
+                        processing_result = sermon_updater.process_single_sermon(
                             sermon_id,
                             no_upload=bool(form_data.get('dry_run', False)),
                             verbose=False,
@@ -1465,6 +1501,20 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                             series_id=job.parameters.get('series_id'),
                             config=config,
                         )
+                        if actions.get('generate_description') or actions.get('generate_hashtags'):
+                            outcome = _classify_metadata_update_result(
+                                processing_result, actions
+                            )
+                            if not outcome['ok']:
+                                raise RuntimeError(outcome['reason'])
+                        if actions.get('enhance_audio'):
+                            completed = (
+                                processing_result.get('completed') or []
+                                if isinstance(processing_result, dict)
+                                else []
+                            )
+                            if 'audio' not in completed:
+                                raise RuntimeError('requested audio was not processed')
 
                         if actions.get('generate_description'):
                             sermon_result['actions_performed'].append('description')
@@ -1517,12 +1567,14 @@ def execute_batch_processing_job(job: Job) -> JobResult:
             f"{results['failed']} failed"
         )
         job.update_progress(100, summary)
+        results['summary'] = summary
 
-        return JobResult(
-            success=True,
-            message=summary,
-            data=results
+        outcome = _partial_failure_result(
+            "Batch processing", results, _failed_item_names(results)
         )
+        if not outcome.success:
+            job.add_log(outcome.message)
+        return outcome
 
     except JobCancelledError:
         raise
@@ -1698,6 +1750,7 @@ def execute_metadata_update_job(job: Job) -> JobResult:
 
         summary = f"Metadata update: {results['completed']} completed, {results['failed']} failed"
         job.update_progress(100, summary)
+        results['summary'] = summary
 
         if results['failed']:
             reasons = "; ".join(

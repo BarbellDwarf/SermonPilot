@@ -274,14 +274,15 @@ def _stop_job_queues() -> None:
         module = sys.modules.get(module_name)
         if module is None:
             continue
-        queue = getattr(module, "_job_queue", None)
-        if queue is None:
-            continue
-        try:
-            queue.stop()
-        except Exception:
-            pass
-        module._job_queue = None
+        for attr in ("_job_queue", "_submit_queue"):
+            queue = getattr(module, attr, None)
+            if queue is None:
+                continue
+            try:
+                queue.stop()
+            except Exception:
+                pass
+            setattr(module, attr, None)
 
 
 @pytest.fixture(autouse=True)

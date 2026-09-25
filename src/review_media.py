@@ -379,11 +379,90 @@ def _same_path(left: Path, right: Path | str | None) -> bool:
         return False
 
 
+def _resolve_path(value: Any) -> Path | None:
+    if not value:
+        return None
+    try:
+        return Path(str(value)).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def _iter_parameter_paths(value: Any) -> list[Path]:
+    """Every filesystem path referenced in a nested job parameter structure."""
+    found: list[Path] = []
+    if isinstance(value, dict):
+        for item in value.values():
+            found.extend(_iter_parameter_paths(item))
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            found.extend(_iter_parameter_paths(item))
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text or text.startswith(("http://", "https://", "remote:")):
+            return found
+        if "/" not in text and "\\" not in text:
+            return found
+        resolved = _resolve_path(text)
+        if resolved is not None:
+            found.append(resolved)
+    return found
+
+
+def _in_progress_review_dirs(repo: Any) -> list[Path]:
+    """Review directories whose edit plan is still awaiting a decision."""
+    dirs: list[Path] = []
+    if repo is None:
+        return dirs
+    try:
+        with repo.db.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT sermon_id FROM edit_plans WHERE status = 'pending_review'"
+            ).fetchall()
+    except Exception:
+        return dirs
+    for row in rows:
+        review_dir = review_dir_for_sermon(str(row["sermon_id"]), repo)
+        if review_dir is not None:
+            dirs.append(review_dir)
+    return dirs
+
+
+def _non_terminal_job_paths(repo: Any) -> list[Path]:
+    """Artifacts and review directories referenced by a non-terminal job."""
+    paths: list[Path] = []
+    if repo is None:
+        return paths
+    try:
+        with repo.db.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT parameters FROM background_jobs "
+                "WHERE status IN ('queued', 'running', 'paused')"
+            ).fetchall()
+    except Exception:
+        return paths
+    for row in rows:
+        try:
+            params = json.loads(row["parameters"]) if row["parameters"] else {}
+        except (json.JSONDecodeError, TypeError):
+            params = {}
+        if not isinstance(params, dict):
+            continue
+        paths.extend(_iter_parameter_paths(params))
+        sermon_id = params.get("sermon_id")
+        if sermon_id:
+            review_dir = review_dir_for_sermon(str(sermon_id), repo)
+            if review_dir is not None:
+                paths.append(review_dir)
+    return paths
+
+
 def sweep_abandoned_reviews(
     config: dict[str, Any] | None = None,
     repo: Any = None,
     now: float | None = None,
     protect_dir: Path | str | None = None,
+    protect_dirs: Any = None,
 ) -> dict[str, Any]:
     """Drop review media past the age or total-size cap.
 
@@ -393,12 +472,41 @@ def sweep_abandoned_reviews(
     last remaining review, so a single review larger than the cap survives and
     a warning names its size against the cap.
 
+    Any review still in progress is exempt as well: a review whose edit plan is
+    ``pending_review``, and any review an artifact of a queued or running job
+    lives in or under. Those reviews are being read or written right now, so
+    retention must wait for them to reach a terminal outcome.
+
     Returns ``{"removed": [...], "kept": int, "bytes": int}``. Safe to run
     repeatedly; only marked review directories are considered.
     """
     root = resolve_review_media_root(config)
     if not root.is_dir():
         return {"removed": [], "kept": 0, "bytes": 0}
+
+    if repo is None:
+        try:
+            from ui.database import SermonRepository
+
+            repo = SermonRepository()
+        except Exception:
+            repo = None
+
+    protected_paths: list[Path] = []
+    for extra in protect_dirs or []:
+        resolved = _resolve_path(extra)
+        if resolved is not None:
+            protected_paths.append(resolved)
+    protected_paths.extend(_in_progress_review_dirs(repo))
+    protected_paths.extend(_non_terminal_job_paths(repo))
+
+    def _is_protected(review_dir: Path) -> bool:
+        if _same_path(review_dir, protect_dir):
+            return True
+        for path in protected_paths:
+            if _is_under(review_dir, path) or _is_under(path, review_dir):
+                return True
+        return False
 
     now_ts = time.time() if now is None else float(now)
     max_age_seconds = review_retention_days() * 86400.0
@@ -417,7 +525,7 @@ def sweep_abandoned_reviews(
     removed: list[str] = []
     kept: list[dict[str, Any]] = []
     for entry in entries:
-        if _same_path(entry["dir"], protect_dir):
+        if _is_protected(entry["dir"]):
             logger.info("Kept current review media (protected): %s", entry["dir"])
             kept.append(entry)
             continue
@@ -439,7 +547,7 @@ def sweep_abandoned_reviews(
         remaining: list[dict[str, Any]] = []
         survivors = len(kept)
         for entry in kept:
-            protected = _same_path(entry["dir"], protect_dir)
+            protected = _is_protected(entry["dir"])
             if total > max_bytes and not protected and survivors > 1:
                 logger.info(
                     "Removing review media %s: %s over %s size cap (oldest first)",
