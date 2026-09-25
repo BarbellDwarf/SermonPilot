@@ -429,14 +429,15 @@ def _in_progress_review_dirs(repo: Any) -> list[Path]:
 
 
 def _non_terminal_job_paths(repo: Any) -> list[Path]:
-    """Artifacts and review directories referenced by a queued/running job."""
+    """Artifacts and review directories referenced by a non-terminal job."""
     paths: list[Path] = []
     if repo is None:
         return paths
     try:
         with repo.db.get_connection() as conn:
             rows = conn.execute(
-                "SELECT parameters FROM background_jobs WHERE status IN ('queued', 'running')"
+                "SELECT parameters FROM background_jobs "
+                "WHERE status IN ('queued', 'running', 'paused')"
             ).fetchall()
     except Exception:
         return paths

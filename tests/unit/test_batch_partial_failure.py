@@ -45,7 +45,14 @@ def _patch(monkeypatch, outcomes: dict[str, str]) -> None:
         outcome = outcomes.get(sermon_id, "ok")
         if outcome == "fail":
             raise RuntimeError(f"per-item failure for {sermon_id}")
-        return {"action": "processed"}
+        if outcome == "metadata-fail":
+            return {
+                "action": "processed",
+                "completed": [],
+                "description_needs_review": True,
+                "description_error": "description generation failed",
+            }
+        return {"action": "processed", "completed": ["description"]}
 
     monkeypatch.setattr(sermon_updater, "process_single_sermon", fake_process)
 
@@ -63,6 +70,17 @@ def test_batch_with_a_failed_item_is_not_plain_success(monkeypatch) -> None:
         detail.get("sermon_id") == "s-bad" and detail.get("status") == "error"
         for detail in result.data["details"]
     )
+
+
+def test_batch_with_a_failed_metadata_result_is_not_plain_success(monkeypatch) -> None:
+    _patch(monkeypatch, {"s-good": "ok", "s-bad": "metadata-fail"})
+
+    result = execute_batch_processing_job(_job(["s-good", "s-bad"]))
+
+    assert result.success is False
+    assert "s-bad" in (result.message or "")
+    assert result.data is not None
+    assert result.data["failed"] == 1
 
 
 def test_batch_without_failures_still_reports_success(monkeypatch) -> None:

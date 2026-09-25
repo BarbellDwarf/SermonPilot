@@ -814,12 +814,11 @@ def execute_validation_job(job: Job) -> JobResult:
                             f"Sermon {sermon_id}: Invalid "
                             f"(score: {validation_result.validation_score:.2f})"
                         )
+                    results['completed'] += 1
                 else:
                     results['errors'] += 1
                     results['details'].append({'sermon_id': sermon_id, 'status': 'error'})
                     job.add_log(f"Sermon {sermon_id}: Validation failed")
-
-                results['completed'] += 1
 
             except Exception as e:
                 results['errors'] += 1
@@ -1487,7 +1486,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                         form_data = job.parameters.get('form_data', {})
                         force_update = job.parameters.get('force_update', False)
                         # Use the existing sermon processing function with appropriate flags
-                        sermon_updater.process_single_sermon(
+                        processing_result = sermon_updater.process_single_sermon(
                             sermon_id,
                             no_upload=bool(form_data.get('dry_run', False)),
                             verbose=False,
@@ -1502,6 +1501,20 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                             series_id=job.parameters.get('series_id'),
                             config=config,
                         )
+                        if actions.get('generate_description') or actions.get('generate_hashtags'):
+                            outcome = _classify_metadata_update_result(
+                                processing_result, actions
+                            )
+                            if not outcome['ok']:
+                                raise RuntimeError(outcome['reason'])
+                        if actions.get('enhance_audio'):
+                            completed = (
+                                processing_result.get('completed') or []
+                                if isinstance(processing_result, dict)
+                                else []
+                            )
+                            if 'audio' not in completed:
+                                raise RuntimeError('requested audio was not processed')
 
                         if actions.get('generate_description'):
                             sermon_result['actions_performed'].append('description')

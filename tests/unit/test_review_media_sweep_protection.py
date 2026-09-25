@@ -1,7 +1,7 @@
 """The review-media sweep must not touch a review that is still live.
 
 A review is live while a user is deciding on it (edit plan ``pending_review``)
-and while a queued/running job still references its artifacts. Retention may
+and while a non-terminal job still references its artifacts. Retention may
 only discard reviews that have reached a terminal outcome.
 """
 
@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+
+import pytest
 
 from src.review_media import MARKER_FILENAME, sweep_abandoned_reviews, write_review_marker
 from ui.database import SermonDatabase, SermonRepository
@@ -112,7 +114,10 @@ def test_sweep_keeps_a_review_whose_plan_is_still_pending(tmp_path, monkeypatch)
     assert str(abandoned) in result["removed"]
 
 
-def test_sweep_keeps_artifacts_referenced_by_a_non_terminal_job(tmp_path, monkeypatch):
+@pytest.mark.parametrize("status", ["queued", "running", "paused"])
+def test_sweep_keeps_artifacts_referenced_by_a_non_terminal_job(
+    tmp_path, monkeypatch, status
+):
     monkeypatch.setenv("SERMONPILOT_REVIEW_MEDIA_DIR", str(tmp_path / "reviews"))
     monkeypatch.setenv("SERMONPILOT_REVIEW_RETENTION_DAYS", "1")
     monkeypatch.delenv("SERMONPILOT_REVIEW_RETENTION_MAX_GB", raising=False)
@@ -120,7 +125,7 @@ def test_sweep_keeps_artifacts_referenced_by_a_non_terminal_job(tmp_path, monkey
     repo = _make_repo(tmp_path)
     busy = _seed_review(tmp_path / "reviews", "busy-job")
     idle = _seed_review(tmp_path / "reviews", "idle-job")
-    _add_job(repo, "j-busy", "running", {"output_dir": str(busy)})
+    _add_job(repo, "j-busy", status, {"output_dir": str(busy)})
     _add_job(repo, "j-idle", "completed", {"output_dir": str(idle)})
     _age(busy, 1)
     _age(idle, 1)
