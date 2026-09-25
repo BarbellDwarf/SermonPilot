@@ -348,6 +348,8 @@ def reconcile_interrupted_jobs(db_path: str | None = None) -> int:
         conn.row_factory = sqlite3.Row
         present = _ensure_job_columns(conn)
         _ensure_lease_table(conn)
+        conn.commit()
+        conn.execute("BEGIN IMMEDIATE")
         live_owner = _read_live_lease_owner(conn)
         select_cols = "id, logs" + (", cancelled" if "cancelled" in present else "")
         if "owner_id" in present:
@@ -658,7 +660,12 @@ class JobQueue:
 
     def _start_workers(self) -> None:
         """Recover orphans and start the worker and persister threads."""
+        if not self._owns_lease:
+            return
+        self._load_jobs_from_db()
         self._recover_orphaned_jobs()
+        if not self._owns_lease:
+            return
         for i in range(self.max_workers):
             worker = threading.Thread(
                 target=self._worker_loop,
@@ -694,6 +701,8 @@ class JobQueue:
         try:
             with self.db.get_connection() as conn:
                 _ensure_lease_table(conn)
+                conn.commit()
+                conn.execute("BEGIN IMMEDIATE")
                 row = conn.execute(
                     f"SELECT worker_id, heartbeat_at, boot_id FROM {_JOB_LEASE_TABLE}"
                     " WHERE id = 1"
@@ -710,6 +719,7 @@ class JobQueue:
                         and recorded_boot != boot_id
                     )
                     if same_boot and heartbeat > stale_before:
+                        conn.rollback()
                         return False
                 conn.execute(
                     f"INSERT OR REPLACE INTO {_JOB_LEASE_TABLE}"
@@ -739,8 +749,9 @@ class JobQueue:
                 conn.commit()
             self._last_heartbeat_at = time.monotonic()
             return cursor.rowcount > 0
-        except Exception:
-            return True
+        except Exception as exc:
+            logger.warning("Failed to renew worker lease for %s: %s", self.worker_id, exc)
+            return False
 
     def _release_worker_lease(self) -> None:
         """Drop this worker's lease so a successor can start immediately."""
@@ -769,14 +780,38 @@ class JobQueue:
         never replaced.
         """
         recovered_jobs = []
-        with self._queue_lock:
-            for job in self._jobs.values():
-                if (
-                    job.status in IN_FLIGHT_JOB_STATUSES
-                    and getattr(job, "_owner_id", None) != self.worker_id
-                ):
-                    _mark_job_interrupted(job)
-                    recovered_jobs.append(job)
+        if self.db:
+            try:
+                with self.db.get_connection() as conn:
+                    _ensure_lease_table(conn)
+                    conn.commit()
+                    conn.execute("BEGIN IMMEDIATE")
+                    if _read_live_lease_owner(conn) != self.worker_id:
+                        conn.rollback()
+                        self._owns_lease = False
+                        return
+                    with self._queue_lock:
+                        for job in self._jobs.values():
+                            if (
+                                job.status in IN_FLIGHT_JOB_STATUSES
+                                and getattr(job, "_owner_id", None) != self.worker_id
+                            ):
+                                _mark_job_interrupted(job)
+                                recovered_jobs.append(job)
+                    conn.commit()
+            except Exception:
+                self._owns_lease = False
+                logger.exception("Failed to recover orphaned jobs")
+                return
+        else:
+            with self._queue_lock:
+                for job in self._jobs.values():
+                    if (
+                        job.status in IN_FLIGHT_JOB_STATUSES
+                        and getattr(job, "_owner_id", None) != self.worker_id
+                    ):
+                        _mark_job_interrupted(job)
+                        recovered_jobs.append(job)
 
         for job in recovered_jobs:
             self._save_job_to_db(job)
@@ -1007,6 +1042,9 @@ class JobQueue:
         """Main worker loop that processes jobs"""
         while self._running and not self._shutdown_event.is_set():
             try:
+                if not self._owns_lease:
+                    time.sleep(1.0)
+                    continue
                 # Do not claim a job without headroom; leave it queued and wait.
                 if not self._resources_available():
                     time.sleep(10.0)
@@ -1037,6 +1075,7 @@ class JobQueue:
             try:
                 if time.monotonic() - self._last_heartbeat_at >= JOB_HEARTBEAT_INTERVAL_SECONDS:
                     if not self._renew_worker_lease():
+                        self._owns_lease = False
                         logger.warning(
                             "Worker lease lost for %s; stopping this worker",
                             self.worker_id,
@@ -1320,6 +1359,7 @@ class JobQueue:
             child.join(1.0)
             if child.is_alive() and timeout > 0:
                 if time.monotonic() - job._last_activity_at >= timeout:
+                    job.cancelled = True
                     job._on_update = None
                     raise JobStalledError(job._last_stage)
 

@@ -278,6 +278,48 @@ def test_a_second_live_worker_does_not_start(
         first.stop()
 
 
+def test_concurrent_lease_claims_have_one_owner(
+    db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = SermonDatabase(db_path=str(db_path))
+    monkeypatch.setattr(database_module, "_db", db)
+
+    first = JobQueue(worker_id="owner-1")
+    second = JobQueue(worker_id="owner-2")
+    barrier = threading.Barrier(2)
+    results: dict[str, bool] = {}
+
+    def claim(queue: JobQueue) -> None:
+        barrier.wait(timeout=5.0)
+        results[queue.worker_id] = queue._acquire_worker_lease()
+
+    threads = [
+        threading.Thread(target=claim, args=(queue,))
+        for queue in (first, second)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10.0)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert sorted(results.values()) == [False, True]
+    owner_id = next(worker_id for worker_id, acquired in results.items() if acquired)
+    owner = first if owner_id == first.worker_id else second
+    owner._owns_lease = True
+    try:
+        conn = _connect(db_path)
+        try:
+            row = conn.execute(
+                f"SELECT worker_id FROM {_JOB_LEASE_TABLE} WHERE id = 1"
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row["worker_id"] == owner.worker_id
+    finally:
+        owner._release_worker_lease()
+
+
 def test_cancel_through_another_process_stops_the_running_worker(
     db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -309,4 +351,3 @@ def test_cancel_through_another_process_stops_the_running_worker(
     finally:
         owner.stop()
         submit.stop()
-

@@ -53,12 +53,15 @@ def test_hung_stage_fails_with_the_stage_named_and_queue_moves_on(
     queue: JobQueue, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     next_started = threading.Event()
+    cancel_seen = threading.Event()
 
     def fake_executor(job: Job) -> JobResult:
         if job.title == "hung":
             job.update_progress(30, "Enhancing audio")
-            while True:
+            while not job.cancelled:
                 time.sleep(0.05)
+            cancel_seen.set()
+            return JobResult(success=False, message="cancelled")
         next_started.set()
         return JobResult(success=True, message="done")
 
@@ -71,6 +74,7 @@ def test_hung_stage_fails_with_the_stage_named_and_queue_moves_on(
     queue.start()
     try:
         assert _wait_for_terminal(queue, hung_id) is JobStatus.FAILED
+        assert cancel_seen.wait(timeout=2.0), "the stalled executor did not see cancellation"
         assert next_started.wait(timeout=5.0), "the next job never started"
         assert _wait_for_terminal(queue, next_id) is JobStatus.COMPLETED
     finally:
