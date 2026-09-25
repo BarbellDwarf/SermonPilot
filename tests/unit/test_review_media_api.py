@@ -7,7 +7,14 @@ import types
 from pathlib import Path
 from unittest.mock import Mock
 
+import pytest
+
 import sermon_updater as su
+
+
+@pytest.fixture(autouse=True)
+def _allow_tmp_output_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_DIRECTORY", str(tmp_path))
 
 
 def _set_output_dir(user_id: str, path: Path) -> None:

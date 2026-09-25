@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from pydantic import BaseModel
 
 from server.api.routers.auth import require_user
-from server.api.scoping import visible
+from server.api.scoping import is_admin, may_claim, visible
 
 router = APIRouter(prefix="/api", tags=["write"])
 
@@ -101,12 +101,17 @@ def _save_draft_sermon(
     recorded_date: str,
     series_title: str = "",
     description: str = "",
-    user_id: str | None,
+    user: dict,
 ) -> None:
     from server.api.accounts import get_db_path
     from ui.database import SermonDatabase, SermonRepository
 
     repo = SermonRepository(SermonDatabase(db_path=get_db_path()))
+    if not may_claim(repo.get_sermon(sermon_id), user):
+        raise HTTPException(
+            status_code=403,
+            detail="a sermon with this identity is owned by another user",
+        )
     ok = repo.save_sermon(
         {
             "id": sermon_id,
@@ -116,10 +121,17 @@ def _save_draft_sermon(
             "series_title": series_title.strip(),
             "description": description.strip(),
             "status": "draft",
-            "user_id": user_id,
-        }
+            "user_id": user.get("id"),
+        },
+        required_owner=user.get("id"),
+        allow_owner_override=is_admin(user),
     )
     if not ok:
+        if not may_claim(repo.get_sermon(sermon_id), user):
+            raise HTTPException(
+                status_code=403,
+                detail="a sermon with this identity is owned by another user",
+            )
         raise HTTPException(status_code=500, detail="could not save sermon")
 
 
@@ -317,6 +329,7 @@ def _enqueue_plan_refine(
             detail={
                 "message": "an active job already exists for this sermon",
                 "job_id": active["id"],
+                "code": "job_active",
             },
         )
     from ui.job_labels import build_job_labels
@@ -468,6 +481,7 @@ def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(r
             detail={
                 "message": "an active job already exists for this sermon",
                 "job_id": active["id"],
+                "code": "job_active",
             },
         )
     if not body.render_only:
@@ -523,6 +537,7 @@ def upload_now(sermon_id: str, user=Depends(require_user)):
             detail={
                 "message": "an active job already exists for this sermon",
                 "job_id": active["id"],
+                "code": "job_active",
             },
         )
     _require_sermonaudio_connection(user.get("id"))
@@ -556,6 +571,7 @@ def regenerate_description(sermon_id: str, user=Depends(require_user)):
             detail={
                 "message": "an active job already exists for this sermon",
                 "job_id": active["id"],
+                "code": "job_active",
             },
         )
     _require_sermonaudio_connection(user.get("id"))
@@ -636,6 +652,58 @@ def _ingest_base() -> Path:
     return Path(os.environ.get("SERMONPILOT_RAW_INGEST", "/data/raw_ingest"))
 
 
+def _user_ingest_dir(user_id: str | None) -> Path:
+    from server.api.routers.userdata import _resolve_output_path
+
+    return _resolve_output_path(str(_ingest_base())) / re.sub(
+        r"[^A-Za-z0-9_-]", "_", user_id or "anon"
+    )
+
+
+def _server_path_roots(user: dict) -> list[Path]:
+    """Local roots a server-path source may live under for this user."""
+    from server.api.routers.userdata import _resolve_output_path
+
+    candidates = [_user_ingest_dir(user.get("id"))]
+    try:
+        from ui.config_utils import resolve_config
+
+        configured = str((resolve_config() or {}).get("input_directory") or "").strip()
+        if configured and not configured.startswith("remote:"):
+            candidates.append(_resolve_output_path(configured))
+    except Exception as exc:
+        logger.warning("Could not resolve input_directory for server paths: %s", exc)
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except (OSError, RuntimeError):
+            continue
+        if str(resolved) not in seen:
+            seen.add(str(resolved))
+            roots.append(resolved)
+    return roots
+
+
+def _resolve_server_path(value: str, user: dict) -> Path:
+    """Resolve a server-path source, refusing traversal outside the user's roots."""
+    raw = (value or "").strip()
+    if not raw.startswith("/"):
+        raise HTTPException(status_code=422, detail="container_path must be absolute")
+    try:
+        candidate = Path(raw).expanduser().resolve()
+    except (OSError, RuntimeError):
+        raise HTTPException(status_code=422, detail="container_path is not a valid path") from None
+    roots = _server_path_roots(user)
+    if not any(candidate == root or root in candidate.parents for root in roots):
+        raise HTTPException(
+            status_code=403,
+            detail="container_path is outside the allowed input directories",
+        )
+    return candidate
+
+
 def _upload_cap_bytes() -> int:
     try:
         gb = float(os.environ.get("SERMONPILOT_UPLOAD_GB", "30"))
@@ -689,7 +757,7 @@ async def upload_sermon(
             detail=f"unsupported file type: .{ext or '?'} "
             f"(allowed: {', '.join(sorted(_UPLOAD_EXTENSIONS))})",
         )
-    user_dir = _ingest_base() / re.sub(r"[^A-Za-z0-9_-]", "_", user.get("id") or "anon")
+    user_dir = _user_ingest_dir(user.get("id"))
     user_dir.mkdir(parents=True, exist_ok=True)
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", original) or "upload"
     dest = user_dir / f"{int(time.time() * 1000)}_{safe}"
@@ -734,7 +802,7 @@ async def upload_sermon(
             speaker=speaker.strip(),
             recorded_date=recorded_date.strip(),
             series_title=series_title.strip(),
-            user_id=user.get("id"),
+            user=user,
         )
     except HTTPException:
         try:
@@ -801,10 +869,9 @@ class ServerPathBody(BaseModel):
 
 @router.get("/sermons/server-path/stat")
 def server_path_stat(path: str = "", user=Depends(require_user)) -> dict[str, Any]:
-    candidate = Path(path.strip()).expanduser() if path.strip() else None
-    if candidate is None or not path.strip().startswith("/"):
+    if not path.strip():
         return {"exists": False, "size": None, "size_human": "—", "ext": "", "kind": "—", "name": ""}  # noqa: E501
-    return _stat_path(candidate)
+    return _stat_path(_resolve_server_path(path, user))
 
 
 @router.post("/sermons/server-path", status_code=201)
@@ -850,9 +917,7 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
         info = {"size": None, "size_human": "—", "ext": ext, "kind": _kind_for_ext(ext)}
         source_path = ref
     else:
-        if not body.container_path.strip().startswith("/"):
-            raise HTTPException(status_code=422, detail="container_path must be absolute")
-        source = Path(body.container_path.strip()).expanduser()
+        source = _resolve_server_path(body.container_path, user)
         info = _stat_path(source)
         if not info["exists"] or not source.is_file():
             raise HTTPException(status_code=422, detail="container_path does not exist")
@@ -887,7 +952,7 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
         speaker=body.speaker,
         recorded_date=body.recorded_date,
         series_title=body.series_title,
-        user_id=user.get("id"),
+        user=user,
     )
     resolved_logo = (body.logo_path or body.auto_edit_logo_path).strip()
     resolved_bible = (body.bible_text or body.scripture).strip()

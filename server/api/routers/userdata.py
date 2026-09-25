@@ -10,7 +10,9 @@ stored key; restores reject masked values.
 from __future__ import annotations
 
 import base64
+import logging
 import os
+import re
 import secrets
 import sqlite3
 from datetime import datetime
@@ -29,6 +31,8 @@ from server.api.accounts import (
 from server.api.routers.auth import require_user
 
 router = APIRouter(prefix="/api/me/connections", tags=["connections"])
+
+logger = logging.getLogger(__name__)
 
 _LLM_KEY = "connections.llm"
 _SA_KEY = "connections.sermonaudio"
@@ -358,11 +362,56 @@ def _resolve_output_path(value: str) -> Path:
     return path.resolve()
 
 
+def _user_ingest_dir(user_id: str | None) -> Path:
+    base = os.environ.get("SERMONPILOT_RAW_INGEST", "/data/raw_ingest")
+    return _resolve_output_path(base) / re.sub(
+        r"[^A-Za-z0-9_-]", "_", user_id or "anon"
+    )
+
+
+def _operator_output_roots() -> list[Path]:
+    """Stable, operator-controlled roots an output directory may live under.
+
+    The per-user output directory is user-settable, so without a root model a
+    user could point it at ``/etc`` and read the whole filesystem through the
+    file views. Allowed roots are the app default and the configured
+    input/output directories; anything else falls back to the default.
+    """
+    candidates = [_resolve_output_path(_DEFAULT_OUTPUT_DIR)]
+    try:
+        from ui.config_utils import resolve_config
+
+        config = resolve_config() or {}
+        for key in ("output_directory", "input_directory"):
+            configured = str(config.get(key) or "").strip()
+            if configured and not configured.startswith("remote:"):
+                candidates.append(_resolve_output_path(configured))
+    except Exception as exc:
+        logger.warning("Could not resolve output roots: %s", exc)
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except (OSError, RuntimeError):
+            continue
+        if str(resolved) not in seen:
+            seen.add(str(resolved))
+            roots.append(resolved)
+    return roots
+
+
+def _within_output_roots(path: Path) -> bool:
+    return any(path == root or root in path.parents for root in _operator_output_roots())
+
+
 def resolve_user_output_dir(user: dict) -> Path:
     """Absolute output root for a user: settings.general.output_dir or the default.
 
     A configured cloud reference (``remote:<name>:<sub>``) has no local root, so
-    the local file views fall back to the default directory.
+    the local file views fall back to the default directory. A stored path
+    outside the operator roots (for example one written by a settings restore)
+    also falls back, so it can never become a read root.
     """
     with writable_conn() as conn:
         general = get_setting(conn, user["id"], "settings.general")
@@ -371,7 +420,10 @@ def resolve_user_output_dir(user: dict) -> Path:
         configured = str(general.get("output_dir") or "").strip()
     if configured.startswith("remote:"):
         return _resolve_output_path(_DEFAULT_OUTPUT_DIR)
-    return _resolve_output_path(configured or _DEFAULT_OUTPUT_DIR)
+    resolved = _resolve_output_path(configured or _DEFAULT_OUTPUT_DIR)
+    if not _within_output_roots(resolved):
+        return _resolve_output_path(_DEFAULT_OUTPUT_DIR)
+    return resolved
 
 
 def _validate_remote_output(value: str, user: dict) -> str | None:
@@ -408,6 +460,8 @@ def validate_output_path(value: str) -> Path:
     resolved = _resolve_output_path(raw)
     if resolved == Path(resolved.anchor):
         raise HTTPException(status_code=422, detail="output_dir cannot be the filesystem root")
+    if not _within_output_roots(resolved):
+        raise HTTPException(status_code=422, detail="output_dir is outside the allowed roots")
     if resolved.exists():
         if not resolved.is_dir():
             raise HTTPException(status_code=422, detail="output_dir is not a directory")
@@ -439,7 +493,7 @@ def list_user_files(user=Depends(require_user)):
 def download_file(path: str, user=Depends(require_user)):
     root = resolve_user_output_dir(user).resolve()
     candidate = (root / path).resolve()
-    if not str(candidate).startswith(str(root)):
+    if not candidate.is_relative_to(root):
         raise HTTPException(status_code=400, detail="path escapes the output directory")
     if not candidate.is_file():
         raise HTTPException(status_code=404, detail="file not found")
@@ -459,7 +513,9 @@ def get_output_dir(user=Depends(require_user)):
     configured = ""
     if isinstance(general, dict):
         configured = str(general.get("output_dir") or "").strip()
-    if configured:
+    if configured.startswith("remote:"):
+        return {"output_dir": configured, "source": "user"}
+    if configured and _within_output_roots(_resolve_output_path(configured)):
         return {"output_dir": configured, "source": "user"}
     return {"output_dir": _DEFAULT_OUTPUT_DIR, "source": "default"}
 
@@ -494,10 +550,7 @@ def _root_entries(roots: list[Path]) -> list[dict[str, str]]:
 
 
 def _explore_roots(user: dict) -> list[Path]:
-    candidates = [
-        resolve_user_output_dir(user),
-        Path(os.environ.get("SERMONPILOT_RAW_INGEST", "/data/raw_ingest")),
-    ]
+    candidates = [resolve_user_output_dir(user), _user_ingest_dir(user.get("id"))]
     try:
         from ui.config_utils import resolve_config
 

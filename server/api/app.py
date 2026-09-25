@@ -143,21 +143,35 @@ def create_app() -> FastAPI:
     app.include_router(cloud_router)
     app.include_router(cloud_proxy_router)
 
-    dist = Path(__file__).resolve().parent.parent.parent / "web" / "dist"
+    dist = (Path(__file__).resolve().parent.parent.parent / "web" / "dist").resolve()
     if dist.is_dir():
 
         @app.get("/{path:path}", include_in_schema=False)
         def spa(path: str):  # type: ignore[no-redef]
-            candidate = (dist / path).resolve() if path else None
-            if (
-                candidate is not None
-                and str(candidate).startswith(str(dist))
-                and candidate.is_file()
-            ):
+            candidate = resolve_spa_file(dist, path)
+            if candidate is not None:
                 return FileResponse(str(candidate))
             return FileResponse(str(dist / "index.html"))
 
     return app
+
+
+def resolve_spa_file(dist: Path, path: str) -> Path | None:
+    """Resolve a request path to a file inside ``dist``, or None for the shell.
+
+    A string prefix check would serve a sibling directory whose name shares the
+    dist prefix (``dist/../dist-backup/secret``); ``is_relative_to`` on the
+    resolved path is the real containment test.
+    """
+    if not path:
+        return None
+    try:
+        candidate = (dist / path).resolve()
+    except (OSError, RuntimeError):
+        return None
+    if candidate.is_relative_to(dist) and candidate.is_file():
+        return candidate
+    return None
 
 
 app = create_app()

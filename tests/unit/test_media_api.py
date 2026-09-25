@@ -6,6 +6,13 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _allow_tmp_output_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_DIRECTORY", str(tmp_path))
+
 
 def _conn():
     from server.api.accounts import get_db_path
@@ -172,7 +179,9 @@ def test_stream_rejects_path_outside_allowed_roots(client, scoped_setup, tmp_pat
     s = scoped_setup
     outdir = tmp_path / "a-out"
     _seed_media(s["a"]["id"], "s-a", outdir)
-    outside = tmp_path / "outside-secret.mp4"
+    outside_dir = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside_dir.mkdir()
+    outside = outside_dir / "outside-secret.mp4"
     outside.write_bytes(b"top secret")
     _add_file("s-a", "audio", outside)
     conn = _conn()

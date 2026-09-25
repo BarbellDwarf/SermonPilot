@@ -32,6 +32,59 @@ def test_create_draft_sermon_attributes_and_scopes(client, scoped_setup):
     assert missing.status_code == 422
 
 
+def test_create_draft_cannot_overwrite_another_users_sermon(client, scoped_setup):
+    s = scoped_setup
+    body = {"title": "Shared Title", "speaker": "Speaker X", "recorded_date": "2026-09-20"}
+    first = client.post("/api/sermons", json=body, headers=s["a"]["headers"])
+    assert first.status_code == 201, first.text
+    sermon_id = first.json()["id"]
+
+    hijack = client.post(
+        "/api/sermons",
+        json={**body, "description": "hijacked"},
+        headers=s["b"]["headers"],
+    )
+    assert hijack.status_code == 403, hijack.text
+
+    detail = client.get(f"/api/sermons/{sermon_id}", headers=s["a"]["headers"])
+    assert detail.status_code == 200
+    assert detail.json()["description"] in (None, "")
+    assert client.get(f"/api/sermons/{sermon_id}", headers=s["b"]["headers"]).status_code == 404
+
+    again = client.post(
+        "/api/sermons",
+        json={**body, "description": "mine now"},
+        headers=s["a"]["headers"],
+    )
+    assert again.status_code == 201, again.text
+
+
+def test_create_draft_cannot_claim_an_ownerless_legacy_row(client, scoped_setup):
+    from src.sermon_identity import derive_sermon_id
+
+    s = scoped_setup
+    body = {"title": "Legacy Title", "speaker": "Speaker L", "recorded_date": "2026-09-21"}
+    sermon_id = derive_sermon_id(body["speaker"], body["recorded_date"], body["title"])
+    conn = sqlite3.connect(get_db_path())
+    conn.execute(
+        "INSERT INTO sermons (id, title, speaker, recorded_date, status, user_id) "
+        "VALUES (?, ?, ?, ?, 'draft', NULL)",
+        (sermon_id, body["title"], body["speaker"], body["recorded_date"]),
+    )
+    conn.commit()
+    conn.close()
+
+    denied = client.post("/api/sermons", json=body, headers=s["a"]["headers"])
+    assert denied.status_code == 403, denied.text
+
+    conn = sqlite3.connect(get_db_path())
+    owner = conn.execute(
+        "SELECT user_id FROM sermons WHERE id = ?", (sermon_id,)
+    ).fetchone()[0]
+    conn.close()
+    assert owner is None
+
+
 def test_apply_queues_job_with_attribution_and_guard(client, scoped_setup, monkeypatch):
     s = scoped_setup
     import ui.database as dbmod
@@ -72,6 +125,7 @@ def test_apply_queues_job_with_attribution_and_guard(client, scoped_setup, monke
         headers=s["a"]["headers"],
     )
     assert duplicate.status_code == 409
+    assert duplicate.json()["detail"]["code"] == "job_active"
 
     foreign = client.post(
         f"/api/sermons/{sid}/plan/apply",

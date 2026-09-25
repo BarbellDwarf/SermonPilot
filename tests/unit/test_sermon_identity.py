@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from server.api.accounts import get_db_path
+from server.api.routers.writes import _user_ingest_dir
 from src.sermon_identity import derive_sermon_id, source_fingerprint
 
 TINY_MP3 = b"ID3" + bytes(2048)
@@ -54,9 +55,11 @@ def _sermon_count(predicate: str, params: tuple = ()) -> int:
         conn.close()
 
 
-def test_same_server_source_updates_one_row(client, scoped_setup, tmp_path):
+def test_same_server_source_updates_one_row(client, scoped_setup, tmp_path, monkeypatch):
     s = scoped_setup
-    src = tmp_path / "talk.mp3"
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
+    src = _user_ingest_dir(s["a"]["id"]) / "talk.mp3"
+    src.parent.mkdir(parents=True, exist_ok=True)
     src.write_bytes(TINY_MP3)
     body = _server_path_body(src)
 
@@ -93,10 +96,13 @@ def test_same_uploaded_bytes_updates_one_row(client, scoped_setup, tmp_path, mon
     assert _sermon_count("speaker = ? AND title = ?", ("Speaker A", "Uploaded Talk")) == 1
 
 
-def test_distinct_sermons_stay_two_rows(client, scoped_setup, tmp_path):
+def test_distinct_sermons_stay_two_rows(client, scoped_setup, tmp_path, monkeypatch):
     s = scoped_setup
-    talk_a = tmp_path / "a.mp3"
-    talk_b = tmp_path / "b.mp3"
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
+    ingest = _user_ingest_dir(s["a"]["id"])
+    talk_a = ingest / "a.mp3"
+    talk_b = ingest / "b.mp3"
+    ingest.mkdir(parents=True, exist_ok=True)
     talk_a.write_bytes(b"ID3" + bytes(1000))
     talk_b.write_bytes(b"ID3" + bytes(2000))
 
@@ -112,6 +118,42 @@ def test_distinct_sermons_stay_two_rows(client, scoped_setup, tmp_path):
     )
     assert first.json()["id"] != second.json()["id"]
     assert _sermon_count("title IN ('Alpha', 'Beta')") == 2
+
+
+def test_repository_owner_guard_refuses_a_conflicting_update(tmp_path: Path):
+    from ui.database import SermonDatabase, SermonRepository
+
+    repo = SermonRepository(SermonDatabase(db_path=str(tmp_path / "owner-guard.db")))
+    assert repo.save_sermon(
+        {
+            "id": "owned",
+            "title": "Original",
+            "speaker": "Speaker A",
+            "recorded_date": "2026-09-20",
+            "description": "kept",
+            "status": "draft",
+            "user_id": "user-a",
+        }
+    )
+
+    saved = repo.save_sermon(
+        {
+            "id": "owned",
+            "title": "Changed",
+            "speaker": "Speaker A",
+            "recorded_date": "2026-09-20",
+            "description": "replacement",
+            "status": "draft",
+            "user_id": "user-b",
+        },
+        required_owner="user-b",
+    )
+
+    assert saved is False
+    row = repo.get_sermon("owned")
+    assert row["user_id"] == "user-a"
+    assert row["title"] == "Original"
+    assert row["description"] == "kept"
 
 
 def test_migration_collapses_duplicates_and_is_idempotent(tmp_path: Path):

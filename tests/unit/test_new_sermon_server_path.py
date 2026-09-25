@@ -4,7 +4,29 @@ import json
 import os
 import sqlite3
 
+import pytest
+
 from server.api.accounts import get_db_path
+from server.api.routers.writes import _user_ingest_dir
+
+
+def _ingest_source(user_id: str, name: str, payload: bytes):
+    path = _user_ingest_dir(user_id) / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    return path
+
+
+@pytest.fixture(autouse=True)
+def _allow_tmp_as_ingest(tmp_path, monkeypatch):
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
+
+
+def test_user_ingest_dir_resolves_relative_paths_consistently(monkeypatch):
+    from server.api.routers.userdata import _user_ingest_dir as explorer_ingest_dir
+
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", "relative-ingest")
+    assert _user_ingest_dir("user-a") == explorer_ingest_dir("user-a")
 
 
 def _server_path_body(path, **overrides):
@@ -27,8 +49,7 @@ def _server_path_body(path, **overrides):
 
 def test_server_path_creates_draft_and_queues_job(client, scoped_setup, tmp_path):
     s = scoped_setup
-    src = tmp_path / "talk.mp3"
-    src.write_bytes(b"ID3" + bytes(2048))
+    src = _ingest_source(s["a"]["id"], "talk.mp3", b"ID3" + bytes(2048))
 
     r = client.post(
         "/api/sermons/server-path", json=_server_path_body(src), headers=s["a"]["headers"]
@@ -75,8 +96,7 @@ def test_server_path_creates_draft_and_queues_job(client, scoped_setup, tmp_path
 
 def test_server_path_rejects_bad_extension(client, scoped_setup, tmp_path):
     s = scoped_setup
-    src = tmp_path / "notes.txt"
-    src.write_bytes(b"hello")
+    src = _ingest_source(s["a"]["id"], "notes.txt", b"hello")
     r = client.post(
         "/api/sermons/server-path", json=_server_path_body(src), headers=s["a"]["headers"]
     )
@@ -85,14 +105,13 @@ def test_server_path_rejects_bad_extension(client, scoped_setup, tmp_path):
 
 def test_server_path_requires_fields(client, scoped_setup, tmp_path):
     s = scoped_setup
-    src = tmp_path / "talk.mp3"
-    src.write_bytes(b"ID3")
+    src = _ingest_source(s["a"]["id"], "talk.mp3", b"ID3")
     for drop in ("container_path", "title", "speaker", "recorded_date"):
         payload = _server_path_body(src)
         payload[drop] = ""
         r = client.post("/api/sermons/server-path", json=payload, headers=s["a"]["headers"])
         assert r.status_code == 422, drop
-    missing = tmp_path / "gone.mp3"
+    missing = _user_ingest_dir(s["a"]["id"]) / "gone.mp3"
     r = client.post(
         "/api/sermons/server-path", json=_server_path_body(missing), headers=s["a"]["headers"]
     )
@@ -102,8 +121,7 @@ def test_server_path_requires_fields(client, scoped_setup, tmp_path):
 
 def test_server_path_stat_reports_real_file(client, scoped_setup, tmp_path):
     s = scoped_setup
-    src = tmp_path / "clip.mp4"
-    src.write_bytes(b"\x00" * 4096)
+    src = _ingest_source(s["a"]["id"], "clip.mp4", b"\x00" * 4096)
     r = client.get(
         "/api/sermons/server-path/stat", params={"path": str(src)}, headers=s["a"]["headers"]
     )
@@ -115,11 +133,65 @@ def test_server_path_stat_reports_real_file(client, scoped_setup, tmp_path):
     assert info["kind"] == "video"
     gone = client.get(
         "/api/sermons/server-path/stat",
-        params={"path": str(tmp_path / "nope.mp3")},
+        params={"path": str(_user_ingest_dir(s["a"]["id"]) / "nope.mp3")},
         headers=s["a"]["headers"],
     ).json()
     assert gone["exists"] is False
     assert client.get("/api/sermons/server-path/stat", params={"path": str(src)}).status_code == 401
+
+
+def test_server_path_rejects_sources_outside_allowed_roots(
+    client, scoped_setup, tmp_path
+):
+    s = scoped_setup
+    outside = tmp_path.parent / f"{tmp_path.name}-outside"
+    outside.mkdir()
+    src = outside / "talk.mp3"
+    src.write_bytes(b"ID3")
+
+    r = client.post(
+        "/api/sermons/server-path", json=_server_path_body(src), headers=s["a"]["headers"]
+    )
+    assert r.status_code == 403, r.text
+
+    stat = client.get(
+        "/api/sermons/server-path/stat",
+        params={"path": str(src)},
+        headers=s["a"]["headers"],
+    )
+    assert stat.status_code == 403
+
+    traversal = client.post(
+        "/api/sermons/server-path",
+        json=_server_path_body(
+            str(tmp_path / ".." / f"{tmp_path.name}-outside" / "talk.mp3")
+        ),
+        headers=s["a"]["headers"],
+    )
+    assert traversal.status_code == 403
+
+
+def test_server_path_refuses_another_users_ingest_file(client, scoped_setup):
+    s = scoped_setup
+    src = _ingest_source(s["a"]["id"], "private.mp3", b"ID3" + bytes(128))
+    body = _server_path_body(src)
+
+    denied = client.post(
+        "/api/sermons/server-path", json=body, headers=s["b"]["headers"]
+    )
+    assert denied.status_code == 403, denied.text
+
+    stat = client.get(
+        "/api/sermons/server-path/stat",
+        params={"path": str(src)},
+        headers=s["b"]["headers"],
+    )
+    assert stat.status_code == 403
+
+    allowed = client.post(
+        "/api/sermons/server-path", json=body, headers=s["a"]["headers"]
+    )
+    assert allowed.status_code == 201, allowed.text
 
 
 def test_branding_upload_stores_per_user_with_tight_perms(

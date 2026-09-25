@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
 from server.api.accounts import get_db_path
+
+
+@pytest.fixture(autouse=True)
+def _allow_tmp_output_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("OUTPUT_DIRECTORY", str(tmp_path))
 
 
 def test_retirement_defaults_false_and_needs_no_auth(client):

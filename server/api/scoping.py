@@ -48,3 +48,17 @@ def visible(owner: str | None, user: dict[str, Any] | None) -> bool:
     if is_admin(user):
         return True
     return owner == user.get("id")
+
+
+def may_claim(existing: dict[str, Any] | None, user: dict[str, Any] | None) -> bool:
+    """True when the caller may create or overwrite the row with this identity.
+
+    A missing row is claimable, as is any row for an admin. A row already owned
+    by a different user is not. Ownerless legacy rows remain admin-only until a
+    repair or backfill assigns their owner.
+    """
+    if existing is None:
+        return True
+    if is_admin(user):
+        return True
+    return existing.get("user_id") == (user or {}).get("id")

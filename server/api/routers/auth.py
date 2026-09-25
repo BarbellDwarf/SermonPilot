@@ -43,10 +43,6 @@ PUBLIC_PATHS = (
 )
 
 
-def _public(path: str) -> bool:
-    return any(path == p or path.startswith(p + "/") for p in PUBLIC_PATHS)
-
-
 def require_user(request: Request):
     """FastAPI dependency: resolve the session token to an active user."""
     auth = request.headers.get("Authorization", "")
@@ -153,10 +149,6 @@ def me(user=Depends(require_user)):
 def _row(user: dict):
     with writable_conn() as conn:
         return get_user_by_id(conn, user["id"])
-
-
-def _conn():  # legacy shim kept for reference; unused
-    raise NotImplementedError
 
 
 @router.get("/admin/users", dependencies=[Depends(admin_only)])

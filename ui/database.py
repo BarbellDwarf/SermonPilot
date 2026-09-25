@@ -1542,18 +1542,40 @@ class SermonRepository:
             conn.commit()
             return cursor.rowcount > 0
 
-    def save_sermon(self, sermon_data: dict[str, Any]) -> bool:
+    def save_sermon(
+        self,
+        sermon_data: dict[str, Any],
+        *,
+        required_owner: str | None = None,
+        allow_owner_override: bool = False,
+    ) -> bool:
         """
         Save a complete sermon record with all associated data.
 
         Args:
             sermon_data: Dictionary containing sermon information
+            required_owner: When set, refuse an existing row owned by another user
+            allow_owner_override: Let an admin replace a row owned by another user
 
         Returns:
             Success status
         """
         try:
             with self.db.get_connection() as conn:
+                if required_owner is not None:
+                    conn.execute("BEGIN IMMEDIATE")
+                    owner_row = conn.execute(
+                        "SELECT user_id FROM sermons WHERE id = ?",
+                        (sermon_data.get('id'),),
+                    ).fetchone()
+                    existing_owner = owner_row['user_id'] if owner_row else None
+                    if (
+                        owner_row is not None
+                        and existing_owner != required_owner
+                        and not allow_owner_override
+                    ):
+                        conn.rollback()
+                        return False
                 conn.execute("""
                     INSERT INTO sermons
                     (id, title, subtitle, speaker, recorded_date, event_type, bible_text,

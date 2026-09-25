@@ -61,6 +61,32 @@ def test_upload_streams_to_user_dir_and_queues_job(client, scoped_setup, tmp_pat
     assert client.get(f"/api/sermons/{sermon_id}", headers=s["b"]["headers"]).status_code == 404
 
 
+def test_upload_cannot_overwrite_another_users_sermon(
+    client, scoped_setup, tmp_path, monkeypatch
+):
+    s = scoped_setup
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path / "raw_ingest"))
+    monkeypatch.setattr("ui.job_queue.JobQueue._resources_available", lambda self: False)
+
+    first = _post_upload(client, s["a"]["headers"], title="Shared Upload")
+    assert first.status_code == 201, first.text
+    sermon_id = first.json()["id"]
+
+    second = _post_upload(
+        client, s["b"]["headers"], title="Shared Upload", content=TINY_MP3
+    )
+    assert second.status_code == 403, second.text
+
+    detail = client.get(f"/api/sermons/{sermon_id}", headers=s["a"]["headers"])
+    assert detail.status_code == 200
+    conn = sqlite3.connect(get_db_path())
+    owner = conn.execute(
+        "SELECT user_id, status FROM sermons WHERE id = ?", (sermon_id,)
+    ).fetchone()
+    conn.close()
+    assert owner == (s["a"]["id"], "draft")
+
+
 def test_upload_rejects_bad_extension(client, scoped_setup, tmp_path, monkeypatch):
     s = scoped_setup
     monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path / "raw"))

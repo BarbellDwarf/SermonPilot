@@ -95,6 +95,39 @@ def test_back_to_back_jobs_do_not_overlap(queue: JobQueue, monkeypatch: pytest.M
     ]
 
 
+class _StageBoom(BaseException):
+    pass
+
+
+def test_raising_base_exception_stage_fails_job_and_queue_continues(
+    queue: JobQueue, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    order: list[str] = []
+
+    def fake_executor(job: Job) -> JobResult:
+        order.append(job.title)
+        if job.title == "boom":
+            raise _StageBoom("stage exploded")
+        return JobResult(success=True, message="done")
+
+    monkeypatch.setattr(queue, "_get_job_executor", lambda job_type: fake_executor)
+
+    bad_id = queue.add_job(JobType.VALIDATION, "boom", "bad stage")
+    good_id = queue.add_job(JobType.VALIDATION, "good", "next job")
+
+    queue.start()
+    try:
+        assert _wait_for_terminal_status(queue, bad_id) is JobStatus.FAILED
+        assert _wait_for_terminal_status(queue, good_id) is JobStatus.COMPLETED
+    finally:
+        queue.stop()
+
+    failed = queue.get_job(bad_id)
+    assert failed is not None and failed.result is not None
+    assert "stage exploded" in (failed.result.error or "")
+    assert order == ["boom", "good"]
+
+
 def test_queue_recovers_after_metadata_model_failure(
     queue: JobQueue, monkeypatch: pytest.MonkeyPatch
 ) -> None:

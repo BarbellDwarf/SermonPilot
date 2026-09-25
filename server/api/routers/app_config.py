@@ -19,8 +19,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from server.api.routers.auth import require_user
+from server.api.scoping import is_admin
 
 router = APIRouter(prefix="/api/config", tags=["config"])
+
+_FILESYSTEM_ROOT_PATHS = {"input_directory", "output_directory"}
 
 # Dotted path -> value kind. ``json`` accepts a whole sub-tree (prompt
 # templates); ``secret`` is write-only and never echoed.
@@ -228,6 +231,11 @@ def update_config_section(
         kind = spec.get(path)
         if kind is None:
             continue
+        if path in _FILESYSTEM_ROOT_PATHS and not is_admin(user):
+            raise HTTPException(
+                status_code=403,
+                detail="admin role required for filesystem root settings",
+            )
         if kind == "secret":
             if not isinstance(value, str) or not value.strip() or _is_mask(value):
                 continue

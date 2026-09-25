@@ -35,7 +35,7 @@ def test_unknown_section_is_rejected(client, scoped_setup, clean_env):
 
 
 def test_saved_section_is_what_the_pipeline_resolves(client, scoped_setup, clean_env):
-    headers = scoped_setup["a"]["headers"]
+    headers = scoped_setup["admin_headers"]
     body = {
         "values": {
             "dry_run": True,
@@ -61,7 +61,7 @@ def test_saved_section_is_what_the_pipeline_resolves(client, scoped_setup, clean
 def test_environment_source_names_the_variable_and_outranks_db(
     client, scoped_setup, clean_env, monkeypatch
 ):
-    headers = scoped_setup["a"]["headers"]
+    headers = scoped_setup["admin_headers"]
     client.put(
         "/api/config/sections/general",
         json={"values": {"output_directory": "db_out"}},
@@ -73,6 +73,24 @@ def test_environment_source_names_the_variable_and_outranks_db(
     field = view["fields"]["output_directory"]
     assert field["value"] == "env_out"
     assert field["source"] == "OUTPUT_DIRECTORY"
+
+
+def test_filesystem_root_config_is_admin_only(client, scoped_setup, clean_env, tmp_path):
+    user = scoped_setup["a"]["headers"]
+    denied = client.put(
+        "/api/config/sections/general",
+        json={"values": {"output_directory": str(tmp_path / "user-root")}},
+        headers=user,
+    )
+    assert denied.status_code == 403
+    assert denied.json()["detail"] == "admin role required for filesystem root settings"
+
+    allowed = client.put(
+        "/api/config/sections/general",
+        json={"values": {"output_directory": str(tmp_path / "operator-root")}},
+        headers=scoped_setup["admin_headers"],
+    )
+    assert allowed.status_code == 200, allowed.text
 
 
 def test_default_source_is_reported(client, scoped_setup, clean_env):
