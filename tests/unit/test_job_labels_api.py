@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 from server.api.accounts import get_db_path
+from server.api.routers.writes import _user_ingest_dir
 
 TITLE = "Console Talk"
 SPEAKER = "Console Speaker"
@@ -122,7 +123,8 @@ def test_new_sermon_job_label_avoids_the_original_path(
 ):
     s = scoped_setup
     monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
-    src = tmp_path / "raw_service.mp3"
+    src = _user_ingest_dir(s["a"]["id"]) / "raw_service.mp3"
+    src.parent.mkdir(parents=True, exist_ok=True)
     src.write_bytes(b"ID3" + bytes(2048))
 
     r = client.post(

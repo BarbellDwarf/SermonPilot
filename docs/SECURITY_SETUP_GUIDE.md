@@ -187,17 +187,20 @@ git commit -m "test commit"  # Will scan for credentials
 #### 4. Input Roots and Cross-User Identity
 
 Server-path sources (`GET /api/sermons/server-path/stat` and
-`POST /api/sermons/server-path`) resolve the submitted path and refuse anything
-outside `SERMONPILOT_RAW_INGEST` (default `/data/raw_ingest`) or the configured
-`input_directory`. Put files you intend to process there; a `..` payload that
-resolves outside those roots is rejected with 403.
+`POST /api/sermons/server-path`) resolve the submitted path and accept only the
+requesting user's directory under `SERMONPILOT_RAW_INGEST` (default
+`/data/raw_ingest`) or the configured `input_directory`. Put shared operator
+sources in `input_directory`. Browser uploads stay in the user's ingest
+subdirectory. A sibling user's upload or a `..` payload that resolves outside
+those roots is rejected with 403.
 
 A user's output directory (`PUT /api/me/output-dir`) must resolve under the app
-default, `SERMONPILOT_RAW_INGEST`, or the configured `input_directory` /
-`output_directory`. A stored path outside those roots is refused (422 on write,
-fall back to the default on read), so it can never become an arbitrary read
-root. The file download route also uses real path containment, so a sibling
-directory sharing the root's prefix is rejected.
+default or the operator-configured `input_directory` / `output_directory`.
+Filesystem root settings in the global config API are admin-only. Raw ingest is
+an input boundary and cannot become a user output or file-browsing root. A
+stored output path outside the allowed roots is refused (422 on write, fallback
+to the default on read). The file download route uses real path containment, so
+a sibling directory sharing the root's prefix is rejected.
 
 A sermon's id is deterministic. A create that would overwrite a sermon owned by
 another user is refused with 403, so an id collision (same speaker, date, title

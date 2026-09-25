@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import re
 import secrets
 import sqlite3
 from datetime import datetime
@@ -361,19 +362,22 @@ def _resolve_output_path(value: str) -> Path:
     return path.resolve()
 
 
+def _user_ingest_dir(user_id: str | None) -> Path:
+    base = os.environ.get("SERMONPILOT_RAW_INGEST", "/data/raw_ingest")
+    return _resolve_output_path(base) / re.sub(
+        r"[^A-Za-z0-9_-]", "_", user_id or "anon"
+    )
+
+
 def _operator_output_roots() -> list[Path]:
     """Stable, operator-controlled roots an output directory may live under.
 
     The per-user output directory is user-settable, so without a root model a
     user could point it at ``/etc`` and read the whole filesystem through the
-    file views. Allowed roots are the app default, the raw ingest directory and
-    the configured input/output directories; anything else falls back to the
-    default.
+    file views. Allowed roots are the app default and the configured
+    input/output directories; anything else falls back to the default.
     """
     candidates = [_resolve_output_path(_DEFAULT_OUTPUT_DIR)]
-    raw = os.environ.get("SERMONPILOT_RAW_INGEST", "").strip()
-    if raw:
-        candidates.append(Path(raw))
     try:
         from ui.config_utils import resolve_config
 
@@ -546,10 +550,7 @@ def _root_entries(roots: list[Path]) -> list[dict[str, str]]:
 
 
 def _explore_roots(user: dict) -> list[Path]:
-    candidates = [
-        resolve_user_output_dir(user),
-        Path(os.environ.get("SERMONPILOT_RAW_INGEST", "/data/raw_ingest")),
-    ]
+    candidates = [resolve_user_output_dir(user), _user_ingest_dir(user.get("id"))]
     try:
         from ui.config_utils import resolve_config
 

@@ -645,11 +645,15 @@ def _ingest_base() -> Path:
     return Path(os.environ.get("SERMONPILOT_RAW_INGEST", "/data/raw_ingest"))
 
 
-def _server_path_roots() -> list[Path]:
-    """Local roots a server-path source may live under: raw ingest + input dir."""
+def _user_ingest_dir(user_id: str | None) -> Path:
+    return _ingest_base() / re.sub(r"[^A-Za-z0-9_-]", "_", user_id or "anon")
+
+
+def _server_path_roots(user: dict) -> list[Path]:
+    """Local roots a server-path source may live under for this user."""
     from server.api.routers.userdata import _resolve_output_path
 
-    candidates = [_ingest_base()]
+    candidates = [_user_ingest_dir(user.get("id"))]
     try:
         from ui.config_utils import resolve_config
 
@@ -671,8 +675,8 @@ def _server_path_roots() -> list[Path]:
     return roots
 
 
-def _resolve_server_path(value: str) -> Path:
-    """Resolve a server-path source, refusing traversal outside the input roots."""
+def _resolve_server_path(value: str, user: dict) -> Path:
+    """Resolve a server-path source, refusing traversal outside the user's roots."""
     raw = (value or "").strip()
     if not raw.startswith("/"):
         raise HTTPException(status_code=422, detail="container_path must be absolute")
@@ -680,7 +684,7 @@ def _resolve_server_path(value: str) -> Path:
         candidate = Path(raw).expanduser().resolve()
     except (OSError, RuntimeError):
         raise HTTPException(status_code=422, detail="container_path is not a valid path") from None
-    roots = _server_path_roots()
+    roots = _server_path_roots(user)
     if not any(candidate == root or root in candidate.parents for root in roots):
         raise HTTPException(
             status_code=403,
@@ -742,7 +746,7 @@ async def upload_sermon(
             detail=f"unsupported file type: .{ext or '?'} "
             f"(allowed: {', '.join(sorted(_UPLOAD_EXTENSIONS))})",
         )
-    user_dir = _ingest_base() / re.sub(r"[^A-Za-z0-9_-]", "_", user.get("id") or "anon")
+    user_dir = _user_ingest_dir(user.get("id"))
     user_dir.mkdir(parents=True, exist_ok=True)
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", original) or "upload"
     dest = user_dir / f"{int(time.time() * 1000)}_{safe}"
@@ -856,7 +860,7 @@ class ServerPathBody(BaseModel):
 def server_path_stat(path: str = "", user=Depends(require_user)) -> dict[str, Any]:
     if not path.strip():
         return {"exists": False, "size": None, "size_human": "—", "ext": "", "kind": "—", "name": ""}  # noqa: E501
-    return _stat_path(_resolve_server_path(path))
+    return _stat_path(_resolve_server_path(path, user))
 
 
 @router.post("/sermons/server-path", status_code=201)
@@ -902,7 +906,7 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
         info = {"size": None, "size_human": "—", "ext": ext, "kind": _kind_for_ext(ext)}
         source_path = ref
     else:
-        source = _resolve_server_path(body.container_path)
+        source = _resolve_server_path(body.container_path, user)
         info = _stat_path(source)
         if not info["exists"] or not source.is_file():
             raise HTTPException(status_code=422, detail="container_path does not exist")

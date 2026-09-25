@@ -16,6 +16,7 @@ try:  # noqa: E402 - keep one module identity for ui.job_queue
 except ImportError:  # Streamlit entrypoint
     from job_queue import Job, JobStatus, JobType  # noqa: E402
 
+from server.api.routers.writes import _user_ingest_dir  # noqa: E402
 from ui import job_executors  # noqa: E402
 from ui.job_executors import execute_sermon_processing_job  # noqa: E402
 
@@ -215,7 +216,8 @@ def test_server_path_job_keeps_remote_output(
     s = scoped_setup
     _write_remote_config(cloud_env["rclone"], s["a"]["id"])
     monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
-    src = tmp_path / "talk.mp3"
+    src = _user_ingest_dir(s["a"]["id"]) / "talk.mp3"
+    src.parent.mkdir(parents=True, exist_ok=True)
     src.write_bytes(b"ID3")
     r = client.post(
         "/api/sermons/server-path",

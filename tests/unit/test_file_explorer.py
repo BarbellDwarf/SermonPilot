@@ -6,12 +6,22 @@ import sqlite3
 import pytest
 
 from server.api.accounts import get_db_path
+from server.api.routers.writes import _user_ingest_dir
+
+
+def _ingest_source(user_id: str, name: str, payload: bytes):
+    path = _user_ingest_dir(user_id) / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    return path
 
 
 @pytest.fixture(autouse=True)
 def _allow_tmp_roots(tmp_path, monkeypatch):
+    raw = tmp_path.parent / f"{tmp_path.name}-raw"
+    raw.mkdir()
     monkeypatch.setenv("OUTPUT_DIRECTORY", str(tmp_path))
-    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(raw))
 
 
 def _seed_output_dir(user_id: str, path) -> None:
@@ -57,8 +67,11 @@ def test_explore_confines_to_roots(client, scoped_setup, tmp_path, monkeypatch):
     s = scoped_setup
     outdir = tmp_path / "processed"
     outdir.mkdir()
-    ingest = tmp_path / "raw_ingest"
-    (ingest / "user-a").mkdir(parents=True)
+    ingest = tmp_path.parent / f"{tmp_path.name}-confined-raw"
+    own_ingest = ingest / s["a"]["id"]
+    foreign_ingest = ingest / s["b"]["id"]
+    own_ingest.mkdir(parents=True)
+    foreign_ingest.mkdir(parents=True)
     monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(ingest))
     _seed_output_dir(s["a"]["id"], outdir)
 
@@ -67,7 +80,17 @@ def test_explore_confines_to_roots(client, scoped_setup, tmp_path, monkeypatch):
     (secret / "keys.txt").write_bytes(b"nope")
 
     roots = client.get("/api/files/explore", headers=s["a"]["headers"]).json()["roots"]
-    assert {r["path"] for r in roots} == {str(outdir.resolve()), str(ingest.resolve())}
+    assert {r["path"] for r in roots} == {str(outdir.resolve()), str(own_ingest.resolve())}
+    assert client.get(
+        "/api/files/explore",
+        params={"path": str(own_ingest)},
+        headers=s["a"]["headers"],
+    ).status_code == 200
+    assert client.get(
+        "/api/files/explore",
+        params={"path": str(own_ingest)},
+        headers=s["b"]["headers"],
+    ).status_code == 403
 
     escape = client.get(
         "/api/files/explore", params={"path": str(secret)}, headers=s["a"]["headers"]
@@ -186,8 +209,7 @@ def test_upload_output_dir_override_threads_to_job(
 
 def test_server_path_output_dir_override_threads_to_job(client, scoped_setup, tmp_path):
     s = scoped_setup
-    src = tmp_path / "talk.mp3"
-    src.write_bytes(b"ID3" + bytes(128))
+    src = _ingest_source(s["a"]["id"], "talk.mp3", b"ID3" + bytes(128))
     override = tmp_path / "server-out"
     override.mkdir()
     r = client.post(
@@ -211,8 +233,7 @@ def test_output_dir_default_is_used_when_override_absent(client, scoped_setup, t
     target = tmp_path / "user-default"
     target.mkdir()
     _seed_output_dir(s["a"]["id"], target)
-    src = tmp_path / "talk.mp3"
-    src.write_bytes(b"ID3" + bytes(128))
+    src = _ingest_source(s["a"]["id"], "talk.mp3", b"ID3" + bytes(128))
     r = client.post(
         "/api/sermons/server-path",
         json={

@@ -55,6 +55,28 @@ def test_output_dir_outside_allowed_roots_is_refused(client, scoped_setup, tmp_p
     assert dl.status_code == 404
 
 
+def test_user_cannot_widen_output_roots(client, scoped_setup, tmp_path, monkeypatch):
+    s = scoped_setup
+    raw = tmp_path.parent / f"{tmp_path.name}-raw"
+    raw.mkdir()
+    (raw / s["a"]["id"]).mkdir()
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(raw))
+
+    config = client.put(
+        "/api/config/sections/general",
+        json={"values": {"output_directory": "/etc"}},
+        headers=s["a"]["headers"],
+    )
+    assert config.status_code == 403
+
+    assert client.put(
+        "/api/me/output-dir", json={"output_dir": "/etc"}, headers=s["a"]["headers"]
+    ).status_code == 422
+    assert client.put(
+        "/api/me/output-dir", json={"output_dir": str(raw)}, headers=s["a"]["headers"]
+    ).status_code == 422
+
+
 def test_file_download_path_traversal_blocked(client, scoped_setup, tmp_path):
     s = scoped_setup
     outdir = tmp_path / "processed2"

@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from server.api.accounts import get_db_path
+from server.api.routers.writes import _user_ingest_dir
 from src.sermon_identity import derive_sermon_id, source_fingerprint
 
 TINY_MP3 = b"ID3" + bytes(2048)
@@ -57,7 +58,8 @@ def _sermon_count(predicate: str, params: tuple = ()) -> int:
 def test_same_server_source_updates_one_row(client, scoped_setup, tmp_path, monkeypatch):
     s = scoped_setup
     monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
-    src = tmp_path / "talk.mp3"
+    src = _user_ingest_dir(s["a"]["id"]) / "talk.mp3"
+    src.parent.mkdir(parents=True, exist_ok=True)
     src.write_bytes(TINY_MP3)
     body = _server_path_body(src)
 
@@ -97,8 +99,10 @@ def test_same_uploaded_bytes_updates_one_row(client, scoped_setup, tmp_path, mon
 def test_distinct_sermons_stay_two_rows(client, scoped_setup, tmp_path, monkeypatch):
     s = scoped_setup
     monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
-    talk_a = tmp_path / "a.mp3"
-    talk_b = tmp_path / "b.mp3"
+    ingest = _user_ingest_dir(s["a"]["id"])
+    talk_a = ingest / "a.mp3"
+    talk_b = ingest / "b.mp3"
+    ingest.mkdir(parents=True, exist_ok=True)
     talk_a.write_bytes(b"ID3" + bytes(1000))
     talk_b.write_bytes(b"ID3" + bytes(2000))
 
