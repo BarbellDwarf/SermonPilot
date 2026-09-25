@@ -209,9 +209,12 @@ def test_output_dir_rejects_unknown_remote(client, scoped_setup, cloud_env):
     assert "ghost" in r.json()["detail"]
 
 
-def test_server_path_job_keeps_remote_output(client, scoped_setup, cloud_env, tmp_path):
+def test_server_path_job_keeps_remote_output(
+    client, scoped_setup, cloud_env, tmp_path, monkeypatch
+):
     s = scoped_setup
     _write_remote_config(cloud_env["rclone"], s["a"]["id"])
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
     src = tmp_path / "talk.mp3"
     src.write_bytes(b"ID3")
     r = client.post(

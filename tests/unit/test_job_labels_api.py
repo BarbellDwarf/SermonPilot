@@ -117,8 +117,11 @@ def test_re_detect_job_reads_as_prose(client, scoped_setup, monkeypatch):
     assert description.startswith("Re-detecting the opening and closing cut")
 
 
-def test_new_sermon_job_label_avoids_the_original_path(client, scoped_setup, tmp_path):
+def test_new_sermon_job_label_avoids_the_original_path(
+    client, scoped_setup, tmp_path, monkeypatch
+):
     s = scoped_setup
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
     src = tmp_path / "raw_service.mp3"
     src.write_bytes(b"ID3" + bytes(2048))
 

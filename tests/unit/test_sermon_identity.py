@@ -54,8 +54,9 @@ def _sermon_count(predicate: str, params: tuple = ()) -> int:
         conn.close()
 
 
-def test_same_server_source_updates_one_row(client, scoped_setup, tmp_path):
+def test_same_server_source_updates_one_row(client, scoped_setup, tmp_path, monkeypatch):
     s = scoped_setup
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
     src = tmp_path / "talk.mp3"
     src.write_bytes(TINY_MP3)
     body = _server_path_body(src)
@@ -93,8 +94,9 @@ def test_same_uploaded_bytes_updates_one_row(client, scoped_setup, tmp_path, mon
     assert _sermon_count("speaker = ? AND title = ?", ("Speaker A", "Uploaded Talk")) == 1
 
 
-def test_distinct_sermons_stay_two_rows(client, scoped_setup, tmp_path):
+def test_distinct_sermons_stay_two_rows(client, scoped_setup, tmp_path, monkeypatch):
     s = scoped_setup
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
     talk_a = tmp_path / "a.mp3"
     talk_b = tmp_path / "b.mp3"
     talk_a.write_bytes(b"ID3" + bytes(1000))
