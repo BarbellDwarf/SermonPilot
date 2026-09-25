@@ -127,7 +127,9 @@ Identity ignores `user_id`. Two users who submit the same sermon attributes and
 source resolve to one row, which matches the one-sermon-one-record rule. The
 first creator keeps ownership: `save_sermon` sets `user_id` only when the
 column is NULL, and the migration copies a loser's `user_id` only when the
-survivor has none.
+survivor has none. An ownerless legacy row remains admin-only until owner repair
+or backfill assigns it; a regular user cannot claim it through a deterministic
+identity collision.
 
 ## Publish migration and owner repair
 

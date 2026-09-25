@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from pydantic import BaseModel
 
 from server.api.routers.auth import require_user
-from server.api.scoping import may_claim, visible
+from server.api.scoping import is_admin, may_claim, visible
 
 router = APIRouter(prefix="/api", tags=["write"])
 
@@ -122,9 +122,16 @@ def _save_draft_sermon(
             "description": description.strip(),
             "status": "draft",
             "user_id": user.get("id"),
-        }
+        },
+        required_owner=user.get("id"),
+        allow_owner_override=is_admin(user),
     )
     if not ok:
+        if not may_claim(repo.get_sermon(sermon_id), user):
+            raise HTTPException(
+                status_code=403,
+                detail="a sermon with this identity is owned by another user",
+            )
         raise HTTPException(status_code=500, detail="could not save sermon")
 
 

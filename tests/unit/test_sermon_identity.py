@@ -120,6 +120,42 @@ def test_distinct_sermons_stay_two_rows(client, scoped_setup, tmp_path, monkeypa
     assert _sermon_count("title IN ('Alpha', 'Beta')") == 2
 
 
+def test_repository_owner_guard_refuses_a_conflicting_update(tmp_path: Path):
+    from ui.database import SermonDatabase, SermonRepository
+
+    repo = SermonRepository(SermonDatabase(db_path=str(tmp_path / "owner-guard.db")))
+    assert repo.save_sermon(
+        {
+            "id": "owned",
+            "title": "Original",
+            "speaker": "Speaker A",
+            "recorded_date": "2026-09-20",
+            "description": "kept",
+            "status": "draft",
+            "user_id": "user-a",
+        }
+    )
+
+    saved = repo.save_sermon(
+        {
+            "id": "owned",
+            "title": "Changed",
+            "speaker": "Speaker A",
+            "recorded_date": "2026-09-20",
+            "description": "replacement",
+            "status": "draft",
+            "user_id": "user-b",
+        },
+        required_owner="user-b",
+    )
+
+    assert saved is False
+    row = repo.get_sermon("owned")
+    assert row["user_id"] == "user-a"
+    assert row["title"] == "Original"
+    assert row["description"] == "kept"
+
+
 def test_migration_collapses_duplicates_and_is_idempotent(tmp_path: Path):
     from ui.database import SermonDatabase, SermonRepository
 

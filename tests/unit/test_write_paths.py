@@ -59,6 +59,32 @@ def test_create_draft_cannot_overwrite_another_users_sermon(client, scoped_setup
     assert again.status_code == 201, again.text
 
 
+def test_create_draft_cannot_claim_an_ownerless_legacy_row(client, scoped_setup):
+    from src.sermon_identity import derive_sermon_id
+
+    s = scoped_setup
+    body = {"title": "Legacy Title", "speaker": "Speaker L", "recorded_date": "2026-09-21"}
+    sermon_id = derive_sermon_id(body["speaker"], body["recorded_date"], body["title"])
+    conn = sqlite3.connect(get_db_path())
+    conn.execute(
+        "INSERT INTO sermons (id, title, speaker, recorded_date, status, user_id) "
+        "VALUES (?, ?, ?, ?, 'draft', NULL)",
+        (sermon_id, body["title"], body["speaker"], body["recorded_date"]),
+    )
+    conn.commit()
+    conn.close()
+
+    denied = client.post("/api/sermons", json=body, headers=s["a"]["headers"])
+    assert denied.status_code == 403, denied.text
+
+    conn = sqlite3.connect(get_db_path())
+    owner = conn.execute(
+        "SELECT user_id FROM sermons WHERE id = ?", (sermon_id,)
+    ).fetchone()[0]
+    conn.close()
+    assert owner is None
+
+
 def test_apply_queues_job_with_attribution_and_guard(client, scoped_setup, monkeypatch):
     s = scoped_setup
     import ui.database as dbmod
