@@ -267,8 +267,12 @@ describe("Timeline", () => {
     render(<Harness />);
     await user.click(screen.getByRole("button", { name: "Select a range to cut" }));
 
-    expect(screen.getByRole("slider", { name: "Removal selection start" })).toBeTruthy();
+    const initialStartHandle = screen.getByRole("slider", {
+      name: "Removal selection start",
+    });
+    expect(initialStartHandle).toBeTruthy();
     expect(screen.getByRole("slider", { name: "Removal selection end" })).toBeTruthy();
+    expect(document.activeElement).toBe(initialStartHandle);
 
     const track = screen.getByTestId("timeline-track");
     vi.spyOn(track, "getBoundingClientRect").mockReturnValue({

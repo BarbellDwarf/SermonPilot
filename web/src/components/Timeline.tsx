@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 export interface TimelineClip {
   id: string;
@@ -81,11 +81,18 @@ export function Timeline({
   onPlayRegion,
 }: TimelineProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
+  const selectionStartRef = useRef<HTMLButtonElement | null>(null);
+  const focusSelectionOnActivate = useRef(false);
   const dragRef = useRef<"start" | "end" | null>(null);
   const selectionDragRef = useRef<number | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [internalSelection, setInternalSelection] = useState<TimelineRange | null>(null);
   const selection = controlledSelection === undefined ? internalSelection : controlledSelection;
+  useEffect(() => {
+    if (!focusSelectionOnActivate.current || !selecting || !selection) return;
+    focusSelectionOnActivate.current = false;
+    selectionStartRef.current?.focus();
+  }, [selecting, selection]);
   const ending = endingSec ?? endSec;
   const span = timelineSpan(durationSec, endSec, ending, clips);
   const boundedStart = clamp(startSec, 0, span);
@@ -124,6 +131,7 @@ export function Timeline({
       setSelecting(false);
       return;
     }
+    focusSelectionOnActivate.current = true;
     setSelecting(true);
     if (!selection) setSelection(defaultSelection());
   };
@@ -341,6 +349,7 @@ export function Timeline({
               className="pointer-events-none absolute inset-y-0 z-40 border-y-2 border-warn bg-warn/20"
             />
             <button
+              ref={selectionStartRef}
               type="button"
               role="slider"
               data-testid="timeline-selection-handle-start"
