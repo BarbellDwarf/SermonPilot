@@ -143,7 +143,6 @@ def _drain(
             if not chunk:
                 break
             sink.append(chunk)
-            _notify_activity()
             if on_output is not None:
                 try:
                     text = (
@@ -250,8 +249,8 @@ def run_supervised(
     to :func:`subprocess.run`, so callers that never requested supervision keep
     their exact behaviour. With a hook, the child is supervised and the call
     raises :class:`ProcessCancelled` after the child is stopped. An activity
-    context receives child output and growth of ``partial_paths``. Partial
-    outputs are moved into the trash root on cancellation.
+    context receives growth of ``partial_paths``. Partial outputs are moved
+    into the trash root on cancellation.
     """
     activity_callback = _ACTIVITY_CALLBACK.get()
     if cancel_check is None and on_output is None and activity_callback is None:
