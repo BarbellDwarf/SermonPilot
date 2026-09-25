@@ -205,10 +205,12 @@ def test_metadata_job_logs_rejection_reason_and_keeps_description(
 
     result = job_executors.execute_metadata_update_job(job)
 
-    assert result.success is True
+    assert result.success is False
+    assert "refusal" in (result.error or "")
     stored = repo.get_sermon("s-job")
     assert stored["description"] == "Stored description"
     assert bool(stored["description_needs_review"]) is True
     joined = "\n".join(job.logs or [])
     assert "refusal" in joined
-    assert "description generation failed" in joined
+    assert "no usable text" in joined
+    assert "0 completed, 1 failed" in joined
