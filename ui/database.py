@@ -351,6 +351,7 @@ class SermonDatabase:
                     source_path TEXT,
                     applied_media_id TEXT,
                     actions TEXT,
+                    remove_segments TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     reviewed_at TIMESTAMP,
                     notes TEXT,
@@ -380,6 +381,11 @@ class SermonDatabase:
 
             try:
                 conn.execute("ALTER TABLE edit_plans ADD COLUMN actions TEXT")
+            except Exception:
+                pass  # Column already exists
+
+            try:
+                conn.execute("ALTER TABLE edit_plans ADD COLUMN remove_segments TEXT")
             except Exception:
                 pass  # Column already exists
 
@@ -1358,8 +1364,8 @@ class SermonRepository:
                     sermon_id, revision, proposed_start, proposed_end,
                     final_start, final_end, audio_offset, confidence, needs_review, evidence,
                     qa_judgment, reasoning, detection_status, status, source_path,
-                    applied_media_id, notes, actions
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    applied_media_id, notes, actions, remove_segments
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 sermon_id,
                 next_revision,
@@ -1379,6 +1385,7 @@ class SermonRepository:
                 plan.get('applied_media_id'),
                 plan.get('notes'),
                 json.dumps(plan['actions']) if plan.get('actions') is not None else None,
+                json.dumps(plan.get('remove_segments') or []),
             ))
             plan_id = cursor.lastrowid
             conn.commit()

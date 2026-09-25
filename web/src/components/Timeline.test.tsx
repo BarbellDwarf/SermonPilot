@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { Timeline, timelinePercent, timelineSpan } from "./Timeline";
+import { Timeline, timelinePercent, timelineSpan, type TimelineRange } from "./Timeline";
 
 const clips = [
   { id: "snippet_start", label: "Start cut", startSec: 0, endSec: 18.5 },
@@ -233,5 +234,75 @@ describe("Timeline", () => {
     render(<Timeline {...baseProps()} />);
     const track = screen.getByTestId("timeline-track");
     expect(track.className).toContain("touch-pan-y");
+  });
+
+  it("renders removals separately from trims and counts them", () => {
+    render(
+      <Timeline
+        {...baseProps()}
+        removeSegments={[{ startSec: 900, endSec: 930 }]}
+      />,
+    );
+
+    const removal = screen.getByTestId("timeline-removal-0");
+    expect(removal.getAttribute("data-region")).toBe("removal");
+    expect(removal.className).toContain("danger");
+    expect(screen.getByTestId("timeline-labels").textContent).toContain("1 cut removed");
+  });
+
+  it("selects an interior range and exposes keyboard nudging handles", async () => {
+    const user = userEvent.setup();
+
+    function Harness() {
+      const [selection, setSelection] = useState<TimelineRange | null>(null);
+      return (
+        <Timeline
+          {...baseProps()}
+          selection={selection}
+          onChangeSelection={setSelection}
+        />
+      );
+    }
+
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Select a range to cut" }));
+
+    const initialStartHandle = screen.getByRole("slider", {
+      name: "Removal selection start",
+    });
+    expect(initialStartHandle).toBeTruthy();
+    expect(screen.getByRole("slider", { name: "Removal selection end" })).toBeTruthy();
+    expect(document.activeElement).toBe(initialStartHandle);
+
+    const track = screen.getByTestId("timeline-track");
+    vi.spyOn(track, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 56,
+      width: 1000,
+      height: 56,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+    const surface = screen.getByTestId("timeline-selection-surface");
+    fireEvent.pointerDown(surface, { pointerId: 1, clientX: 200 });
+    fireEvent.pointerMove(track, { pointerId: 1, clientX: 400 });
+    fireEvent.pointerUp(track);
+
+    expect(screen.getByRole("button", { name: "Select a range to cut" })).toBeTruthy();
+    expect(screen.getByTestId("timeline-selection")).toBeTruthy();
+    const startHandle = screen.getByRole("slider", { name: "Removal selection start" });
+    const endHandle = screen.getByRole("slider", { name: "Removal selection end" });
+    expect(startHandle).toBeTruthy();
+    expect(endHandle).toBeTruthy();
+    expect(startHandle.tabIndex).toBe(0);
+    expect(endHandle.tabIndex).toBe(0);
+
+    const beforeNudge = startHandle.getAttribute("aria-valuenow");
+    startHandle.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(startHandle.getAttribute("aria-valuenow")).not.toBe(beforeNudge);
   });
 });

@@ -257,6 +257,7 @@ def build_apply_job_params(
     re_detect: bool = False,
     config: dict[str, Any] | None = None,
     enhance_audio: bool | None = None,
+    remove_segments: list[dict[str, float]] | None = None,
 ) -> dict[str, Any]:
     mode = "render_only" if render_only else "upload"
     return {
@@ -271,6 +272,7 @@ def build_apply_job_params(
         "re_detect": bool(re_detect),
         "config": config or {},
         "enhance_audio": enhance_audio,
+        "remove_segments": list(remove_segments or []),
     }
 
 
@@ -514,12 +516,17 @@ def _build_apply_kwargs(
 
 
 def _write_edit_plan_file(
-    plan_id: Any, start: float, end: float, audio_offset: float = 0.0
+    plan_id: Any,
+    start: float,
+    end: float,
+    audio_offset: float = 0.0,
+    remove_segments: list[dict[str, float]] | None = None,
 ) -> str | None:
     payload = {
         "start": float(start),
         "end": float(end),
         "audio_offset": float(audio_offset),
+        "remove_segments": list(remove_segments or []),
         "confidence": 1.0,
         "needs_review": False,
         "evidence": "approved in Library edit-review panel",
@@ -786,6 +793,7 @@ def run_library_apply(
     cancel_log: Callable[[str], None] | None = None,
     config: dict[str, Any] | None = None,
     enhance_audio: bool | None = None,
+    remove_segments: list[dict[str, float]] | None = None,
 ) -> dict[str, Any]:
     sermon_id = str(sermon_id or "")
     plan = _find_plan(repo, sermon_id, plan_id)
@@ -793,9 +801,40 @@ def run_library_apply(
         return {"success": False, "error": f"No edit plan found for {sermon_id}"}
     plan_id = plan.get("id", plan_id)
 
+    if remove_segments is None:
+        stored_remove_segments = plan.get("remove_segments")
+        if isinstance(stored_remove_segments, str):
+            try:
+                stored_remove_segments = json.loads(stored_remove_segments)
+            except (json.JSONDecodeError, TypeError):
+                stored_remove_segments = []
+        remove_segments = list(stored_remove_segments or [])
+
+    if not re_detect:
+        from src.auto_edit import EditPlan, validate_plan
+
+        candidate = EditPlan(
+            start=float(start),
+            end=float(end),
+            audio_offset=float(audio_offset or 0.0),
+            remove_segments=list(remove_segments or []),
+        )
+        problems = validate_plan(candidate, min_sermon_seconds=0.0)
+        if problems:
+            return {
+                "success": False,
+                "error": f"Invalid edit plan: {'; '.join(problems)}",
+            }
+        start = candidate.start
+        end = candidate.end
+        audio_offset = candidate.audio_offset
+        remove_segments = candidate.remove_segments
+
     plan_file = None
     if not re_detect:
-        plan_file = _write_edit_plan_file(plan_id, start, end, audio_offset)
+        plan_file = _write_edit_plan_file(
+            plan_id, start, end, audio_offset, remove_segments=remove_segments
+        )
         if not plan_file:
             return {"success": False, "error": "Could not write edit plan file"}
 

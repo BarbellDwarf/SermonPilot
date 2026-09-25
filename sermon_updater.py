@@ -1440,7 +1440,7 @@ def _verify_mux_av_sync(path: str | Path, tolerance: float = 0.2) -> list[str]:
 _EDIT_PLAN_FILE_KEYS = {
     'start', 'end', 'fade_in', 'logo_hold', 'fade_to_black',
     'confidence', 'needs_review', 'evidence', 'qa_judgment', 'reasoning',
-    'audio_offset', 'detection_status',
+    'audio_offset', 'remove_segments', 'detection_status',
 }
 
 
@@ -1462,6 +1462,7 @@ def _load_edit_plan_from_file(path: str | Path) -> EditPlan:
         qa_judgment=str(fields.get('qa_judgment', 'cut')),
         reasoning=str(fields.get('reasoning', '')),
         audio_offset=float(fields.get('audio_offset', 0.0)),
+        remove_segments=list(fields.get('remove_segments') or []),
         detection_status=str(fields.get('detection_status', 'ok')),
     )
 
@@ -3402,6 +3403,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'qa_judgment': plan.qa_judgment,
                 'reasoning': plan.reasoning,
                 'audio_offset': float(plan.audio_offset or 0.0),
+                'remove_segments': list(plan.remove_segments),
                 'detection_status': plan.detection_status,
                 'status': status,
                 'source_path': source_path,

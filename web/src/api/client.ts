@@ -57,6 +57,11 @@ export interface ApiTranscript {
   total_length: number;
 }
 
+export interface ApiRemoveSegment {
+  start_sec: number;
+  end_sec: number;
+}
+
 export interface ApiEditPlan {
   sermon_id: string;
   status: string;
@@ -67,6 +72,7 @@ export interface ApiEditPlan {
   evidence: string;
   start_sec: number | null;
   end_sec: number | null;
+  remove_segments: ApiRemoveSegment[];
   offset_sec: number;
   detection_status: string;
   reasoning: string;
@@ -499,7 +505,7 @@ export const backupApi = {
 };
 
 export const writeApi = {
-  applyPlan: (id: string, body: { start: number; end: number; audio_offset: number; render_only: boolean; re_detect?: boolean; enhance_audio?: boolean }) =>
+  applyPlan: (id: string, body: { start: number; end: number; audio_offset: number; render_only: boolean; re_detect?: boolean; enhance_audio?: boolean; remove_segments?: ApiRemoveSegment[] }) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/plan/apply`, "POST", body),
   uploadOnly: (id: string, body?: { confirm_missing_description?: boolean }) =>
     send<{ job_id: string; status: string; render?: { name: string; size: number; size_human: string } }>(

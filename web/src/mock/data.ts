@@ -94,6 +94,11 @@ export type PlanStatus = "draft" | "pending_review" | "applied_local" | "process
 
 export type DetectionStatus = "ok" | "unavailable";
 
+export interface RemoveSegment {
+  startSec: number;
+  endSec: number;
+}
+
 export interface EditPlan {
   sermonId: string;
   status: PlanStatus;
@@ -104,6 +109,7 @@ export interface EditPlan {
   evidence: string;
   startSec: number;
   endSec: number;
+  removeSegments: RemoveSegment[];
   offsetSec: number;
   detectionStatus: DetectionStatus;
   reasoning: string;
@@ -121,6 +127,7 @@ export const editPlans: Record<string, EditPlan> = {
     evidence: "Silence gate at both ends, loudness within target band.",
     startSec: 8.5,
     endSec: 2512.3,
+    removeSegments: [],
     offsetSec: 0.4,
     detectionStatus: "ok",
     reasoning: "Teaching starts after the welcome; Q&A begins after the closing prayer.",
@@ -136,6 +143,7 @@ export const editPlans: Record<string, EditPlan> = {
     evidence: "Low-confidence ending boundary, verify before render.",
     startSec: 12.0,
     endSec: 2650.0,
+    removeSegments: [],
     offsetSec: -0.3,
     detectionStatus: "ok",
     reasoning: "Confident opening cut, the ending sits just before the audience question.",
