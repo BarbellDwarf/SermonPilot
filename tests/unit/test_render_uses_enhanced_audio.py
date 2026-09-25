@@ -65,7 +65,7 @@ def _install_fake_processor(monkeypatch, counter: dict) -> None:
         def __init__(self, *_args, **_kwargs) -> None:
             pass
 
-        def process_sermon_audio(self, _source, out):
+        def process_sermon_audio(self, _source, out, **_kwargs):
             counter["enhance"] += 1
             Path(out).write_bytes(b"wav")
             return True, {}
@@ -104,6 +104,15 @@ def _wire_pipeline(monkeypatch, tmp_path: Path, counter: dict, recorder: _RunRec
                 needs_review=False,
                 evidence="quotes",
             )
+        ),
+    )
+    monkeypatch.setattr(
+        su,
+        "transcribe_segments",
+        Mock(
+            return_value=[
+                {"start": 0.0, "end": 600.0, "text": "Fixture transcript"}
+            ]
         ),
     )
     monkeypatch.setattr(
