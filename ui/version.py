@@ -18,6 +18,6 @@ def app_version() -> str:
     try:
         from importlib.metadata import version
 
-        return version("sermonpilot")
+        return version("sermon-audio-updater")
     except Exception:
         return "unknown"
