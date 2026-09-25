@@ -149,6 +149,9 @@ INFRA_ONLY_ENV_VARS: dict[str, str] = {
     "STREAMLIT_SERVER_MAX_UPLOAD_SIZE": (
         "Streamlit runtime upload limit, read by the Streamlit server rather than app config"
     ),
+    "SERMONPILOT_JOB_WORKER_ENABLED": (
+        "Container worker toggle, read by the entrypoint and queue startup"
+    ),
 }
 
 BUILTIN_PROMPT_TEMPLATES: dict[str, Any] = {

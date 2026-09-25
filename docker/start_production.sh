@@ -72,6 +72,10 @@ cleanup() {
         kill -TERM "$INGEST_WATCHER_PID" 2>/dev/null
         wait "$INGEST_WATCHER_PID" 2>/dev/null
     fi
+    if [ -n "$WORKER_PID" ]; then
+        kill -TERM "$WORKER_PID" 2>/dev/null
+        wait "$WORKER_PID" 2>/dev/null
+    fi
     echo "Shutdown complete"
     exit 0
 }
@@ -128,6 +132,19 @@ except Exception as e:
     print(f'Database initialization warning: {e}')
 "
 
+# Start the headless job worker. Set SERMONPILOT_JOB_WORKER_ENABLED=0 for a
+# submit-only deployment.
+case "${SERMONPILOT_JOB_WORKER_ENABLED:-1}" in
+    0|false|FALSE|no|NO|off|OFF)
+        echo "Job worker disabled (SERMONPILOT_JOB_WORKER_ENABLED=${SERMONPILOT_JOB_WORKER_ENABLED})"
+        ;;
+    *)
+        echo "Starting job worker..."
+        python -m ui.job_worker &
+        WORKER_PID=$!
+        ;;
+esac
+
 # Start main application
 echo "Starting Streamlit application..."
 streamlit run streamlit_app.py \
@@ -161,4 +178,14 @@ case "${INGEST_WATCHER_ENABLED:-}" in
 esac
 
 # Wait for background processes
-wait $STREAMLIT_PID ${UVICORN_PID:-} ${INGEST_WATCHER_PID:-}
+PIDS=("$STREAMLIT_PID")
+if [ -n "${UVICORN_PID:-}" ]; then
+    PIDS+=("$UVICORN_PID")
+fi
+if [ -n "${INGEST_WATCHER_PID:-}" ]; then
+    PIDS+=("$INGEST_WATCHER_PID")
+fi
+if [ -n "${WORKER_PID:-}" ]; then
+    PIDS+=("$WORKER_PID")
+fi
+wait "${PIDS[@]}"

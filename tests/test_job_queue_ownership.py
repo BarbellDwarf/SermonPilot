@@ -165,6 +165,30 @@ def test_reconciliation_leaves_a_live_job_alone_and_reaps_an_orphan(db_path: Pat
     assert _read_status(db_path, "j-unowned") == "failed"
 
 
+def test_reconciliation_never_reaps_an_unstarted_queued_job(db_path: Path) -> None:
+    _init_schema(db_path)
+    _insert_job(db_path, "j-queued", status="queued", owner=None)
+    _insert_lease(db_path, "old-worker", datetime.now() - timedelta(minutes=10))
+
+    reconciled = reconcile_interrupted_jobs(db_path=str(db_path))
+
+    assert reconciled == 0
+    conn = _connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT status, started_at, completed_at, result FROM background_jobs"
+            " WHERE id = ?",
+            ("j-queued",),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None
+    assert row["status"] == "queued"
+    assert row["started_at"] is None
+    assert row["completed_at"] is None
+    assert row["result"] is None
+
+
 def test_reconciliation_reaps_a_stale_lease_holder(db_path: Path) -> None:
     _init_schema(db_path)
     _insert_job(db_path, "j-stale", owner="stale-worker")
@@ -174,6 +198,17 @@ def test_reconciliation_reaps_a_stale_lease_holder(db_path: Path) -> None:
 
     assert reconciled == 1
     assert _read_status(db_path, "j-stale") == "failed"
+
+
+def test_reconciliation_leaves_a_running_job_with_a_fresh_lease(db_path: Path) -> None:
+    _init_schema(db_path)
+    _insert_job(db_path, "j-live", owner="live-worker")
+    _insert_lease(db_path, "live-worker", datetime.now())
+
+    reconciled = reconcile_interrupted_jobs(db_path=str(db_path))
+
+    assert reconciled == 0
+    assert _read_status(db_path, "j-live") == "running"
 
 
 def test_a_fresh_lease_from_a_previous_boot_is_not_live(db_path: Path) -> None:

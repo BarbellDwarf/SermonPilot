@@ -112,6 +112,14 @@ _JOB_OPTIONAL_COLUMNS: dict[str, str] = {
     "heartbeat_at": "TIMESTAMP",
 }
 
+_JOB_WORKER_DISABLED_VALUES = frozenset({"0", "false", "no", "off"})
+
+
+def _job_worker_enabled_from_env() -> bool:
+    value = os.environ.get("SERMONPILOT_JOB_WORKER_ENABLED", "1")
+    return value.strip().lower() not in _JOB_WORKER_DISABLED_VALUES
+
+
 _JOB_LEASE_TABLE = "job_worker_lease"
 
 
@@ -243,10 +251,9 @@ _TERMINAL_JOB_STATUSES = frozenset({
     JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED,
 })
 
-# States where a worker owned the job. A worker thread is a daemon that dies
-# with the process, so after a restart none of these can still be running.
-# QUEUED is deliberately absent: a fresh worker can and should claim it.
-IN_FLIGHT_JOB_STATUSES = frozenset({JobStatus.RUNNING, JobStatus.PAUSED})
+# Only a claimed running job can be reconciled after a restart. A queued row
+# has no owner yet and must remain available for a future worker.
+IN_FLIGHT_JOB_STATUSES = frozenset({JobStatus.RUNNING})
 
 # Stable phrase used in the result payload so the write-path guard can tell a
 # restart-reconciled job from one that completed on its own.
@@ -320,24 +327,24 @@ def _resolve_reconcile_db_path(db_path: str | None = None) -> str:
 
 
 def reconcile_interrupted_jobs(db_path: str | None = None) -> int:
-    """Mark in-flight jobs whose owner is provably gone as terminal.
+    """Mark only running jobs whose owner is provably gone as terminal.
+
+    A job can be terminalized only when its status is ``running`` and its
+    recorded owner has no fresh lease. A queued row with a NULL ``started_at``
+    has never been claimed, so reconciliation leaves it available for a future
+    worker. A fresh ``job_worker_lease`` heartbeat identifies the live owner
+    and protects that owner's running row from every other process.
 
     This is the startup reconciliation for a process that does not hold the
     jobs in memory (the API bridge reads the store directly). It is idempotent:
-    a second run finds no in-flight rows and changes nothing. Terminal rows are
+    a second run finds no eligible rows and changes nothing. Terminal rows are
     never touched. Existing logs are preserved and appended to, and the result
     is replaced with an interruption outcome that registers no artifact.
-
-    Ownership is explicit: a live worker renews the ``job_worker_lease`` row on
-    a heartbeat. An in-flight job whose ``owner_id`` is the live lease holder is
-    left alone, however this process is started; only rows whose owner is gone
-    (no live lease, a different worker id, or no recorded owner) are reaped.
     """
     path = _resolve_reconcile_db_path(db_path)
     if not os.path.isfile(path):
         return 0
-    statuses = tuple(sorted(status.value for status in IN_FLIGHT_JOB_STATUSES))
-    placeholders = ",".join("?" for _ in statuses)
+    reconcile_status = JobStatus.RUNNING.value
     reconciled = 0
     try:
         conn = sqlite3.connect(path, timeout=30.0)
@@ -355,8 +362,8 @@ def reconcile_interrupted_jobs(db_path: str | None = None) -> int:
         if "owner_id" in present:
             select_cols += ", owner_id"
         rows = conn.execute(
-            f"SELECT {select_cols} FROM background_jobs WHERE status IN ({placeholders})",
-            statuses,
+            f"SELECT {select_cols} FROM background_jobs WHERE status = ?",
+            (reconcile_status,),
         ).fetchall()
         for row in rows:
             owner = row["owner_id"] if "owner_id" in present else None
@@ -378,14 +385,14 @@ def reconcile_interrupted_jobs(db_path: str | None = None) -> int:
                 result_json,
                 logs_json,
                 row["id"],
-                *statuses,
+                reconcile_status,
             ]
             if "owner_id" in present and live_owner is not None:
                 guard = " AND (owner_id IS NULL OR owner_id != ?)"
                 params.append(live_owner)
             cursor = conn.execute(
                 "UPDATE background_jobs SET status = ?, completed_at = ?, result = ?, logs = ?"
-                f" WHERE id = ? AND status IN ({placeholders})" + guard,
+                " WHERE id = ? AND status = ?" + guard,
                 params,
             )
             reconciled += max(cursor.rowcount, 0)
@@ -773,12 +780,12 @@ class JobQueue:
     def _recover_orphaned_jobs(self):
         """Reconcile in-flight jobs left by a previous owner.
 
-        Only jobs whose recorded owner is not this worker are reaped: this
-        worker has just taken the lease, so any other owner is gone. A job this
-        worker itself owns cannot exist yet. Mark each orphan terminal, as
-        CANCELLED when its cancel flag was already set, so the operator can
-        review and retry from the Jobs page. Existing logs are appended to,
-        never replaced.
+        Only a running job can be reaped: this worker has just taken the lease,
+        so any other owner is gone. A queued job has never been claimed and
+        remains available for a future worker. Mark each eligible orphan
+        terminal, as CANCELLED when its cancel flag was already set, so the
+        operator can review and retry from the Jobs page. Existing logs are
+        appended to, never replaced.
         """
         recovered_jobs = []
         if self.db:
@@ -794,7 +801,7 @@ class JobQueue:
                     with self._queue_lock:
                         for job in self._jobs.values():
                             if (
-                                job.status in IN_FLIGHT_JOB_STATUSES
+                                job.status == JobStatus.RUNNING
                                 and getattr(job, "_owner_id", None) != self.worker_id
                             ):
                                 _mark_job_interrupted(job)
@@ -808,7 +815,7 @@ class JobQueue:
             with self._queue_lock:
                 for job in self._jobs.values():
                     if (
-                        job.status in IN_FLIGHT_JOB_STATUSES
+                        job.status == JobStatus.RUNNING
                         and getattr(job, "_owner_id", None) != self.worker_id
                     ):
                         _mark_job_interrupted(job)
@@ -1712,8 +1719,11 @@ def get_submit_job_queue() -> JobQueue:
 
 
 def initialize_job_queue():
-    """Initialize the job queue system"""
-    queue = get_job_queue()
+    """Initialize the queue, honoring submit-only worker configuration."""
+    if _job_worker_enabled_from_env():
+        queue = get_job_queue()
+    else:
+        queue = get_submit_job_queue()
     logger.info("Job queue system initialized")
     return queue
 
