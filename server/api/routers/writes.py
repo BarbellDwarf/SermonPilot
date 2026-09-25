@@ -653,7 +653,11 @@ def _ingest_base() -> Path:
 
 
 def _user_ingest_dir(user_id: str | None) -> Path:
-    return _ingest_base() / re.sub(r"[^A-Za-z0-9_-]", "_", user_id or "anon")
+    from server.api.routers.userdata import _resolve_output_path
+
+    return _resolve_output_path(str(_ingest_base())) / re.sub(
+        r"[^A-Za-z0-9_-]", "_", user_id or "anon"
+    )
 
 
 def _server_path_roots(user: dict) -> list[Path]:

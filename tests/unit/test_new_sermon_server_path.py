@@ -22,6 +22,13 @@ def _allow_tmp_as_ingest(tmp_path, monkeypatch):
     monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
 
 
+def test_user_ingest_dir_resolves_relative_paths_consistently(monkeypatch):
+    from server.api.routers.userdata import _user_ingest_dir as explorer_ingest_dir
+
+    monkeypatch.setenv("SERMONPILOT_RAW_INGEST", "relative-ingest")
+    assert _user_ingest_dir("user-a") == explorer_ingest_dir("user-a")
+
+
 def _server_path_body(path, **overrides):
     body = {
         "container_path": str(path),
