@@ -18,7 +18,8 @@ try:  # src package import (project root on sys.path)
 except ImportError:  # src dir placed directly on sys.path
     from supervised_process import ProcessCancelled, run_supervised  # type: ignore[no-redef]
 
-_FFMPEG_TIMEOUT_SECONDS = 3600
+_FFMPEG_TIMEOUT_SECONDS = 4 * 60 * 60
+_FFMPEG_PROGRESS_INTERVAL_SECONDS = 15.0
 
 DETECTION_OK = "ok"
 DETECTION_UNAVAILABLE = "unavailable"
@@ -517,6 +518,69 @@ MAX_AUDIO_OFFSET = 5.0
 DEFAULT_FADE_OUT_TAIL_SECONDS = 2.0
 
 
+def _make_ffmpeg_progress_reporter(
+    callback: Callable[[float, str], None] | None,
+    expected_duration: float | None,
+    step: str,
+) -> tuple[Callable[[str], None], Callable[[], None]]:
+    latest_seconds = 0.0
+    buffer = ""
+    last_fraction = -1.0
+    last_sent_at = 0.0
+
+    def emit(*, force: bool = False) -> None:
+        nonlocal last_fraction, last_sent_at
+        if callback is None:
+            return
+        if force:
+            fraction = 1.0
+            if last_fraction >= 1.0:
+                return
+        else:
+            if not expected_duration or expected_duration <= 0:
+                return
+            fraction = min(max(latest_seconds / expected_duration, 0.0), 1.0)
+            if fraction <= last_fraction:
+                return
+            if time.monotonic() - last_sent_at < _FFMPEG_PROGRESS_INTERVAL_SECONDS:
+                return
+        percent = fraction * 100.0
+        try:
+            callback(percent, f"{step}: {percent:.0f}%")
+        except Exception:
+            logger.debug("ffmpeg progress callback failed", exc_info=True)
+        last_fraction = fraction
+        last_sent_at = time.monotonic()
+
+    def on_output(text: str) -> None:
+        nonlocal buffer, latest_seconds
+        buffer += text
+        while "\n" in buffer:
+            line, buffer = buffer.split("\n", 1)
+            key, separator, value = line.strip().partition("=")
+            if not separator or key not in {"out_time_ms", "out_time_us"}:
+                continue
+            try:
+                reported_seconds = float(value) / 1_000_000.0
+            except ValueError:
+                continue
+            latest_seconds = max(latest_seconds, reported_seconds)
+            emit()
+
+    if callback is not None:
+        try:
+            callback(0.0, f"{step}: 0%")
+        except Exception:
+            logger.debug("ffmpeg progress callback failed", exc_info=True)
+        last_fraction = 0.0
+        last_sent_at = time.monotonic()
+
+    def finish() -> None:
+        emit(force=True)
+
+    return on_output, finish
+
+
 def _run_ffmpeg(
     cmd: list[str],
     *,
@@ -524,32 +588,44 @@ def _run_ffmpeg(
     cancel_log: Callable[[str], None] | None = None,
     partial_paths: list[str | Path] | None = None,
     step: str = "edit render",
+    progress_callback: Callable[[float, str], None] | None = None,
+    expected_duration: float | None = None,
 ) -> None:
-    import time as _time
-
-    start = _time.time()
-    try:
-        run_supervised(
-            cmd,
-            cancel_check=cancel_check,
-            log=cancel_log,
-            step=step,
-            partial_paths=partial_paths,
-            partial_reason="cancelled_render_partial",
-            capture_output=True,
-            text=True,
-            timeout=_FFMPEG_TIMEOUT_SECONDS,
-            check=True,
+    start = time.time()
+    progress_output: Callable[[str], None] | None = None
+    finish_progress: Callable[[], None] | None = None
+    run_cmd = list(cmd)
+    if progress_callback is not None:
+        progress_output, finish_progress = _make_ffmpeg_progress_reporter(
+            progress_callback, expected_duration, step
         )
+        run_cmd = [*run_cmd[:-1], "-progress", "pipe:1", run_cmd[-1]]
+    try:
+        run_kwargs: dict[str, Any] = {
+            "cancel_check": cancel_check,
+            "log": cancel_log,
+            "step": step,
+            "partial_paths": partial_paths,
+            "partial_reason": "cancelled_render_partial",
+            "capture_output": True,
+            "text": True,
+            "timeout": _FFMPEG_TIMEOUT_SECONDS,
+            "check": True,
+        }
+        if progress_output is not None:
+            run_kwargs["on_output"] = progress_output
+        run_supervised(run_cmd, **run_kwargs)
+        if finish_progress is not None:
+            finish_progress()
     except subprocess.CalledProcessError as e:
         stderr_tail = (e.stderr or "")[-400:]
         raise RuntimeError(f"apply_edit ffmpeg failed: {stderr_tail}") from e
     finally:
         logger.info(
             "ffmpeg stage %.1fs: %s -> %s",
-            _time.time() - start,
-            " ".join(cmd[:2]),
-            cmd[-1],
+            time.time() - start,
+            " ".join(run_cmd[:2]),
+            run_cmd[-1],
         )
 
 
@@ -582,6 +658,7 @@ def apply_edit(
     fade_out_tail_seconds: float = DEFAULT_FADE_OUT_TAIL_SECONDS,
     cancel_check: Callable[[], None] | None = None,
     cancel_log: Callable[[str], None] | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> Path:
     if fade_to_black is None:
         fade_to_black = plan.fade_to_black
@@ -691,6 +768,8 @@ def apply_edit(
         cancel_log=cancel_log,
         partial_paths=[out],
         step="edit render",
+        progress_callback=progress_callback,
+        expected_duration=total,
     )
     return out
 
@@ -1043,6 +1122,7 @@ def transcode_to_keeper(
     *,
     cancel_check: Callable[[], None] | None = None,
     cancel_log: Callable[[str], None] | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
 ) -> Path | None:
     keeper_cfg = config.get("auto_edit", {}).get("keeper", {})
     if not keeper_cfg.get("enabled", True):
@@ -1082,21 +1162,23 @@ def transcode_to_keeper(
         str(out),
     ]
     logger.info(f"auto_edit keeper: transcoding {source.name} with {encoder}")
+    expected_duration = None
+    ffprobe = shutil.which("ffprobe")
+    if ffprobe:
+        try:
+            expected_duration = _ffprobe_duration(ffprobe, source)
+        except Exception:
+            expected_duration = None
     try:
-        proc = run_supervised(
+        _run_ffmpeg(
             cmd,
             cancel_check=cancel_check,
-            log=cancel_log,
-            step="keeper transcode",
+            cancel_log=cancel_log,
             partial_paths=[out],
-            partial_reason="cancelled_render_partial",
-            capture_output=True,
-            text=True,
-            timeout=3600,
+            step="keeper transcode",
+            progress_callback=progress_callback,
+            expected_duration=expected_duration,
         )
-        if proc.returncode != 0:
-            logger.warning(f"auto_edit keeper: ffmpeg failed: {(proc.stderr or '')[-400:]}")
-            return source
     except ProcessCancelled:
         raise
     except Exception as e:

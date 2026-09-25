@@ -6,6 +6,7 @@ legitimately long stage that keeps logging is left alone.
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 from pathlib import Path
@@ -14,7 +15,14 @@ import pytest
 
 import ui.database as database_module
 from ui.database import SermonDatabase
-from ui.job_queue import Job, JobQueue, JobResult, JobStatus, JobType
+from ui.job_queue import (
+    JOB_STALL_TIMEOUT_SECONDS,
+    Job,
+    JobQueue,
+    JobResult,
+    JobStatus,
+    JobType,
+)
 
 TERMINAL = (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
 
@@ -105,3 +113,90 @@ def test_a_progressing_job_is_never_stalled(
         assert _wait_for_terminal(queue, job_id) is JobStatus.COMPLETED
     finally:
         queue.stop()
+
+
+def test_live_child_with_growing_output_is_not_stalled(
+    queue: JobQueue, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from src.supervised_process import run_supervised
+
+    output = tmp_path / "growing-render.mp4"
+    next_started = threading.Event()
+
+    def fake_executor(job: Job) -> JobResult:
+        if job.title == "growing":
+            child = [
+                sys.executable,
+                "-c",
+                (
+                    "import pathlib, sys, time\n"
+                    "path = pathlib.Path(sys.argv[1])\n"
+                    "deadline = time.monotonic() + 1.5\n"
+                    "while time.monotonic() < deadline:\n"
+                    "    with path.open('ab') as stream:\n"
+                    "        stream.write(b'x' * 4096)\n"
+                    "        stream.flush()\n"
+                    "    time.sleep(0.02)\n"
+                ),
+                str(output),
+            ]
+
+            def cancel_check() -> None:
+                if job.cancelled:
+                    raise RuntimeError("cancelled by watchdog")
+
+            run_supervised(
+                child,
+                cancel_check=cancel_check,
+                poll_interval=0.02,
+                terminate_grace=1.0,
+                partial_paths=[output],
+            )
+            return JobResult(success=True, message="rendered")
+
+        next_started.set()
+        return JobResult(success=True, message="done")
+
+    _patch_stall_bound(monkeypatch, seconds=0.2)
+    monkeypatch.setattr(queue, "_get_job_executor", lambda job_type: fake_executor)
+
+    render_id = queue.add_job(JobType.VALIDATION, "growing", "child keeps writing")
+    next_id = queue.add_job(JobType.VALIDATION, "next", "runs after the render")
+
+    queue.start()
+    try:
+        assert _wait_for_terminal(queue, render_id) is JobStatus.COMPLETED
+        assert next_started.wait(timeout=2.0)
+        assert _wait_for_terminal(queue, next_id) is JobStatus.COMPLETED
+    finally:
+        queue.stop()
+
+
+def test_a_new_log_line_keeps_a_long_stage_alive(
+    queue: JobQueue, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fake_executor(job: Job) -> JobResult:
+        for index in range(6):
+            job.add_log(f"stage tick {index}")
+            time.sleep(0.1)
+        return JobResult(success=True, message="done")
+
+    _patch_stall_bound(monkeypatch, seconds=0.2)
+    monkeypatch.setattr(queue, "_get_job_executor", lambda job_type: fake_executor)
+
+    job_id = queue.add_job(JobType.VALIDATION, "logging", "keeps logging")
+    queue.start()
+    try:
+        assert _wait_for_terminal(queue, job_id) is JobStatus.COMPLETED
+    finally:
+        queue.stop()
+
+
+def test_stall_timeout_default_and_config_override(queue: JobQueue, monkeypatch) -> None:
+    assert JOB_STALL_TIMEOUT_SECONDS >= 2 * 60 * 60
+
+    monkeypatch.setattr(
+        "ui.config_utils.resolve_config",
+        lambda db=None: {"job_queue": {"stall_timeout_seconds": 5400}},
+    )
+    assert queue._stall_timeout_seconds() == 5400.0

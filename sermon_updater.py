@@ -2534,6 +2534,13 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             _report(6, "Preparing keeper transcode...")
             from src.auto_edit import transcode_to_keeper
 
+            def _keeper_progress(progress: float, message: str) -> None:
+                bounded = min(max(float(progress), 0.0), 100.0)
+                _report(
+                    6.0 + bounded * 0.04,
+                    f"Preparing keeper transcode... ({message})",
+                )
+
             try:
                 kept_path = transcode_to_keeper(
                     audio_path,
@@ -2541,6 +2548,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     config,
                     cancel_check=_check_cancelled,
                     cancel_log=cancel_log,
+                    progress_callback=_keeper_progress,
                 )
             except ProcessCancelled:
                 result['error'] = "Processing cancelled"
@@ -3523,6 +3531,14 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             edited_path = _auto_edit_output_root() / "edited" / (
                 f"{original_input_path.stem}_edited{original_input_path.suffix or '.mp4'}"
             )
+
+            def _render_progress(progress: float, message: str) -> None:
+                bounded = min(max(float(progress), 0.0), 100.0)
+                _report(
+                    58.0 + bounded * 0.02,
+                    f"Applying automatic edit... ({message})",
+                )
+
             try:
                 edited_path = apply_edit(
                     Path(render_source),
@@ -3533,6 +3549,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     fade_out_tail_seconds=edit_fade_out_tail,
                     cancel_check=_check_cancelled,
                     cancel_log=cancel_log,
+                    progress_callback=_render_progress,
                 )
             except ProcessCancelled:
                 raise
