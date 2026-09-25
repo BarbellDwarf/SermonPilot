@@ -1128,7 +1128,7 @@ export function SermonReview({
                             onClick={() => playJoin(segment)}
                             className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                           >
-                            Preview join
+                            Preview join {index + 1}
                           </button>
                           <button
                             type="button"
@@ -1136,7 +1136,7 @@ export function SermonReview({
                             onClick={() => undoRemoval(index)}
                             className="inline-flex min-h-[44px] items-center rounded-md border border-danger px-3 text-xs font-medium text-danger transition-colors hover:bg-danger hover:text-[var(--danger-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
                           >
-                            Undo
+                            Undo removal {index + 1}
                           </button>
                         </div>
                       </li>

@@ -319,7 +319,7 @@ export function Timeline({
                 onPlayRegion?.(`removal_join_${index}`, segment.startSec, segment.endSec);
               }}
               style={{ left: `${left}%`, width: `${Math.max(width, 0.6)}%` }}
-              className="absolute bottom-0 z-30 h-11 min-w-[24px] -translate-x-1/2 bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
+              className="absolute bottom-0 z-30 h-11 min-w-[24px] bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
             >
               <span
                 aria-hidden="true"
@@ -349,6 +349,7 @@ export function Timeline({
               aria-valuemin={startSec}
               aria-valuemax={Math.max(startSec, selection.endSec - MIN_SELECTION_SEC)}
               aria-valuenow={selection.startSec}
+              tabIndex={0}
               style={{ left: `${pct(selection.startSec)}%` }}
               onKeyDown={nudgeSelection("start")}
               className="absolute inset-y-0 z-50 w-11 -translate-x-1/2 cursor-ew-resize bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-warn"
@@ -364,6 +365,7 @@ export function Timeline({
               aria-valuemin={Math.min(endSec, selection.startSec + MIN_SELECTION_SEC)}
               aria-valuemax={endSec}
               aria-valuenow={selection.endSec}
+              tabIndex={0}
               style={{ left: `${pct(selection.endSec)}%` }}
               onKeyDown={nudgeSelection("end")}
               className="absolute inset-y-0 z-50 w-11 -translate-x-1/2 cursor-ew-resize bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-warn"

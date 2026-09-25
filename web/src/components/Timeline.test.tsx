@@ -293,6 +293,8 @@ describe("Timeline", () => {
     const endHandle = screen.getByRole("slider", { name: "Removal selection end" });
     expect(startHandle).toBeTruthy();
     expect(endHandle).toBeTruthy();
+    expect(startHandle.tabIndex).toBe(0);
+    expect(endHandle.tabIndex).toBe(0);
 
     const beforeNudge = startHandle.getAttribute("aria-valuenow");
     startHandle.focus();
