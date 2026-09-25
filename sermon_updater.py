@@ -3531,6 +3531,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             edited_path = _auto_edit_output_root() / "edited" / (
                 f"{original_input_path.stem}_edited{original_input_path.suffix or '.mp4'}"
             )
+
             def _render_progress(progress: float, message: str) -> None:
                 bounded = min(max(float(progress), 0.0), 100.0)
                 _report(
