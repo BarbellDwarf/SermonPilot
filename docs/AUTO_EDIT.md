@@ -147,7 +147,7 @@ The cut-detection prompt comes from `prompt_templates.cut_detection`, resolved l
 
 ## Re-edit semantics
 
-Re-edits always re-encode from the retained original (or keeper copy), never from the previous edited output, so quality never compounds. Each revision is a new row in `edit_plans`; older rows stay but are marked superseded.
+Re-edits always re-encode from the retained original (or keeper copy), never from the previous edited output, so quality never compounds. A recorded render is reused as the render base only when its duration matches the retained full-length original or keeper within a small tolerance; a previous cut is skipped, and a render whose duration cannot be measured is never trusted. Each revision is a new row in `edit_plans`; older rows stay but are marked superseded.
 
 Applying an approved edit updates the same sermon record in place and advances its `edit_status`: `pending_review` when the review pass saves the draft, `applied` while the render runs, then `rendered` for a local render or `uploaded` once it reaches SermonAudio, and `failed` when a stage gives out. The apply reuses the retained transcript and stored metadata, so the LLM runs only for an empty title, description or hashtags.
 
