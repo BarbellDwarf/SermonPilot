@@ -176,7 +176,7 @@ def test_pause_with_keeper_retains_media_and_skips_processed_copy(tmp_path, monk
         def __init__(self, *_args, **_kwargs):
             pass
 
-        def process_sermon_audio(self, _source, out):
+        def process_sermon_audio(self, _source, out, **_kwargs):
             Path(out).write_bytes(b"wav")
             return True, {}
 

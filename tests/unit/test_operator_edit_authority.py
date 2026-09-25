@@ -10,6 +10,8 @@ must survive with the edit.
 from __future__ import annotations
 
 import json
+import sys
+import types
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -139,6 +141,35 @@ def pipeline(monkeypatch) -> dict:
         return out
 
     monkeypatch.setattr(su, "apply_edit", Mock(side_effect=_fake_apply))
+
+    def _fake_mux(_video, _audio, out, *_args, **_kwargs):
+        out = Path(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"mux")
+        return []
+
+    monkeypatch.setattr(su, "_mux_video_with_audio", _fake_mux)
+
+    fake_audio = types.ModuleType("src.audio_processing")
+
+    class _FakeProcessor:
+        enhancement_method = "deepfilternet"
+
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def process_sermon_audio(self, _source, out, **_kwargs):
+            Path(out).write_bytes(b"wav")
+            return True, {}
+
+        def release_gpu(self):
+            pass
+
+    fake_audio.AudioProcessor = _FakeProcessor
+    monkeypatch.setitem(sys.modules, "src.audio_processing", fake_audio)
+    import src as src_package
+
+    monkeypatch.setattr(src_package, "audio_processing", fake_audio, raising=False)
     return calls
 
 

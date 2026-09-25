@@ -24,7 +24,7 @@ def _fake_audio_processor(monkeypatch) -> None:
         def __init__(self, *_args, **_kwargs):
             pass
 
-        def process_sermon_audio(self, _source, out):
+        def process_sermon_audio(self, _source, out, **_kwargs):
             Path(out).write_bytes(b"RIFF0000WAVE")
             return True, {}
 
