@@ -49,6 +49,7 @@ export interface SermonCompletedProps {
   onEdit: () => void;
   onSaveDetails?: (patch: DetailsPatch) => Promise<void> | void;
   onRegenerateDescription?: () => void;
+  onPushDetails?: () => void;
 }
 
 export function SermonCompleted({
@@ -68,6 +69,7 @@ export function SermonCompleted({
   onEdit,
   onSaveDetails,
   onRegenerateDescription,
+  onPushDetails,
 }: SermonCompletedProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [seek, setSeek] = useState<{ sec: number; n: number } | null>(null);
@@ -183,16 +185,28 @@ export function SermonCompleted({
           <h2 id="completed-details-h" className="text-lg font-semibold">
             Details
           </h2>
-          <button
-            type="button"
-            data-testid="edit-details"
-            onClick={() => setDetailsOpen((value) => !value)}
-            aria-expanded={detailsOpen}
-            aria-controls="completed-details-form"
-            className={linkClass}
-          >
-            {detailsOpen ? "Close" : "Edit details"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {onPushDetails ? (
+              <button
+                type="button"
+                data-testid="push-details"
+                onClick={onPushDetails}
+                className={linkClass}
+              >
+                Push details to SermonAudio
+              </button>
+            ) : null}
+            <button
+              type="button"
+              data-testid="edit-details"
+              onClick={() => setDetailsOpen((value) => !value)}
+              aria-expanded={detailsOpen}
+              aria-controls="completed-details-form"
+              className={linkClass}
+            >
+              {detailsOpen ? "Close" : "Edit details"}
+            </button>
+          </div>
         </div>
 
         {detailsOpen ? (

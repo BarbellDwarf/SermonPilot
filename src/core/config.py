@@ -55,7 +55,6 @@ ENV_CONFIG_MAP: dict[str, list[list[str]]] = {
     'GROQ_MODEL': [['llm', 'primary', 'groq', 'model']],
     'OPENROUTER_API_KEY': [
         ['llm', 'primary', 'openrouter', 'api_key'],
-        ['transcription', 'whisper_openrouter', 'api_key'],
     ],
     'OPENROUTER_MODEL': [['llm', 'primary', 'openrouter', 'model']],
     'AUTO_EDIT_LLM_API_KEY': [['llm', 'operations', 'auto_edit', 'openai', 'api_key']],
@@ -231,6 +230,34 @@ def apply_env_overrides(config: dict[str, Any], environ=None) -> dict[str, Any]:
                     continue
                 set_nested_value(config, config_path, coerced)
     return config
+
+
+REMOVED_TRANSCRIPTION_BACKENDS: dict[str, str] = {
+    'whisper_openrouter': 'whisper_openai',
+}
+
+
+def migrate_removed_transcription_backends(
+    config: dict[str, Any],
+) -> tuple[str, str] | None:
+    """Rewrite a removed transcription backend to its supported replacement.
+
+    The OpenRouter-named Whisper backend was removed because it duplicated the
+    OpenAI-compatible hosted backend. A stored or environment-supplied value
+    that still names it is migrated in place to ``whisper_openai``; the caller
+    gets the (old, new) pair so it can log the migration once.
+    """
+    transcription = config.get('transcription')
+    if not isinstance(transcription, dict):
+        return None
+    current = transcription.get('backend')
+    if not isinstance(current, str):
+        return None
+    replacement = REMOVED_TRANSCRIPTION_BACKENDS.get(current.strip().lower())
+    if not replacement:
+        return None
+    transcription['backend'] = replacement
+    return current, replacement
 
 
 def expand_env_value(value: str) -> str:

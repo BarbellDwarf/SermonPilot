@@ -652,11 +652,10 @@ def show_transcription_settings():
         save_transcription_settings()
 
     st.markdown("#### Backend")
-    backend_options = ["faster_whisper_local", "whisper_openai", "whisper_openrouter"]
+    backend_options = ["faster_whisper_local", "whisper_openai"]
     display_names = {
         "faster_whisper_local": "Faster Whisper (Local)",
         "whisper_openai": "OpenAI Whisper API",
-        "whisper_openrouter": "OpenRouter Whisper API",
     }
     backend_key = st.selectbox(
         "Transcription Backend",
@@ -725,30 +724,6 @@ def show_transcription_settings():
                 help="API model name (e.g. whisper-1)"
             )
 
-    elif backend_key == "whisper_openrouter":
-        st.markdown("#### OpenRouter API Settings")
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.text_input(
-                "API Key",
-                key="settings_trans_or_key",
-                type="password",
-                help="OpenRouter API key (or set OPENROUTER_API_KEY env var)"
-            )
-            st.text_input(
-                "Base URL",
-                key="settings_trans_or_base_url",
-                help="OpenRouter API endpoint"
-            )
-
-        with col2:
-            st.text_input(
-                "Model",
-                key="settings_trans_or_model",
-                help="API model name"
-            )
-
 def save_transcription_settings():
     """Save transcription settings to configuration"""
     if not st.session_state.get('config'):
@@ -788,19 +763,6 @@ def save_transcription_settings():
         )
         config['transcription']['whisper_openai']['model'] = st.session_state.get(
             'settings_trans_openai_model', 'whisper-1'
-        )
-
-    elif backend == "whisper_openrouter":
-        if 'whisper_openrouter' not in config['transcription']:
-            config['transcription']['whisper_openrouter'] = {}
-        api_key = st.session_state.get('settings_trans_or_key', '')
-        if api_key:
-            config['transcription']['whisper_openrouter']['api_key'] = api_key
-        config['transcription']['whisper_openrouter']['base_url'] = st.session_state.get(
-            'settings_trans_or_base_url', 'https://openrouter.ai/api/v1'
-        )
-        config['transcription']['whisper_openrouter']['model'] = st.session_state.get(
-            'settings_trans_or_model', 'openai/whisper-large-v3'
         )
 
     from config_utils import save_config_to_file as _save_config
@@ -1373,9 +1335,8 @@ def _init_transcription_session_state(transcription_cfg):
     """Initialize Transcription tab widget keys from config if not already set"""
     local_cfg = transcription_cfg.get('faster_whisper_local', {})
     openai_cfg = transcription_cfg.get('whisper_openai', {})
-    or_cfg = transcription_cfg.get('whisper_openrouter', {})
 
-    backend_options = ["faster_whisper_local", "whisper_openai", "whisper_openrouter"]
+    backend_options = ["faster_whisper_local", "whisper_openai"]
     model_options = [
         "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium",
         "medium.en", "large", "large-v2", "large-v3", "large-v3-turbo",
@@ -1408,9 +1369,6 @@ def _init_transcription_session_state(transcription_cfg):
         "settings_trans_openai_key": openai_cfg.get('api_key', ''),
         "settings_trans_openai_base_url": openai_cfg.get('base_url', 'https://api.openai.com/v1'),
         "settings_trans_openai_model": openai_cfg.get('model', 'whisper-1'),
-        "settings_trans_or_key": or_cfg.get('api_key', ''),
-        "settings_trans_or_base_url": or_cfg.get('base_url', 'https://openrouter.ai/api/v1'),
-        "settings_trans_or_model": or_cfg.get('model', 'openai/whisper-large-v3'),
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -1523,8 +1481,7 @@ def _clear_settings_widget_keys():
         "settings_trans_backend", "settings_trans_local_model", "settings_trans_device",
         "settings_trans_compute_type", "settings_trans_language",
         "settings_trans_openai_key", "settings_trans_openai_base_url",
-        "settings_trans_openai_model", "settings_trans_or_key",
-        "settings_trans_or_base_url", "settings_trans_or_model",
+        "settings_trans_openai_model",
         "validation_enabled", "new_criterion", "settings_validation_criteria",
         "desc_update_missing", "desc_update_minimal", "desc_min_length",
         "hash_update_missing", "hash_update_minimal", "hash_min_length",

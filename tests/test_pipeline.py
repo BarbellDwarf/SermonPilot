@@ -346,3 +346,38 @@ def test_dry_run_with_auto_edit_persists_plan_without_api(
     repo = SermonRepository()
     row = repo.get_current_edit_plan(result["sermon_id"])
     assert row["status"] == "auto_applied"
+
+
+def test_supplied_metadata_does_not_starve_cut_detection(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Operator-supplied metadata must not remove the transcript detection reads."""
+    audio_file = _make_video(tmp_path)
+    plan = _auto_edit_config(tmp_path, monkeypatch)
+
+    captured: dict = {}
+
+    def capture_detect(segments, llm, config, duration):
+        captured["segments"] = list(segments)
+        return plan
+
+    monkeypatch.setattr(su, "detect_cut_points", capture_detect)
+    monkeypatch.setattr(su, "apply_edit", _stub_apply_edit(tmp_path))
+    monkeypatch.setattr(su, "create_new_sermon_api", Mock(return_value="111"))
+    monkeypatch.setattr(su, "upload_media_file", Mock(return_value=True))
+
+    result = su.process_new_sermon(
+        str(audio_file),
+        speaker_name=f"Metadata Speaker {tmp_path.name}",
+        recorded_date="2024-01-01",
+        title="Test Title",
+        description="Test description",
+        hashtags="#test",
+        dry_run=True,
+        skip_audio=True,
+        auto_edit_mode="auto",
+    )
+
+    assert result["success"] is True
+    su.transcribe_segments.assert_called_once()
+    assert captured["segments"], "cut detection must receive transcript segments"

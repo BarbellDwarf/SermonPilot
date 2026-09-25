@@ -43,6 +43,7 @@ vi.mock("../api/client", () => {
       refinePlan: vi.fn(),
       reDetectPlan: vi.fn(),
       regenerateDescription: vi.fn(),
+      pushMetadata: vi.fn(),
     },
   };
 });

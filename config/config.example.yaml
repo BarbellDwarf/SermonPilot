@@ -174,7 +174,7 @@ transcription:
   # lower-VRAM faster_whisper_local path is used; otherwise the code falls back
   # to whisper_local (openai-whisper, which runs fp16 on CUDA and drops to CPU
   # on a CUDA out-of-memory).
-  backend: faster_whisper_local  # Options: auto, whisper_local, faster_whisper_local, whisper_openai, whisper_openrouter
+  backend: faster_whisper_local  # Options: auto, whisper_local, faster_whisper_local, whisper_openai
   # Compute type for local Whisper. auto = int8 on cpu, float16 on cuda (an
   # 8 GB card cannot hold a float32 large model). Pin one of the explicit
   # values to override; cuda loads still step down the ladder on OOM.
@@ -190,12 +190,8 @@ transcription:
     model: base  # Options: tiny, base, small, medium, large (or ${WHISPER_MODEL})
   whisper_openai:
     api_key: "${OPENAI_API_KEY}"  # Or set OPENAI_API_KEY in the environment
-    base_url: https://api.openai.com/v1  # OpenAI API base URL
-    model: whisper-1  # Options: whisper-1
-  whisper_openrouter:
-    api_key: "${OPENROUTER_API_KEY}"  # Or set OPENROUTER_API_KEY in the environment
-    base_url: https://openrouter.ai/api/v1  # OpenRouter API base URL
-    model: openai/whisper-large-v3  # Options: openai/whisper-large-v3, etc.
+    base_url: https://api.openai.com/v1  # OpenAI-compatible API base URL
+    model: whisper-1  # Options: whisper-1, or any model the endpoint serves
 
 # Auto-Edit Settings (see docs/AUTO_EDIT.md)
 auto_edit:

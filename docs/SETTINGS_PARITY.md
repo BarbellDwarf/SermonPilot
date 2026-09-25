@@ -48,9 +48,6 @@ enumeration of environment variables.
 | Transcription | OpenAI API Key (`transcription.whisper_openai.api_key`) | Transcription, OpenAI backend |
 | Transcription | OpenAI Base URL (`transcription.whisper_openai.base_url`) | Transcription, OpenAI backend |
 | Transcription | OpenAI Model (`transcription.whisper_openai.model`) | Transcription, OpenAI backend |
-| Transcription | OpenRouter API Key (`transcription.whisper_openrouter.api_key`) | Transcription, OpenRouter backend |
-| Transcription | OpenRouter Base URL (`transcription.whisper_openrouter.base_url`) | Transcription, OpenRouter backend |
-| Transcription | OpenRouter Model (`transcription.whisper_openrouter.model`) | Transcription, OpenRouter backend |
 | Validation | Enable Description Validation (`metadata_processing.description.validation.enabled`) | Validation |
 | Validation | Validation criteria (`metadata_processing.description.validation.criteria`) | Validation |
 | Validation | Description Update if Missing (`metadata_processing.description.update_if_missing`) | Validation |

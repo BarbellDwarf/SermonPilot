@@ -255,6 +255,42 @@ def test_regenerate_description_queues_metadata_job(client, scoped_setup, monkey
     assert foreign.status_code == 404
 
 
+def test_push_metadata_queues_full_push_job(client, scoped_setup, monkeypatch):
+    s = scoped_setup
+    import ui.database as dbmod
+
+    monkeypatch.setattr(dbmod, "_db", None)
+    monkeypatch.setenv("DATABASE_URL", get_db_path())
+    monkeypatch.setattr("ui.job_queue.JobQueue._resources_available", lambda self: False)
+
+    r = client.post(
+        "/api/sermons/s-a/metadata/push",
+        json={"full_push": True},
+        headers=s["a"]["headers"],
+    )
+    assert r.status_code == 202, r.text
+    assert r.json()["full_push"] is True
+    job_id = r.json()["job_id"]
+
+    conn = sqlite3.connect(get_db_path())
+    row = conn.execute(
+        "SELECT type, user_id, parameters FROM background_jobs WHERE id = ?", (job_id,)
+    ).fetchone()
+    conn.close()
+    assert row is not None
+    assert row[0] == "metadata_update"
+    assert row[1] == s["a"]["id"]
+    params = json.loads(row[2])
+    assert params["sermon_ids"] == ["s-a"]
+    assert params["actions"]["push_metadata"] is True
+    assert params["actions"]["full_push"] is True
+
+    foreign = client.post(
+        "/api/sermons/s-a/metadata/push", json={}, headers=s["b"]["headers"]
+    )
+    assert foreign.status_code == 404
+
+
 def test_sermon_detail_surfaces_description_needs_review(client, scoped_setup):
     s = scoped_setup
     conn = sqlite3.connect(get_db_path())

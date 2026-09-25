@@ -67,9 +67,14 @@ def _show_feedback():
         st.code(details)
 
 
-def push_sermon_metadata_to_api(sermon):
+def push_sermon_metadata_to_api(sermon, full_push=False):
     """Push sermon to SermonAudio — creates new sermon for dry runs,
-    updates metadata for existing ones."""
+    updates metadata for existing ones.
+
+    ``full_push`` sends title, display title, subtitle, bible text, event type
+    and hashtags as well as the description; the default keeps the historical
+    description-and-hashtags update.
+    """
     try:
         import sermon_updater
 
@@ -131,29 +136,25 @@ def push_sermon_metadata_to_api(sermon):
             return
 
         with st.spinner("Pushing metadata to SermonAudio..."):
-            description = (sermon.get('description') or
-                          sermon.get('ai_description') or
-                          sermon.get('moreInfoText') or '')
-
-            hashtags = sermon.get('hashtags') or sermon.get('keywords') or []
-
-            if isinstance(hashtags, str):
-                if ' ' in hashtags and ',' not in hashtags:
-                    hashtags = hashtags.split()
-                else:
-                    hashtags = [tag.strip() for tag in hashtags.split(',') if tag.strip()]
-
-            success = sermon_updater.update_sermon_metadata(
-                sermon_id, description, hashtags,
-                series_title=sermon.get('series_title') or None,
+            result = sermon_updater.push_sermon_metadata(
+                sermon_id, sermon, full_push=full_push
             )
 
-            if success:
-                _set_feedback("Metadata successfully updated on SermonAudio!")
+            if result.get('success'):
+                skipped = result.get('skipped') or {}
+                if full_push and skipped:
+                    _set_feedback(
+                        "Metadata pushed to SermonAudio. Skipped: "
+                        + ", ".join(f"{name} ({reason})" for name, reason in skipped.items())
+                    )
+                elif full_push:
+                    _set_feedback("Full metadata pushed to SermonAudio!")
+                else:
+                    _set_feedback("Metadata successfully updated on SermonAudio!")
             else:
                 _set_feedback(
-                    "Failed to update metadata on SermonAudio. "
-                    "Check your API credentials and try again.",
+                    "Failed to update metadata on SermonAudio: "
+                    f"{result.get('error') or 'check your API credentials'}",
                     kind="error",
                 )
 
@@ -2221,6 +2222,14 @@ def display_sermon_details(sermon):
                     generate_ai_content(sermon, gen_description=gen_desc, gen_hashtags=gen_tags)
                     st.session_state[gen_key] = False
                     st.rerun()
+    push_full = st.checkbox(
+        "Push all metadata fields",
+        key=f"push_full_{sermon['id']}",
+        help=(
+            "Also send title, display title, subtitle, bible text, event type "
+            "and hashtags; otherwise only the description and hashtags update"
+        ),
+    )
     header_row2 = st.columns(3)
     with header_row2[0]:
         push_help = (
@@ -2230,7 +2239,7 @@ def display_sermon_details(sermon):
         if st.button("Push", key=f"push_{sermon['id']}",
                     help=push_help,
                     width='stretch'):
-            push_sermon_metadata_to_api(sermon)
+            push_sermon_metadata_to_api(sermon, full_push=push_full)
             st.rerun()
     with header_row2[1]:
         if st.button("Delete", key=f"delete_{sermon['id']}",
@@ -2558,10 +2567,10 @@ def display_sermon_details(sermon):
             )
             rp_backend = st.selectbox(
                 "Transcription Backend",
-                options=["whisper_local", "whisper_openai", "whisper_openrouter"],
+                options=["whisper_local", "whisper_openai"],
                 index=1,
                 key=f"rp_backend_{sermon['id']}",
-                help="Local Whisper (runs on your machine) or OpenAI/OpenRouter API"
+                help="Local Whisper (runs on your machine) or an OpenAI-compatible API"
             )
             rp_col1, rp_col2 = st.columns(2)
             with rp_col1:
@@ -2772,6 +2781,7 @@ def display_sermon_editor(sermon, api_client, repo):
                 "Recorded Date",
                 value=parsed_date.date() if parsed_date else datetime.now().date()
             )
+            subtitle = st.text_input("Subtitle", value=sermon.get('subtitle', ''))
 
         with col2:
             # Series dropdown or text input
@@ -2788,6 +2798,9 @@ def display_sermon_editor(sermon, api_client, repo):
             scripture_reference = st.text_input(
                 "Scripture Reference", value=sermon.get('scripture_reference', '')
             )
+            bible_text = st.text_area(
+                "Bible Text", value=sermon.get('bible_text', ''), height=80
+            )
             stored_event_type = sermon.get('event_type') or None
             if stored_event_type:
                 event_key_suffix = re.sub(r"\W+", "_", stored_event_type).strip("_")
@@ -2801,6 +2814,7 @@ def display_sermon_editor(sermon, api_client, repo):
             )
 
         description = st.text_area("Description", value=sermon.get('description', ''), height=100)
+        hashtags = st.text_input("Hashtags", value=sermon.get('hashtags', ''))
 
         # Form buttons
         col1, col2, col3 = st.columns([1, 1, 2])
@@ -2814,12 +2828,15 @@ def display_sermon_editor(sermon, api_client, repo):
             try:
                 updated_data = {
                     'title': title,
+                    'subtitle': subtitle,
                     'speaker': speaker,
                     'series_title': series_title,
                     'recorded_date': recorded_date.isoformat(),
                     'scripture_reference': scripture_reference,
+                    'bible_text': bible_text,
                     'event_type': event_type,
-                    'description': description
+                    'description': description,
+                    'hashtags': hashtags,
                 }
 
                 success = repo.update_sermon_metadata(sermon['id'], updated_data)

@@ -91,7 +91,7 @@ class CLIParser:
         new_sermon.add_argument('--transcription-backend', dest='transcription_backend',
                                default=None,
                                choices=['auto', 'whisper_local', 'faster_whisper_local',
-                                        'whisper_openai', 'whisper_openrouter'],
+                                        'whisper_openai'],
                                help='Transcription backend (default: config/auto, '
                                     'prefers faster-whisper when available)')
         new_sermon.add_argument('--auto-edit', dest='auto_edit', action='store_true',
