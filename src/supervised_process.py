@@ -15,9 +15,9 @@ it, moves any partial output named in ``partial_paths`` into the trash area per
 terminal as cancelled. If the child ignores ``terminate`` the hard kill is the
 fallback, so the worker is never left blocked.
 
-When no cancel hook is supplied the call is a plain ``subprocess.run``. The
-CLI and one-shot renders keep their existing behaviour, and code that patches
-``subprocess.run`` is unaffected.
+When no cancel hook, output callback, or activity context is supplied the call
+is a plain ``subprocess.run``. The CLI and one-shot renders keep their existing
+behaviour, and code that patches ``subprocess.run`` is unaffected.
 """
 
 from __future__ import annotations
@@ -246,10 +246,12 @@ def run_supervised(
 ) -> subprocess.CompletedProcess:
     """Run ``cmd``, polling ``cancel_check`` and stopping the child on cancel.
 
-    Without ``cancel_check`` this defers to :func:`subprocess.run`, so callers
-    that never had a cancel hook keep their exact behaviour. With a hook, the
-    child is supervised and the call raises :class:`ProcessCancelled` after the
-    child is stopped. ``partial_paths`` are moved into the trash root on cancel.
+    Without ``cancel_check``, ``on_output``, or an activity context this defers
+    to :func:`subprocess.run`, so callers that never requested supervision keep
+    their exact behaviour. With a hook, the child is supervised and the call
+    raises :class:`ProcessCancelled` after the child is stopped. An activity
+    context receives child output and growth of ``partial_paths``. Partial
+    outputs are moved into the trash root on cancellation.
     """
     activity_callback = _ACTIVITY_CALLBACK.get()
     if cancel_check is None and on_output is None and activity_callback is None:
