@@ -77,13 +77,12 @@ JOB_CANCEL_POLL_INTERVAL_SECONDS = 1.0
 JOB_LEASE_TIMEOUT_SECONDS = 30.0
 JOB_HEARTBEAT_INTERVAL_SECONDS = 5.0
 
-# A job that reports no progress at all for this long is treated as stalled and
-# failed, so one hung native call cannot wedge the single worker forever. The
-# bound is on silence, not total runtime: a long transcription that keeps
-# emitting segment progress is never stalled. Large files are normal, so the
-# default is generous; a single legitimately silent native call must finish
-# inside it. Set to 0 to disable the watchdog.
-JOB_STALL_TIMEOUT_SECONDS = 1800.0
+# A job with no progress, no new log line, and no growing supervised child
+# output for this long is treated as stalled and failed, so one hung native
+# call cannot wedge the single worker forever. The bound is on silence, not
+# total runtime. Two hours leaves room for a normal long service even when a
+# native stage cannot report intermediate progress. Set to 0 to disable it.
+JOB_STALL_TIMEOUT_SECONDS = 7200.0
 
 
 def _is_secret_key(key: str) -> bool:
@@ -485,6 +484,10 @@ class Job:
         """
         self._force_persist = True
         self._notify_update()
+
+    def mark_activity(self) -> None:
+        """Refresh watchdog liveness without adding a user-facing log line."""
+        self._last_activity_at = time.monotonic()
 
     def _notify_update(self):
         """Invoke the queue's persistence hook when one is registered."""
@@ -1347,18 +1350,24 @@ class JobQueue:
     def _run_executor_with_watchdog(self, job: Job, executor: Callable) -> JobResult:
         """Run the executor in a child thread, abandoning it when it stalls.
 
-        The worker waits on the child in short slices and only gives up when
-        the job has reported no progress for the stall bound, so a legitimately
-        long stage that keeps logging is left to finish. On a stall the child
-        is abandoned (a daemon thread, so it cannot keep the process alive) and
-        the job is failed with its last named stage, freeing the worker for the
-        next job.
+        Activity means any of: a progress update, a new job log line, output
+        from a supervised child, or growth of a supervised child's output file.
+        The worker checks the same monotonic activity clock while the executor
+        runs. On a stall the child is abandoned (a daemon thread, so it cannot
+        keep the process alive) and the job is failed with its last named stage,
+        freeing the worker for the next job.
         """
+        try:
+            from src.supervised_process import activity_context
+        except ImportError:  # src dir placed directly on sys.path
+            from supervised_process import activity_context  # type: ignore[no-redef]
+
         holder: dict[str, Any] = {}
 
         def _run() -> None:
             try:
-                holder["result"] = executor(job)
+                with activity_context(job.mark_activity):
+                    holder["result"] = executor(job)
             except BaseException as exc:  # re-raised on the worker thread
                 holder["exc"] = exc
 
@@ -1367,8 +1376,9 @@ class JobQueue:
         )
         child.start()
         timeout = self._stall_timeout_seconds()
+        poll_interval = 1.0 if timeout <= 0 else min(1.0, max(timeout / 4.0, 0.05))
         while child.is_alive():
-            child.join(1.0)
+            child.join(poll_interval)
             if child.is_alive() and timeout > 0:
                 if time.monotonic() - job._last_activity_at >= timeout:
                     job.cancelled = True

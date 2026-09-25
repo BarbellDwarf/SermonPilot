@@ -28,7 +28,9 @@ import signal
 import subprocess
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -37,7 +39,31 @@ logger = logging.getLogger(__name__)
 DEFAULT_POLL_INTERVAL_SECONDS = 2.0
 DEFAULT_TERMINATE_GRACE_SECONDS = 10.0
 
+_ACTIVITY_CALLBACK: ContextVar[Callable[[], None] | None] = ContextVar(
+    "supervised_activity_callback", default=None
+)
+
 _TRASH_META_KEYS = ("sermon_id", "job_id", "stage", "config")
+
+
+@contextmanager
+def activity_context(callback: Callable[[], None] | None) -> Iterator[None]:
+    """Publish liveness from supervised children in the current execution context."""
+    token = _ACTIVITY_CALLBACK.set(callback)
+    try:
+        yield
+    finally:
+        _ACTIVITY_CALLBACK.reset(token)
+
+
+def _notify_activity() -> None:
+    callback = _ACTIVITY_CALLBACK.get()
+    if callback is None:
+        return
+    try:
+        callback()
+    except Exception:
+        logger.debug("Supervised activity callback failed", exc_info=True)
 
 
 class ProcessCancelled(Exception):
@@ -106,13 +132,28 @@ def terminate_process(
     return True
 
 
-def _drain(stream: Any, sink: list) -> None:
+def _drain(
+    stream: Any,
+    sink: list,
+    on_output: Callable[[str], None] | None = None,
+) -> None:
     try:
         while True:
             chunk = stream.read(65536)
             if not chunk:
                 break
             sink.append(chunk)
+            _notify_activity()
+            if on_output is not None:
+                try:
+                    text = (
+                        chunk.decode("utf-8", errors="replace")
+                        if isinstance(chunk, bytes)
+                        else chunk
+                    )
+                    on_output(text)
+                except Exception:
+                    logger.debug("Supervised output callback failed", exc_info=True)
     except Exception:
         pass
     finally:
@@ -160,6 +201,30 @@ def _emit(log: Callable[[str], None] | None, message: str) -> None:
         logger.debug("Cancel log callback failed", exc_info=True)
 
 
+def _file_sizes(paths: Sequence[str | Path]) -> dict[Path, int | None]:
+    sizes: dict[Path, int | None] = {}
+    for raw_path in paths:
+        path = Path(str(raw_path))
+        try:
+            sizes[path] = path.stat().st_size
+        except OSError:
+            sizes[path] = None
+    return sizes
+
+
+def _output_grew(paths: dict[Path, int | None]) -> bool:
+    grew = False
+    for path, previous in paths.items():
+        try:
+            current = path.stat().st_size
+        except OSError:
+            current = None
+        if current is not None and (previous is None or current > previous):
+            paths[path] = current
+            grew = True
+    return grew
+
+
 def run_supervised(
     cmd: Sequence[str],
     *,
@@ -171,6 +236,7 @@ def run_supervised(
     capture_output: bool = False,
     text: bool = False,
     check: bool = False,
+    on_output: Callable[[str], None] | None = None,
     log: Callable[[str], None] | None = None,
     partial_paths: Sequence[str | Path] | None = None,
     partial_reason: str = "cancelled_process_partial",
@@ -185,7 +251,8 @@ def run_supervised(
     child is supervised and the call raises :class:`ProcessCancelled` after the
     child is stopped. ``partial_paths`` are moved into the trash root on cancel.
     """
-    if cancel_check is None:
+    activity_callback = _ACTIVITY_CALLBACK.get()
+    if cancel_check is None and on_output is None and activity_callback is None:
         return subprocess.run(
             cmd,
             capture_output=capture_output,
@@ -197,7 +264,7 @@ def run_supervised(
         )
 
     label = step or (Path(str(cmd[0])).name if cmd else "command")
-    stdout_pipe = subprocess.PIPE if capture_output else None
+    stdout_pipe = subprocess.PIPE if capture_output or on_output is not None else None
     stderr_pipe = subprocess.PIPE if capture_output else None
 
     proc = subprocess.Popen(
@@ -209,18 +276,25 @@ def run_supervised(
         env=env,
         start_new_session=(os.name == "posix"),
     )
+    _notify_activity()
 
     out_chunks: list = []
     err_chunks: list = []
     readers: list[threading.Thread] = []
-    if capture_output:
+    if capture_output or on_output is not None:
         for stream, sink in ((proc.stdout, out_chunks), (proc.stderr, err_chunks)):
             if stream is None:
                 continue
-            thread = threading.Thread(target=_drain, args=(stream, sink), daemon=True)
+            stream_callback = on_output if stream is proc.stdout else None
+            thread = threading.Thread(
+                target=_drain,
+                args=(stream, sink, stream_callback),
+                daemon=True,
+            )
             thread.start()
             readers.append(thread)
 
+    tracked_sizes = _file_sizes(partial_paths or ())
     started = time.monotonic()
     timed_out = False
     while proc.poll() is None:
@@ -242,6 +316,8 @@ def run_supervised(
                 message = f"Cancelled during {label} (stopped after {elapsed:.0f}s){suffix}"
                 _emit(log, message)
                 raise ProcessCancelled(message, original=exc) from exc
+        if _output_grew(tracked_sizes):
+            _notify_activity()
         time.sleep(max(poll_interval, 0.0))
 
     if timed_out:
