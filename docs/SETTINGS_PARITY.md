@@ -39,6 +39,7 @@ enumeration of environment variables.
 | Audio | Audio Normalization (`audio_normalize`) | Audio |
 | Audio | Gain dB (`audio_gain_db`) | Audio |
 | Audio | Target Level dB (`audio_target_level_db`) | Audio |
+| Audio | Process Audio (`metadata_processing.process_audio`) | Audio, legacy boolean, ignored when it conflicts with the enhancement method |
 | Transcription | Backend (`transcription.backend`) | Transcription |
 | Transcription | Local Model (`transcription.<local>.model`) | Transcription, local backends |
 | Transcription | Device (`transcription.<local>.device`) | Transcription, local backends |
@@ -109,6 +110,19 @@ surface, not migrations.
   SermonAudio API with the saved credentials. The console has no server-side
   credential check endpoint, so the button was removed rather than kept as a
   fake success path. Credentials are exercised for real when a sermon uploads.
+
+## Audio settings reach the pipeline
+
+The five audio settings (`audio_noise_reduction`, `audio_amplify`,
+`audio_normalize`, `audio_gain_db`, `audio_target_level_db`) resolve through
+`audio_processing_settings` in `sermon_updater.py` and are passed as keyword
+arguments to `AudioProcessor.process_sermon_audio` on the enhancement call. A
+fresh run and the Library apply path use the same resolver, so a value saved on
+the console Audio section reaches the enhancer.
+
+`audio_enhancement_method == "none"` means skip on every path. It wins over the
+legacy `metadata_processing.process_audio` boolean, and when the two disagree the
+log names the winner and the losing value once per resolution.
 
 ## Environment override display
 
