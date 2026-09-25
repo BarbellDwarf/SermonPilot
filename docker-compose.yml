@@ -27,7 +27,8 @@
 #   Processing: DEBUG, VERBOSE, DRY_RUN, HASHTAG_VERIFICATION
 #   Runtime: DATABASE_URL (default sqlite:///data/sermon_processor.db,
 #     resolved to /data/sermon_processor.db inside the container),
-#     APP_PASSWORD (UI sign-in when set)
+#     APP_PASSWORD (UI sign-in when set), SERMONPILOT_JOB_WORKER_ENABLED
+#     (headless worker, enabled by default)
 #   Compose-side only: SERMONPILOT_TAG (image tag), HOST_BIND (port bind
 #     address). ENVIRONMENT is declared here but currently unused by the app.
 
@@ -52,6 +53,7 @@ services:
       - XAI_API_KEY=${XAI_API_KEY}
       - DEBUG=${DEBUG:-false}
       - STREAMLIT_SERVER_MAX_UPLOAD_SIZE=${STREAMLIT_SERVER_MAX_UPLOAD_SIZE:-30720}
+      - SERMONPILOT_JOB_WORKER_ENABLED=${SERMONPILOT_JOB_WORKER_ENABLED:-1}
     volumes:
       - sermon_data:/data
       - ./raw_ingest:/data/raw_ingest

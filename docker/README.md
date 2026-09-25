@@ -15,7 +15,9 @@ The container entrypoint is `docker/start_production.sh`, which:
 
 1. Creates the persistent data directories (`/data`, `/models`, `/app/api_cache`, `/app/processed_sermons`, `/app/logs`) and repairs or warns about their ownership
 2. Initializes the SQLite database through `SermonRepository`
-3. Starts `streamlit run streamlit_app.py` on `0.0.0.0:8501`
+3. Starts the headless job worker by default
+4. Starts `streamlit run streamlit_app.py` on `0.0.0.0:8501`
+5. Starts the web API when `SERMONPILOT_WEB_API` is enabled
 
 ## Prerequisites
 
@@ -73,6 +75,9 @@ variant-appropriate choices (transcription backend, enhancement method, LLM
 provider). Placeholder values that have no matching environment variable keep
 their `${VAR}` form until you fill them in the UI or set the variable. Once
 seeded, the database holds the config; later image upgrades do not reseed.
+
+The worker logs `worker started, owns lease` when it owns the queue lease.
+Set `SERMONPILOT_JOB_WORKER_ENABLED=0` for a submit-only deployment.
 
 ## Images
 

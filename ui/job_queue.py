@@ -112,6 +112,14 @@ _JOB_OPTIONAL_COLUMNS: dict[str, str] = {
     "heartbeat_at": "TIMESTAMP",
 }
 
+_JOB_WORKER_DISABLED_VALUES = frozenset({"0", "false", "no", "off"})
+
+
+def _job_worker_enabled_from_env() -> bool:
+    value = os.environ.get("SERMONPILOT_JOB_WORKER_ENABLED", "1")
+    return value.strip().lower() not in _JOB_WORKER_DISABLED_VALUES
+
+
 _JOB_LEASE_TABLE = "job_worker_lease"
 
 
@@ -1711,8 +1719,11 @@ def get_submit_job_queue() -> JobQueue:
 
 
 def initialize_job_queue():
-    """Initialize the job queue system"""
-    queue = get_job_queue()
+    """Initialize the queue, honoring submit-only worker configuration."""
+    if _job_worker_enabled_from_env():
+        queue = get_job_queue()
+    else:
+        queue = get_submit_job_queue()
     logger.info("Job queue system initialized")
     return queue
 
