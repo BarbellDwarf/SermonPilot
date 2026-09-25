@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ApiConfigField, ApiConnection } from "../api/client";
+import type { ApiConfigField, ApiConnection, ApiEffectiveConnection } from "../api/client";
 import componentSource from "./SermonAudioAccounts.tsx?raw";
 
 const configState = vi.hoisted(() => ({ fields: {} as Record<string, ApiConfigField> }));
@@ -19,10 +19,11 @@ vi.mock("../api/useConfigSection", async (importOriginal) => {
   };
 });
 
-import { SermonAudioAccountsSection } from "./SermonAudioAccounts";
+import { SermonAudioAccountsSection, routingCopy } from "./SermonAudioAccounts";
 import { SermonAudioCredentialsSection } from "./SermonAudioCredentials";
 
 const BASE = "/api/me/connections/sermonaudio";
+const EFFECTIVE = "/api/me/sermonaudio-connection";
 
 function json(body: unknown, status = 200): Response {
   return {
@@ -42,7 +43,11 @@ function noContent(): Response {
   } as unknown as Response;
 }
 
-function stubApi(initial: ApiConnection[], defaultId: string | null = null) {
+function stubApi(
+  initial: ApiConnection[],
+  defaultId: string | null = null,
+  effective?: Partial<ApiEffectiveConnection>,
+) {
   const rows = initial.map((r) => ({ ...r }));
   let def = defaultId;
   const calls: { url: string; method: string; body: Record<string, unknown> | undefined }[] = [];
@@ -54,6 +59,21 @@ function stubApi(initial: ApiConnection[], defaultId: string | null = null) {
       : undefined;
     calls.push({ url, method, body });
 
+    if (method === "GET" && url.includes(EFFECTIVE)) {
+      const current = rows.find((r) => r.id === def);
+      return Promise.resolve(
+        json({
+          configured: true,
+          source: "user",
+          account_id: current?.id ?? null,
+          account_name: current?.name ?? null,
+          broadcaster_id: current?.broadcasterId ?? "",
+          masked_key: current?.masked_key ?? "",
+          message: "",
+          ...effective,
+        }),
+      );
+    }
     if (method === "GET") {
       return Promise.resolve(json({ items: rows, total: rows.length, default_id: def }));
     }
@@ -256,5 +276,93 @@ describe("SermonAudio accounts and fallback together", () => {
     expect(await screen.findByText(/No SermonAudio accounts configured/i)).toBeTruthy();
     expect(screen.getByText(/set by environment: SERMONAUDIO_API_KEY/)).toBeTruthy();
     expect(screen.getByDisplayValue("env-broadcaster")).toBeTruthy();
+  });
+});
+
+describe("routingCopy", () => {
+  it("names the user's own account", () => {
+    expect(
+      routingCopy({
+        configured: true,
+        source: "user",
+        account_id: "sa-1",
+        account_name: "Sample Chapel",
+        broadcaster_id: "sample-chapel",
+        masked_key: "********7890",
+        message: "",
+      }),
+    ).toBe("Uploads use Sample Chapel (sample-chapel).");
+  });
+
+  it("names the environment fallback source", () => {
+    expect(
+      routingCopy({
+        configured: true,
+        source: "SERMONAUDIO_API_KEY",
+        account_id: null,
+        account_name: null,
+        broadcaster_id: "env-broadcaster",
+        masked_key: "********1234",
+        message: "",
+      }),
+    ).toBe(
+      "No account connected. Uploads fall back to the environment variable SERMONAUDIO_API_KEY (env-broadcaster).",
+    );
+  });
+
+  it("names the saved single-account fallback", () => {
+    expect(
+      routingCopy({
+        configured: true,
+        source: "db",
+        account_id: null,
+        account_name: null,
+        broadcaster_id: "saved-broadcaster",
+        masked_key: "********1234",
+        message: "",
+      }),
+    ).toBe(
+      "No account connected. Uploads fall back to the saved single-account credentials (saved-broadcaster).",
+    );
+  });
+
+  it("shows the refusal message when nothing is configured", () => {
+    const message = "Connect your SermonAudio account in Settings before publishing.";
+    expect(
+      routingCopy({
+        configured: false,
+        source: "none",
+        account_id: null,
+        account_name: null,
+        broadcaster_id: "",
+        masked_key: "",
+        message,
+      }),
+    ).toBe(message);
+  });
+});
+
+describe("SermonAudioAccountsSection upload routing", () => {
+  it("shows which account uploads will use", async () => {
+    stubApi([sampleRow()], "sa-1");
+    render(<SermonAudioAccountsSection show={() => {}} />);
+
+    expect(await screen.findByText("Uploads use Sample Chapel (sample-chapel).")).toBeTruthy();
+  });
+
+  it("shows the refusal when no account is configured", async () => {
+    const message = "Connect your SermonAudio account in Settings before publishing.";
+    stubApi([], null, {
+      configured: false,
+      source: "none",
+      account_name: null,
+      broadcaster_id: "",
+      masked_key: "",
+      message,
+    });
+    render(<SermonAudioAccountsSection show={() => {}} />);
+
+    expect(await screen.findByText(message)).toBeTruthy();
+    expect(screen.getByText(/refused until an account is connected/)).toBeTruthy();
   });
 });

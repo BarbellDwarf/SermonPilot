@@ -334,6 +334,16 @@ export interface ApiConnectionList {
   default_id: string | null;
 }
 
+export interface ApiEffectiveConnection {
+  configured: boolean;
+  source: string;
+  account_id: string | null;
+  account_name: string | null;
+  broadcaster_id: string;
+  masked_key: string;
+  message: string;
+}
+
 async function send<T>(path: string, method: string, body?: unknown): Promise<T> {
   const res = await authFetch(path, {
     method,
@@ -374,6 +384,8 @@ export const connectionsApi = {
     send<void>(`/api/me/connections/${kind}/${encodeURIComponent(id)}`, "DELETE"),
   setDefault: (id: string | null) =>
     send<{ default_id: string | null }>("/api/me/connections/sermonaudio/default", "PUT", { id }),
+  effective: () =>
+    send<ApiEffectiveConnection>("/api/me/sermonaudio-connection", "GET"),
 };
 
 export const settingsApi = {
