@@ -159,48 +159,135 @@ def clean_description(raw: str) -> str:
     return ""
 
 
+_REFUSAL_RE = re.compile(
+    r"^\s*(?:"
+    r"i'?m sorry|i am sorry|"
+    r"i can'?t|i cannot|i can not|"
+    r"i'?m unable|i am unable|i'?m not able|i am not able|"
+    r"i won'?t|i will not|i must decline|i have to decline|"
+    r"i don'?t have|i do not have|"
+    r"as an ai|as a language model|"
+    r"unable to (?:provide|write|generate|produce|summari[sz]e)|"
+    r"cannot (?:provide|write|generate|produce|assist|fulfill|summari[sz]e)|"
+    r"can'?t (?:provide|write|generate|produce|assist|fulfill|summari[sz]e)|"
+    r"no (?:description|summary)(?: (?:was|is) )?(?:available|provided|generated)?"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_PLACEHOLDER_VALUES = {
+    "description",
+    "summary",
+    "sermon description",
+    "sermon summary",
+    "the description",
+    "the summary",
+    "n/a",
+    "na",
+    "none",
+    "null",
+    "nil",
+    "tbd",
+    "todo",
+    "placeholder",
+    "content",
+    "text",
+    "output",
+    "insert description here",
+    "description goes here",
+    "description here",
+    "no description",
+    "no description available",
+    "no summary",
+    "lorem ipsum",
+    "example description",
+    "sample description",
+    "test description",
+}
+
+_ELLIPSIS_CHARS = frozenset(".… \t\r\n")
+
+
+def _looks_like_refusal(text: str) -> bool:
+    return bool(_REFUSAL_RE.match(text.strip()))
+
+
+def _looks_like_placeholder(text: str) -> bool:
+    normalized = text.strip().strip(_QUOTE_CHARS).strip("[](){}<>").strip()
+    folded = normalized.casefold().rstrip(".!:;,").strip()
+    if folded in _PLACEHOLDER_VALUES:
+        return True
+    if "lorem ipsum" in folded:
+        return True
+    return bool(normalized) and set(normalized) <= _ELLIPSIS_CHARS
+
+
+def description_rejection_reason(
+    text: str, min_chars: int = MIN_DESCRIPTION_CHARS
+) -> str | None:
+    """Name why a cleaned description is unusable, or None when it is usable.
+
+    A refusal, a placeholder or stub, model narration, or a reply below
+    ``min_chars`` is unusable. The reason is a short phrase safe to put in a
+    job log; the raw text is never part of it.
+    """
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return "empty"
+    if len(cleaned) < min_chars:
+        return f"too short ({len(cleaned)} chars, minimum {min_chars})"
+    if _looks_like_refusal(cleaned):
+        return "refusal"
+    if _looks_like_placeholder(cleaned):
+        return "placeholder"
+    if is_meta_commentary(cleaned):
+        return "model narration"
+    return None
+
+
 def is_usable_description(text: str, min_chars: int = MIN_DESCRIPTION_CHARS) -> bool:
-    if not text or len(text) < min_chars:
-        return False
-    return not is_meta_commentary(text)
+    return description_rejection_reason(text, min_chars) is None
 
 
-def clean_description_with_retry(
+def validate_description(
     raw: str,
     regenerate: Callable[[], str],
     *,
     min_chars: int = MIN_DESCRIPTION_CHARS,
-) -> tuple[str, bool]:
-    """Clean a model reply, retrying once when the result is unusable.
+) -> tuple[str | None, str | None]:
+    """Clean and validate a model reply, retrying once when unusable.
 
-    Returns the cleaned description and a ``needs_review`` flag. Raw narration
-    is never returned, and a failed retry still returns the best cleaned text
-    so the caller can continue.
+    The single validation entry point for every description generator, so the
+    pipeline and the console regenerate path cannot drift apart. Returns
+    ``(text, reason)``: ``text`` is the cleaned description when it is usable,
+    otherwise ``None``; ``reason`` names the rejection and is safe to log.
+    Junk (a refusal, stub, placeholder, narration, or a reply below
+    ``min_chars``) is never returned as a usable description.
     """
     cleaned = clean_description(raw)
-    if is_usable_description(cleaned, min_chars):
-        return cleaned, False
+    reason = description_rejection_reason(cleaned, min_chars)
+    if reason is None:
+        return cleaned, None
 
     logger.info(
-        "description cleanup produced %d chars from %d; retrying once",
+        "description cleanup produced unusable text (%s, %d chars); retrying once",
+        reason,
         len(cleaned),
-        len(raw or ""),
     )
     try:
         retry_cleaned = clean_description(regenerate() or "")
     except Exception as exc:
-        logger.warning("description retry failed (%s); keeping first cleaned text", exc)
-        return cleaned, True
+        logger.warning("description retry failed (%s); rejecting reply", exc)
+        return None, reason
 
-    if is_usable_description(retry_cleaned, min_chars):
-        return retry_cleaned, False
+    retry_reason = description_rejection_reason(retry_cleaned, min_chars)
+    if retry_reason is None:
+        return retry_cleaned, None
 
-    best = retry_cleaned if len(retry_cleaned) > len(cleaned) else cleaned
     logger.warning(
-        "description marked needs_review: cleanup and retry both unusable (%d chars kept)",
-        len(best),
+        "description rejected after cleanup and one retry (%s)", retry_reason
     )
-    return best, True
+    return None, retry_reason
 
 
 def clean_hashtags(raw: str, max_chars: int = 150) -> str:

@@ -114,9 +114,9 @@ with redirect_stdout(StringIO()), redirect_stderr(StringIO()), warnings.catch_wa
     from llm_manager import _call_with_deadline as _llm_call_with_deadline
     from metadata_cleanup import (
         clean_description,
-        clean_description_with_retry,
         clean_hashtags,
         clean_title,
+        validate_description,
     )
     from processing.orchestrator import (
         ArgumentsNormalizer,
@@ -2142,7 +2142,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       reuse_transcript_segments: list | None = None,
                       keeper_prepared: bool = False,
                       enhanced_audio_file: str | None = None,
-                      require_enhancement: bool = False) -> dict:
+                      require_enhancement: bool = False,
+                      existing_description_needs_review: bool | None = None) -> dict:
     """Process a new sermon from audio file with automatic metadata generation.
 
     Args:
@@ -2182,6 +2183,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             instead of running the enhancer. Used only when it exists.
         require_enhancement: When True an enhancement run that fails is a
             hard error, not a silent fallback to the un-enhanced source.
+        existing_description_needs_review: The review flag to keep when the
+            stored description is reused instead of regenerated. None leaves
+            the flag to the generator.
 
     Returns:
         Dict with keys: success, sermon_id, title, description, hashtags,
@@ -3231,6 +3235,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
         # Step 3: Generate metadata using transcript or fallback
         metadata_notes: dict = {}
+        if existing_description_needs_review is not None:
+            # A render that reuses the stored description must not clear the
+            # record's review flag; only a fresh generation may change it.
+            metadata_notes['description_needs_review'] = bool(
+                existing_description_needs_review
+            )
         if transcript and not skip_ai_generation:
             console_print("Generating metadata from transcript...")
 
@@ -4772,7 +4782,7 @@ def generate_summary(
         )
         response = _description_chat_with_retry(messages, prompt_chars=prompt_chars)
 
-        response, description_needs_review = clean_description_with_retry(
+        response, rejection_reason = validate_description(
             _clean_llm_thinking_response(response),
             regenerate=lambda: _clean_llm_thinking_response(
                 _description_chat_with_retry(
@@ -4782,16 +4792,19 @@ def generate_summary(
             ),
         )
         if notes is not None:
-            notes['description_needs_review'] = description_needs_review
-        if description_needs_review:
+            notes['description_needs_review'] = rejection_reason is not None
+            if rejection_reason is not None:
+                notes['description_error'] = (
+                    f"description generation produced unusable text: {rejection_reason}"
+                )
+        if rejection_reason is not None:
             logger.warning(
-                "Description flagged needs_review after cleanup and one retry (%d chars)",
-                len(response or ""),
+                "Description rejected after cleanup and one retry (%s); not stored",
+                rejection_reason,
             )
-
-        if not (response or "").strip():
             raise DescriptionGenerationError(
-                "description generation produced no usable text after cleanup",
+                "description generation produced no usable text after cleanup "
+                f"({rejection_reason})",
                 provider=provider,
                 elapsed_seconds=time.time() - started,
                 attempts=_DESCRIPTION_MAX_ATTEMPTS,

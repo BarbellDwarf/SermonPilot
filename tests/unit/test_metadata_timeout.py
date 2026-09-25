@@ -110,17 +110,25 @@ def test_pipeline_continues_when_metadata_times_out(
     assert result["description"] != "Summary generation failed"
 
 
+GOOD_DESCRIPTION = (
+    "A faithful exposition of grace and mercy for the listener, tracing the "
+    "Apostle Paul's argument that salvation is a gift received by faith apart "
+    "from works. The speaker applies this to daily life, urging the hearer to "
+    "rest in Christ's finished work and to let gratitude, not guilt, drive "
+    "obedience. The message closes with a call to extend that same mercy to "
+    "neighbors and to keep the gospel central in every season."
+)
+
+
 def test_generate_summary_returns_metadata_on_a_normal_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    manager = _manager_with(
-        _WorkingProvider("A faithful exposition of grace and mercy for the listener.")
-    )
+    manager = _manager_with(_WorkingProvider(GOOD_DESCRIPTION))
     monkeypatch.setattr(su, "llm_manager", manager)
 
     summary = su.generate_summary("grace mercy peace " * 20)
 
-    assert summary == "A faithful exposition of grace and mercy for the listener."
+    assert summary == GOOD_DESCRIPTION
 
 
 def test_generate_hashtags_returns_metadata_on_a_normal_call(
@@ -176,6 +184,16 @@ def test_metadata_stage_deadline_is_enforced(
     monkeypatch.setattr(su, "config", {"output_directory": str(tmp_path / "out")})
 
     release = threading.Event()
+    # The metadata stage runs on a daemon thread that the deadline abandons.
+    # Once released it keeps going, so signal its last stage and wait for it
+    # before returning: a still-running thread would otherwise read the next
+    # test's llm_manager and consume its scripted replies.
+    stage_finished = threading.Event()
+
+    def _fake_hashtags(*_args, **_kwargs):
+        stage_finished.set()
+        return "#test"
+
     manager = _manager_with(_HangingProvider(release))
     manager.call_timeout_seconds = 30.0
     manager.total_budget_seconds = 30.0
@@ -183,6 +201,7 @@ def test_metadata_stage_deadline_is_enforced(
     monkeypatch.setattr(su, "_metadata_stage_budget_seconds", lambda: 0.2)
     monkeypatch.setattr(su, "_reuse_existing_transcript", lambda *a, **k: "")
     monkeypatch.setattr(su, "_reuse_existing_transcript_segments", lambda *a, **k: [])
+    monkeypatch.setattr(su, "generate_hashtags", _fake_hashtags)
     monkeypatch.setattr(
         su,
         "transcribe_segments",
@@ -200,6 +219,7 @@ def test_metadata_stage_deadline_is_enforced(
             )
     finally:
         release.set()
+        assert stage_finished.wait(5)
 
     assert result["success"] is True
     assert any(

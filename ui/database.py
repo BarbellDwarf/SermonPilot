@@ -216,6 +216,14 @@ class SermonDatabase:
             except Exception:
                 pass
 
+            try:
+                # Operator authority: stamped when the console saves a title or
+                # description. An apply render must not overwrite a field the
+                # operator edited after the review snapshot was written.
+                conn.execute("ALTER TABLE sermons ADD COLUMN metadata_edited_at TEXT")
+            except Exception:
+                pass
+
             # CA5: qa_normalization was removed; drop its dormant table. The
             # processing_info columns stay (additive-only policy), only writes stop.
             conn.execute("DROP TABLE IF EXISTS qa_segments")
@@ -1803,14 +1811,25 @@ class SermonRepository:
             with self.db.get_connection() as conn:
                 sermon_cols = ('title', 'subtitle', 'speaker', 'event_type', 'recorded_date',
                                'bible_text', 'series_title', 'description', 'scripture_reference',
-                               'church_name', 'is_favorite', 'notes', 'status', 'duration')
+                               'church_name', 'is_favorite', 'notes', 'status', 'duration',
+                               'description_needs_review')
                 set_parts = []
                 params = []
                 for col in sermon_cols:
                     if col in metadata:
                         set_parts.append(f"{col} = ?")
-                        params.append(metadata[col])
+                        value = metadata[col]
+                        if col == 'description_needs_review':
+                            value = 1 if value else 0
+                        params.append(value)
                 if set_parts:
+                    # Operator authority: a console save of the title or
+                    # description stamps metadata_edited_at, which the apply
+                    # render reads before deciding whether its review snapshot
+                    # may overwrite the live row.
+                    if {'title', 'description'} & set(metadata):
+                        set_parts.append("metadata_edited_at = ?")
+                        params.append(utcnow())
                     set_parts.append("updated_at = ?")
                     params.append(utcnow())
                     params.append(sermon_id)
