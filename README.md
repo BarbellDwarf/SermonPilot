@@ -2,23 +2,27 @@
 
 SermonPilot takes a raw service recording and turns it into a finished sermon: it
 cleans and enhances the audio, transcribes it, finds and trims the dead time, and
-renders the edited video with an ending card. It publishes the result to
-SermonAudio with an AI-drafted title, description, and hashtags. All of it is
-operated from a web console.
+renders the edited video, with an ending card when one is configured. It publishes
+the result to SermonAudio with an AI-drafted title, description, and hashtags. All
+of it is operated from a web console.
 
 ## What the console does
 
-- **Three ways to add a recording**: upload a file in the browser, point at a
-  path on the server, or pick a file from a configured cloud mount.
+- **Three ways to add a recording**: upload a file in the browser, point at an
+  absolute path inside the configured input roots, or pick a file from a
+  configured cloud mount.
 - **Cloud mounts without a command line**: connect Google Drive, Dropbox,
   OneDrive, an S3-compatible bucket, or Backblaze B2 in Settings -> Cloud Mounts,
   browse the remote, and use a file straight from the picker.
+- **Per-user SermonAudio accounts**: each user connects an account in Settings,
+  and uploads use the account belonging to the sermon owner.
 - **One player, one timeline**: the review page shows a single player and a
   single timeline with markers for the keep region, the opening and closing cuts,
-  and the ending card. Adjust the cut points, preview each segment, then approve.
-- **Approve and publish**: approving a cut renders the edited video with the
-  ending card, and the same action can upload it to SermonAudio. A render-only
-  approve saves locally and can be published later with "Upload existing render".
+  and the optional ending card. Adjust the cut points, preview each segment, then
+  approve.
+- **Approve and publish**: approving a cut renders the edited video and can upload
+  it to SermonAudio. A render-only approve saves locally and can be published later
+  with "Upload existing render".
 - **A background job queue**: every run appears under Jobs with live status and
   per-job logs. A queued or running job can be cancelled.
 - **Recoverable deletion**: deleting a sermon moves local media into a dated
@@ -27,7 +31,8 @@ operated from a web console.
   can be re-opened to re-render or edit.
 
 The legacy Streamlit interface (`ui/`) is still present and is served on its own
-port while the console takes over.
+port while the console takes over; its process currently hosts the background job
+worker.
 
 ## Quick start
 
@@ -53,6 +58,7 @@ volumes, and first boot.
 
 The full docs index is [docs/](docs/). Start with
 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) to deploy,
+[docs/RELEASES.md](docs/RELEASES.md) for release notes,
 [docs/AUTO_EDIT.md](docs/AUTO_EDIT.md) for cut detection and the review workflow,
 and [docs/CLOUD_MOUNTS_OAUTH.md](docs/CLOUD_MOUNTS_OAUTH.md) for the cloud mount
 OAuth client.
@@ -62,13 +68,13 @@ OAuth client.
 - **Console** (`web/`): React, Vite, TypeScript, Tailwind. Talks to the API over
   JSON.
 - **API server** (`server/api/`): FastAPI. Serves the console bundle and the
-  `/api/*` routes, reads the SQLite database, and queues jobs. Account sessions
-  gate every route except health, login, bootstrap, the cutover metadata, and the
-  OAuth callback.
+  `/api/*` routes, reads and writes the SQLite database, and queues jobs. Account
+  sessions gate every route except health, login, bootstrap, the cutover metadata,
+  and the OAuth callback.
 - **Job queue** (`ui/job_queue.py`, `ui/job_executors.py`): jobs run in a
   background queue, serialized by default, with cancel and per-job logs.
 - **Media pipeline** (`sermon_updater.py`, `src/`): clean, enhance, mux,
-  transcribe, detect cuts, render the approved edit with the ending card, upload.
+  transcribe, detect cuts, render the approved edit, and upload.
 - **LLM roles**: a primary provider generates metadata, a fallback catches
   failures, and a validator reviews drafts. Each role has its own provider,
   model, and endpoint in **Settings -> LLM Providers**.
