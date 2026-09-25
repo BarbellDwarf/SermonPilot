@@ -10,7 +10,9 @@ from src.auto_edit import EditPlan, apply_edit
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg is required")
-def test_apply_edit_reports_monotonic_progress_for_a_real_encode(tmp_path: Path) -> None:
+def test_apply_edit_reports_monotonic_progress_for_a_real_encode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     source = tmp_path / "source.mp4"
     subprocess.run(
         [
@@ -42,6 +44,7 @@ def test_apply_edit_reports_monotonic_progress_for_a_real_encode(tmp_path: Path)
         timeout=30,
     )
 
+    monkeypatch.setattr("src.auto_edit._FFMPEG_PROGRESS_INTERVAL_SECONDS", 0.0)
     reports: list[tuple[float, str]] = []
     output = tmp_path / "edited.mp4"
     apply_edit(
@@ -54,8 +57,9 @@ def test_apply_edit_reports_monotonic_progress_for_a_real_encode(tmp_path: Path)
 
     values = [pct for pct, _message in reports]
     assert output.exists()
-    assert len(values) >= 2
+    assert len(values) >= 3
     assert all(0.0 <= pct <= 100.0 for pct in values)
+    assert any(0.0 < pct < 100.0 for pct in values)
     assert all(
         earlier < later for earlier, later in zip(values[:-1], values[1:], strict=True)
     )
