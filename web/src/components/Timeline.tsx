@@ -109,6 +109,25 @@ export function Timeline({
     onChangeSelection?.(next);
   };
 
+  const defaultSelection = (): TimelineRange => {
+    const minStart = startSec + MIN_SELECTION_SEC;
+    const maxEnd = endSec - MIN_SELECTION_SEC;
+    const width = Math.min(1, Math.max(MIN_SELECTION_SEC, maxEnd - minStart));
+    const first = roundTenths(
+      clamp((minStart + maxEnd) / 2 - width / 2, minStart, maxEnd - width),
+    );
+    return { startSec: first, endSec: roundTenths(first + width) };
+  };
+
+  const toggleSelecting = () => {
+    if (selecting) {
+      setSelecting(false);
+      return;
+    }
+    setSelecting(true);
+    if (!selection) setSelection(defaultSelection());
+  };
+
   const beginDrag = (handle: "start" | "end") => (event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -158,6 +177,7 @@ export function Timeline({
   };
 
   const endDrag = () => {
+    if (selectionDragRef.current !== null) setSelecting(false);
     dragRef.current = null;
     selectionDragRef.current = null;
   };
@@ -187,12 +207,12 @@ export function Timeline({
     event.preventDefault();
     if (handle === "start") {
       const next = roundTenths(
-        clamp(selection.startSec + delta, startSec + MIN_SELECTION_SEC, selection.endSec - MIN_SELECTION_SEC),
+        clamp(selection.startSec + delta, startSec, selection.endSec - MIN_SELECTION_SEC),
       );
       setSelection({ ...selection, startSec: next });
     } else {
       const next = roundTenths(
-        clamp(selection.endSec + delta, selection.startSec + MIN_SELECTION_SEC, endSec - MIN_SELECTION_SEC),
+        clamp(selection.endSec + delta, selection.startSec + MIN_SELECTION_SEC, endSec),
       );
       setSelection({ ...selection, endSec: next });
     }
@@ -326,8 +346,8 @@ export function Timeline({
               data-testid="timeline-selection-handle-start"
               aria-label="Removal selection start"
               aria-orientation="horizontal"
-              aria-valuemin={startSec + MIN_SELECTION_SEC}
-              aria-valuemax={selection.endSec - MIN_SELECTION_SEC}
+              aria-valuemin={startSec}
+              aria-valuemax={Math.max(startSec, selection.endSec - MIN_SELECTION_SEC)}
               aria-valuenow={selection.startSec}
               style={{ left: `${pct(selection.startSec)}%` }}
               onKeyDown={nudgeSelection("start")}
@@ -341,8 +361,8 @@ export function Timeline({
               data-testid="timeline-selection-handle-end"
               aria-label="Removal selection end"
               aria-orientation="horizontal"
-              aria-valuemin={selection.startSec + MIN_SELECTION_SEC}
-              aria-valuemax={endSec - MIN_SELECTION_SEC}
+              aria-valuemin={Math.min(endSec, selection.startSec + MIN_SELECTION_SEC)}
+              aria-valuemax={endSec}
               aria-valuenow={selection.endSec}
               style={{ left: `${pct(selection.endSec)}%` }}
               onKeyDown={nudgeSelection("end")}
@@ -420,7 +440,7 @@ export function Timeline({
           type="button"
           data-testid="timeline-select-removal"
           aria-pressed={selecting}
-          onClick={() => setSelecting((value) => !value)}
+          onClick={toggleSelecting}
           className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-warn focus-visible:outline focus-visible:outline-2 focus-visible:outline-warn"
         >
           {selecting ? "Finish selecting range" : "Select a range to cut"}

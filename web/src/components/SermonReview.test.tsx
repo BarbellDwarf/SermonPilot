@@ -326,6 +326,92 @@ describe("SermonReview single player and plan", () => {
     fireEvent.pointerUp(track);
   });
 
+  it("adds an interior cut, previews its join, sends it, and undoes it", async () => {
+    const user = userEvent.setup();
+    const apply = vi
+      .spyOn(writeApi, "applyPlan")
+      .mockResolvedValue({ job_id: "j-cut", status: "queued" });
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Select a range to cut" }));
+    const track = screen.getByTestId("timeline-track");
+    vi.spyOn(track, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 56,
+      width: 1000,
+      height: 56,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+    const surface = screen.getByTestId("timeline-selection-surface");
+    fireEvent.pointerDown(surface, { pointerId: 1, clientX: 400 });
+    fireEvent.pointerMove(track, { pointerId: 1, clientX: 500 });
+    fireEvent.pointerUp(track);
+
+    expect(screen.getByRole("slider", { name: "Removal selection start" })).toBeTruthy();
+    expect(screen.getByRole("slider", { name: "Removal selection end" })).toBeTruthy();
+    const cutButton = screen.getByRole("button", { name: "Cut this out" });
+    expect(cutButton).toBeTruthy();
+    await user.click(cutButton);
+    const removal = screen.getByTestId("timeline-removal-0");
+    expect(screen.getByTestId("removal-list")).toBeTruthy();
+    expect(screen.getByTestId("timeline-labels").textContent).toContain("1 cut removed");
+    const startSec = Number(removal.getAttribute("data-start-sec"));
+    const endSec = Number(removal.getAttribute("data-end-sec"));
+
+    await user.click(screen.getByRole("button", { name: /Preview join 1/ }));
+    const video = document.querySelector("video") as HTMLVideoElement;
+    expect(video.currentTime).toBeCloseTo(startSec - 10, 1);
+    video.currentTime = endSec;
+    fireEvent.timeUpdate(video);
+    expect(video.currentTime).toBeCloseTo(endSec, 1);
+
+    await user.click(screen.getByRole("button", { name: /Approve · Render-only/ }));
+    await waitFor(() => expect(apply).toHaveBeenCalled());
+    expect(apply.mock.calls[0][1]).toMatchObject({
+      remove_segments: [{ start_sec: startSec, end_sec: endSec }],
+    });
+
+    await user.click(screen.getByRole("button", { name: /Undo removal 1/ }));
+    expect(screen.queryByTestId("timeline-removal-0")).toBeNull();
+    expect(screen.getByTestId("timeline-labels").textContent).toContain("0 cuts removed");
+  });
+
+  it("shows the removal count and distinct removal markers", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan({
+          removeSegments: [
+            { startSec: 100, endSec: 130 },
+            { startSec: 400, endSec: 440 },
+          ],
+        })}
+        media={media()}
+        isLive={false}
+        onToast={noop}
+      />,
+    );
+
+    expect(screen.getByTestId("timeline-labels").textContent).toContain("2 cuts removed");
+    expect(screen.getAllByTestId(/^timeline-removal-/)).toHaveLength(2);
+    expect(screen.getByTestId("timeline-removal-0").getAttribute("data-region")).toBe("removal");
+  });
+
+
   it("moves the start marker when the start field changes, with no programmatic scrolling", () => {
     const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView");
     const scrollBefore = window.scrollY;

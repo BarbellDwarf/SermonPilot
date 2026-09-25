@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { mediaStreamUrl, writeApi, type ApiMediaItem, ApiError } from "../api/client";
 import type { SermonMediaData } from "../api/hooks";
-import type { EditPlan, LibrarySermon, PlanStatus } from "../mock/data";
+import type { EditPlan, LibrarySermon, PlanStatus, RemoveSegment } from "../mock/data";
 import { formatCut, parseCut } from "../utils/time";
 import { formatBytes } from "../utils/files";
 import { MediaPlayer, type PlayWindow } from "./MediaPlayer";
-import { Timeline, type TimelineClip } from "./Timeline";
+import { Timeline, type TimelineClip, type TimelineRange } from "./Timeline";
 import { TranscriptViewer } from "./TranscriptViewer";
 import { sermonActionMatrix } from "./sermonActions";
 import { Button, Chip, ConfirmDialog } from "./ui";
@@ -124,6 +124,58 @@ const ARTIFACT_NOTES: Record<string, string> = {
   snippet_end: "Preview window around the closing cut.",
   snippet_ending: "Preview window for the proposed ending card.",
 };
+
+const MIN_CUT_SECONDS = 0.25;
+const JOIN_PREVIEW_SECONDS = 10;
+
+function normalizeUiRemoveSegments(
+  segments: RemoveSegment[],
+  startSec: number,
+  endSec: number,
+): { segments: RemoveSegment[]; errors: string[] } {
+  const errors: string[] = [];
+  const parsed = segments
+    .map((segment, index) => ({ ...segment, index }))
+    .sort((left, right) => left.startSec - right.startSec || left.endSec - right.endSec);
+  const normalized: RemoveSegment[] = [];
+  for (const segment of parsed) {
+    if (
+      !Number.isFinite(segment.startSec) ||
+      !Number.isFinite(segment.endSec) ||
+      segment.endSec <= segment.startSec
+    ) {
+      errors.push(`Cut ${segment.index + 1} must end after it starts.`);
+      continue;
+    }
+    if (segment.endSec - segment.startSec < MIN_CUT_SECONDS) {
+      errors.push(`Cut ${segment.index + 1} must be at least 0.25 seconds.`);
+      continue;
+    }
+    if (segment.startSec <= startSec || segment.endSec >= endSec) {
+      errors.push(`Cut ${segment.index + 1} must stay inside the keep window.`);
+      continue;
+    }
+    const previous = normalized[normalized.length - 1];
+    if (previous && segment.startSec < previous.endSec) {
+      errors.push(`Cut ${segment.index + 1} overlaps another cut.`);
+      continue;
+    }
+    if (previous && segment.startSec === previous.endSec) {
+      previous.endSec = segment.endSec;
+    } else {
+      normalized.push({ startSec: segment.startSec, endSec: segment.endSec });
+    }
+  }
+  return { segments: normalized, errors };
+}
+
+function sameRemoveSegments(left: RemoveSegment[], right: RemoveSegment[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every(
+    (segment, index) =>
+      segment.startSec === right[index]?.startSec && segment.endSec === right[index]?.endSec,
+  );
+}
 
 export interface DetailsPatch {
   title?: string;
@@ -259,6 +311,11 @@ export function SermonReview({
   const [statusLog, setStatusLog] = useState<string[]>([]);
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [selected, setSelected] = useState<"start" | "end" | null>(null);
+  const [removeSegments, setRemoveSegments] = useState<RemoveSegment[]>(
+    () => [...(initial.removeSegments ?? [])],
+  );
+  const [selection, setSelection] = useState<TimelineRange | null>(null);
+  const [removalError, setRemovalError] = useState<string | null>(null);
   const [playWindow, setPlayWindow] = useState<PlayWindow | null>(null);
   const [seek, setSeek] = useState<{ sec: number; n: number } | null>(null);
   const [playhead, setPlayhead] = useState(0);
@@ -318,16 +375,6 @@ export function SermonReview({
   const end = parseCut(endText);
   const offset = parseCut(offsetText);
 
-  const errors = useMemo(() => {
-    const list: string[] = [];
-    if (start === null) list.push("Start is not a valid time (mm:ss.s or seconds).");
-    if (end === null) list.push("End is not a valid time (mm:ss.s or seconds).");
-    if (offset === null) list.push("Offset is not a valid number (seconds, ±5).");
-    if (start !== null && end !== null && end <= start) list.push("End must be after start.");
-    if (offset !== null && (offset < -5 || offset > 5)) list.push("Offset must be within ±5 seconds.");
-    return list;
-  }, [start, end, offset]);
-
   const safeStart = start ?? plan.startSec;
   const safeEnd = end ?? plan.endSec;
   const sourceDuration =
@@ -340,6 +387,35 @@ export function SermonReview({
   );
   const timelineDuration = sourceDuration ?? knownDuration;
   const duration = start !== null && end !== null && end > start ? end - start : null;
+  const removalValidation = useMemo(
+    () => normalizeUiRemoveSegments(removeSegments, safeStart, safeEnd),
+    [removeSegments, safeStart, safeEnd],
+  );
+  const keptDuration =
+    duration !== null
+      ? Math.max(
+          0,
+          duration -
+            removalValidation.segments.reduce(
+              (total, segment) => total + segment.endSec - segment.startSec,
+              0,
+            ),
+        )
+      : null;
+  const finalDuration = keptDuration ?? duration;
+
+  const errors = useMemo(() => {
+    const list: string[] = [];
+    if (start === null) list.push("Start is not a valid time (mm:ss.s or seconds).");
+    if (end === null) list.push("End is not a valid time (mm:ss.s or seconds).");
+    if (offset === null) list.push("Offset is not a valid number (seconds, ±5).");
+    if (start !== null && end !== null && end <= start) list.push("End must be after start.");
+    if (offset !== null && (offset < -5 || offset > 5)) list.push("Offset must be within ±5 seconds.");
+    list.push(...removalValidation.errors);
+    if (removalError) list.push(removalError);
+    return list;
+  }, [end, offset, removalError, removalValidation.errors, start]);
+
   const detectionFailed = plan.detectionStatus === "unavailable";
 
   const clips = useMemo<TimelineClip[]>(() => {
@@ -382,13 +458,60 @@ export function SermonReview({
     setPlayWindow({ startSec, endSec, nonce: (playWindow?.nonce ?? 0) + 1 });
   };
 
+  const playJoin = (segment: RemoveSegment) => {
+    const sourceKind = media.byKind.source?.available ? "source" : preferredKind(media);
+    if (media.byKind[sourceKind]?.available) setPlayerKind(sourceKind);
+    const startSec = Math.max(safeStart, segment.startSec - JOIN_PREVIEW_SECONDS);
+    const endSec = Math.min(safeEnd, segment.endSec + JOIN_PREVIEW_SECONDS);
+    requestSeek(startSec);
+    setPlayWindow({
+      startSec,
+      endSec,
+      nonce: (playWindow?.nonce ?? 0) + 1,
+      jumpAtSec: segment.endSec,
+      jumpToSec: segment.endSec,
+    });
+  };
+
+  const addRemoval = () => {
+    if (!selection) return;
+    if (selection.endSec - selection.startSec < MIN_CUT_SECONDS) {
+      setRemovalError("Choose a range of at least 0.25 seconds.");
+      return;
+    }
+    const next = normalizeUiRemoveSegments(
+      [...removeSegments, { startSec: selection.startSec, endSec: selection.endSec }],
+      safeStart,
+      safeEnd,
+    );
+    if (next.errors.length > 0) {
+      setRemovalError(next.errors[0]);
+      return;
+    }
+    setRemovalError(null);
+    setRemoveSegments(next.segments);
+    setSelection(null);
+  };
+
+  const undoRemoval = (index: number) => {
+    setRemoveSegments((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setRemovalError(null);
+  };
+
   const reset = () => {
     setStartText(formatCut(plan.startSec));
     setEndText(formatCut(plan.endSec));
     setOffsetText(plan.offsetSec.toFixed(1));
+    setRemoveSegments([...(plan.removeSegments ?? [])]);
+    setSelection(null);
+    setRemovalError(null);
   };
 
-  const dirty = start !== plan.startSec || end !== plan.endSec || offset !== plan.offsetSec;
+  const dirty =
+    start !== plan.startSec ||
+    end !== plan.endSec ||
+    offset !== plan.offsetSec ||
+    !sameRemoveSegments(removeSegments, plan.removeSegments ?? []);
 
   const processedAvailable = !!media.byKind.processed?.available;
   const actions = sermonActionMatrix({ status: sermon.status, hasRender: processedAvailable });
@@ -436,6 +559,10 @@ export function SermonReview({
           start: start ?? plan.startSec,
           end: end ?? plan.endSec,
           audio_offset: offset ?? plan.offsetSec,
+          remove_segments: removalValidation.segments.map((segment) => ({
+            start_sec: segment.startSec,
+            end_sec: segment.endSec,
+          })),
           render_only: renderOnly,
           enhance_audio: enhance,
         })
@@ -461,6 +588,7 @@ export function SermonReview({
         revisionsTotal: p.revisionsTotal + 1,
         startSec: start ?? p.startSec,
         endSec: end ?? p.endSec,
+        removeSegments: removalValidation.segments,
         offsetSec: offset ?? p.offsetSec,
       }));
       onToast(
@@ -877,15 +1005,23 @@ export function SermonReview({
                 endingSec={safeEnd}
                 currentSec={playhead}
                 clips={clips}
+                removeSegments={removeSegments}
+                selection={selection}
+                onChangeSelection={(next) => {
+                  setSelection(next);
+                  setRemovalError(null);
+                }}
                 selected={selected}
                 onSelect={setSelected}
                 onChangeStart={(sec) => {
                   setStartText(formatCut(sec));
                   setSelected("start");
+                  setRemovalError(null);
                 }}
                 onChangeEnd={(sec) => {
                   setEndText(formatCut(sec));
                   setSelected("end");
+                  setRemovalError(null);
                 }}
                 onSeek={(sec, regionId) => {
                   requestSeek(sec);
@@ -894,8 +1030,120 @@ export function SermonReview({
                     if (clip) playRegion(clip.id, clip.startSec, clip.endSec);
                   }
                 }}
-                onPlayRegion={playRegion}
+                onPlayRegion={(regionId, startSec, endSec) => {
+                  if (regionId.startsWith("removal_join_")) {
+                    const index = Number(regionId.replace("removal_join_", ""));
+                    const segment = removeSegments[index];
+                    if (segment) playJoin(segment);
+                    return;
+                  }
+                  playRegion(regionId, startSec, endSec);
+                }}
               />
+              {selection ? (
+                <section
+                  data-testid="removal-selection-panel"
+                  aria-labelledby="removal-selection-heading"
+                  className="rounded-md border border-warn bg-ink p-3"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 id="removal-selection-heading" className="text-sm font-semibold">
+                        Selected range
+                      </h3>
+                      <p
+                        data-testid="removal-selection-range"
+                        className="mt-1 font-mono text-sm text-mist"
+                      >
+                        {formatCut(selection.startSec)} to {formatCut(selection.endSec)}
+                      </p>
+                      <p className="mt-1 text-xs text-muted">
+                        Nudge either handle with the arrow keys, then remove this range.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="danger" onClick={addRemoval}>
+                        Cut this out
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          setSelection(null);
+                          setRemovalError(null);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                  {removalError ? (
+                    <p role="alert" className="mt-2 text-xs text-danger">
+                      {removalError}
+                    </p>
+                  ) : null}
+                </section>
+              ) : null}
+              {removeSegments.length > 0 ? (
+                <section
+                  data-testid="removal-list"
+                  aria-labelledby="removal-list-heading"
+                  className="rounded-md border border-line bg-ink p-3"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h3 id="removal-list-heading" className="text-sm font-semibold">
+                        Interior cuts
+                      </h3>
+                      <p className="mt-1 text-xs text-muted">
+                        Preview each join before approving the plan.
+                      </p>
+                    </div>
+                    <span className="font-mono text-xs text-muted" aria-live="polite">
+                      {removeSegments.length === 1
+                        ? "1 cut removed"
+                        : `${removeSegments.length} cuts removed`}
+                    </span>
+                  </div>
+                  <ul className="mt-3 flex flex-col gap-2">
+                    {removeSegments.map((segment, index) => (
+                      <li
+                        key={`${segment.startSec}-${segment.endSec}-${index}`}
+                        data-testid={`removal-item-${index}`}
+                        className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">Cut {index + 1}</p>
+                          <p
+                            data-testid={`removal-range-${index}`}
+                            className="font-mono text-xs text-muted"
+                          >
+                            {formatCut(segment.startSec)} to {formatCut(segment.endSec)} ·{" "}
+                            {formatCut(segment.endSec - segment.startSec)} removed
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            aria-label={`Preview join ${index + 1}`}
+                            title="Play 10 seconds before and after this join"
+                            onClick={() => playJoin(segment)}
+                            className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                          >
+                            Preview join
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Undo removal ${index + 1}`}
+                            onClick={() => undoRemoval(index)}
+                            className="inline-flex min-h-[44px] items-center rounded-md border border-danger px-3 text-xs font-medium text-danger transition-colors hover:bg-danger hover:text-[var(--danger-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
+                          >
+                            Undo
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 {clips.map((clip) => (
                   <button
@@ -929,7 +1177,7 @@ export function SermonReview({
                     className="border-t border-line px-3 py-2 font-mono text-xs text-muted"
                   >
                     Start {formatCut(safeStart)} · End {formatCut(safeEnd)} ·{" "}
-                    {duration !== null ? formatCut(duration) : "—"}
+                    {finalDuration !== null ? formatCut(finalDuration) : "—"}
                   </p>
                 ) : null}
                 <fieldset id="adjust-cuts-body" hidden={!adjustOpen} className="border-t border-line p-3">
