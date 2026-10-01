@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { adminApi, isLive, meApi, metaApi, type AdminUser } from "../api/client";
+import { useQuery } from "@tanstack/react-query";
+import { adminApi, api, isLive, meApi, metaApi, type AdminUser } from "../api/client";
 import { useUserSettings } from "../api/useUserSettings";
 import { AudioSettingsSection } from "../components/AudioSettings";
 import { CloudMountsSection } from "../components/CloudMounts";
@@ -25,19 +26,34 @@ import {
 const ENV_NOTE =
   "Environment variables override saved settings for the variables they map to. A field shows the variable name when the environment is winning.";
 
+/**
+ * Nine tabs, none of them a long scroll. Every documented capability keeps an
+ * addressable home, and `?tab=` names one so any page can send the operator
+ * straight to the setting that is blocking them.
+ */
 const TABS = [
   { id: "general", label: "General" },
+  { id: "processing", label: "Audio & Transcription" },
   { id: "llm", label: "LLM Providers" },
-  { id: "sermonaudio", label: "SermonAudio Accounts" },
+  { id: "sermonaudio", label: "SermonAudio" },
   { id: "cloud", label: "Cloud Mounts" },
-  { id: "audio", label: "Audio" },
-  { id: "transcription", label: "Transcription" },
-  { id: "validation", label: "Validation" },
-  { id: "prompts", label: "Prompt Templates" },
+  { id: "content", label: "Descriptions & Prompts" },
   { id: "backup", label: "Backup & Restore" },
+  { id: "account", label: "Appearance & Account" },
+  { id: "users", label: "Users" },
+  { id: "system", label: "System" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
+
+const TAB_IDS = TABS.map((t) => t.id) as readonly string[];
+
+function tabFromParams(params: URLSearchParams): TabId {
+  const asked = params.get("tab");
+  if (asked && TAB_IDS.includes(asked)) return asked as TabId;
+  if (params.get("cloud") === "connected") return "cloud";
+  return "general";
+}
 
 function useSectionToast() {
   const [toast, setToast] = useState<string | null>(null);
@@ -292,16 +308,32 @@ function ProcessingSection({ show }: { show: (m: string) => void }) {
   );
 }
 
+const SERVICE_CARDS: { id: string; label: string }[] = [
+  { id: "sermonaudio_api", label: "SermonAudio" },
+  { id: "database", label: "Database" },
+  { id: "llm_primary", label: "AI provider" },
+  { id: "local_storage", label: "Output folder" },
+  { id: "processing_queue", label: "Job queue" },
+  { id: "system_resources", label: "Machine load" },
+];
+
+const SERVICE_TONE: Record<string, string> = {
+  ok: "ok",
+  warning: "warn",
+  error: "error",
+};
+
 function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: boolean }) {
   const [savedLevel, setSavedLevel] = useUserSettings<string>("settings.logLevel", "info");
   const [logLevel, setLogLevel] = useState(savedLevel);
   const [retired, setRetired] = useState<boolean | null>(isLive ? null : false);
-  const dirty = isLive ? logLevel !== savedLevel : logLevel !== savedLevel;
-  const bars = [
-    { label: "Processed media", pct: 62 },
-    { label: "Source uploads", pct: 24 },
-    { label: "Database", pct: 8 },
-  ];
+  const dirty = logLevel !== savedLevel;
+  const status = useQuery({
+    queryKey: ["status"],
+    queryFn: api.status,
+    enabled: isLive,
+    staleTime: 15_000,
+  });
 
   useEffect(() => {
     if (!isLive || !isAdmin) return;
@@ -320,7 +352,7 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
   }, [isAdmin]);
 
   return (
-    <SectionCard title="System" sub="Mock usage and log verbosity.">
+    <SectionCard title="System" sub="What the server reports about itself, and how much it logs.">
       {isAdmin ? (
         <div
           role="status"
@@ -328,32 +360,58 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
           className="mb-3 rounded-md border border-line bg-ink px-4 py-3 text-xs text-muted"
         >
           <p className="font-semibold text-mist">
-            Front-door cutover:{" "}
-            {retired === null ? "state unknown (bridge unreachable)" : retired ? "console is live; the legacy UI may retire" : "the legacy UI still serves your domain"}
-          </p>
-          <p className="mt-1 font-mono">
-            web_console_ready lives in the settings database; the legacy UI System settings page
-            flips it, then the operator moves the reverse proxy upstream
-            8501 → 8504 (see web/README.md).
+            This console is the only interface.{" "}
+            {retired === null
+              ? "The front-door setting could not be read."
+              : retired
+                ? "Your domain has been pointed here."
+                : "If your domain still loads the old interface, the reverse proxy is still pointing at port 8501. Move it to 8504 and reload it."}
           </p>
         </div>
       ) : null}
-      <div className="flex flex-col gap-2" aria-label="Storage usage">
-        {bars.map((b) => (
-          <div key={b.label}>
-            <div className="flex items-center justify-between gap-2 text-xs">
-              <span className="font-medium">{b.label}</span>
-              <span className="font-mono text-muted">{b.pct}%</span>
-            </div>
-            <div className="mt-1 h-2 overflow-hidden rounded bg-raised" role="img" aria-label={`${b.label} ${b.pct} percent`}>
-              <div className="h-full rounded bg-accent" style={{ width: `${b.pct}%` }} />
-            </div>
+
+      {isLive ? (
+        status.isPending ? (
+          <p className="text-sm text-muted" role="status">
+            Reading the server's own report…
+          </p>
+        ) : status.isError ? (
+          <div className="flex flex-col items-start gap-2">
+            <p className="text-sm text-muted">The server's own report could not be read.</p>
+            <Button onClick={() => void status.refetch()}>Try again</Button>
           </div>
-        ))}
-        <p className="font-mono text-xs text-muted">61 GB free of 120 GB (mock)</p>
-      </div>
-      <div className="mt-3 max-w-xs">
-        <Field label="Log level" htmlFor="set-loglevel">
+        ) : (
+          <ul className="flex flex-col gap-2" aria-label="Server report">
+            {SERVICE_CARDS.map(({ id, label }) => {
+              const entry = status.data?.status?.[id];
+              if (!entry) return null;
+              const raw = String(entry.status);
+              const tone = SERVICE_TONE[raw] ?? "neutral";
+              return (
+                <li
+                  key={id}
+                  className="flex min-w-0 flex-col gap-1 rounded-md border border-line bg-ink p-3 sm:flex-row sm:items-center sm:gap-3"
+                >
+                  <Chip tone={tone}>
+                    {tone === "warn" ? "Warning" : tone === "error" ? "Problem" : tone === "ok" ? "OK" : "Not measured"}
+                  </Chip>
+                  <span className="min-w-0 flex-1 text-sm font-semibold">{label}</span>
+                  <span className="min-w-0 text-xs text-muted [overflow-wrap:anywhere]">
+                    {entry.details || entry.message || ""}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )
+      ) : (
+        <p className="text-sm text-muted">
+          The server report appears here once the console is connected to one.
+        </p>
+      )}
+
+      <div className="mt-4 max-w-xs">
+        <Field label="Log level" htmlFor="set-loglevel" hint="Debug records everything, including each pipeline stage.">
           <select id="set-loglevel" value={logLevel} onChange={(e) => setLogLevel(e.target.value)} className={inputCls}>
             {["debug", "info", "warn", "error"].map((l) => (
               <option key={l} value={l}>
@@ -377,14 +435,17 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
 
 export function Settings({ user }: { user: { display_name: string; role?: string } }) {
   const { toast, show } = useSectionToast();
-  const [searchParams] = useSearchParams();
-  const [active, setActive] = useState<TabId>(
-    searchParams.get("cloud") === "connected" ? "cloud" : "general",
-  );
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [active, setActive] = useState<TabId>(() => tabFromParams(searchParams));
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
-  const focusTab = (id: TabId) => {
+  const select = (id: TabId) => {
     setActive(id);
+    setSearchParams({ tab: id }, { replace: true });
+  };
+
+  const focusTab = (id: TabId) => {
+    select(id);
     tabRefs.current[id]?.focus();
   };
 
@@ -406,9 +467,15 @@ export function Settings({ user }: { user: { display_name: string; role?: string
     }
   };
 
+  const panel = (id: TabId, children: React.ReactNode) => (
+    <div role="tabpanel" id={`panel-${id}`} aria-labelledby={`tab-${id}`} className="flex flex-col gap-4">
+      {children}
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Settings" sub={isLive ? "Each section saves to your account on save." : "Sections save on their own. Placeholder sections are labelled as such."} />
+      <PageHeader title="Settings" sub="Each section saves on its own. Nothing here needs a restart." />
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-xs text-muted">{ENV_NOTE}</p>
       <div
         role="tablist"
@@ -428,7 +495,7 @@ export function Settings({ user }: { user: { display_name: string; role?: string
               aria-selected={selected}
               aria-controls={`panel-${t.id}`}
               tabIndex={selected ? 0 : -1}
-              onClick={() => setActive(t.id)}
+              onClick={() => select(t.id)}
               onKeyDown={(e) => onTabKeyDown(e, t.id)}
               className={`min-h-[44px] shrink-0 rounded-md border px-4 text-sm font-semibold transition-colors ${
                 selected
@@ -441,57 +508,51 @@ export function Settings({ user }: { user: { display_name: string; role?: string
           );
         })}
       </div>
-      {active === "general" && (
-        <div role="tabpanel" id="panel-general" aria-labelledby="tab-general" className="flex flex-col gap-4">
-        <GeneralSettingsSection show={show} />
-        <ProcessingSection show={show} />
-        <AppearanceSection show={show} />
-        <AccountSection show={show} user={user} />
-        <UsersSection show={show} />
-        <SystemSection show={show} isAdmin={user.role === "admin"} />
-        </div>
-      )}
-      {active === "llm" && (
-        <div role="tabpanel" id="panel-llm" aria-labelledby="tab-llm" className="flex flex-col gap-4">
-        <LlmConnectionsSection show={show} />
-        </div>
-      )}
-      {active === "sermonaudio" && (
-        <div role="tabpanel" id="panel-sermonaudio" aria-labelledby="tab-sermonaudio" className="flex flex-col gap-4">
-        <SermonAudioAccountsSection show={show} />
-        <SermonAudioCredentialsSection show={show} />
-        </div>
-      )}
-      {active === "cloud" && (
-        <div role="tabpanel" id="panel-cloud" aria-labelledby="tab-cloud" className="flex flex-col gap-4">
-        <CloudMountsSection show={show} isAdmin={user.role === "admin"} />
-        </div>
-      )}
-      {active === "audio" && (
-        <div role="tabpanel" id="panel-audio" aria-labelledby="tab-audio" className="flex flex-col gap-4">
-        <AudioSettingsSection show={show} />
-        </div>
-      )}
-      {active === "transcription" && (
-        <div role="tabpanel" id="panel-transcription" aria-labelledby="tab-transcription" className="flex flex-col gap-4">
-        <TranscriptionSettingsSection show={show} />
-        </div>
-      )}
-      {active === "validation" && (
-        <div role="tabpanel" id="panel-validation" aria-labelledby="tab-validation" className="flex flex-col gap-4">
-        <ValidationSettingsSection show={show} />
-        </div>
-      )}
-      {active === "prompts" && (
-        <div role="tabpanel" id="panel-prompts" aria-labelledby="tab-prompts" className="flex flex-col gap-4">
-        <PromptTemplatesSection show={show} />
-        </div>
-      )}
-      {active === "backup" && (
-        <div role="tabpanel" id="panel-backup" aria-labelledby="tab-backup" className="flex flex-col gap-4">
-        <ConfigBackupSection show={show} />
-        </div>
-      )}
+      {active === "general" &&
+        panel(
+          "general",
+          <>
+            <GeneralSettingsSection show={show} />
+            <ProcessingSection show={show} />
+          </>,
+        )}
+      {active === "processing" &&
+        panel(
+          "processing",
+          <>
+            <AudioSettingsSection show={show} />
+            <TranscriptionSettingsSection show={show} />
+          </>,
+        )}
+      {active === "llm" && panel("llm", <LlmConnectionsSection show={show} />)}
+      {active === "sermonaudio" &&
+        panel(
+          "sermonaudio",
+          <>
+            <SermonAudioAccountsSection show={show} />
+            <SermonAudioCredentialsSection show={show} />
+          </>,
+        )}
+      {active === "cloud" && panel("cloud", <CloudMountsSection show={show} isAdmin={user.role === "admin"} />)}
+      {active === "content" &&
+        panel(
+          "content",
+          <>
+            <ValidationSettingsSection show={show} />
+            <PromptTemplatesSection show={show} />
+          </>,
+        )}
+      {active === "backup" && panel("backup", <ConfigBackupSection show={show} />)}
+      {active === "account" &&
+        panel(
+          "account",
+          <>
+            <AccountSection show={show} user={user} />
+            <AppearanceSection show={show} />
+          </>,
+        )}
+      {active === "users" && panel("users", <UsersSection show={show} />)}
+      {active === "system" && panel("system", <SystemSection show={show} isAdmin={user.role === "admin"} />)}
       <Toast message={toast} />
     </div>
   );

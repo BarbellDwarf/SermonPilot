@@ -1,7 +1,12 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, type RenderResult } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
+
+function LocationProbe() {
+  const location = useLocation();
+  return <span data-testid="location-search">{location.search}</span>;
+}
 
 /**
  * Every page that reads live data goes through TanStack Query, so the provider
@@ -14,7 +19,10 @@ export function withProviders(ui: ReactNode, route = "/"): RenderResult {
   });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>
+      <MemoryRouter initialEntries={[route]}>
+        <LocationProbe />
+        {ui}
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
