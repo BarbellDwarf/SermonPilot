@@ -8,7 +8,7 @@ import { MediaPlayer, type PlayWindow } from "./MediaPlayer";
 import { Timeline, type TimelineClip, type TimelineRange } from "./Timeline";
 import { TranscriptViewer } from "./TranscriptViewer";
 import { sermonActionMatrix } from "./sermonActions";
-import { Button, Chip, ConfirmDialog } from "./ui";
+import { AsyncSection, Button, Chip, ConfirmDialog } from "./ui";
 
 export const planStatusLabel: Record<PlanStatus, string> = {
   draft: "Draft",
@@ -76,37 +76,51 @@ function ArtifactRow({
   testId,
   live,
   onOpen,
+  active,
 }: {
   sermonId: string;
   item: ApiMediaItem;
   testId: string;
   live: boolean;
   onOpen?: (kind: string) => void;
+  active?: boolean;
 }) {
   const linkClass =
     "inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted";
+  const playable = item.available && isPlayableKind(item);
   return (
     <li
       data-testid={testId}
-      className="flex min-w-0 flex-col gap-1 rounded-md border border-line bg-ink p-3 sm:flex-row sm:items-center sm:justify-between"
+      className={`flex min-w-0 flex-col gap-1 rounded-md border bg-ink p-3 sm:flex-row sm:items-center sm:justify-between ${
+        active ? "border-accent" : "border-line"
+      }`}
     >
       <div className="min-w-0">
-        <p className="text-sm font-semibold">{item.label || artifactLabel(item.kind)}</p>
+        <p className="text-sm font-semibold">
+          {item.label || artifactLabel(item.kind)}
+          {active ? <span className="ml-2 text-xs text-accent">playing</span> : null}
+        </p>
         <p className="text-xs text-muted">
           {ARTIFACT_NOTES[item.kind] ?? "Additional processing artifact."} ·{" "}
           {item.available ? formatBytes(item.size) : "not available"}
         </p>
       </div>
       <div className="flex shrink-0 flex-wrap gap-2">
+        {playable && live && onOpen ? (
+          <button
+            type="button"
+            data-testid={`${testId}-play`}
+            onClick={() => onOpen(item.kind)}
+            aria-pressed={Boolean(active)}
+            className={linkClass}
+          >
+            {active ? "Playing" : "Play"}
+          </button>
+        ) : null}
         {item.available && live ? (
           <a href={mediaStreamUrl(sermonId, item.kind)} download className={linkClass}>
             Download
           </a>
-        ) : null}
-        {item.available && live && onOpen ? (
-          <button type="button" onClick={() => onOpen(item.kind)} className={linkClass}>
-            Open in player
-          </button>
         ) : null}
       </div>
     </li>
@@ -127,6 +141,13 @@ const ARTIFACT_NOTES: Record<string, string> = {
 
 const MIN_CUT_SECONDS = 0.25;
 const JOIN_PREVIEW_SECONDS = 10;
+
+/** Text and timestamps have nothing to play, so they never offer a Play. */
+function isPlayableKind(item: ApiMediaItem): boolean {
+  if (item.content_type?.startsWith("text/")) return false;
+  if (item.content_type) return true;
+  return item.kind !== "transcript_timestamps";
+}
 
 function normalizeUiRemoveSegments(
   segments: RemoveSegment[],
@@ -764,7 +785,57 @@ export function SermonReview({
     </div>
   ) : null;
 
-  return (
+  /**
+ * The secondary actions, once, shared by the compact bar and the full bar.
+ * Publishing is the point of this screen, so exactly one action stays on the
+ * surface; everything else lives one click away behind a labelled disclosure.
+ * History is not here because the section below already carries its own
+ * disclosure, and a second entry point for the same thing is noise.
+ */
+const secondaryActions = [
+  {
+    key: "render-only",
+    label: `${applyVerb} · Render-only`,
+    hint: "Apply the cuts and write the render, but stop before the upload.",
+    show: true,
+    run: () => approve(true),
+    disabled: errors.length > 0 || applying,
+  },
+  {
+    key: "upload-existing",
+    label: "Upload existing render",
+    hint: "Publish the render already on disk without re-rendering.",
+    show: actions.canUploadExisting,
+    run: () => uploadExisting(false),
+    disabled: applying || uploading,
+  },
+  {
+    key: "reject",
+    label: "Reject with notes",
+    hint: "Say what the detector got wrong and let it try again.",
+    show: true,
+    run: () => setNotesOpen((v) => !v),
+    disabled: false,
+  },
+  {
+    key: "redetect",
+    label: "Re-detect",
+    hint: "Throw the current proposal away and look for the cuts again.",
+    show: true,
+    run: reDetect,
+    disabled: refining,
+  },
+  {
+    key: "upload",
+    label: "Upload",
+    hint: "Publish this sermon without re-rendering.",
+    show: Boolean(onUpload && actions.canPublishLegacy),
+    run: () => onUpload?.(),
+    disabled: false,
+  },
+].filter((action) => action.show);
+
+return (
     <div data-testid="sermon-review" className="flex flex-col gap-4">
       <header className="flex min-w-0 flex-col gap-2">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -807,164 +878,72 @@ export function SermonReview({
         className={
           narrow
             ? "sticky top-16 z-20 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 shadow-lg"
-            : "flex flex-col gap-2 rounded-lg border border-line bg-surface p-3 shadow-lg lg:static lg:z-auto lg:shadow-none"
+            : "flex flex-col gap-2 rounded-lg border border-line bg-surface p-3"
         }
       >
-        {narrow ? (
-          <>
+        {narrow ? null : statusPills}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="primary"
+            className={narrow ? "min-w-0 flex-1 whitespace-nowrap" : ""}
+            onClick={() => approve(false)}
+            disabled={errors.length > 0 || applying}
+            aria-busy={applying}
+            title="Apply the cuts, write the render, and publish it to SermonAudio."
+          >
+            {applying
+              ? "Queueing…"
+              : actions.published
+                ? "Re-render and publish"
+                : "Approve and publish"}
+          </Button>
+          <div ref={moreRef} className={narrow ? "relative shrink-0" : "relative"}>
             <Button
-              variant="primary"
-              className="min-w-0 flex-1 whitespace-nowrap"
-              onClick={() => approve(false)}
-              disabled={errors.length > 0 || applying}
-              aria-busy={applying}
+              onClick={() => setMoreOpen((v) => !v)}
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              aria-controls="more-actions"
             >
-              {applying ? "Queueing…" : applyVerb}
+              More actions
             </Button>
-            <div ref={moreRef} className="relative shrink-0">
-              <Button
-                onClick={() => setMoreOpen((v) => !v)}
-                aria-haspopup="menu"
-                aria-expanded={moreOpen}
-                aria-controls="more-actions"
+            {moreOpen ? (
+              <div
+                id="more-actions"
+                data-testid="more-actions"
+                role="menu"
+                aria-label="More actions"
+                className="absolute right-0 top-full z-40 mt-2 flex w-72 flex-col gap-1 rounded-lg border border-line bg-surface p-2 shadow-2xl"
               >
-                More actions
-              </Button>
-              {moreOpen ? (
-                <div
-                  id="more-actions"
-                  data-testid="more-actions"
-                  role="menu"
-                  aria-label="More actions"
-                  className="absolute right-0 top-full z-40 mt-2 flex w-64 flex-col gap-1 rounded-lg border border-line bg-surface p-2 shadow-2xl"
-                >
+                {secondaryActions.map((action) => (
                   <button
+                    key={action.key}
                     type="button"
                     role="menuitem"
+                    data-testid={`menu-${action.key}`}
                     className={menuItemClass}
                     onClick={() => {
                       setMoreOpen(false);
-                      approve(true);
+                      action.run();
                     }}
-                    disabled={errors.length > 0 || applying}
+                    disabled={action.disabled}
+                    aria-expanded={action.key === "reject" ? notesOpen : undefined}
+                    aria-controls={action.key === "reject" ? "refine-notes" : undefined}
                   >
-                    {applyVerb} · Render-only
+                    <span className="block font-medium text-mist">
+                      {action.key === "upload-existing" && uploading ? "Uploading…" : action.label}
+                    </span>
+                    <span className="block text-xs text-muted">{action.hint}</span>
                   </button>
-                  {actions.canUploadExisting ? (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      data-testid="upload-existing-render"
-                      className={menuItemClass}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        uploadExisting(false);
-                      }}
-                      disabled={applying || uploading}
-                    >
-                      {uploading ? "Uploading…" : "Upload existing render"}
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={menuItemClass}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      setNotesOpen((v) => !v);
-                    }}
-                    aria-expanded={notesOpen}
-                    aria-controls="refine-notes"
-                  >
-                    Reject with notes
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={menuItemClass}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      reDetect();
-                    }}
-                    disabled={refining}
-                  >
-                    Re-detect
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={menuItemClass}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      setHistoryOpen((v) => !v);
-                    }}
-                    aria-expanded={historyOpen}
-                    aria-controls="history"
-                  >
-                    History
-                  </button>
-                  {onUpload && actions.canPublishLegacy ? (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className={menuItemClass}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        onUpload();
-                      }}
-                    >
-                      Upload
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          </>
-        ) : (
-          <>
-            {statusPills}
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="primary" onClick={() => approve(true)} disabled={errors.length > 0 || applying} aria-busy={applying}>
-                {applying ? "Queueing…" : `${applyVerb} · Render-only`}
-              </Button>
-              <Button
-                onClick={() => approve(false)}
-                disabled={errors.length > 0 || applying}
-              >
-                {applyVerb} · Render+upload
-              </Button>
-              {actions.canUploadExisting ? (
-                <Button
-                  data-testid="upload-existing-render"
-                  onClick={() => uploadExisting(false)}
-                  disabled={applying || uploading}
-                  aria-busy={uploading}
-                  title="Publish the render already on disk without re-rendering."
-                >
-                  {uploading ? "Uploading…" : "Upload existing render"}
-                </Button>
-              ) : null}
-              <Button
-                className="w-full min-[480px]:w-auto"
-                onClick={() => setNotesOpen((v) => !v)}
-                aria-expanded={notesOpen}
-                aria-controls="refine-notes"
-              >
-                Reject with notes
-              </Button>
-              <Button className="w-full min-[480px]:w-auto" onClick={reDetect} disabled={refining}>
-                Re-detect
-              </Button>
-              <Button onClick={() => setHistoryOpen((v) => !v)} aria-expanded={historyOpen} aria-controls="history">
-                History
-              </Button>
-            </div>
-            {enhanceControl}
-            {notesPanel}
-            {detectionAlert}
-          </>
-        )}
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+        {narrow ? null : enhanceControl}
       </section>
+
+      {narrow ? null : notesPanel}
+      {narrow ? null : detectionAlert}
 
       <div
         data-testid="approval-content"
@@ -982,6 +961,7 @@ export function SermonReview({
                   kind={activeKind}
                   contentType={activeItem?.content_type}
                   available={!!activeItem?.available}
+                  loading={live && media.isLoading}
                   emptyMessage="No playable audio for this sermon yet. It appears once the run finishes rendering."
                   markers={[
                     { atSec: safeStart, label: "Start" },
@@ -1253,10 +1233,19 @@ export function SermonReview({
             onToggle={setFilesOpen}
           >
             <div className="flex flex-col gap-3">
-              <ArtifactGroup id="files-media" title="Media">
-                {primaryArtifacts.length === 0 && extraMediaArtifacts.length === 0 ? (
-                  <p className="text-sm text-muted">No source, render, or keeper files recorded yet.</p>
-                ) : (
+              <AsyncSection
+                loading={live && media.isLoading}
+                error={live ? media.error : null}
+                onRetry={media.retry}
+                rows={2}
+                isEmpty={primaryArtifacts.length === 0 && extraMediaArtifacts.length === 0}
+                empty={
+                  <p className="text-sm text-muted">
+                    No source, render, or keeper files on disk yet.
+                  </p>
+                }
+              >
+                <ArtifactGroup id="files-media" title="Media">
                   <ul className="flex flex-col gap-2">
                     {primaryArtifacts.map((item) => (
                       <ArtifactRow
@@ -1265,6 +1254,8 @@ export function SermonReview({
                         item={item}
                         testId="artifact-primary-row"
                         live={live}
+                        onOpen={setPlayerKind}
+                        active={activeKind === item.kind}
                       />
                     ))}
                     {extraMediaArtifacts.map((item) => (
@@ -1275,11 +1266,12 @@ export function SermonReview({
                         testId="artifact-other-row"
                         live={live}
                         onOpen={setPlayerKind}
+                        active={activeKind === item.kind}
                       />
                     ))}
                   </ul>
-                )}
-              </ArtifactGroup>
+                </ArtifactGroup>
+              </AsyncSection>
 
               <ArtifactGroup id="files-transcripts" title="Transcripts">
                 {transcript ? (
@@ -1358,7 +1350,11 @@ export function SermonReview({
                   </button>
                   <div id="all-files" hidden={!allFilesOpen} className="flex flex-col gap-3">
                     <ArtifactGroup id="files-previews" title="Previews">
-                      {availablePreviews.length === 0 ? (
+                      {live && media.isLoading ? (
+                        <p className="text-sm text-muted" role="status">
+                          Looking for the preview clips…
+                        </p>
+                      ) : availablePreviews.length === 0 ? (
                         <p data-testid="previews-empty" className="text-sm text-muted">
                           Previews appear after a render.
                         </p>
@@ -1372,6 +1368,7 @@ export function SermonReview({
                               testId="artifact-preview-row"
                               live={live}
                               onOpen={setPlayerKind}
+                              active={activeKind === item.kind}
                             />
                           ))}
                         </ul>

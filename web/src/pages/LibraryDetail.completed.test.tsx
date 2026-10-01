@@ -327,9 +327,11 @@ describe("LibraryDetail completed sermons", () => {
     expect(document.querySelector("#cut-start")).toBeTruthy();
     expect(document.querySelector("#cut-end")).toBeTruthy();
     expect(document.querySelector("#cut-offset")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Approve · Render-only/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Reject with notes" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Re-detect" })).toBeTruthy();
+    const bar = screen.getByTestId("approval-bar");
+    expect(within(bar).getByRole("button", { name: "Approve and publish" })).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: "More actions" })).toBeTruthy();
+    expect(screen.queryByTestId("menu-reject")).toBeNull();
+    expect(screen.queryByTestId("menu-redetect")).toBeNull();
 
     expect(screen.queryByTestId("sermon-completed")).toBeNull();
     expect(screen.queryByTestId("edit-sermon")).toBeNull();
@@ -351,7 +353,7 @@ describe("LibraryDetail completed sermons", () => {
     await user.click(screen.getByTestId("edit-sermon"));
     expect(screen.getByTestId("sermon-review")).toBeTruthy();
     expect(screen.getByTestId("timeline-region-keep")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Re-render · Render-only/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Re-render and publish" })).toBeTruthy();
     expect(screen.getByTestId("show-completed-view")).toBeTruthy();
 
     await user.click(screen.getByTestId("show-completed-view"));

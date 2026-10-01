@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -150,8 +150,9 @@ describe("LibraryDetail state-aware header actions", () => {
     await user.click(screen.getByTestId("edit-sermon"));
 
     expect(screen.queryByRole("button", { name: "Push to SermonAudio" })).toBeNull();
-    expect(screen.getByRole("button", { name: /Re-render · Render-only/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Re-render · Render\+upload/ })).toBeTruthy();
+    const bar = screen.getByTestId("approval-bar");
+    expect(within(bar).getByRole("button", { name: "Re-render and publish" })).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: "More actions" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
   });
 
