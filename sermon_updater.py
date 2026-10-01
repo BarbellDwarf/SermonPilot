@@ -2254,7 +2254,7 @@ def validate_event_type_for_api(event_type: str | None) -> None:
     allowed list is empty or unavailable, never blocking on unknown.
     """
     try:
-        from ui.sermon_metadata import get_event_types
+        from ui.sermon_metadata_core import get_event_types
         allowed = get_event_types()
     except Exception as e:
         logger.warning(

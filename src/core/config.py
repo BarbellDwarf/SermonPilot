@@ -299,7 +299,7 @@ class ConfigManager:
 
         A bare relative path such as ``config.yaml`` is ambiguous: it resolves
         against the process working directory, which varies between the CLI
-        (repo root), Streamlit (``/app``), job workers, and tests. Resolve in
+        (repo root), the console (``/app``), job workers, and tests. Resolve in
         order: absolute as-is, cwd-relative if it exists there, then
         project-root-relative. When nothing exists, return the project-root
         absolute path so the not-found warning names the real location instead

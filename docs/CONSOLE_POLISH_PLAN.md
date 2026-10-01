@@ -274,28 +274,42 @@ renders with a pending media query and asserts the empty text is absent.
 Last, and as its own set of commits, so the test baseline stays attributable.
 
 Keep: `ui/config_utils.py`, `ui/database.py`, `ui/job_queue.py`,
-`ui/job_executors.py`, `ui/job_labels.py`, `ui/system_status.py`,
-`ui/sermonaudio_accounts.py`, `ui/upload_only.py`, `ui/version.py`,
-`ui/auto_edit_apply.py` (imported by the tests that cover apply behaviour).
+`ui/job_executors.py`, `ui/job_labels.py`, `ui/job_worker.py`,
+`ui/system_status.py`, `ui/sermonaudio_accounts.py`, `ui/upload_only.py`,
+`ui/version.py`, `ui/auto_edit_apply.py` (imported by the tests that cover apply
+behaviour).
 
 Remove: `streamlit_app.py`, `ui/pages.py`, `ui/shared_navigation.py`,
 `ui/ui_state.py`, `ui/auth.py`, `ui/ui_processor.py`, `ui/media_server.py`,
 `ui/sermon_manager.py`, `ui/analytics_manager.py`, `ui/sermonaudio_analytics.py`,
 `ui/sermonaudio_api.py`, `ui/performance_monitor.py`, `ui/sermon_importer.py`,
-`ui/ui_pages/` (ten modules), `ui/components/` (five modules).
+`ui/ui_pages/` (ten modules), `ui/components/` (five modules), `.streamlit/`.
 
-`sermon_updater.py` imports `get_event_types` from `ui/sermon_metadata.py`,
-which imports streamlit at module scope. That function moves to a streamlit-free
-module and the call site follows, so the pipeline never needs streamlit.
+`sermon_updater.py` imported `get_event_types` from `ui/sermon_metadata.py`,
+which imports streamlit at module scope. The enum, the pastor/series cache, and
+filename parsing move to `ui/sermon_metadata_core.py`, and the call site follows,
+so the pipeline never needs streamlit. The console carries its own copy of the
+enum in `NewSermon.tsx`; `tests/unit/test_event_type_enum.py` pins the core list.
 
-`ui/config_utils.py` has six function-local `import streamlit as st` calls that
-only feed a progress callback. They go.
+`ui/config_utils.py` had six function-local `import streamlit as st` calls that
+only fed a progress callback, and `reload_configuration()` returned early unless
+a Streamlit session existed. All gone; `reload_configuration()` is a plain
+re-resolve.
 
-Also: the eleven tests that import `ui.ui_pages.*`, the singleton list in
-`tests/conftest.py`, `pyproject.toml`, the requirements files, `Dockerfile`,
-`docker-compose.yml` (stop publishing 8501), `docker/nginx/nginx.conf`,
-`docker/start_production.sh`, and the docs that still describe 8501 as the
-front door.
+Also removed, because nothing read them once the old interface was gone:
+`APP_PASSWORD` (the console signs in with `SERMONPILOT_ADMIN_USER` /
+`SERMONPILOT_ADMIN_PASSWORD`, bootstrapped once and then managed in
+**Settings -> Users**) and `STREAMLIT_SERVER_MAX_UPLOAD_SIZE` (replaced by
+`SERMONPILOT_UPLOAD_GB`, which the bridge already read).
+
+`GET /api/meta/retirement` returned `streamlit_ready`, a field named after the
+interface being removed. It returns `console_ready` now. The database key
+`web_console_ready` is unchanged.
+
+`tests/unit/test_no_legacy_ui.py` asserts the removal holds: no module on disk,
+no `import streamlit` anywhere, no dependency listing it, no 8501 in the
+Dockerfile, compose file, or nginx upstream, and no `streamlit` in the
+entrypoint.
 
 Parity audit before deletion: `docs/SETTINGS_PARITY.md` maps every legacy
 control to a console home. Every row must have a live destination. The legacy

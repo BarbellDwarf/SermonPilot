@@ -64,10 +64,6 @@ cleanup() {
         kill -TERM "$UVICORN_PID" 2>/dev/null
         wait "$UVICORN_PID" 2>/dev/null
     fi
-    if [ -n "$STREAMLIT_PID" ]; then
-        kill -TERM "$STREAMLIT_PID" 2>/dev/null
-        wait "$STREAMLIT_PID" 2>/dev/null
-    fi
     if [ -n "$INGEST_WATCHER_PID" ]; then
         kill -TERM "$INGEST_WATCHER_PID" 2>/dev/null
         wait "$INGEST_WATCHER_PID" 2>/dev/null
@@ -145,26 +141,15 @@ case "${SERMONPILOT_JOB_WORKER_ENABLED:-1}" in
         ;;
 esac
 
-# Start main application
-echo "Starting Streamlit application..."
-streamlit run streamlit_app.py \
-    --server.port=8501 \
-    --server.address=0.0.0.0 \
-    --server.headless=true \
-    --server.maxUploadSize=${STREAMLIT_SERVER_MAX_UPLOAD_SIZE:-30720} \
-    --browser.gatherUsageStats=false &
-STREAMLIT_PID=$!
-
-# Start read-only web API + SPA (opt out with SERMONPILOT_WEB_API=0)
-if [ "${SERMONPILOT_WEB_API:-}" != "0" ]; then
-    echo "🌐 Starting web API..."
-    # --proxy-headers trusts X-Forwarded-Proto/Host from the TLS-terminating
-    # reverse proxy; --forwarded-allow-ips='*' accepts all upstreams, which is
-    # fine because this console only listens on the LAN/docker network.
-    uvicorn server.api.app:app --host 0.0.0.0 --port "${SERMONPILOT_WEB_PORT:-8504}" \
-        --proxy-headers --forwarded-allow-ips='*' &
-    UVICORN_PID=$!
-fi
+# Start the console. It serves the built SPA and the whole /api surface, so
+# this is the only web process in the container.
+echo "🌐 Starting the console..."
+# --proxy-headers trusts X-Forwarded-Proto/Host from the TLS-terminating
+# reverse proxy; --forwarded-allow-ips='*' accepts all upstreams, which is
+# fine because this console only listens on the LAN/docker network.
+uvicorn server.api.app:app --host 0.0.0.0 --port "${SERMONPILOT_WEB_PORT:-8504}" \
+    --proxy-headers --forwarded-allow-ips='*' &
+UVICORN_PID=$!
 
 # Start the ingest watcher (opt in with INGEST_WATCHER_ENABLED=1; default off).
 # Notify-only: it polls the configured per-user cloud remote and sends Signal
@@ -178,10 +163,7 @@ case "${INGEST_WATCHER_ENABLED:-}" in
 esac
 
 # Wait for background processes
-PIDS=("$STREAMLIT_PID")
-if [ -n "${UVICORN_PID:-}" ]; then
-    PIDS+=("$UVICORN_PID")
-fi
+PIDS=("$UVICORN_PID")
 if [ -n "${INGEST_WATCHER_PID:-}" ]; then
     PIDS+=("$INGEST_WATCHER_PID")
 fi

@@ -1,9 +1,9 @@
 """SermonAudio eventType enum completeness and merge-on-refresh.
 
 Seams under test (public boundaries):
-- ui.sermon_metadata.DEFAULT_EVENT_TYPES (authoritative enum seam)
-- ui.sermon_metadata.get_event_types (picker consumer seam)
-- ui.sermon_metadata.fetch_and_cache_metadata (refresh seam)
+- ui.sermon_metadata_core.DEFAULT_EVENT_TYPES (authoritative enum seam)
+- ui.sermon_metadata_core.get_event_types (picker consumer seam)
+- ui.sermon_metadata_core.fetch_and_cache_metadata (refresh seam)
 
 Spec: the picker must show the full SermonAudio eventType enum even with an
 empty cache, and a refresh must merge (enum + broadcaster extras) rather
@@ -75,7 +75,7 @@ def _patch_db(monkeypatch, db) -> None:
 
 
 def test_enum_constant_has_all_values() -> None:
-    import ui.sermon_metadata as metadata
+    import ui.sermon_metadata_core as metadata
 
     for value in EXPECTED_ENUM:
         assert value in metadata.DEFAULT_EVENT_TYPES
@@ -83,7 +83,7 @@ def test_enum_constant_has_all_values() -> None:
 
 
 def test_get_event_types_with_empty_cache_returns_full_enum(monkeypatch) -> None:
-    import ui.sermon_metadata as metadata
+    import ui.sermon_metadata_core as metadata
 
     _patch_db(monkeypatch, _FakeDB(event_data=None))
 
@@ -94,7 +94,7 @@ def test_get_event_types_with_empty_cache_returns_full_enum(monkeypatch) -> None
 
 
 def test_get_event_types_upgrades_narrow_cache(monkeypatch) -> None:
-    import ui.sermon_metadata as metadata
+    import ui.sermon_metadata_core as metadata
 
     _patch_db(monkeypatch, _FakeDB(event_data=list(NARROW_CACHE)))
 
@@ -106,7 +106,7 @@ def test_get_event_types_upgrades_narrow_cache(monkeypatch) -> None:
 
 def test_fetch_and_cache_merges_rather_than_replaces(monkeypatch) -> None:
     import sermon_updater as su
-    import ui.sermon_metadata as metadata
+    import ui.sermon_metadata_core as metadata
 
     db = _FakeDB(event_data=None)
     _patch_db(monkeypatch, db)
@@ -128,7 +128,7 @@ def test_fetch_and_cache_merges_rather_than_replaces(monkeypatch) -> None:
 
 def test_broadcaster_extra_preserved_on_merge(monkeypatch) -> None:
     import sermon_updater as su
-    import ui.sermon_metadata as metadata
+    import ui.sermon_metadata_core as metadata
 
     db = _FakeDB(event_data=None)
     _patch_db(monkeypatch, db)

@@ -39,5 +39,5 @@ seeded into the database once on startup, when no value is saved for their path
 yet. Deploy-time secrets (API keys) stay in the environment and are never copied
 into the database.
 
-Edit settings in the web console Settings page or the Streamlit settings page,
+Edit settings in the console's Settings page,
 not in a file.

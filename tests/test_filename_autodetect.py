@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from ui.sermon_metadata import parse_sermon_filename
+from ui.sermon_metadata_core import parse_sermon_filename
 
 
 def test_full_format():

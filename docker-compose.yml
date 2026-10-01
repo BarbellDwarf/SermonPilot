@@ -10,8 +10,8 @@
 # compute type) matched to the image's hardware stack. Runtime configuration
 # is stored in the settings database and seeded from environment variables;
 # config.yaml is optional (export/import only). Import the matching template
-# from the UI config page, or point SA_UPDATER_CONFIG at a template to use it
-# as a file overlay.
+# from the console's Settings page, or point SA_UPDATER_CONFIG at a template to
+# use it as a file overlay.
 #
 # Environment variables consumed by config resolution (environment values
 # override values loaded from config files):
@@ -27,10 +27,14 @@
 #   Processing: DEBUG, VERBOSE, DRY_RUN, HASHTAG_VERIFICATION
 #   Runtime: DATABASE_URL (default sqlite:///data/sermon_processor.db,
 #     resolved to /data/sermon_processor.db inside the container),
-#     APP_PASSWORD (UI sign-in when set), SERMONPILOT_JOB_WORKER_ENABLED
-#     (headless worker, enabled by default)
+#     SERMONPILOT_ADMIN_USER / SERMONPILOT_ADMIN_PASSWORD (bootstrap admin),
+#     SERMONPILOT_JOB_WORKER_ENABLED (headless worker, enabled by default),
+#     SERMONPILOT_UPLOAD_GB (browser upload cap, default 30)
 #   Compose-side only: SERMONPILOT_TAG (image tag), HOST_BIND (port bind
 #     address). ENVIRONMENT is declared here but currently unused by the app.
+#
+# The console is the only interface. It is published on 8504; the reverse
+# proxy in front of it is the operator's to move.
 
 services:
   sermon-pilot:
@@ -38,12 +42,13 @@ services:
     container_name: sermon-pilot
     restart: unless-stopped
     ports:
-      - "${HOST_BIND:-127.0.0.1}:8501:8501"
+      - "${HOST_BIND:-127.0.0.1}:8504:8504"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
-      - APP_PASSWORD=${APP_PASSWORD}
+      - SERMONPILOT_ADMIN_USER=${SERMONPILOT_ADMIN_USER}
+      - SERMONPILOT_ADMIN_PASSWORD=${SERMONPILOT_ADMIN_PASSWORD}
       - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
       - DATABASE_URL=${DATABASE_URL:-sqlite:///data/sermon_processor.db}
       - SERMONAUDIO_API_KEY=${SERMONAUDIO_API_KEY}
@@ -52,7 +57,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - XAI_API_KEY=${XAI_API_KEY}
       - DEBUG=${DEBUG:-false}
-      - STREAMLIT_SERVER_MAX_UPLOAD_SIZE=${STREAMLIT_SERVER_MAX_UPLOAD_SIZE:-30720}
+      - SERMONPILOT_UPLOAD_GB=${SERMONPILOT_UPLOAD_GB:-30}
       - SERMONPILOT_JOB_WORKER_ENABLED=${SERMONPILOT_JOB_WORKER_ENABLED:-1}
     volumes:
       - sermon_data:/data

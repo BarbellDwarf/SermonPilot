@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -9,30 +8,14 @@ from unittest.mock import Mock
 
 import pytest
 
-_UI_DIR = Path(__file__).resolve().parents[2] / "ui"
-if str(_UI_DIR) not in sys.path:
-    sys.path.insert(0, str(_UI_DIR))
-
-try:  # noqa: E402 - package path (same module identity as ui.job_executors)
-    from ui.job_queue import (
-        Job,
-        JobCancelledError,
-        JobStatus,
-        JobType,
-    )
-except ImportError:  # Streamlit entrypoint
-    from job_queue import (
-        Job,
-        JobCancelledError,
-        JobStatus,
-        JobType,
-    )
-
-from ui.job_executors import (  # noqa: E402
+from ui.job_executors import (
     execute_auto_edit_apply_job,
     execute_auto_edit_job,
     get_executor,
 )
+from ui.job_queue import Job, JobCancelledError, JobStatus, JobType
+
+_UI_DIR = Path(__file__).resolve().parents[2] / "ui"
 
 
 def _job(params: dict[str, Any]) -> Job:

@@ -31,7 +31,7 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           python -m pip install --upgrade pip
-          pip install ruff pytest requests python-dotenv PyYAML streamlit fastapi httpx
+          pip install ruff pytest requests python-dotenv PyYAML fastapi httpx
           pip install -e . --no-deps
 
       - name: Lint with ruff

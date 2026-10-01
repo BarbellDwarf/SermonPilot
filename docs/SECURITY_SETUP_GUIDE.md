@@ -291,7 +291,7 @@ Once security is configured:
 
 1. **Test the system**: Run `python sermon_updater.py list --since-days 30` to test API connectivity
 2. **Configure audio processing**: Set up audio enhancement models
-3. **Set up web interface**: Run `streamlit run streamlit_app.py`
+3. **Set up the console**: Run `uvicorn server.api.app:app --port 8504`
 4. **Process sermons**: Begin processing with proper security in place
 
 ## Support

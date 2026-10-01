@@ -6,18 +6,18 @@ locally, and enabling GPU acceleration.
 
 ## What the stack contains
 
-The compose file defines one service, `sermon-pilot`, which runs the
-Streamlit web UI on port 8501. There is no separate API server, Redis,
-PostgreSQL, or Ollama container in the stack. Ollama, when used, runs
-outside the container and is reached through `OLLAMA_HOST`.
+The compose file defines one service, `sermon-pilot`, which serves the web
+console and its API on port 8504 from one process. There is no separate API
+server, Redis, PostgreSQL, or Ollama container in the stack. Ollama, when used,
+runs outside the container and is reached through `OLLAMA_HOST`.
 
 The container entrypoint is `docker/start_production.sh`, which:
 
 1. Creates the persistent data directories (`/data`, `/models`, `/app/api_cache`, `/app/processed_sermons`, `/app/logs`) and repairs or warns about their ownership
 2. Initializes the SQLite database through `SermonRepository`
 3. Starts the headless job worker by default
-4. Starts `streamlit run streamlit_app.py` on `0.0.0.0:8501`
-5. Starts the web API when `SERMONPILOT_WEB_API` is enabled
+4. Starts `uvicorn server.api.app:app` on `0.0.0.0:8504`, which serves both the
+   console bundle and the `/api/*` routes
 
 ## Prerequisites
 
@@ -36,7 +36,7 @@ Edit `.env` and set at least:
 
 - `SERMONAUDIO_API_KEY`
 - `SERMONAUDIO_BROADCASTER_ID`
-- `APP_PASSWORD` (recommended; the app binds to `127.0.0.1` by default, set `HOST_BIND=0.0.0.0` only when a password is set)
+- `SERMONPILOT_ADMIN_USER` and `SERMONPILOT_ADMIN_PASSWORD` (recommended; the app binds to `127.0.0.1` by default, set `HOST_BIND=0.0.0.0` only when these are set)
 
 LLM provider keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `XAI_API_KEY`) are
 optional. For local inference, set `OLLAMA_HOST` to a running Ollama server;
@@ -49,7 +49,7 @@ Ollama container or host process on the Docker host.
 docker compose up -d
 ```
 
-Wait for the health check to pass, then open http://localhost:8501.
+Wait for the health check to pass, then open http://localhost:8504.
 
 ```bash
 docker compose ps
@@ -58,7 +58,7 @@ docker compose ps
 ### 3. Verify it works
 
 ```bash
-curl http://localhost:8501/
+curl http://localhost:8504/api/health
 docker compose logs -f sermon-pilot
 ```
 
@@ -233,16 +233,17 @@ pytest or test suite inside the container. Run tests from a local checkout.
 
 ## Troubleshooting
 
-**The UI is not reachable.** Check `docker compose ps` and the logs with
+**The console is not reachable.** Check `docker compose ps` and the logs with
 `docker compose logs sermon-pilot`. The health check is
-`curl -f http://localhost:8501/`, and Streamlit needs a few seconds to start.
+`curl -f http://localhost:8504/api/health`, and the process needs a few
+seconds to start.
 
-**Port 8501 is already in use.** Change the published port in
-`docker-compose.yml`, for example `"127.0.0.1:8502:8501"`.
+**Port 8504 is already in use.** Change the published port in
+`docker-compose.yml`, for example `"127.0.0.1:8505:8504"`.
 
-**The app is only reachable from localhost.** `HOST_BIND` defaults to
-`127.0.0.1`. Set `HOST_BIND=0.0.0.0` in `.env` to expose the UI on the
-network, and keep `APP_PASSWORD` set.
+**The console is only reachable from localhost.** `HOST_BIND` defaults to
+`127.0.0.1`. Set `HOST_BIND=0.0.0.0` in `.env` to expose it on the network, and
+keep `SERMONPILOT_ADMIN_PASSWORD` set.
 
 **Ollama is not reachable.** From the host, check the Ollama server:
 

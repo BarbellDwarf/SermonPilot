@@ -101,6 +101,6 @@ RUN mkdir -p /app/processed_sermons \
 
 USER sermonapp
 
-EXPOSE 8501 8504
+EXPOSE 8504
 
 CMD ["/app/docker/start_production.sh"]

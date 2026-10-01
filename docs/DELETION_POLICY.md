@@ -62,7 +62,7 @@ is never cleared unless the operator has set a window.
 
 `SERMONPILOT_TRASH_RETENTION_DAYS` overrides the window, and the
 `trash_retention_days` config key is the saved equivalent. The sweep runs once
-at Streamlit startup through `ui/config_utils.py::sweep_stale_job_files`, which
+at process startup through `ui/config_utils.py::sweep_stale_job_files`, which
 already handles the job temp roots. Item age is read from the item directory's
 mtime, and the sweep is idempotent: a second run finds nothing past the window.
 

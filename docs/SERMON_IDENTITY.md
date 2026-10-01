@@ -71,7 +71,7 @@ re-renders an existing record carries that record's id through.
 `process_new_sermon` accepts `existing_sermon_id`. Jobs set it from the job
 parameters, and apply continuation jobs set it from the sermon being edited.
 `_resolve_identity_id` returns that id when present and derives one otherwise,
-so CLI and Streamlit callers keep working without a carried id.
+so CLI and console callers keep working without a carried id.
 
 `SermonRepository.save_sermon` upserts on the primary key. It refreshes the
 sermon columns and leaves `edit_plans`, `notes` and `sermon_content` alone, so a

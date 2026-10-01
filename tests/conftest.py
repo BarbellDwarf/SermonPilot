@@ -199,7 +199,7 @@ if _UI_DIR not in sys.path:
 # --- process-wide singleton isolation ---
 #
 # Several modules cache a lazily-created process-wide singleton at module
-# scope: the database handle (``_db``), the UI managers, and the job queue.
+# scope: the database handle (``_db``), the status manager, and the job queue.
 # A test that triggers creation through the real factory without a fixture
 # to reset it leaves the handle bound for every later test, so a later test
 # can bind to a stale, already-deleted temp database and fail depending on
@@ -225,10 +225,6 @@ _PROCESS_SINGLETONS: dict[str, tuple[str, ...]] = {
     "ui.database": ("_db",),
     "database": ("_db",),
     "ui.system_status": ("_status_manager", "_status_manager_config"),
-    "ui.sermon_manager": ("_sermon_manager",),
-    "ui.ui_processor": ("_processor",),
-    "ui.media_server": ("_server",),
-    "ui.analytics_manager": ("_analytics_manager",),
 }
 
 # The job queue is not restored to its pre-test reference. A queue owns live

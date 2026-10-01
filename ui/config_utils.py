@@ -1,5 +1,5 @@
 """
-Configuration utilities for the Streamlit UI
+Configuration resolution: the single path the pipeline and the console share
 
 Provides the single configuration resolution path used by the UI, the
 engine, and the job executors, plus session state helpers.
@@ -144,10 +144,15 @@ CONFIG_SEED_VERSION = 1
 
 INFRA_ONLY_ENV_VARS: dict[str, str] = {
     "DATABASE_URL": "SQLite location consumed directly by ui.database",
-    "APP_PASSWORD": "UI authentication consumed directly by ui.auth",
+    "SERMONPILOT_ADMIN_USER": (
+        "Bootstrap admin username, read by the API bridge rather than app config"
+    ),
+    "SERMONPILOT_ADMIN_PASSWORD": (
+        "Bootstrap admin password, read by the API bridge rather than app config"
+    ),
     "ENVIRONMENT": "container runtime label with no in-app consumer",
-    "STREAMLIT_SERVER_MAX_UPLOAD_SIZE": (
-        "Streamlit runtime upload limit, read by the Streamlit server rather than app config"
+    "SERMONPILOT_UPLOAD_GB": (
+        "Browser upload cap in gigabytes, read by the API bridge rather than app config"
     ),
     "SERMONPILOT_JOB_WORKER_ENABLED": (
         "Container worker toggle, read by the entrypoint and queue startup"
@@ -557,8 +562,9 @@ def _resolve_layers(db=None) -> tuple[dict[str, Any], dict[str, Any]]:
          database because it is operator intent for the running process.
       5. ${VAR} / ${VAR:-default} expansion of remaining string values.
 
-    DATABASE_URL, APP_PASSWORD, and ENVIRONMENT are infra-only variables
-    consumed directly from the environment and never enter the config dict.
+    DATABASE_URL, the SERMONPILOT_ADMIN_* bootstrap pair, and ENVIRONMENT are
+    infra-only variables consumed directly from the environment and never enter
+    the config dict.
     """
     legacy_file_layer = _load_file_layer()
     try:
@@ -695,12 +701,6 @@ def load_config_from_file():
         sources = _config_sources(config, db_layer)
     except Exception as e:
         logger.error("Failed to load configuration: %s", e)
-        try:
-            import streamlit as st
-
-            st.error(f"Failed to load configuration: {e}")
-        except ImportError:
-            pass
         return {}
     _warn_plaintext_api_keys(config, sources)
     return config
@@ -762,35 +762,14 @@ def _warn_plaintext_api_keys(
         "Set the listed environment variables to keep them out of the database."
     )
     logger.warning(message)
-    try:
-        import streamlit as st
-
-        st.warning(message)
-    except Exception:
-        pass
 
 
 def reload_configuration():
-    """Re-resolve the effective configuration and update session state"""
+    """Re-resolve the effective configuration after a write."""
     try:
-        import streamlit as st
-
-        config = load_config_from_file()
-
-        st.session_state.config = config
-
-        if "llm_manager" in st.session_state:
-            st.session_state.llm_manager = None
-
-        return config
-
+        return load_config_from_file()
     except Exception as e:
-        try:
-            import streamlit as st
-
-            st.error(f"Failed to reload configuration: {e}")
-        except ImportError:
-            pass  # Not in Streamlit context
+        logger.error("Failed to reload configuration: %s", e)
         return {}
 
 
@@ -824,20 +803,8 @@ def save_config_to_file(config):
         except Exception:
             pass
 
-        try:
-            import streamlit as st
-
-            st.info("Configuration saved to the settings database (YAML export updated).")
-        except Exception:
-            pass  # Not in Streamlit context
-
         return True
 
     except Exception as e:
-        try:
-            import streamlit as st
-
-            st.error(f"Failed to save configuration: {e}")
-        except Exception:
-            pass  # Not in Streamlit context
+        logger.error("Failed to save configuration: %s", e)
         return False

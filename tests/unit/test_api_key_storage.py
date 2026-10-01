@@ -95,7 +95,6 @@ def test_plaintext_warning_silent_for_placeholders_db_only(tmp_path, monkeypatch
         ),
         encoding="utf-8",
     )
-    monkeypatch.setitem(sys.modules, "streamlit", None)
     with caplog.at_level(logging.WARNING, logger=""):
         cu._warn_plaintext_api_keys()
     assert not cu._find_plaintext_api_keys(

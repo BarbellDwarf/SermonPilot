@@ -15,13 +15,9 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
-try:  # noqa: E402 - package path so ui.* is one module identity
-    from ui.job_queue import Job, JobStatus, JobType
-except ImportError:  # Streamlit entrypoint
-    from job_queue import Job, JobStatus, JobType
-
 from src.llm_manager import create_llm_manager
 from ui.job_executors import execute_sermon_processing_job, resolve_job_config
+from ui.job_queue import Job, JobStatus, JobType
 
 MODEL = "test-model:latest"
 JOB_MODEL = "job-model:latest"

@@ -12,12 +12,11 @@ Guides for running and understanding SermonPilot.
 - [CANCELLATION.md](CANCELLATION.md): how cancelling a job stops the running work, and how restart reconciliation clears stuck rows.
 - [DELETION_POLICY.md](DELETION_POLICY.md): every media delete is a recoverable move, and cloud media stays on its remote.
 - [SERMON_IDENTITY.md](SERMON_IDENTITY.md): how a sermon id is derived so re-runs upsert one row.
-- [SETTINGS_PARITY.md](SETTINGS_PARITY.md): how each legacy Streamlit setting maps to the web console.
+- [SETTINGS_PARITY.md](SETTINGS_PARITY.md): how each removed-interface setting maps to the console.
+- [CONSOLE_POLISH_PLAN.md](CONSOLE_POLISH_PLAN.md): the console vocabulary, navigation, workflow, and the removal of the old interface.
 - [LLM_Configuration_Guide.md](LLM_Configuration_Guide.md): LLM providers, models, and endpoints.
 - [CLOUD_MOUNTS_OAUTH.md](CLOUD_MOUNTS_OAUTH.md): bring your own Google OAuth client for cloud mounts.
 - [DESCRIPTION_FAILURE_HANDLING.md](DESCRIPTION_FAILURE_HANDLING.md): description generation returns usable prose or raises, never a failure string.
 - [DESCRIPTION_VALIDATION_FEATURE.md](DESCRIPTION_VALIDATION_FEATURE.md): checking and regenerating existing descriptions.
-- [SECURITY_SETUP_GUIDE.md](SECURITY_SETUP_GUIDE.md): credential management, UI password protection, and the pre-commit scanner.
-- [ANALYTICS.md](ANALYTICS.md): the Streamlit Analytics page (legacy UI).
-- [PERFORMANCE_MONITORING.md](PERFORMANCE_MONITORING.md): the performance monitor and the metrics it collects.
-- [PRODUCTION_DEPLOYMENT_GUIDE.md](PRODUCTION_DEPLOYMENT_GUIDE.md): older Streamlit-era production notes (bare metal, systemd, an nginx upstream to 8501); use DEPLOYMENT.md for the container flow.
+- [SECURITY_SETUP_GUIDE.md](SECURITY_SETUP_GUIDE.md): credential management, console password protection, and the pre-commit scanner.
+- [PRODUCTION_DEPLOYMENT_GUIDE.md](PRODUCTION_DEPLOYMENT_GUIDE.md): older bare-metal production notes (systemd, an nginx upstream). Superseded by DEPLOYMENT.md; kept for hosts that still run it that way.

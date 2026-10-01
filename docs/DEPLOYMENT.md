@@ -31,24 +31,34 @@ It pulls `ghcr.io/barbelldwarf/sermonpilot:${SERMONPILOT_TAG:-latest}`, restarts
 unless stopped, and reads `.env` when present.
 
 The console, which is the API server plus the built React bundle, listens on
-**8504**. The legacy Streamlit interface listens on **8501**. Both run inside the
-one container.
-
-The checked-in compose file publishes only 8501, so a plain
-`docker compose up -d` exposes the legacy UI. To reach the console, add the 8504
-mapping to the service before starting:
+**8504**. It is the only web process in the container and the only interface
+there is. A plain `docker compose up -d` publishes it:
 
 ```yaml
 ports:
-  - "${HOST_BIND:-127.0.0.1}:8501:8501"   # legacy Streamlit UI
-  - "${HOST_BIND:-127.0.0.1}:8504:8504"   # API + web console
+  - "${HOST_BIND:-127.0.0.1}:8504:8504"   # console + API
 ```
 
-`HOST_BIND` defaults to `127.0.0.1`, which keeps both ports on the host. Set
-`HOST_BIND=0.0.0.0` to expose them on the network, and set the console admin
-credentials first. A reverse proxy in front of either port is the operator's
-choice; the API reads `X-Forwarded-Proto` and `X-Forwarded-Host` and is happy
-behind one.
+`HOST_BIND` defaults to `127.0.0.1`, which keeps the port on the host. Set
+`HOST_BIND=0.0.0.0` to expose it on the network, and set the console admin
+credentials first. A reverse proxy in front of it is the operator's choice; the
+API reads `X-Forwarded-Proto` and `X-Forwarded-Host` and is happy behind one.
+
+## Moving an existing deployment onto the console
+
+A host that already serves the retired interface on **8501** needs its reverse
+proxy pointed at 8504. Nothing in this repository does that for you, and nothing
+should: it is a one-line change on your side.
+
+1. Set `web_console_ready: true` in the settings database. The console reads it
+   at **Settings -> System** and tells you whether your domain is pointed here.
+2. Change the upstream from `127.0.0.1:8501` to `127.0.0.1:8504` in your reverse
+   proxy, then reload it. Keep the websocket headers, `proxy_buffering off`, and
+   `client_max_body_size` at or above `SERMONPILOT_UPLOAD_GB`.
+3. Confirm the console loads, then drop the 8501 publish from compose.
+
+Rollback is to put the upstream back. The console is read-mostly over the same
+database, so nothing is lost either way.
 
 ## Required environment variables
 
@@ -65,16 +75,15 @@ placeholder.
 | `DATABASE_URL` | SQLite location | `sqlite:///data/sermon_processor.db` |
 | `SERMONPILOT_TAG` | Image backend or tag to pull | `cuda` |
 | `HOST_BIND` | Bind address for the published ports | `127.0.0.1` |
-| `APP_PASSWORD` | Password for the legacy Streamlit UI | `<a-strong-password>` |
+| `SERMONPILOT_UPLOAD_GB` | Browser upload cap in gigabytes | `30` |
 | `OLLAMA_HOST` | Ollama endpoint when using a local model | `http://host.docker.internal:11434` |
 
 The console creates its admin account from `SERMONPILOT_ADMIN_USER` and
 `SERMONPILOT_ADMIN_PASSWORD` on the first bootstrap. After that, accounts live in
-the database and admins manage them in Settings. `APP_PASSWORD` gates only the
-legacy Streamlit UI.
+the database and admins manage them in **Settings -> Users**.
 
 SermonAudio credentials are seeded into the database on first launch and edited
-afterwards in **Settings -> SermonAudio Accounts**, with the single-account
+afterwards in **Settings -> SermonAudio**, with the single-account
 fallback below that list. An exported `SERMONAUDIO_API_KEY` or
 `SERMONAUDIO_BROADCASTER_ID` still wins while it is set, and the Settings page
 names the environment variable that is winning.
@@ -185,10 +194,9 @@ for the running process.
 
 | Port | Serves |
 |---|---|
-| `8504` | API server and web console (`SERMONPILOT_WEB_PORT` overrides it) |
-| `8501` | Legacy Streamlit UI (`STREAMLIT_SERVER_MAX_UPLOAD_SIZE` sets its upload cap) |
+| `8504` | The console and its API (`SERMONPILOT_WEB_PORT` overrides it) |
 
-Both are plain HTTP inside the container. Terminating TLS and choosing a hostname
+It is plain HTTP inside the container. Terminating TLS and choosing a hostname
 is the operator's job; the API is built to sit behind a reverse proxy.
 
 ## Troubleshooting
@@ -214,9 +222,9 @@ docker compose logs --tail 100 sermon-pilot
 Cancel the job from **Jobs** (Cancel on the job row). After a container recreate,
 startup reconciliation marks jobs that were left `running` by the dead worker as
 failed with a `Job interrupted by app restart` line, so a stuck row clears on its
-own. The console's Retry button reports that retry is unavailable in the
-read-only bridge, so to run the work again, start it from the sermon: approve the
-cut again on the review page, or queue the sermon again from **New Sermon**.
+own. There is no retry action on a failed job: to run the work again, start it
+from the sermon. Approve the cut again on the review page, or queue the sermon
+again from **New Sermon**.
 
 **An upload fails.**
 Check **Settings -> SermonAudio Accounts**: the selected account, or the default,

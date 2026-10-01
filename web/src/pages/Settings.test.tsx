@@ -165,6 +165,13 @@ describe("Settings System tab reports the server's own account", () => {
     const user = userEvent.setup();
     const panel = await openSystem(user);
     expect(within(panel).getByText(/only interface/)).toBeTruthy();
-    expect(panel.textContent ?? "").toContain("8501");
+    expect(panel.textContent ?? "").toContain("8504");
+  });
+
+  it("says the domain is pointed here once the operator confirms it", async () => {
+    mocks.retirement.mockResolvedValue({ console_ready: true });
+    const user = userEvent.setup();
+    const panel = await openSystem(user);
+    expect(await within(panel).findByText(/pointed here/)).toBeTruthy();
   });
 });

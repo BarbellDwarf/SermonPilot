@@ -78,9 +78,6 @@ audit-*.png
 tests/
 conftest.py
 
-# Streamlit config (user-specific)
-.streamlit/
-
 # Agent files
 AGENTS.md
 .agents/

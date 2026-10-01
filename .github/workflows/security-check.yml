@@ -130,7 +130,7 @@ jobs:
       # pre-existing MEDIUM/LOW findings are reported in the artifact.
       run: |
         echo "Running Bandit security linter..."
-        bandit -r src/ ui/ sermon_updater.py streamlit_app.py -lll -f json -o bandit_report.json
+        bandit -r src/ ui/ sermon_updater.py server/ -lll -f json -o bandit_report.json
 
     - name: Upload Bandit report
       if: always()

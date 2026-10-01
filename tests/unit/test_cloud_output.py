@@ -1,24 +1,15 @@
 from __future__ import annotations
 
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-_UI_DIR = Path(__file__).resolve().parents[2] / "ui"
-if str(_UI_DIR) not in sys.path:
-    sys.path.insert(0, str(_UI_DIR))
-
-try:  # noqa: E402 - keep one module identity for ui.job_queue
-    from ui.job_queue import Job, JobStatus, JobType
-except ImportError:  # Streamlit entrypoint
-    from job_queue import Job, JobStatus, JobType  # noqa: E402
-
-from server.api.routers.writes import _user_ingest_dir  # noqa: E402
-from ui import job_executors  # noqa: E402
-from ui.job_executors import execute_sermon_processing_job  # noqa: E402
+from server.api.routers.writes import _user_ingest_dir
+from ui import job_executors
+from ui.job_executors import execute_sermon_processing_job
+from ui.job_queue import Job, JobStatus, JobType
 
 
 class _FakeProc:

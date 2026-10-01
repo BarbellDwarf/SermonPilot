@@ -19,6 +19,7 @@ from ui.config_utils import (  # noqa: E402
     ENV_CONFIG_MAP,
     INFRA_ONLY_ENV_VARS,
     load_config_from_file,
+    reload_configuration,
     resolve_config,
     resolve_config_with_sources,
     save_config_to_file,
@@ -356,15 +357,19 @@ def test_cut_detection_template_db_override_wins(fresh_db, clear_config_env):
     assert config["prompt_templates"]["cut_detection"]["system"]
 
 
-def test_load_config_safely_uses_resolution(fresh_db, clear_config_env, monkeypatch):
-    monkeypatch.setenv("SERMONAUDIO_API_KEY", "env-key")
+def test_reload_after_a_write_returns_the_saved_value(fresh_db, clear_config_env, monkeypatch):
+    """``reload_configuration`` is the post-write refresh path.
+
+    It used to also poke the legacy page's session state, so it only worked
+    inside that process. Now it is a plain re-resolve, which means the console
+    gets the same value the pipeline will.
+    """
     monkeypatch.setenv("SERMONPILOT_VARIANT", "cuda")
-    from ui.shared_navigation import load_config_safely
+    fresh_db.save_config({"audio_enhancement_method": "none"})
 
-    config = load_config_safely()
+    config = reload_configuration()
 
-    assert config["api_key"] == "env-key"
-    assert config["audio_enhancement_method"] == "deepfilternet"
+    assert config["audio_enhancement_method"] == "none"
 
 
 def test_env_secret_does_not_warn(fresh_db, clear_config_env, monkeypatch, caplog):

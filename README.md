@@ -30,9 +30,10 @@ of it is operated from a web console.
 - **Finished sermons stay editable**: a published sermon shows its details and
   can be re-opened to re-render or edit.
 
-The legacy Streamlit interface (`ui/`) is still present and is served on its own
-port while the console takes over; its process currently hosts the background job
-worker.
+The console is the only interface. The legacy one it replaced has been removed
+along with its port, its dependency, and its modules; see
+[docs/CONSOLE_POLISH_PLAN.md](docs/CONSOLE_POLISH_PLAN.md) for what went and
+what came with it.
 
 ## Quick start
 

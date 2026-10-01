@@ -219,8 +219,9 @@ def _detect_device(preference: str = "auto", allow_rocm: bool = True) -> str:
 def _ensure_info_logging() -> None:
     """Make this module's INFO records visible without a root logger config.
 
-    The Streamlit worker never calls logging.basicConfig, so the root logger
-    sits at WARNING with no handler and INFO stage logs (VRAM numbers) vanish.
+    The console and the job worker never call logging.basicConfig, so the
+    root logger sits at WARNING with no handler and INFO stage logs (VRAM
+    numbers) vanish.
     Pin this module's logger to INFO and attach a stderr handler only when the
     root logger has none, so CLI/verbose configurations keep their formatting.
     """
@@ -557,7 +558,7 @@ def _with_gpu_release(fn):
     """Release cached CUDA memory after a local transcription backend returns.
 
     PyTorch keeps reserved blocks in its caching allocator; without an explicit
-    empty_cache the Streamlit process holds several GB after the job finishes
+    empty_cache the process holds several GB after the job finishes
     and the next model load OOMs.
     """
 

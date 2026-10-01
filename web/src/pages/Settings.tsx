@@ -326,7 +326,7 @@ const SERVICE_TONE: Record<string, string> = {
 function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: boolean }) {
   const [savedLevel, setSavedLevel] = useUserSettings<string>("settings.logLevel", "info");
   const [logLevel, setLogLevel] = useState(savedLevel);
-  const [retired, setRetired] = useState<boolean | null>(isLive ? null : false);
+  const [consoleLive, setConsoleLive] = useState<boolean | null>(isLive ? null : false);
   const dirty = logLevel !== savedLevel;
   const status = useQuery({
     queryKey: ["status"],
@@ -341,10 +341,10 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
     void metaApi
       .retirement()
       .then((r) => {
-        if (!cancelled) setRetired(r.streamlit_ready);
+        if (!cancelled) setConsoleLive(r.console_ready);
       })
       .catch(() => {
-        if (!cancelled) setRetired(null);
+        if (!cancelled) setConsoleLive(null);
       });
     return () => {
       cancelled = true;
@@ -361,11 +361,11 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
         >
           <p className="font-semibold text-mist">
             This console is the only interface.{" "}
-            {retired === null
+            {consoleLive === null
               ? "The front-door setting could not be read."
-              : retired
+              : consoleLive
                 ? "Your domain has been pointed here."
-                : "If your domain still loads the old interface, the reverse proxy is still pointing at port 8501. Move it to 8504 and reload it."}
+                : "If your domain still loads the old interface, the reverse proxy is still pointing at the retired port. Move it to 8504 and reload it."}
           </p>
         </div>
       ) : null}

@@ -840,12 +840,12 @@ export const outputDirApi = {
 };
 
 export const metaApi = {
-  retirement: async (): Promise<{ streamlit_ready: boolean }> => {
-    if (!isLive) return { streamlit_ready: false };
+  retirement: async (): Promise<{ console_ready: boolean }> => {
+    if (!isLive) return { console_ready: false };
     const res = await fetch(`${BASE}/api/meta/retirement`, {
       headers: { Accept: "application/json" },
     });
     if (!res.ok) throw new Error(`GET /api/meta/retirement failed with ${res.status}`);
-    return (await res.json()) as { streamlit_ready: boolean };
+    return (await res.json()) as { console_ready: boolean };
   },
 };

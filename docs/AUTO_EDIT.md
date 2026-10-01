@@ -9,11 +9,11 @@ Drop the raw multi-GB `mkv`/`mp4` straight from the recorder into the New Sermon
 Two ways in:
 
 - **Server Path tab (recommended for multi-GB raw files).** Put the file in the raw-ingest folder (Docker host path `.../sermonpilot/raw_ingest`, seen inside the container as `/data/raw_ingest`), then paste the container path into the "Server Path (large files)" tab. The app reads the file from disk directly; nothing goes through the browser.
-- **Browser upload.** Works for smaller files. The limit is 30,720 MB (30 GB) by default and can be changed with the `STREAMLIT_SERVER_MAX_UPLOAD_SIZE` environment variable (Docker: set it in `.env`; standalone: same variable or edit `.streamlit/config.toml`). Streaming a 30 GB file through a browser POST is slow and memory-hungry, so prefer the Server Path tab at that size.
+- **Browser upload.** Works for smaller files. The limit is 30 GB by default and is set with the `SERMONPILOT_UPLOAD_GB` environment variable (Docker: set it in `.env`). Streaming a 30 GB file through a browser POST is slow and memory-hungry, so prefer the Server path option at that size.
 
 ### Resumability
 
-Browser uploads are **not resumable**: Streamlit buffers the upload server-side, and an interrupted POST has to start over. For large recordings, use the Server Path tab: copying the file to the ingest folder over SMB or rsync is interruptible and resumable at the transfer layer, and the app then reads it from disk. A resumable in-browser uploader (chunked upload endpoint + JS uploader) is deliberately out of scope for v1.7.0; see the follow-up issue linked from the map.
+Browser uploads are **not resumable**: the bridge buffers the upload server-side, and an interrupted POST has to start over. For large recordings, use the Server path option: copying the file to the ingest folder over SMB or rsync is interruptible and resumable at the transfer layer, and the app then reads it from disk. A resumable in-browser uploader (chunked upload endpoint + JS uploader) is deliberately out of scope for v1.7.0; see the follow-up issue linked from the map.
 
 kdenlive stays in the workflow for rare creative edits only: multi-cam cuts, titles, audio surgery. Everything routine is handled here.
 
@@ -88,7 +88,7 @@ llm:
         extra_headers: {}  # optional; some gateways need a routing/session header
 ```
 
-If the pin fails to initialize or errors at call time, detection falls back to the global chain. Detection retries up to 3 times on empty, timed-out, or unusable model output. If every attempt fails, the plan comes back with `detection_status: unavailable` and zeroed cut points (`start` and `end` both `0`), never a whole-video fallback that looks like a real proposal. The failure is logged with the provider, prompt size, elapsed time, and a scrubbed preview of the raw response, and surfaced in the Streamlit review panel and the web console.
+If the pin fails to initialize or errors at call time, detection falls back to the global chain. Detection retries up to 3 times on empty, timed-out, or unusable model output. If every attempt fails, the plan comes back with `detection_status: unavailable` and zeroed cut points (`start` and `end` both `0`), never a whole-video fallback that looks like a real proposal. The failure is logged with the provider, prompt size, elapsed time, and a scrubbed preview of the raw response, and surfaced on the console's review page.
 
 ## Pipeline
 

@@ -1,10 +1,13 @@
-"""Front-door cutover metadata (P6c).
+"""Front-door cutover metadata.
 
-GET /api/meta/retirement reports whether the Streamlit front door may be
-retired, computed from the ``web_console_ready`` key in the settings database
-(the same store the pipeline resolves). Default False; the operator flips the
-key in Settings and moves the reverse-proxy upstream. Public: single boolean,
-no secrets.
+``GET /api/meta/retirement`` reports whether the operator has confirmed that
+the console is serving their domain, computed from the ``web_console_ready``
+key in the settings database (the same store the pipeline resolves). Default
+False. Nothing in this repository flips it: the operator sets it and moves the
+reverse-proxy upstream. Public: a single boolean, no secrets.
+
+The response field is ``console_ready``. It carried the old interface's name
+while that interface still existed, and the name outlived the thing it named.
 """
 
 from __future__ import annotations
@@ -26,4 +29,4 @@ def _db_config() -> dict:
 
 @router.get("/retirement")
 def retirement() -> dict:
-    return {"streamlit_ready": bool(_db_config().get("web_console_ready", False))}
+    return {"console_ready": bool(_db_config().get("web_console_ready", False))}

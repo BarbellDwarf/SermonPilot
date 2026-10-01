@@ -2,7 +2,7 @@
 
 ## 1.8.0
 
-SermonPilot 1.8.0 moves more of the operator workflow into the browser console. The release brings the recording workflow, review decisions, publishing, account settings, and recovery paths into one place while keeping the processing engine and the legacy interface available.
+SermonPilot 1.8.0 moves the whole operator workflow into the browser console and retires the interface it replaces. The release brings the recording workflow, review decisions, publishing, account settings, and recovery paths into one place, and removes the legacy interface, its port, and its dependency.
 
 ### New in the console
 
@@ -37,22 +37,31 @@ SermonPilot 1.8.0 moves more of the operator workflow into the browser console. 
 - Cloud mounts are stored separately for each user. OAuth connections, browsing, staging, and output writes use that user's remote configuration.
 - Saved audio settings reach the enhancer on both new runs and review applies. The console's settings sections and the processing engine use the same configuration values.
 
+### The legacy interface is gone
+
+- The old Streamlit interface, its modules, its page set, its dependency, and its port are removed. The container starts one web process and publishes 8504.
+- Everything the legacy settings pages exposed now lives in the console's ten Settings tabs; `docs/SETTINGS_PARITY.md` maps each control and names what was dropped on purpose.
+- The API bridge serves the console bundle and the whole `/api/*` surface from one upstream, so a reverse proxy needs a single location block.
+
 ### Under the hood
 
 - The console streams media with HTTP range requests, so previews do not require loading an entire recording into memory.
-- The API and the legacy interface share the same database, job records, and configuration store.
+- `GET /api/status` resolves the same application config the pipeline does, so the dashboard reports what a run would actually use. A check that cannot determine its state reports *not measured* rather than a warning, and every problem names the Settings tab that fixes it.
+- The console uses one word for a sermon and one vocabulary for its four states, so a record reads the same on every page.
 - The health endpoint and generated API metadata use the application version resolved from the project metadata.
 - The former embeddings and retrieval-augmented generation surfaces have been removed. The remaining Settings pages describe the supported provider and processing configuration.
 
 ### Upgrade note
 
-Restart the deployment after upgrading. The container entrypoint launches the application process that owns the job worker. The worker currently initializes inside the legacy Streamlit process, and the API bridge submits jobs only. After each restart, open the legacy interface once so the worker claims the lease and queued work runs. Console-submitted jobs wait until then.
+Restart the deployment after upgrading. The container entrypoint starts the console and, unless `SERMONPILOT_JOB_WORKER_ENABLED=0`, the job worker beside it. Leave the worker enabled: with it off, queued jobs never run.
+
+A host whose domain still loads the old interface needs its reverse proxy moved from 8501 to 8504. Nothing in this repository does that. The console's **Settings -> System** panel says whether `web_console_ready` is set; the exact steps are in `docs/DEPLOYMENT.md`.
 
 Stored `whisper_openrouter` transcription settings migrate to `whisper_openai`. If the old backend was in use, set `WHISPER_OPENAI_API_KEY` and any matching `WHISPER_OPENAI_BASE_URL` or `WHISPER_OPENAI_MODEL` values before the first run.
 
 SermonAudio credentials from the environment are seeded into the settings database on first use, and an exported variable still wins while it is set.
 
-Existing records keep working. Startup migration can fold older duplicate rows into one record. The legacy Streamlit interface remains available on its own port; its retirement is a separate decision.
+Existing records keep working. Startup migration can fold older duplicate rows into one record.
 
 ### Known gaps
 

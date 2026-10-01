@@ -84,38 +84,28 @@ def test_pipeline_generator_rejects_unusable_reply(
     assert expected_reason in notes["description_error"]
 
 
-def test_library_generator_rejects_refusal_without_storing(
+def test_generator_returns_a_genuine_description(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import ui.ui_pages.library as library
-
-    provider = _ScriptedProvider([REFUSAL, REFUSAL])
-    description, reason = library.generate_library_description(
-        provider, "grace and mercy " * 40, "Sunday Service", "Test Speaker"
-    )
-
-    assert description is None
-    assert reason == "refusal"
-    assert provider.calls == 2
-
-
-def test_library_generator_returns_a_genuine_description() -> None:
-    import ui.ui_pages.library as library
-
     provider = _ScriptedProvider([GOOD])
-    description, reason = library.generate_library_description(
-        provider, "grace and mercy " * 40, "Sunday Service", "Test Speaker"
-    )
+    monkeypatch.setattr(su, "llm_manager", _manager_with(provider))
 
-    assert description == GOOD
-    assert reason is None
+    summary = su.generate_summary("grace and mercy " * 40)
+
+    assert summary == GOOD
+    assert provider.calls == 1
 
 
-def test_both_generators_route_through_shared_validator(
+def test_every_description_path_routes_through_the_shared_validator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import ui.ui_pages.library as library
+    """One generator, one validator.
 
+    The console's "Regenerate description" action queues a metadata-update job
+    that calls ``process_single_sermon(force_description=True)``, so the only
+    path that writes a description is ``generate_summary``. If it ever grows a
+    second entry point, this test is where that gets noticed.
+    """
     seen: list[str] = []
 
     def _fake_validate(raw, regenerate, **_kwargs):
@@ -123,15 +113,36 @@ def test_both_generators_route_through_shared_validator(
         return GOOD, None
 
     monkeypatch.setattr(su, "validate_description", _fake_validate)
-    monkeypatch.setattr(library, "validate_description", _fake_validate)
     monkeypatch.setattr(su, "llm_manager", _manager_with(_ScriptedProvider([GOOD])))
 
     su.generate_summary("grace and mercy " * 40)
-    library.generate_library_description(
-        _ScriptedProvider([GOOD]), "grace and mercy " * 40, "Sunday Service", "Test Speaker"
-    )
 
-    assert len(seen) == 2
+    assert len(seen) == 1
+
+
+def test_metadata_job_treats_a_flagged_description_as_a_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refused description must not be reported as a successful regenerate."""
+    from ui.job_executors import _classify_metadata_update_result
+
+    actions = {"generate_description": True, "push_metadata": False}
+
+    flagged = _classify_metadata_update_result(
+        {"action": "processed", "description_needs_review": True, "description_error": "refusal"},
+        actions,
+    )
+    assert flagged["ok"] is False
+    assert flagged["reason"] == "refusal"
+
+    skipped = _classify_metadata_update_result({"action": "skipped"}, actions)
+    assert skipped["ok"] is False
+
+    done = _classify_metadata_update_result(
+        {"action": "processed", "completed": ["description"]}, actions
+    )
+    assert done["ok"] is True
+    assert done["reason"] is None
 
 
 def test_metadata_job_logs_rejection_reason_and_keeps_description(

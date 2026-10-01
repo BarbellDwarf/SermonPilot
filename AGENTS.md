@@ -1,25 +1,25 @@
 # SermonPilot -- AI Agent Context
 
 ## Project Overview
-Automated sermon processing tool that enhances audio (DeepFilterNet/Clear), transcribes (Whisper), generates AI metadata (title/description/hashtags via Ollama/OpenAI), and uploads to SermonAudio API. Provides a Streamlit web UI and CLI.
+Automated sermon processing tool that enhances audio (DeepFilterNet/Clear), transcribes (Whisper), generates AI metadata (title/description/hashtags via Ollama/OpenAI), and uploads to SermonAudio API. Provides a React web console and a CLI. The legacy Streamlit interface it replaced was removed; nothing in this repository imports `streamlit`.
 
 ## Architecture
 
 ```
 sermon_updater.py        -- Core CLI processing engine
-streamlit_app.py         -- Streamlit UI entry point
-ui/
+server/api/              -- FastAPI console bridge: serves web/dist + /api/*, queues jobs
+ui/                      -- Shared runtime: not a UI package
 |-- config_utils.py      -- Single config resolution path (see below)
 |-- database.py          -- SQLite models: SermonDatabase, SermonRepository (also the settings store)
 |-- job_queue.py         -- Background job system (serialized by default, max_workers=1)
 |-- job_executors.py     -- Job execution (calls process_new_sermon)
-|-- ui_processor.py      -- UI processing interface
-|-- sermonaudio_api.py   -- SermonAudio API client
-|-- sermon_importer.py   -- Filesystem -> DB import
-`-- ui_pages/
-    |-- library.py       -- Library page (reads SQLite; fetches transcript from API if missing locally)
-    |-- new_sermon_enhanced.py -- Main New Sermon page
-    |-- dashboard.py, batch_update.py, validation.py, jobs.py, analytics.py, ...
+|-- job_labels.py        -- Human-readable job names
+|-- job_worker.py        -- Headless worker entrypoint
+|-- system_status.py     -- Service health checks (ok / warning / unknown)
+|-- upload_only.py       -- Publish an existing render
+|-- auto_edit_apply.py   -- Apply an approved cut plan
+|-- sermon_metadata_core.py -- SermonAudio eventType enum, pastor/series cache, filename parsing
+`-- sermonaudio_accounts.py -- Which SermonAudio account an upload uses
 src/
 |-- audio_processing.py       -- Audio enhancement
 |-- transcription.py          -- Whisper transcription (whisper-local default; faster-whisper; cloud backends)
@@ -27,9 +27,10 @@ src/
 |-- safe_delete.py            -- Single deletion policy: trash instead of unlink
 |-- core/config.py            -- ENV_CONFIG_MAP, env override + ${VAR} expansion helpers
 `-- processing/orchestrator.py -- Options dataclass
+web/                       -- React console source (Vite + TypeScript + Tailwind)
 config/templates/{cuda,rocm,cpu}.yaml -- Per-Docker-variant config templates (import/export artifacts)
 processed_sermons/           -- Output directory
-sermon_processor.db          -- SQLite database (UI persistence + settings config_cache)
+sermon_processor.db          -- SQLite database (console persistence + settings config_cache)
 ```
 
 ### Configuration resolution (no required config.yaml)
@@ -58,6 +59,8 @@ Settings sections read and write the same `config_cache.app_config` through
 - **Type hints** everywhere (`dict[str, Any]` not `dict`)
 - **Black** formatting (line-length=100), **Ruff** linting
 - **Pytest** for tests (`testpaths = ['tests']` in pyproject.toml); `tests/conftest.py` points the app at a throwaway config and database (`SA_UPDATER_CONFIG`, `DATABASE_URL`), stubs the `sermonaudio` package when missing, and skips `heavy`-marked tests unless `--run-heavy` is passed
+- **Vitest** for the console (`web/`); `web/src/test/harness.tsx` renders a page with a router and a throwaway query client. `web/src/test/setup.ts` holds global polyfills only
+- `tests/unit/test_no_legacy_ui.py` asserts the removed interface stays gone: no source file may import streamlit, no dependency may list it, and the retired port must not be published
 - **ffmpeg/ffprobe** for audio duration detection and video muxing
 
 ## Database (SQLite -- `sermon_processor.db`)
@@ -86,25 +89,34 @@ Key tables: `sermons` (id TEXT PK, title, speaker, recorded_date, status TEXT DE
 | Database save (normal) | `sermon_updater.py` | 2171 |
 | `publish_dry_run_sermon()` (push draft -> API) | `sermon_updater.py` | 2454 |
 | `get_sermon_transcript()` (fetch from API) | `sermon_updater.py` | 311 |
-| Library page data fetch | `ui/ui_pages/library.py` | 510 (calls `repo.get_all_sermons(limit=1001)`) |
-| Library "Generate" button (fetches transcript from API if missing locally) | `ui/ui_pages/library.py` | 158 (`generate_ai_content`) |
+| `GET /api/sermons` (console library list) | `server/api/routers/sermons.py` | - |
+| Console library data hook | `web/src/api/hooks.tsx` | `useLibrarySermons` |
 | `SermonRepository.save_sermon()` | `ui/database.py` | 860 |
 | `SermonRepository.get_all_sermons()` | `ui/database.py` | 1153 |
 | Job executor | `ui/job_executors.py` | 371 (`execute_sermon_processing_job`) |
 
-Line numbers verified against `release/v1.6.2` (08a324f).
+Line numbers verified against `release/v1.6.2` (08a324f); the API and web rows name
+symbols rather than lines because both moved during the console polish.
+
+## Console vocabulary
+
+The console's wording is product surface, asserted in `web/src/pages/SermonVocabulary.test.tsx` and `web/src/pages/Settings.test.tsx`. Changing it is a behaviour change, not a copy edit.
+
+- **One noun:** sermon. No heading, button, label, filter, empty state, or aria-label says "teaching". Fixture records keep their placeholder names (`Sample Teaching N`).
+- **One status vocabulary:** `toSermonStatus()` in `web/src/api/hooks.tsx` maps the database value to the word on screen. `processed` -> uploaded, `draft` -> waiting for you, `pending` -> queued, `error` -> failed. There is no client-invented `rendered` state.
+- **Service health:** ok, warning, and *not measured*. A check that could not determine its state is never a warning.
 
 ## Important Patterns
 
-- **Jobs system:** UI creates jobs via `job_queue.py`, executed by `job_executors.py`, which calls `sermon_updater.process_new_sermon()` for new sermons
+- **Jobs system:** the console creates jobs via `job_queue.py`, executed by `job_executors.py`, which calls `sermon_updater.process_new_sermon()` for new sermons
 - **Progress reporting:** `progress_callback(progress_pct: float, message: str)` called throughout `process_new_sermon`
 - **Result dict keys:** `success`, `sermon_id`, `title`, `description`, `hashtags`, `enhanced_audio_path`, `transcript_length`, `transcript`, `error`, `output_dir`
 - **Config access:** `config.get('key', default)` on the dict returned by `from ui.config_utils import resolve_config` (or `load_config_from_file()`); engine module level resolves once at import and falls back to a plain file read only if the settings DB is unavailable
 - **Import pattern:** `from ui.database import SermonRepository` used inline (inside function body) in `sermon_updater.py` to avoid circular imports
-- **Push dual behavior:** `push_sermon_metadata_to_api()` in `library.py:51` detects `status == 'draft'` -> calls `publish_dry_run_sermon()` to create+upload on SermonAudio; `status == 'error'` re-uploads local media; otherwise updates existing sermon metadata
+- **Publish paths:** `POST /api/sermons/{id}/upload` (`writes.py::uploadNow`) publishes what is on disk; `POST /api/sermons/{id}/plan/apply` (`render_only=false`) re-renders and publishes; `sermon_updater.publish_dry_run_sermon()` creates a draft on SermonAudio and uploads it
 - **Metadata push surface:** `sermon_updater.push_sermon_fields()` PATCHes the API's `SermonParamsPatch` keys only: `fullTitle`, `displayTitle` (max 30), `subtitle` (max 30), `bibleText`, `eventType`, `keywords`, `moreInfoText`. The default `push_sermon_metadata(..., full_push=False)` stays description-and-hashtags only; the console's "Push all metadata fields" / `POST /api/sermons/{id}/metadata/push` sends the full set and reports skipped fields with reasons
-- **Auto-refresh in Jobs:** the Active tab in `ui/ui_pages/jobs.py` renders inside an `@st.fragment(run_every=2.0)` (`_render_active_tab`, line 137), so running/queued job lists update without a full page rerun; the sidebar "Refresh" button calls `st.rerun()`
-- **Transcript fallback:** `generate_ai_content()` in `library.py:158` tries the SermonAudio transcript first via `sermon_updater.get_sermon_transcript()`, falls back to the local transcript
+- **Jobs polling:** `useJobsData()` polls `/api/jobs` every five seconds, so a running or queued job list updates without a reload
+- **Transcript:** the console reads the transcript through `/api/media/sermons/{id}/transcript`, which serves the file `sermon_files` records
 - **Transcription backends:** `transcription.py` supports whisper-local (`whisper_local`, the code default), faster-whisper (`faster_whisper_local`, CTranslate2), and an OpenAI-compatible cloud backend (`whisper_openai`); device detection (`_detect_device`) maps AMD ROCm to `cuda` for torch-based whisper but passes `allow_rocm=False` for faster-whisper because CTranslate2 has no ROCm support, so it lands on CPU
 
 ## Versioning & Release Process
