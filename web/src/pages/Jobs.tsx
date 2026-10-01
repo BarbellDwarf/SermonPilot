@@ -22,7 +22,7 @@ const stateTone: Record<Job["state"], string> = {
 
 type PendingAction = { job: Job; action: "cancel" | "delete" };
 
-function JobRow({ job, onAction, readOnly, onNotify }: { job: Job; onAction: (a: PendingAction) => void; readOnly: boolean; onNotify: (msg: string) => void }) {
+function JobRow({ job, onAction, readOnly }: { job: Job; onAction: (a: PendingAction) => void; readOnly: boolean }) {
   const [open, setOpen] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const fullTitle = `${job.kind} — ${job.sermon}`;
@@ -70,19 +70,13 @@ function JobRow({ job, onAction, readOnly, onNotify }: { job: Job; onAction: (a:
                     Cancel
                   </Button>
                 ) : null}
-                {job.state === "failed" ? (
-                  <Button onClick={() => onNotify("Retry is unavailable in the read-only bridge.")}>
-                    Retry
+                {job.state === "done" || job.state === "failed" ? (
+                  <Button variant="danger" onClick={() => onAction({ job, action: "delete" })}>
+                    Delete
                   </Button>
                 ) : null}
               </>
-            ) : readOnly ? (
-              job.state === "failed" ? (
-                <Button onClick={() => onNotify("Retry is unavailable in the read-only bridge.")}>
-                  Retry
-                </Button>
-              ) : null
-            ) : (
+            ) : readOnly ? null : (
               <>
                 {job.state === "running" ? (
                   <Button variant="danger" onClick={() => onAction({ job, action: "cancel" })}>
@@ -108,6 +102,12 @@ function JobRow({ job, onAction, readOnly, onNotify }: { job: Job; onAction: (a:
             )}
           </div>
         </div>
+        {isLive && job.state === "failed" ? (
+          <p className="mt-2 text-xs text-muted">
+            This console cannot re-run a failed job. Start a new run from the sermon,
+            or fix the cause and queue it again from New sermon.
+          </p>
+        ) : null}
         {open ? (
           <div id={`log-${job.id}`} className="mt-3 rounded-md border border-line bg-ink p-3">
             {readOnly && detail.isLoading ? (
@@ -191,8 +191,11 @@ export function Jobs() {
       </div>
 
       <p className="text-xs text-muted" role="status" aria-live="polite">
-        {data.active.length} active · {data.completed.length} completed · {data.failed.length} failed
-        {successRate !== null ? ` · ${successRate}% success` : ""}
+        {loading
+          ? "Reading the job list…"
+          : `${data.active.length} active · ${data.completed.length} completed · ${data.failed.length} failed${
+              successRate !== null ? ` · ${successRate}% success` : ""
+            }`}
       </p>
 
       {loading ? (
@@ -213,7 +216,7 @@ export function Jobs() {
       ) : (
         <ol className="grid grid-cols-1 gap-3 xl:grid-cols-2">
           {rows.map((j) => (
-            <JobRow key={j.id} job={j} onAction={setPending} readOnly={isLive} onNotify={showToast} />
+            <JobRow key={j.id} job={j} onAction={setPending} readOnly={isLive} />
           ))}
         </ol>
       )}

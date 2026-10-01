@@ -44,15 +44,70 @@ describe("MediaPlayer", () => {
     expect(document.querySelector("video[data-media-kind='snippet_start']")).toBeTruthy();
   });
 
-  it("falls back to Preview unavailable when the element errors", () => {
+  it("reports a failed playback as a recoverable message, not a bare label", () => {
     render(
       <MediaPlayer sermonId="s-1" kind="processed" contentType="video/mp4" available />,
     );
     const element = document.querySelector("video");
     expect(element).toBeTruthy();
     fireEvent.error(element as HTMLVideoElement);
-    expect(screen.getByText("Preview unavailable.")).toBeTruthy();
+    expect(
+      screen.getByText("This recording could not be played here."),
+    ).toBeTruthy();
     expect(document.querySelector("video")).toBeNull();
+  });
+
+  /**
+   * Regression: the empty state used to render the moment `available` was
+   * false, which included the window before the media request came back. The
+   * page then claimed a sermon had no files while they were still loading.
+   */
+  it("shows a loading state, not the empty state, while the request is in flight", () => {
+    render(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        available={false}
+        loading
+        emptyMessage="No playable audio for this sermon yet."
+      />,
+    );
+    expect(screen.getByTestId("media-loading")).toBeTruthy();
+    expect(screen.queryByTestId("media-empty")).toBeNull();
+    expect(screen.queryByText("No playable audio for this sermon yet.")).toBeNull();
+  });
+
+  it("still shows the empty state once the request settles with nothing there", () => {
+    render(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        available={false}
+        loading={false}
+        emptyMessage="No playable audio for this sermon yet."
+      />,
+    );
+    expect(screen.getByTestId("media-empty")).toBeTruthy();
+    expect(screen.queryByTestId("media-loading")).toBeNull();
+    expect(screen.getByText("No playable audio for this sermon yet.")).toBeTruthy();
+  });
+
+  it("shows the element as soon as the artifact arrives", () => {
+    const { rerender } = render(
+      <MediaPlayer sermonId="s-1" kind="processed" contentType="video/mp4" available={false} loading />,
+    );
+    expect(screen.queryByTestId("media-loading")).toBeTruthy();
+    rerender(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        contentType="video/mp4"
+        available
+        loading={false}
+      />,
+    );
+    expect(document.querySelector("video[data-media-kind='processed']")).toBeTruthy();
+    expect(screen.queryByTestId("media-loading")).toBeNull();
   });
 
   it("renders a marker jump button per cut", () => {

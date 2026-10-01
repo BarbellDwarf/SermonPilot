@@ -18,22 +18,12 @@ import {
   type ServiceState,
   type ServiceStatus,
 } from "../mock/data";
-import { Button, Card, useBriefLoading } from "../components/ui";
+import { useBriefLoading } from "../components/ui";
 import { api, filesApi, isLive, mediaApi, type ApiEditPlan, type ApiJob, type ApiMediaItem, type ApiSermonListItem } from "./client";
 
 export type LibrarySort = "date" | "title" | "duration";
 
-export function QueryError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <Card>
-      <p className="text-sm font-semibold">Could not load data</p>
-      <p className="mt-1 text-sm text-muted">{message}</p>
-      <div className="mt-3">
-        <Button onClick={onRetry}>Retry</Button>
-      </div>
-    </Card>
-  );
-}
+export { QueryError } from "../components/ui";
 
 function toSeconds(d: string): number {
   const parts = d.split(":").map(Number);

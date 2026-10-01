@@ -151,6 +151,126 @@ beforeEach(() => {
   (api.updateSermon as unknown as Mock).mockResolvedValue({});
 });
 
+/**
+ * Regression for the confirmed defect: an early capture of a processed sermon
+ * showed "No playable media for this teaching yet." and "No files recorded for
+ * this teaching." while GET /api/media/sermons/<id> was still in flight and had
+ * nine items waiting. The record query resolves before the media query, so the
+ * page had to be able to tell "not loaded yet" from "genuinely none".
+ */
+describe("LibraryDetail distinguishes loading from genuinely empty", () => {
+  it("never claims a sermon has no files while the media request is in flight", () => {
+    setSermon("uploaded", "pending_review");
+    mocks.media.mockReturnValue({
+      ...mediaData(),
+      items: [],
+      byKind: {},
+      primary: null,
+      audio: null,
+      isLoading: true,
+    });
+    renderDetail();
+
+    const files = screen.getByTestId("completed-files");
+    expect(within(files).queryByTestId("completed-files-empty")).toBeNull();
+    expect(files.textContent ?? "").not.toMatch(/No files/i);
+    expect(within(files).getAllByLabelText("Loading").length).toBeGreaterThan(0);
+  });
+
+  it("never claims a sermon has no playable audio while the request is in flight", () => {
+    setSermon("uploaded", "pending_review");
+    mocks.media.mockReturnValue({
+      ...mediaData(),
+      items: [],
+      byKind: {},
+      primary: null,
+      audio: null,
+      isLoading: true,
+    });
+    renderDetail();
+
+    const player = screen.getByTestId("completed-player");
+    expect(within(player).getByTestId("media-loading")).toBeTruthy();
+    expect(within(player).queryByTestId("media-empty")).toBeNull();
+    expect(player.textContent ?? "").not.toMatch(/No playable audio/i);
+  });
+
+  it("says so honestly once the request settles with nothing on disk", () => {
+    setSermon("uploaded", "pending_review");
+    mocks.media.mockReturnValue({
+      ...mediaData(),
+      items: [],
+      byKind: {},
+      primary: null,
+      audio: null,
+      isLoading: false,
+    });
+    renderDetail();
+
+    const files = screen.getByTestId("completed-files");
+    expect(within(files).getByTestId("completed-files-empty").textContent).toMatch(
+      /No files for this sermon yet/,
+    );
+    expect(screen.queryByLabelText("Loading")).toBeNull();
+  });
+
+  it("offers a retry instead of an empty state when the media request fails", () => {
+    setSermon("uploaded", "pending_review");
+    const retry = vi.fn();
+    mocks.media.mockReturnValue({
+      ...mediaData(),
+      items: [],
+      byKind: {},
+      primary: null,
+      audio: null,
+      isLoading: false,
+      error: "Media previews could not be loaded.",
+      retry,
+    });
+    renderDetail();
+
+    const files = screen.getByTestId("completed-files");
+    expect(within(files).queryByTestId("completed-files-empty")).toBeNull();
+    const button = within(files).getByRole("button", { name: "Try again" });
+    button.click();
+    expect(retry).toHaveBeenCalled();
+  });
+
+  it("keeps the whole page out of the empty state while the plan is loading", () => {
+    setSermon("draft", "pending_review");
+    mocks.media.mockReturnValue({
+      ...mediaData(),
+      items: [],
+      byKind: {},
+      primary: null,
+      audio: null,
+      isLoading: false,
+    });
+    mocks.plan.mockReturnValue({ plan: undefined, history: [], isLoading: true, error: null, retry: vi.fn() });
+    renderDetail();
+
+    expect(screen.queryByText("Nothing to review yet")).toBeNull();
+    expect(screen.getAllByLabelText("Loading").length).toBeGreaterThan(0);
+  });
+
+  it("tells a queued sermon where its plan will appear rather than showing a bare void", () => {
+    setSermon("queued", "pending_review");
+    mocks.media.mockReturnValue({
+      ...mediaData(),
+      items: [],
+      byKind: {},
+      primary: null,
+      audio: null,
+      isLoading: false,
+    });
+    mocks.plan.mockReturnValue({ plan: undefined, history: [], isLoading: false, error: null, retry: vi.fn() });
+    renderDetail();
+
+    expect(screen.getByText("Nothing to review yet")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Watch it under Jobs" }).getAttribute("href")).toBe("/jobs");
+  });
+});
+
 describe("LibraryDetail completed sermons", () => {
   it("renders the finished view for a published record and hides every editing control", () => {
     setSermon("uploaded", "pending_review");

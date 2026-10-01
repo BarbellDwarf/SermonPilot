@@ -13,7 +13,7 @@ import {
   type DetailsPatch,
   type TranscriptState,
 } from "./SermonReview";
-import { Button } from "./ui";
+import { AsyncSection, Button } from "./ui";
 
 const SA_LINK_BASE = "https://www.sermonaudio.com/sermoninfo.asp?SID=";
 
@@ -165,7 +165,8 @@ export function SermonCompleted({
             kind={activeKind}
             contentType={activeItem?.content_type}
             available={!!activeItem?.available}
-            emptyMessage="No playable media for this teaching yet."
+            loading={media.isLoading}
+            emptyMessage="No playable audio for this sermon yet. It appears once the run finishes rendering."
             seekToSec={seek?.sec ?? null}
             seekNonce={seek?.n}
           />
@@ -426,7 +427,7 @@ export function SermonCompleted({
                 />
               </>
             ) : (
-              <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
+              <p className="text-sm text-muted">No transcript for this sermon yet.</p>
             )}
           </div>
         ) : null}
@@ -440,7 +441,19 @@ export function SermonCompleted({
         <h2 id="completed-files-h" className="text-lg font-semibold">
           Files
         </h2>
-        {files.length > 0 ? (
+        <AsyncSection
+          loading={isLive && media.isLoading}
+          error={media.error}
+          onRetry={media.retry}
+          rows={3}
+          isEmpty={files.length === 0}
+          empty={
+            <p data-testid="completed-files-empty" className="mt-2 text-sm text-muted">
+              No files for this sermon yet. They appear once a run finishes and the
+              render is written.
+            </p>
+          }
+        >
           <ul className="mt-3 flex flex-col gap-2">
             {files.map((item) => (
               <li
@@ -464,9 +477,7 @@ export function SermonCompleted({
               </li>
             ))}
           </ul>
-        ) : (
-          <p className="mt-2 text-sm text-muted">No files recorded for this teaching.</p>
-        )}
+        </AsyncSection>
       </section>
 
       <section

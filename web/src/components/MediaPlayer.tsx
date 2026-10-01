@@ -20,6 +20,8 @@ interface MediaPlayerProps {
   kind: string;
   contentType?: string | null;
   available: boolean;
+  /** The request that decides `available` has not come back yet. */
+  loading?: boolean;
   emptyMessage?: string;
   markers?: MediaMarker[];
   seekToSec?: number | null;
@@ -41,6 +43,7 @@ export function MediaPlayer({
   kind,
   contentType,
   available,
+  loading = false,
   emptyMessage,
   markers = [],
   seekToSec = null,
@@ -109,6 +112,19 @@ export function MediaPlayer({
     return () => element.removeEventListener("timeupdate", stopAt);
   }, [playWindow?.nonce]);
 
+  if (loading) {
+    return (
+      <div
+        data-testid="media-loading"
+        aria-label="Loading"
+        aria-busy="true"
+        className={`flex min-h-[64px] items-center justify-center rounded-md border border-line bg-ink px-3 py-6 ${className}`}
+      >
+        <p className="text-center text-sm text-muted">Looking for playable audio…</p>
+      </div>
+    );
+  }
+
   if (!available || failed) {
     return (
       <div
@@ -116,7 +132,7 @@ export function MediaPlayer({
         className={`flex min-h-[64px] items-center justify-center rounded-md border border-dashed border-line bg-ink px-3 py-6 ${className}`}
       >
         <p className="text-center text-sm text-muted">
-          {failed ? "Preview unavailable." : (emptyMessage ?? "Not rendered yet.")}
+          {failed ? "This recording could not be played here." : (emptyMessage ?? "Nothing rendered yet.")}
         </p>
       </div>
     );

@@ -4,7 +4,7 @@ import { SermonReview, type DetailsPatch, type TranscriptState } from "../compon
 import { SermonCompleted } from "../components/SermonCompleted";
 import { sermonActionMatrix, sermonViewMode } from "../components/sermonActions";
 import { sermonStatusLabel, sermonStatusTone } from "./Library";
-import { Button, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast, buttonClass } from "../components/ui";
+import { AsyncSection, Button, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast, buttonClass } from "../components/ui";
 import { QueryError, useSermonDetail, useSermonMedia, useSermonPlan, useSermonTranscript } from "../api/hooks";
 import { api, isLive, writeApi } from "../api/client";
 import type { ApiTrashRecord } from "../api/client";
@@ -67,7 +67,7 @@ export function LibraryDetail() {
   if (isLoading) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader title="Teaching" sub="Loading…" />
+        <PageHeader title="Sermon" sub="Loading…" />
         <SkeletonList rows={3} />
       </div>
     );
@@ -90,8 +90,8 @@ export function LibraryDetail() {
     return (
       <div className="flex flex-col gap-4">
         <EmptyState
-          title="Teaching not found"
-          body="This mock library has only a handful of sample teachings. The link may be stale."
+          title="Sermon not found"
+          body="This library has only a handful of sample sermons. The link may be stale."
           action={
             <Link to="/library" className={buttonClass("primary")}>
               Back to Library
@@ -106,7 +106,7 @@ export function LibraryDetail() {
     return (
       <div className="flex flex-col gap-4">
         <EmptyState
-          title="Teaching deleted"
+          title="Sermon deleted"
           body={
             isLive
               ? `“${sermon.title}” was removed from the database. ${describeDeleteOutcome(trash)}`
@@ -157,7 +157,7 @@ export function LibraryDetail() {
         .catch((e) => {
           setPushing(false);
           const msg = (e as Error).message;
-          showToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`);
+          showToast(/409/.test(msg) ? "A job is already running for this sermon." : `Could not queue: ${msg}`);
         });
       return;
     }
@@ -180,7 +180,7 @@ export function LibraryDetail() {
           const msg = (e as Error).message;
           showToast(
             /409/.test(msg)
-              ? "A job is already running for this teaching."
+              ? "A job is already running for this sermon."
               : `Could not queue: ${msg}`,
           );
         });
@@ -201,7 +201,7 @@ export function LibraryDetail() {
           const msg = (e as Error).message;
           showToast(
             /409/.test(msg)
-              ? "A job is already running for this teaching."
+              ? "A job is already running for this sermon."
               : `Could not queue: ${msg}`,
           );
         });
@@ -296,48 +296,64 @@ export function LibraryDetail() {
           onRegenerateDescription={regenerateDescription}
           onPushDetails={pushDetails}
         />
-      ) : planLoading ? (
-        <SkeletonList rows={3} />
-      ) : planError ? (
-        <QueryError message={planError} onRetry={retryPlan} />
-      ) : plan ? (
-        <SermonReview
-          sermon={sermon}
-          description={detail?.description ?? null}
-          descriptionNeedsReview={detail?.descriptionNeedsReview ?? false}
-          plan={plan}
-          history={planHistory}
-          sourceDurationSec={detail?.durationSeconds}
-          media={media}
-          isLive={isLive}
-          statusChip={<Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>}
-          headerActions={headerActions}
-          transcript={transcriptState}
-          onSaveDetails={saveDetails}
-          onRegenerateDescription={regenerateDescription}
-          onRefresh={retryPlan}
-          onToast={showToast}
-          onUpload={push}
-          enhanceDefault={enhanceDefault}
-          onShowCompleted={viewMode === "completed" ? () => setEditingOverride(false) : undefined}
-        />
       ) : (
-        <div className="flex flex-col gap-4">
-          <PageHeader
-            title={sermon.title}
-            sub={`${sermon.speaker} · ${sermon.date} · ${sermon.duration}`}
-            actions={
-              <>
-                <Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>
-                {headerActions}
-              </>
-            }
-          />
-          <EmptyState
-            title="No auto-edit plan"
-            body="This teaching has no proposed cuts to review. Plans appear here after analysis runs."
-          />
-        </div>
+        <AsyncSection
+          loading={planLoading}
+          error={planError}
+          onRetry={retryPlan}
+          rows={3}
+        >
+          {plan ? (
+            <SermonReview
+              sermon={sermon}
+              description={detail?.description ?? null}
+              descriptionNeedsReview={detail?.descriptionNeedsReview ?? false}
+              plan={plan}
+              history={planHistory}
+              sourceDurationSec={detail?.durationSeconds}
+              media={media}
+              isLive={isLive}
+              statusChip={<Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>}
+              headerActions={headerActions}
+              transcript={transcriptState}
+              onSaveDetails={saveDetails}
+              onRegenerateDescription={regenerateDescription}
+              onRefresh={retryPlan}
+              onToast={showToast}
+              onUpload={push}
+              enhanceDefault={enhanceDefault}
+              onShowCompleted={viewMode === "completed" ? () => setEditingOverride(false) : undefined}
+            />
+          ) : (
+            <div className="flex flex-col gap-4">
+              <PageHeader
+                title={sermon.title}
+                sub={`${sermon.speaker} · ${sermon.date} · ${sermon.duration}`}
+                actions={
+                  <>
+                    <Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>
+                    {headerActions}
+                  </>
+                }
+              />
+              <EmptyState
+                title="Nothing to review yet"
+                body={
+                  sermon.status === "queued"
+                    ? "This sermon is still being worked on. Its proposed cuts appear here once the analysis finishes."
+                    : "No proposed cuts to review for this sermon. A plan appears here after the analysis runs."
+                }
+                action={
+                  sermon.status === "queued" ? (
+                    <Link to="/jobs" className={buttonClass()}>
+                      Watch it under Jobs
+                    </Link>
+                  ) : undefined
+                }
+              />
+            </div>
+          )}
+        </AsyncSection>
       )}
 
       <ConfirmDialog

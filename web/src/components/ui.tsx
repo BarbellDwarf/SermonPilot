@@ -205,6 +205,50 @@ export function EmptyState({ title, body, action }: { title: string; body: strin
   );
 }
 
+export function QueryError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-start gap-2 rounded-lg border border-danger bg-surface p-4">
+      <p className="text-sm font-semibold">Could not load this</p>
+      <p className="max-w-prose text-sm text-muted">{message}</p>
+      <div className="mt-2">
+        <Button onClick={onRetry}>Try again</Button>
+      </div>
+    </div>
+  );
+}
+
+export interface AsyncSectionProps {
+  loading: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+  isEmpty?: boolean;
+  empty?: ReactNode;
+  rows?: number;
+  children: ReactNode;
+}
+
+/**
+ * The one place that decides between still loading, could not load, loaded and
+ * genuinely nothing, and loaded. Every data region goes through it, so an empty
+ * message can never be the answer while a request is still in flight. That was
+ * the Library detail bug: the record query resolved before the media query, so
+ * the page said "No files recorded" for a second on every load.
+ */
+export function AsyncSection({
+  loading,
+  error,
+  onRetry,
+  isEmpty = false,
+  empty = null,
+  rows = 3,
+  children,
+}: AsyncSectionProps) {
+  if (loading) return <SkeletonList rows={rows} />;
+  if (error) return <QueryError message={error} onRetry={onRetry ?? (() => {})} />;
+  if (isEmpty) return <>{empty}</>;
+  return <>{children}</>;
+}
+
 interface ConfirmDialogProps {
   open: boolean;
   title: string;
