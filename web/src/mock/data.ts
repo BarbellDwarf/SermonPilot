@@ -9,7 +9,7 @@ export interface ServiceStatus {
 }
 
 /**
- * The four states a sermon record can be in, named the way the operator
+ * The four states a teaching record can be in, named the way the operator
  * experiences them. `uploaded` is the only one that means it is on
  * SermonAudio. There is no `rendered` state: a record is either uploaded, a
  * draft waiting for review, queued for work, or failed.

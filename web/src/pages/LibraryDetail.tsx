@@ -67,7 +67,7 @@ export function LibraryDetail() {
   if (isLoading) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader title="Sermon" sub="Loading…" />
+        <PageHeader title="Teaching" sub="Loading…" />
         <SkeletonList rows={3} />
       </div>
     );
@@ -90,8 +90,8 @@ export function LibraryDetail() {
     return (
       <div className="flex flex-col gap-4">
         <EmptyState
-          title="Sermon not found"
-          body="This library has only a handful of sample sermons. The link may be stale."
+          title="Teaching not found"
+          body="This library has only a handful of sample teachings. The link may be stale."
           action={
             <Link to="/library" className={buttonClass("primary")}>
               Back to Library
@@ -106,7 +106,7 @@ export function LibraryDetail() {
     return (
       <div className="flex flex-col gap-4">
         <EmptyState
-          title="Sermon deleted"
+          title="Teaching deleted"
           body={
             isLive
               ? `“${sermon.title}” was removed from the database. ${describeDeleteOutcome(trash)}`
@@ -157,7 +157,7 @@ export function LibraryDetail() {
         .catch((e) => {
           setPushing(false);
           const msg = (e as Error).message;
-          showToast(/409/.test(msg) ? "A job is already running for this sermon." : `Could not queue: ${msg}`);
+          showToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`);
         });
       return;
     }
@@ -180,7 +180,7 @@ export function LibraryDetail() {
           const msg = (e as Error).message;
           showToast(
             /409/.test(msg)
-              ? "A job is already running for this sermon."
+              ? "A job is already running for this teaching."
               : `Could not queue: ${msg}`,
           );
         });
@@ -201,7 +201,7 @@ export function LibraryDetail() {
           const msg = (e as Error).message;
           showToast(
             /409/.test(msg)
-              ? "A job is already running for this sermon."
+              ? "A job is already running for this teaching."
               : `Could not queue: ${msg}`,
           );
         });
@@ -340,8 +340,8 @@ export function LibraryDetail() {
                 title="Nothing to review yet"
                 body={
                   sermon.status === "queued"
-                    ? "This sermon is still being worked on. Its proposed cuts appear here once the analysis finishes."
-                    : "No proposed cuts to review for this sermon. A plan appears here after the analysis runs."
+                    ? "This teaching is still being worked on. Its proposed cuts appear here once the analysis finishes."
+                    : "No proposed cuts to review for this teaching. A plan appears here after the analysis runs."
                 }
                 action={
                   sermon.status === "queued" ? (

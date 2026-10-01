@@ -130,9 +130,9 @@ function ArtifactRow({
 const ARTIFACT_NOTES: Record<string, string> = {
   source: "The original recording as it was ingested.",
   processed: "The rendered output with the approved cuts applied.",
-  keeper: "The retained portion of the sermon, cut ends removed.",
+  keeper: "The retained portion of the teaching, cut ends removed.",
   enhanced: "Noise-reduced audio used for transcription and render.",
-  transcript: "Plain-text transcript of the sermon.",
+  transcript: "Plain-text transcript of the teaching.",
   transcript_timestamps: "Transcript split into timecoded segments.",
   snippet_start: "Preview window around the opening cut.",
   snippet_end: "Preview window around the closing cut.",
@@ -557,7 +557,7 @@ export function SermonReview({
             return;
           }
           if (err?.code === "job_active") {
-            onToast("A job is already running for this sermon.");
+            onToast("A job is already running for this teaching.");
             return;
           }
           onToast(err?.message || "Could not queue the upload.");
@@ -594,7 +594,7 @@ export function SermonReview({
         .catch((e) => {
           setApplying(false);
           const msg = (e as Error).message;
-          onToast(/409/.test(msg) ? "A job is already running for this sermon." : `Could not queue: ${msg}`);
+          onToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`);
         });
       return;
     }
@@ -636,7 +636,7 @@ export function SermonReview({
         .catch((e) => {
           setRefining(false);
           const msg = (e as Error).message;
-          onToast(/409/.test(msg) ? "A job is already running for this sermon." : `Could not queue: ${msg}`);
+          onToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`);
         });
       return;
     }
@@ -672,7 +672,7 @@ export function SermonReview({
         .catch((e) => {
           setRefining(false);
           const msg = (e as Error).message;
-          onToast(/409/.test(msg) ? "A job is already running for this sermon." : `Could not queue: ${msg}`);
+          onToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`);
         });
       return;
     }
@@ -828,7 +828,7 @@ const secondaryActions = [
   {
     key: "upload",
     label: "Upload",
-    hint: "Publish this sermon without re-rendering.",
+    hint: "Publish this teaching without re-rendering.",
     show: Boolean(onUpload && actions.canPublishLegacy),
     run: () => onUpload?.(),
     disabled: false,
@@ -962,7 +962,7 @@ return (
                   contentType={activeItem?.content_type}
                   available={!!activeItem?.available}
                   loading={live && media.isLoading}
-                  emptyMessage="No playable audio for this sermon yet. It appears once the run finishes rendering."
+                  emptyMessage="No playable audio for this teaching yet. It appears once the run finishes rendering."
                   markers={[
                     { atSec: safeStart, label: "Start" },
                     { atSec: safeEnd, label: "End" },
@@ -1326,13 +1326,13 @@ return (
                             />
                           </>
                         ) : (
-                          <p className="text-sm text-muted">No transcript for this sermon yet.</p>
+                          <p className="text-sm text-muted">No transcript for this teaching yet.</p>
                         )}
                       </div>
                     ) : null}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted">No transcript for this sermon yet.</p>
+                  <p className="text-sm text-muted">No transcript for this teaching yet.</p>
                 )}
               </ArtifactGroup>
 

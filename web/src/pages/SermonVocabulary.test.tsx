@@ -28,12 +28,28 @@ function row(overrides: Partial<ApiSermonListItem>): ApiSermonListItem {
 
 /**
  * Fixture titles keep their placeholder names on purpose, so they are removed
- * before the scan. What is left is the console's own wording, and none of it
- * may call the thing River processes a "teaching".
+ * before the scan: they are data, not chrome, and they would otherwise satisfy
+ * the check on their own. What is left is the console's own wording, which
+ * names the thing a teaching and never a sermon. The app processes classes as
+ * well as pulpit messages, so the narrower word would misdescribe half of it.
+ *
+ * The markup is flattened to spaced text rather than read through
+ * `textContent`, because `textContent` runs neighbouring elements together
+ * with no separator. Two labels side by side, "Search sermons" then "Sort
+ * teachings", collapse into the single token "sermonsSort", and a word-boundary
+ * pattern then matches nothing. That is the shape most of this console's chrome
+ * takes, so the scan would pass on the very wording it exists to catch.
+ *
+ * The boundary in the negative pattern still matters. "SermonAudio" and
+ * "SermonPilot" are proper nouns, and a bare /sermon/i would fail on the vendor
+ * name the operator has to recognise.
  */
 function consoleWording(): string {
-  const text = document.body.textContent ?? "";
-  return text.replace(/Sample Teaching \d+/g, "");
+  return document.body.innerHTML
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&[a-z]+;|&#\d+;/gi, " ")
+    .replace(/\s+/g, " ")
+    .replace(/Sample Teaching \d+/g, " ");
 }
 
 /**
@@ -68,15 +84,17 @@ describe("one noun and one status vocabulary", () => {
     expect(toLibrarySermon(row({ status: "pending" })).status).toBe("queued");
   });
 
-  it("uses one word for the thing on every page, and never says teaching", async () => {
+  it("uses one word for the thing on every page, and never says sermon", async () => {
     const home = withProviders(<Home />);
     await screen.findAllByText("Uploaded");
-    expect(consoleWording()).not.toMatch(/teaching/i);
+    expect(consoleWording()).toMatch(/teachings?/i);
+    expect(consoleWording()).not.toMatch(/\bsermons?\b/i);
     home.unmount();
 
     withProviders(<Library />);
     await screen.findAllByText("Uploaded");
-    expect(consoleWording()).not.toMatch(/teaching/i);
+    expect(consoleWording()).toMatch(/teachings?/i);
+    expect(consoleWording()).not.toMatch(/\bsermons?\b/i);
     expect(screen.getByRole("heading", { name: "Library" })).toBeTruthy();
   });
 

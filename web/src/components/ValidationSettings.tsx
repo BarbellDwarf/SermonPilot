@@ -16,7 +16,7 @@ interface ValidationState {
 
 const DEFAULTS: ValidationState = {
   enabled: true,
-  criteria: ["Contains a scripture reference", "Mentions the main sermon topic"],
+  criteria: ["Contains a scripture reference", "Mentions the main teaching topic"],
   descMissing: true,
   descMinimal: true,
   descMinLength: "50",

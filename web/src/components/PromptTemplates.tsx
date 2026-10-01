@@ -42,9 +42,9 @@ const TASKS = [
 type TaskKey = (typeof TASKS)[number]["key"];
 
 const SAMPLE_USER: Record<TaskKey, string> = {
-  title: "Generate a sermon title from this transcript:\n{transcript}",
-  short_title: "Shorten this sermon title:\n{full_title}",
-  description: "Write a description for this sermon:\n{transcript}",
+  title: "Generate a teaching title from this transcript:\n{transcript}",
+  short_title: "Shorten this teaching title:\n{full_title}",
+  description: "Write a description for this teaching:\n{transcript}",
   hashtags: "Generate hashtags for:\n{text}",
   hashtag_verification: "Verify these hashtags:\n{initial_hashtags}\n\nSource:\n{original_text}",
   description_validation: "Validate this description:\n{description}\n\nCriteria:\n{criteria_text}",

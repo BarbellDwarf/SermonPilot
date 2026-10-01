@@ -254,7 +254,7 @@ export function SermonAudioAccountsSection({ show }: { show: (m: string) => void
   return (
     <SectionCard
       title="SermonAudio Accounts"
-      sub="Per-broadcaster upload accounts stored on the server. Each account pairs an API key with a broadcaster ID; the ★ default is used when a sermon does not pick one. Only the last four characters of a stored key ever display."
+      sub="Per-broadcaster upload accounts stored on the server. Each account pairs an API key with a broadcaster ID; the ★ default is used when a teaching does not pick one. Only the last four characters of a stored key ever display."
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-muted">

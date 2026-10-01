@@ -7,7 +7,7 @@ export type Section = "home" | "new" | "library" | "jobs" | "settings";
 
 const items: { to: string; end?: boolean; label: string; path: string }[] = [
   { to: "/", end: true, label: "Home", path: "M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z" },
-  { to: "/new", label: "New Sermon", path: "M12 5v14M5 12h14" },
+  { to: "/new", label: "New Teaching", path: "M12 5v14M5 12h14" },
   { to: "/library", label: "Library", path: "M4 5h7v14H4zM13 5h7v14h-7z" },
   { to: "/jobs", label: "Jobs", path: "M4 6h16M4 12h16M4 18h16" },
   { to: "/settings", label: "Settings", path: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 12h2M18 12h2M12 4v2M12 18v2" },

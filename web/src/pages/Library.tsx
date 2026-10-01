@@ -61,7 +61,7 @@ function SermonCard({ sermon }: { sermon: LibrarySermon }) {
             sermonId={sermon.id}
             kind="processed"
             available={isLive && sermon.status !== "queued"}
-            emptyMessage={isLive ? "No rendered audio for this sermon yet." : "Preview available in the live console."}
+            emptyMessage={isLive ? "No rendered audio for this teaching yet." : "Preview available in the live console."}
           />
         </div>
       ) : null}
@@ -95,12 +95,12 @@ export function Library() {
     <div className="flex flex-col gap-4">
       <PageHeader
         title="Library"
-        sub={isLive ? "Every sermon on this server, with its status." : "Sample sermons with their status."}
+        sub={isLive ? "Every teaching on this server, with its status." : "Sample teachings with their status."}
       />
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <label htmlFor="library-search" className="sr-only">
-          Search sermons
+          Search teachings
         </label>
         <input
           id="library-search"
@@ -111,7 +111,7 @@ export function Library() {
           className="min-h-[44px] min-w-0 flex-1 rounded-md border border-line bg-surface px-3 text-sm text-mist placeholder:text-muted"
         />
         <label htmlFor="library-sort" className="sr-only">
-          Sort sermons
+          Sort teachings
         </label>
         <select
           id="library-sort"
@@ -173,7 +173,7 @@ export function Library() {
         <QueryError message={error} onRetry={retry} />
       ) : visible.length === 0 ? (
         <EmptyState
-          title="No sermons match"
+          title="No teachings match"
           body="Try a different search term, or clear the search to see everything."
         />
       ) : (

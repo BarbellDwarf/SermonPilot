@@ -104,8 +104,8 @@ function JobRow({ job, onAction, readOnly }: { job: Job; onAction: (a: PendingAc
         </div>
         {isLive && job.state === "failed" ? (
           <p className="mt-2 text-xs text-muted">
-            This console cannot re-run a failed job. Start a new run from the sermon,
-            or fix the cause and queue it again from New sermon.
+            This console cannot re-run a failed job. Start a new run from the teaching,
+            or fix the cause and queue it again from New teaching.
           </p>
         ) : null}
         {open ? (

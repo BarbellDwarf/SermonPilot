@@ -150,7 +150,7 @@ describe("NewSermon source options", () => {
     await fillMetadata(user);
 
     const file = new File(["audio-bytes"], "sample-sermon.mp3", { type: "audio/mpeg" });
-    await user.upload(screen.getByLabelText("Choose a sermon file"), file);
+    await user.upload(screen.getByLabelText("Choose a teaching file"), file);
     await waitFor(() => expect(submitButton().disabled).toBe(false));
     expect(runSummary().textContent).toContain("sample-sermon.mp3");
     await user.click(submitButton());
@@ -362,7 +362,7 @@ describe("the required path is short and says what is missing", () => {
     expect(runSummary().textContent).toContain("Still needed: source file");
 
     const file = new File(["audio"], "sample.mp3", { type: "audio/mpeg" });
-    await user.upload(screen.getByLabelText("Choose a sermon file"), file);
+    await user.upload(screen.getByLabelText("Choose a teaching file"), file);
     await waitFor(() => expect(submitButton().disabled).toBe(false));
     expect(runSummary().textContent).not.toContain("Still needed");
   });
@@ -371,7 +371,7 @@ describe("the required path is short and says what is missing", () => {
 describe("validation appears inline as the operator works", () => {
   it("says nothing about a field nobody has touched yet", () => {
     renderPage();
-    expect(screen.queryByText("Give the sermon a title.")).toBeNull();
+    expect(screen.queryByText("Give the teaching a title.")).toBeNull();
     expect(screen.queryByText("Say who gave this.")).toBeNull();
     expect(screen.queryByText("Pick the day it was given.")).toBeNull();
     expect(screen.queryByText("Choose a file to upload.")).toBeNull();
@@ -383,7 +383,7 @@ describe("validation appears inline as the operator works", () => {
     const title = screen.getByLabelText("Title (needed)");
     await user.click(title);
     await user.tab();
-    expect(screen.getByText("Give the sermon a title.")).toBeTruthy();
+    expect(screen.getByText("Give the teaching a title.")).toBeTruthy();
     expect(title.getAttribute("aria-invalid")).toBe("true");
   });
 
@@ -403,10 +403,10 @@ describe("validation appears inline as the operator works", () => {
     const title = screen.getByLabelText("Title (needed)");
     await user.click(title);
     await user.tab();
-    expect(screen.getByText("Give the sermon a title.")).toBeTruthy();
+    expect(screen.getByText("Give the teaching a title.")).toBeTruthy();
     await user.type(title, "Sample Title");
     await user.tab();
-    expect(screen.queryByText("Give the sermon a title.")).toBeNull();
+    expect(screen.queryByText("Give the teaching a title.")).toBeNull();
     expect(title.getAttribute("aria-invalid")).toBeNull();
   });
 

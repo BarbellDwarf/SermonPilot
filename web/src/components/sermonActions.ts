@@ -8,7 +8,7 @@ export interface SermonActionState {
 export type SermonViewMode = "editing" | "completed";
 
 /**
- * A sermon is finished once it has been uploaded (record status ``uploaded``)
+ * A teaching is finished once it has been uploaded (record status ``uploaded``)
  * or its edit plan has reached ``processed``. Every other combination still has
  * edit work pending, so it keeps the editing interface.
  */

@@ -147,7 +147,7 @@ export function SermonCompleted({
           <div className="flex flex-wrap items-center gap-2">
             {statusChip}
             <Button variant="primary" data-testid="edit-sermon" onClick={onEdit}>
-              Edit this sermon
+              Edit this teaching
             </Button>
             {headerActions}
           </div>
@@ -166,7 +166,7 @@ export function SermonCompleted({
             contentType={activeItem?.content_type}
             available={!!activeItem?.available}
             loading={media.isLoading}
-            emptyMessage="No playable audio for this sermon yet. It appears once the run finishes rendering."
+            emptyMessage="No playable audio for this teaching yet. It appears once the run finishes rendering."
             seekToSec={seek?.sec ?? null}
             seekNonce={seek?.n}
           />
@@ -427,7 +427,7 @@ export function SermonCompleted({
                 />
               </>
             ) : (
-              <p className="text-sm text-muted">No transcript for this sermon yet.</p>
+              <p className="text-sm text-muted">No transcript for this teaching yet.</p>
             )}
           </div>
         ) : null}
@@ -449,7 +449,7 @@ export function SermonCompleted({
           isEmpty={files.length === 0}
           empty={
             <p data-testid="completed-files-empty" className="mt-2 text-sm text-muted">
-              No files for this sermon yet. They appear once a run finishes and the
+              No files for this teaching yet. They appear once a run finishes and the
               render is written.
             </p>
           }

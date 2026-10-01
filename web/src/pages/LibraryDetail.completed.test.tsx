@@ -209,7 +209,7 @@ describe("LibraryDetail distinguishes loading from genuinely empty", () => {
 
     const files = screen.getByTestId("completed-files");
     expect(within(files).getByTestId("completed-files-empty").textContent).toMatch(
-      /No files for this sermon yet/,
+      /No files for this teaching yet/,
     );
     expect(screen.queryByLabelText("Loading")).toBeNull();
   });

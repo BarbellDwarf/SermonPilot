@@ -4,7 +4,7 @@ import { Card, Chip, EmptyState, Meter, PageHeader, SkeletonList, buttonClass } 
 import { QueryError, useHomeData } from "../api/hooks";
 
 /**
- * One label per record state, used on every page that shows a sermon. The
+ * One label per record state, used on every page that shows a teaching. The
  * wording is what the operator would say out loud: it is on SermonAudio, it is
  * waiting on me, it is still to come, or it broke.
  */
@@ -50,7 +50,7 @@ export function Home() {
   const okCount = services.filter((s) => s.state === "ok").length;
   const unknownCount = services.filter((s) => s.state === "unknown").length;
   const stats: [string, string][] = [
-    ["Sermons", String(recentSermons.length)],
+    ["Teachings", String(recentSermons.length)],
     ["Waiting for you", String(needsReview.length)],
     ["Active jobs", String(activeJobs.length)],
     ["Services ok", `${okCount}/${services.length}`],
@@ -63,7 +63,7 @@ export function Home() {
         sub="What needs you next, then what the machine is doing."
         actions={
           <Link to="/new" className={buttonClass("primary")}>
-            New sermon
+            New teaching
           </Link>
         }
       />
@@ -96,10 +96,10 @@ export function Home() {
         ) : needsYouCount === 0 ? (
           <EmptyState
             title="Nothing is waiting on you"
-            body="Every sermon is uploaded or still queued. New work lands here the moment it needs a decision."
+            body="Every teaching is uploaded or still queued. New work lands here the moment it needs a decision."
             action={
               <Link to="/new" className={buttonClass()}>
-                New sermon
+                New teaching
               </Link>
             }
           />
@@ -157,10 +157,10 @@ export function Home() {
         ) : activeJobs.length === 0 ? (
           <EmptyState
             title="No jobs running"
-            body="Everything is idle. Start a new sermon and it will show up here."
+            body="Everything is idle. Start a new teaching and it will show up here."
             action={
               <Link to="/new" className={buttonClass("primary")}>
-                New sermon
+                New teaching
               </Link>
             }
           />
@@ -213,7 +213,7 @@ export function Home() {
 
       <section aria-labelledby="recent-h">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 id="recent-h" className="text-lg font-semibold">Recent sermons</h2>
+          <h2 id="recent-h" className="text-lg font-semibold">Recent teachings</h2>
           <Link
             to="/library"
             className="inline-flex min-h-[44px] items-center rounded-md px-2 text-sm font-medium text-accent hover:underline"

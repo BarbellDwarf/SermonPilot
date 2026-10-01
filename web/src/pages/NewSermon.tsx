@@ -193,7 +193,7 @@ export function NewSermon() {
       .catch(() => undefined);
   }, []);
 
-  // Speaker / series suggestions from real sermon history (loaded once per visit).
+  // Speaker / series suggestions from real teaching history (loaded once per visit).
   const facetsQuery = useQuery({
     queryKey: ["library", "facets"],
     queryFn: () => libraryApi.facets(),
@@ -488,7 +488,7 @@ export function NewSermon() {
   return (
     <div className="flex flex-col gap-4 pb-8">
       <PageHeader
-        title="New sermon"
+        title="New teaching"
         sub="Choose the recording, say what it is, then queue the run. Two steps are needed; the rest is optional."
         actions={
           <Button variant="ghost" onClick={() => setConfirmReset(true)}>
@@ -542,7 +542,7 @@ export function NewSermon() {
               type="file"
               accept=".mkv,.mp4,.mov,.webm,.m4v,.mp3,.wav,.m4a,.flac,.ogg,.mpa"
               className="sr-only"
-              aria-label="Choose a sermon file"
+              aria-label="Choose a teaching file"
               onChange={(e) => {
                 const f = e.target.files?.[0] ?? null;
                 if (isLive) setFileObj(f);
@@ -554,8 +554,8 @@ export function NewSermon() {
               tabIndex={0}
               aria-label={
                 isLive
-                  ? "Drop a sermon file here, or press Enter to choose one"
-                  : "Drop a sermon file here, or press Enter to pick a mock file"
+                  ? "Drop a teaching file here, or press Enter to choose one"
+                  : "Drop a teaching file here, or press Enter to pick a mock file"
               }
               onDragOver={(e) => {
                 e.preventDefault();
@@ -817,7 +817,7 @@ export function NewSermon() {
         <p className="mt-1 text-xs text-muted">
           {outputIsCloud
             ? "Processed files are staged locally, uploaded to the cloud folder with rclone, then the staging copy is removed."
-            : "Changing this saves it as your default for future sermons. This run is queued with the location chosen here."}
+            : "Changing this saves it as your default for future teachings. This run is queued with the location chosen here."}
         </p>
       </details>
 
@@ -839,7 +839,7 @@ export function NewSermon() {
                 className={inputCls}
               />
             </Field>
-            {fieldError(emptyAndTouched("title") && !meta.title.trim(), "Give the sermon a title.")}
+            {fieldError(emptyAndTouched("title") && !meta.title.trim(), "Give the teaching a title.")}
           </div>
           <div className="min-w-0">
             <Field label="Speaker (needed)" htmlFor="ns-speaker">
@@ -915,7 +915,7 @@ export function NewSermon() {
           <Toggle checked={enhance} onChange={setEnhance} label="Clean the audio" hint="Noise cleanup before transcription." />
           <Toggle checked={transcribe} onChange={setTranscribe} label="Transcribe" hint="Speech-to-text for captions and search." />
           <Toggle checked={aiMeta} onChange={setAiMeta} label="Write the summary and tags" hint="Let the AI draft the title, description, and hashtags." />
-          <Toggle checked={dryRun} onChange={setDryRun} label="Dry run" hint="Process locally and stop before the upload. The sermon stays in the Library as a draft." />
+          <Toggle checked={dryRun} onChange={setDryRun} label="Dry run" hint="Process locally and stop before the upload. The teaching stays in the Library as a draft." />
         </div>
 
         <div className="mt-4">
