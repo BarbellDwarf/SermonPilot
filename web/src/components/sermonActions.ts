@@ -8,7 +8,7 @@ export interface SermonActionState {
 export type SermonViewMode = "editing" | "completed";
 
 /**
- * A sermon is finished once it has been published (record status ``processed``)
+ * A sermon is finished once it has been uploaded (record status ``uploaded``)
  * or its edit plan has reached ``processed``. Every other combination still has
  * edit work pending, so it keeps the editing interface.
  */
@@ -19,7 +19,7 @@ export function sermonViewMode({
   status: LibrarySermonStatus;
   planStatus?: PlanStatus | null;
 }): SermonViewMode {
-  if (status === "processed" || planStatus === "processed") return "completed";
+  if (status === "uploaded" || planStatus === "processed") return "completed";
   return "editing";
 }
 
@@ -34,11 +34,11 @@ export interface SermonActions {
 
 /**
  * Actions that can still succeed for a record in the given state. The two apply
- * actions both re-render, so they stay available for every state, including a
- * published one that needs a re-edit; only the publish-only actions drop away.
+ * actions both re-render, so they stay available for every state, including an
+ * uploaded one that needs a re-edit; only the publish-only actions drop away.
  */
 export function sermonActionMatrix({ status, hasRender }: SermonActionState): SermonActions {
-  const published = status === "processed";
+  const published = status === "uploaded";
   return {
     published,
     canUploadExisting: !published && hasRender,

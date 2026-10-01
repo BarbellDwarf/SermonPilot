@@ -102,6 +102,10 @@ body {
   background-color: var(--danger);
 }
 
+.meter-fill-unknown {
+  background-color: var(--border);
+}
+
 .skeleton-shimmer {
   position: relative;
   overflow: hidden;

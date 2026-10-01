@@ -42,7 +42,7 @@ function sermon(overrides: Partial<LibrarySermon> = {}): LibrarySermon {
     date: "2026-09-06",
     duration: "42:10",
     series: "Sample Series",
-    status: "rendered",
+    status: "draft",
     ...overrides,
   };
 }
@@ -621,7 +621,7 @@ describe("SermonReview mobile layout", () => {
     const user = userEvent.setup();
     renderReview(
       <SermonReview
-        sermon={sermon()}
+        sermon={sermon({ status: "queued" })}
         description={null}
         plan={plan()}
         media={media()}
@@ -989,7 +989,7 @@ describe("SermonReview upload existing render", () => {
     const onToast = vi.fn();
     renderReview(
       <SermonReview
-        sermon={sermon({ status: "rendered" })}
+        sermon={sermon({ status: "draft" })}
         description="A description."
         plan={plan()}
         media={media()}
@@ -1021,7 +1021,7 @@ describe("SermonReview upload existing render", () => {
       .mockResolvedValueOnce({ job_id: "j-up", status: "queued" });
     renderReview(
       <SermonReview
-        sermon={sermon({ status: "rendered" })}
+        sermon={sermon({ status: "draft" })}
         description=""
         plan={plan()}
         media={media()}
@@ -1045,7 +1045,7 @@ describe("SermonReview upload existing render", () => {
   it("hides the upload action once the teaching is published", () => {
     renderReview(
       <SermonReview
-        sermon={sermon({ status: "processed" })}
+        sermon={sermon({ status: "uploaded" })}
         description="A description."
         plan={plan()}
         media={media()}
@@ -1098,7 +1098,7 @@ describe("SermonReview state-aware action row", () => {
   it("drops the publish-only actions and keeps the re-render actions for a published record", () => {
     renderReview(
       <SermonReview
-        sermon={sermon({ status: "processed" })}
+        sermon={sermon({ status: "uploaded" })}
         description="A description."
         plan={plan()}
         media={media()}
@@ -1118,7 +1118,7 @@ describe("SermonReview state-aware action row", () => {
   it("labels the plan chip so a published record is not read as pending review", () => {
     renderReview(
       <SermonReview
-        sermon={sermon({ status: "processed" })}
+        sermon={sermon({ status: "uploaded" })}
         description="A description."
         plan={plan()}
         media={media()}
@@ -1136,7 +1136,7 @@ describe("SermonReview state-aware action row", () => {
     const user = userEvent.setup();
     renderReview(
       <SermonReview
-        sermon={sermon({ status: "processed" })}
+        sermon={sermon({ status: "uploaded" })}
         description="A description."
         plan={plan()}
         media={media()}
@@ -1158,7 +1158,7 @@ describe("SermonReview state-aware action row", () => {
     const user = userEvent.setup();
     renderReview(
       <SermonReview
-        sermon={sermon({ status: "rendered" })}
+        sermon={sermon({ status: "queued" })}
         description="A description."
         plan={plan()}
         media={media()}

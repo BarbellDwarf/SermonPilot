@@ -15,6 +15,7 @@ import {
   type PlanStatus,
   type Sermon,
   type SermonStatus,
+  type ServiceState,
   type ServiceStatus,
 } from "../mock/data";
 import { Button, Card, useBriefLoading } from "../components/ui";
@@ -72,15 +73,23 @@ export function toEditPlan(p: ApiEditPlan): EditPlan {
   };
 }
 
+/**
+ * The single mapping from the database's record status to the word the
+ * operator sees. Two vocabularies used to live side by side, which meant the
+ * same record read "Ready" on Home and "Processed" in the Library.
+ */
+const DB_STATUS_MAP: Record<string, SermonStatus> = {
+  processed: "uploaded",
+  draft: "draft",
+  error: "failed",
+  pending: "queued",
+};
+
+export function toSermonStatus(value: string | null | undefined): SermonStatus {
+  return DB_STATUS_MAP[String(value ?? "")] ?? "queued";
+}
+
 export function toLibrarySermon(s: ApiSermonListItem): LibrarySermon {
-  const status =
-    s.status === "draft"
-      ? "draft"
-      : s.status === "processed"
-        ? "processed"
-        : s.status === "error"
-          ? "failed"
-          : "rendered";
   return {
     id: s.id,
     title: s.title || "(untitled)",
@@ -88,7 +97,7 @@ export function toLibrarySermon(s: ApiSermonListItem): LibrarySermon {
     date: s.date,
     duration: s.duration,
     series: s.series,
-    status,
+    status: toSermonStatus(s.status),
   };
 }
 
@@ -466,14 +475,12 @@ export interface HomeData {
   activeJobs: Job[];
   recentSermons: Sermon[];
   upNext: Job[];
+  /** Drafts waiting on the operator's approval, newest first. */
+  needsReview: Sermon[];
+  /** Records whose last run failed. */
+  failed: Sermon[];
+  needsReviewTotal: number;
 }
-
-const SERMON_STATUS_MAP: Record<string, SermonStatus> = {
-  processed: "ready",
-  draft: "draft",
-  pending: "processing",
-  error: "failed",
-};
 
 function toRecentSermon(s: ApiSermonListItem): Sermon {
   return {
@@ -481,16 +488,34 @@ function toRecentSermon(s: ApiSermonListItem): Sermon {
     title: s.title || "(untitled)",
     speaker: s.speaker || "Unknown speaker",
     duration: s.duration,
-    status: SERMON_STATUS_MAP[s.status] ?? "processing",
+    status: toSermonStatus(s.status),
     updated: fmtStamp(s.date),
   };
 }
 
 const SERVICE_LABELS: Record<string, string> = {
-  sermonaudio_api: "API",
+  sermonaudio_api: "SermonAudio",
   database: "Database",
-  llm_primary: "LLM",
-  local_storage: "Storage",
+  llm_primary: "AI provider",
+  local_storage: "Output folder",
+};
+
+/**
+ * A check that could not determine its state is not a warning. Amber means
+ * "something needs attention", so it has to be earned.
+ */
+function toServiceState(raw: string): ServiceState {
+  if (raw === "ok") return "ok";
+  if (raw === "warning") return "warn";
+  if (raw === "error") return "error";
+  return "unknown";
+}
+
+const SERVICE_LEVEL: Record<ServiceState, number> = {
+  ok: 85,
+  warn: 40,
+  error: 15,
+  unknown: 60,
 };
 
 export function useHomeData() {
@@ -520,6 +545,9 @@ export function useHomeData() {
       activeJobs,
       recentSermons,
       upNext: activeJobs.filter((j) => j.state === "queued").slice(0, 3),
+      needsReview: recentSermons.filter((s) => s.status === "draft").slice(0, 4),
+      failed: recentSermons.filter((s) => s.status === "failed").slice(0, 4),
+      needsReviewTotal: recentSermons.filter((s) => s.status === "draft").length,
     }),
     [],
   );
@@ -529,19 +557,26 @@ export function useHomeData() {
   }
   const servicesLive: ServiceStatus[] = Object.entries(statusQuery.data?.status ?? {})
     .filter(([id]) => id in SERVICE_LABELS)
-    .map(([id, s]) => ({
-      id,
-      label: SERVICE_LABELS[id],
-      detail: s.message || s.details,
-      state: s.status === "ok" ? "ok" : s.status === "warning" ? "warn" : "error",
-      level: s.status === "ok" ? 85 : s.status === "warning" ? 40 : 15,
-    }));
+    .map(([id, s]) => {
+      const state = toServiceState(s.status);
+      return {
+        id,
+        label: SERVICE_LABELS[id],
+        detail: s.details || s.message || state,
+        state,
+        level: SERVICE_LEVEL[state],
+      };
+    });
   const allJobs = (jobsQuery.data?.items ?? []).map((j) => toJob(j));
+  const recent = (sermonsQuery.data?.items ?? []).map(toRecentSermon);
   const data: HomeData = {
     services: servicesLive,
     activeJobs: allJobs.filter((j) => j.state === "queued" || j.state === "running"),
-    recentSermons: (sermonsQuery.data?.items ?? []).slice(0, 4).map(toRecentSermon),
+    recentSermons: recent.slice(0, 4),
     upNext: allJobs.filter((j) => j.state === "queued").slice(0, 3),
+    needsReview: recent.filter((s) => s.status === "draft").slice(0, 4),
+    failed: recent.filter((s) => s.status === "failed").slice(0, 4),
+    needsReviewTotal: recent.filter((s) => s.status === "draft").length,
   };
   const isLoading = statusQuery.isPending || jobsQuery.isPending || sermonsQuery.isPending;
   const isError = statusQuery.isError || jobsQuery.isError || sermonsQuery.isError;

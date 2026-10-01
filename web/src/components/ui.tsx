@@ -267,12 +267,14 @@ export function Toast({ message }: { message: string | null }) {
   );
 }
 
-export function Meter({ level, state }: { level: number; state: "ok" | "warn" | "error" }) {
+export type MeterState = "ok" | "warn" | "error" | "unknown";
+
+export function Meter({ level, state }: { level: number; state: MeterState }) {
   return (
     <div
       className="meter-track h-16 w-2 shrink-0 overflow-hidden rounded-sm"
       role="img"
-      aria-label={`level ${level} percent, ${state}`}
+      aria-label={state === "unknown" ? "state not determined" : `level ${level} percent, ${state}`}
     >
       <div className="flex h-full flex-col justify-end">
         <div className={`meter-fill-${state} w-full`} style={{ height: `${level}%` }} />

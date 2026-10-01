@@ -7,16 +7,16 @@ import { QueryError, useLibrarySermons, type LibrarySort } from "../api/hooks";
 import { isLive } from "../api/client";
 
 export const sermonStatusTone: Record<LibrarySermonStatus, string> = {
-  draft: "neutral",
-  rendered: "warn",
-  processed: "ok",
+  draft: "warn",
+  queued: "neutral",
+  uploaded: "ok",
   failed: "error",
 };
 
 export const sermonStatusLabel: Record<LibrarySermonStatus, string> = {
-  draft: "Draft",
-  rendered: "Rendered — not uploaded",
-  processed: "Processed",
+  draft: "Waiting for you",
+  queued: "Queued",
+  uploaded: "Uploaded",
   failed: "Failed",
 };
 
@@ -60,8 +60,8 @@ function SermonCard({ sermon }: { sermon: LibrarySermon }) {
           <MediaPlayer
             sermonId={sermon.id}
             kind="processed"
-            available={isLive}
-            emptyMessage={isLive ? "Not rendered yet." : "Preview available in the live console."}
+            available={isLive && sermon.status !== "queued"}
+            emptyMessage={isLive ? "No rendered audio for this sermon yet." : "Preview available in the live console."}
           />
         </div>
       ) : null}
@@ -93,11 +93,14 @@ export function Library() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Library" sub={isLive ? "Teachings from the live database, with status, search, and sort." : "Mock teachings with status, search, and sort."} />
+      <PageHeader
+        title="Library"
+        sub={isLive ? "Every sermon on this server, with its status." : "Sample sermons with their status."}
+      />
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <label htmlFor="library-search" className="sr-only">
-          Search teachings
+          Search sermons
         </label>
         <input
           id="library-search"
@@ -108,7 +111,7 @@ export function Library() {
           className="min-h-[44px] min-w-0 flex-1 rounded-md border border-line bg-surface px-3 text-sm text-mist placeholder:text-muted"
         />
         <label htmlFor="library-sort" className="sr-only">
-          Sort teachings
+          Sort sermons
         </label>
         <select
           id="library-sort"
@@ -170,7 +173,7 @@ export function Library() {
         <QueryError message={error} onRetry={retry} />
       ) : visible.length === 0 ? (
         <EmptyState
-          title="No teachings match"
+          title="No sermons match"
           body="Try a different search term, or clear the search to see everything."
         />
       ) : (

@@ -1,4 +1,4 @@
-export type ServiceState = "ok" | "warn" | "error";
+export type ServiceState = "ok" | "warn" | "error" | "unknown";
 
 export interface ServiceStatus {
   id: string;
@@ -8,7 +8,13 @@ export interface ServiceStatus {
   level: number;
 }
 
-export type SermonStatus = "ready" | "processing" | "draft" | "failed";
+/**
+ * The four states a sermon record can be in, named the way the operator
+ * experiences them. `uploaded` is the only one that means it is on
+ * SermonAudio. There is no `rendered` state: a record is either uploaded, a
+ * draft waiting for review, queued for work, or failed.
+ */
+export type SermonStatus = "uploaded" | "draft" | "queued" | "failed";
 
 export interface Sermon {
   id: string;
@@ -63,13 +69,14 @@ export const activeJobs: Job[] = [
 ];
 
 export const recentSermons: Sermon[] = [
-  { id: "s-01", title: "Sample Teaching 1", speaker: "Speaker A", duration: "42:10", status: "ready", updated: "Today 09:12" },
-  { id: "s-02", title: "Sample Teaching 2", speaker: "Speaker B", duration: "38:44", status: "processing", updated: "Today 08:50" },
+  { id: "s-01", title: "Sample Teaching 1", speaker: "Speaker A", duration: "42:10", status: "uploaded", updated: "Today 09:12" },
+  { id: "s-02", title: "Sample Teaching 2", speaker: "Speaker B", duration: "38:44", status: "queued", updated: "Today 08:50" },
   { id: "s-03", title: "Sample Teaching 3", speaker: "Speaker C", duration: "51:02", status: "draft", updated: "Yesterday 17:20" },
   { id: "s-04", title: "Sample Teaching 4", speaker: "Speaker A", duration: "44:37", status: "failed", updated: "Yesterday 15:03" },
 ];
 
-export type LibrarySermonStatus = "draft" | "rendered" | "processed" | "failed";
+/** One vocabulary, shared with the list view and the detail view. */
+export type LibrarySermonStatus = SermonStatus;
 
 export interface LibrarySermon {
   id: string;
@@ -82,12 +89,13 @@ export interface LibrarySermon {
 }
 
 export const librarySermons: LibrarySermon[] = [
-  { id: "s-01", title: "Sample Teaching 1", speaker: "Speaker A", date: "2026-09-06", duration: "42:10", series: "Sample Series A", status: "rendered" },
+  { id: "s-01", title: "Sample Teaching 1", speaker: "Speaker A", date: "2026-09-06", duration: "42:10", series: "Sample Series A", status: "draft" },
   { id: "s-02", title: "Sample Teaching 2", speaker: "Speaker B", date: "2026-09-05", duration: "38:44", series: "Sample Series A", status: "draft" },
-  { id: "s-03", title: "Sample Teaching 3", speaker: "Speaker C", date: "2026-09-04", duration: "51:02", series: "Sample Series B", status: "processed" },
-  { id: "s-04", title: "Sample Teaching 4", speaker: "Speaker A", date: "2026-09-03", duration: "44:37", series: "Sample Series B", status: "rendered" },
-  { id: "s-05", title: "Sample Teaching 5", speaker: "Speaker B", date: "2026-09-02", duration: "39:15", series: "Sample Series C", status: "processed" },
+  { id: "s-03", title: "Sample Teaching 3", speaker: "Speaker C", date: "2026-09-04", duration: "51:02", series: "Sample Series B", status: "uploaded" },
+  { id: "s-04", title: "Sample Teaching 4", speaker: "Speaker A", date: "2026-09-03", duration: "44:37", series: "Sample Series B", status: "queued" },
+  { id: "s-05", title: "Sample Teaching 5", speaker: "Speaker B", date: "2026-09-02", duration: "39:15", series: "Sample Series C", status: "uploaded" },
   { id: "s-06", title: "Sample Teaching 6", speaker: "Speaker C", date: "2026-09-01", duration: "47:28", series: "Sample Series C", status: "draft" },
+  { id: "s-07", title: "Sample Teaching 7", speaker: "Speaker C", date: "2026-08-31", duration: "44:02", series: "Sample Series C", status: "failed" },
 ];
 
 export type PlanStatus = "draft" | "pending_review" | "applied_local" | "processed" | "superseded";

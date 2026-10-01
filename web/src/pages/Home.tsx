@@ -1,34 +1,69 @@
 import { Link } from "react-router-dom";
-import { type SermonStatus } from "../mock/data";
+import { type Sermon, type SermonStatus } from "../mock/data";
 import { Card, Chip, EmptyState, Meter, PageHeader, SkeletonList, buttonClass } from "../components/ui";
 import { QueryError, useHomeData } from "../api/hooks";
 
-const sermonTone: Record<SermonStatus, string> = {
-  ready: "ok",
-  processing: "info",
-  draft: "neutral",
+/**
+ * One label per record state, used on every page that shows a sermon. The
+ * wording is what the operator would say out loud: it is on SermonAudio, it is
+ * waiting on me, it is still to come, or it broke.
+ */
+export const sermonStatusLabel: Record<SermonStatus, string> = {
+  uploaded: "Uploaded",
+  draft: "Waiting for you",
+  queued: "Queued",
+  failed: "Failed",
+};
+
+export const sermonStatusTone: Record<SermonStatus, string> = {
+  uploaded: "ok",
+  draft: "warn",
+  queued: "neutral",
   failed: "error",
 };
 
+export const serviceStateLabel: Record<string, string> = {
+  ok: "OK",
+  warn: "Warning",
+  error: "Problem",
+  unknown: "Not measured",
+};
+
+function NeedsYouRow({ sermon, verb }: { sermon: Sermon; verb: string }) {
+  return (
+    <li>
+      <Link
+        to={`/library/${sermon.id}`}
+        className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-line bg-surface px-3 py-2 transition-colors hover:border-muted"
+      >
+        <Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{sermon.title}</span>
+        <span className="font-mono text-xs text-muted">{verb}</span>
+      </Link>
+    </li>
+  );
+}
+
 export function Home() {
   const { data, isLoading: loading, error, retry } = useHomeData();
-  const { services, activeJobs, recentSermons, upNext } = data;
+  const { services, activeJobs, recentSermons, upNext, needsReview, failed } = data;
   const okCount = services.filter((s) => s.state === "ok").length;
-  const queuedCount = activeJobs.filter((j) => j.state === "queued").length;
+  const unknownCount = services.filter((s) => s.state === "unknown").length;
   const stats: [string, string][] = [
-    ["Teachings", String(recentSermons.length)],
+    ["Sermons", String(recentSermons.length)],
+    ["Waiting for you", String(needsReview.length)],
     ["Active jobs", String(activeJobs.length)],
-    ["Queued", String(queuedCount)],
     ["Services ok", `${okCount}/${services.length}`],
   ];
+  const needsYouCount = needsReview.length + failed.length;
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Home"
-        sub="Pipeline health, active work, and recent teachings."
+        sub="What needs you next, then what the machine is doing."
         actions={
           <Link to="/new" className={buttonClass("primary")}>
-            Start new sermon
+            New sermon
           </Link>
         }
       />
@@ -46,8 +81,49 @@ export function Home() {
         </dl>
       </section>
 
+      <section aria-labelledby="needs-h">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 id="needs-h" className="text-lg font-semibold">Needs you</h2>
+          <Link
+            to="/library"
+            className="inline-flex min-h-[44px] items-center rounded-md px-2 text-sm font-medium text-accent hover:underline"
+          >
+            Open library
+          </Link>
+        </div>
+        {loading ? (
+          <SkeletonList rows={2} />
+        ) : needsYouCount === 0 ? (
+          <EmptyState
+            title="Nothing is waiting on you"
+            body="Every sermon is uploaded or still queued. New work lands here the moment it needs a decision."
+            action={
+              <Link to="/new" className={buttonClass()}>
+                New sermon
+              </Link>
+            }
+          />
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {needsReview.map((s) => (
+              <NeedsYouRow key={`review-${s.id}`} sermon={s} verb="Review and publish" />
+            ))}
+            {failed.map((s) => (
+              <NeedsYouRow key={`failed-${s.id}`} sermon={s} verb="Retry or re-run" />
+            ))}
+          </ul>
+        )}
+      </section>
+
       <section aria-labelledby="status-h">
-        <h2 id="status-h" className="mb-2 text-lg font-semibold">System status</h2>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 id="status-h" className="text-lg font-semibold">System status</h2>
+          {unknownCount > 0 ? (
+            <p className="text-xs text-muted">
+              {unknownCount} of {services.length} could not be measured.
+            </p>
+          ) : null}
+        </div>
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {services.map((s) => (
             <li key={s.id}>
@@ -56,9 +132,9 @@ export function Home() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-semibold">{s.label}</p>
-                    <Chip tone={s.state}>{s.state}</Chip>
+                    <Chip tone={s.state}>{serviceStateLabel[s.state]}</Chip>
                   </div>
-                  <p className="mt-1 truncate text-sm text-muted">{s.detail}</p>
+                  <p className="mt-1 text-sm text-muted [overflow-wrap:anywhere]">{s.detail}</p>
                 </div>
               </Card>
             </li>
@@ -76,18 +152,18 @@ export function Home() {
             View all
           </Link>
         </div>
-        {activeJobs.length === 0 ? (
+        {loading ? (
+          <SkeletonList rows={2} />
+        ) : activeJobs.length === 0 ? (
           <EmptyState
             title="No jobs running"
             body="Everything is idle. Start a new sermon and it will show up here."
             action={
               <Link to="/new" className={buttonClass("primary")}>
-                Start new sermon
+                New sermon
               </Link>
             }
           />
-        ) : loading ? (
-          <SkeletonList rows={2} />
         ) : (
           <ol className="flex flex-col gap-2">
             {activeJobs.map((j) => (
@@ -96,7 +172,7 @@ export function Home() {
                   <Chip tone={j.state === "running" ? "accent" : "neutral"}>{j.state}</Chip>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">{j.kind}</p>
-                    <p className="truncate font-mono text-xs text-muted">{j.id} · {j.sermon} · since {j.created}</p>
+                    <p className="truncate font-mono text-xs text-muted">{j.sermon} · since {j.created}</p>
                   </div>
                   <span className="font-mono text-xs text-muted">{j.duration}</span>
                 </Card>
@@ -126,7 +202,7 @@ export function Home() {
                   <Chip tone="neutral">{j.state}</Chip>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">{j.kind}</p>
-                    <p className="truncate font-mono text-xs text-muted">{j.id} · {j.sermon} · since {j.created}</p>
+                    <p className="truncate font-mono text-xs text-muted">{j.sermon} · since {j.created}</p>
                   </div>
                 </Card>
               </li>
@@ -145,30 +221,30 @@ export function Home() {
             Open library
           </Link>
         </div>
-        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {loading ? (
-            <li className="col-span-full">
-              <SkeletonList rows={2} />
-            </li>
-          ) : (
-            recentSermons.map((s) => (
-            <li key={s.id}>
-              <Link
-                to={`/library/${s.id}`}
-                aria-label={`${s.title} by ${s.speaker}, status ${s.status}`}
-                className="block w-full rounded-lg border border-line bg-surface p-4 text-left transition-colors hover:border-muted"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <Chip tone={sermonTone[s.status]}>{s.status}</Chip>
-                  <span className="font-mono text-xs text-muted">{s.duration}</span>
-                </div>
-                <p className="mt-2 text-base font-semibold [overflow-wrap:anywhere]">{s.title}</p>
-                <p className="truncate text-sm text-muted">{s.speaker} · {s.updated}</p>
-              </Link>
-            </li>
-            ))
-          )}
-        </ul>
+        {loading ? (
+          <SkeletonList rows={2} />
+        ) : (
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {recentSermons.map((s) => (
+              <li key={s.id}>
+                <Link
+                  to={`/library/${s.id}`}
+                  aria-label={`${s.title} by ${s.speaker}, ${sermonStatusLabel[s.status]}`}
+                  className="block w-full rounded-lg border border-line bg-surface p-4 text-left transition-colors hover:border-muted"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <Chip tone={sermonStatusTone[s.status]}>{sermonStatusLabel[s.status]}</Chip>
+                    <span className="font-mono text-xs text-muted">{s.duration}</span>
+                  </div>
+                  <p className="mt-2 text-base font-semibold [overflow-wrap:anywhere]">{s.title}</p>
+                  <p className="truncate text-sm text-muted">
+                    {s.speaker} · {s.updated}
+                  </p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );

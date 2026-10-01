@@ -143,7 +143,7 @@ beforeEach(() => {
 describe("LibraryDetail state-aware header actions", () => {
   it("hides the legacy push and keeps the re-render actions once a published sermon is opened for editing", async () => {
     const user = userEvent.setup();
-    setSermon("processed", true);
+    setSermon("uploaded", true);
     renderDetail();
 
     expect(screen.getByTestId("sermon-completed")).toBeTruthy();
@@ -156,14 +156,14 @@ describe("LibraryDetail state-aware header actions", () => {
   });
 
   it("keeps the legacy push for a locally rendered sermon that is not published", () => {
-    setSermon("rendered", true);
+    setSermon("queued", true);
     renderDetail();
 
     expect(screen.getByRole("button", { name: "Push to SermonAudio" })).toBeTruthy();
   });
 
   it("passes the detail duration to the review timeline", () => {
-    setSermon("rendered", false, 3600);
+    setSermon("draft", false, 3600);
     renderDetail();
 
     expect(screen.getByTestId("timeline-track").getAttribute("data-span-sec")).toBe("3600");

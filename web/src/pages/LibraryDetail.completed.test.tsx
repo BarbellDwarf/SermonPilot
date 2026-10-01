@@ -153,7 +153,7 @@ beforeEach(() => {
 
 describe("LibraryDetail completed sermons", () => {
   it("renders the finished view for a published record and hides every editing control", () => {
-    setSermon("processed", "pending_review");
+    setSermon("uploaded", "pending_review");
     renderDetail();
 
     expect(screen.getByTestId("sermon-completed")).toBeTruthy();
@@ -216,7 +216,7 @@ describe("LibraryDetail completed sermons", () => {
   });
 
   it("treats a processed plan as completed even when the record status lags", () => {
-    setSermon("rendered", "processed");
+    setSermon("draft", "processed");
     renderDetail();
 
     expect(screen.getByTestId("sermon-completed")).toBeTruthy();
@@ -225,7 +225,7 @@ describe("LibraryDetail completed sermons", () => {
 
   it("switches a published record into editing mode and back again", async () => {
     const user = userEvent.setup();
-    setSermon("processed", "pending_review");
+    setSermon("uploaded", "pending_review");
     renderDetail();
 
     await user.click(screen.getByTestId("edit-sermon"));
@@ -243,7 +243,7 @@ describe("LibraryDetail completed sermons", () => {
 describe("LibraryDetail completed details editing", () => {
   it("issues the same metadata update call from the finished view", async () => {
     const user = userEvent.setup();
-    setSermon("processed", "pending_review");
+    setSermon("uploaded", "pending_review");
     renderDetail();
 
     await user.click(screen.getByTestId("edit-details"));
@@ -266,7 +266,7 @@ describe("LibraryDetail completed details editing", () => {
 
   it("queues a full metadata push from the finished view", async () => {
     const user = userEvent.setup();
-    setSermon("processed", "pending_review");
+    setSermon("uploaded", "pending_review");
     (writeApi.pushMetadata as unknown as Mock).mockResolvedValue({
       job_id: "j-1",
       status: "queued",
@@ -282,7 +282,7 @@ describe("LibraryDetail completed details editing", () => {
 
   it("opens the transcript from the finished view with copy and download affordances", async () => {
     const user = userEvent.setup();
-    setSermon("processed", "pending_review");
+    setSermon("uploaded", "pending_review");
     renderDetail();
 
     const section = screen.getByTestId("completed-transcript");
