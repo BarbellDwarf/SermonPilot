@@ -39,13 +39,13 @@ describe("NewSermon demo mode", () => {
     renderPage();
 
     await user.click(screen.getByRole("button", { name: "Choose file" }));
-    await user.type(screen.getByLabelText("Title (required)"), "Sample Title");
+    await user.type(screen.getByLabelText("Title (needed)"), "Sample Title");
     await user.type(screen.getByRole("combobox", { name: "Speaker" }), "Sample Speaker");
-    fireEvent.change(screen.getByLabelText("Date (required)"), {
+    fireEvent.change(screen.getByLabelText("Date (needed)"), {
       target: { value: "2026-09-22" },
     });
 
-    const submit = screen.getByRole("button", { name: "Start Processing" }) as HTMLButtonElement;
+    const submit = screen.getByRole("button", { name: "Start processing" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(false);
     await user.click(submit);
 

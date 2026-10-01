@@ -9,6 +9,7 @@ interface ComboboxProps {
   id: string;
   value: string;
   onChange: (value: string) => void;
+  onBlur?: () => void;
   options: ComboboxOption[];
   placeholder?: string;
   ariaLabel?: string;
@@ -20,6 +21,7 @@ export function Combobox({
   id,
   value,
   onChange,
+  onBlur,
   options,
   placeholder,
   ariaLabel,
@@ -124,6 +126,7 @@ export function Combobox({
           setTyped(false);
           openList();
         }}
+        onBlur={onBlur}
         onClick={() => {
           setTyped(false);
           openList();

@@ -1,9 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NewSermon } from "./NewSermon";
+import { withProviders } from "../test/harness";
 
 const mocks = vi.hoisted(() => ({
   listBranding: vi.fn(),
@@ -46,29 +45,21 @@ vi.mock("../api/client", () => ({
 }));
 
 function renderPage(entry = "/new") {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={client}>
-      <MemoryRouter
-        initialEntries={[entry]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
-        <NewSermon />
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
+  return withProviders(<NewSermon />, entry);
 }
 
 async function fillMetadata(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText("Title (required)"), "Sample Title");
+  await user.type(screen.getByLabelText("Title (needed)"), "Sample Title");
   await user.type(screen.getByRole("combobox", { name: "Speaker" }), "Sample Speaker");
-  fireEvent.change(screen.getByLabelText("Date (required)"), {
+  fireEvent.change(screen.getByLabelText("Date (needed)"), {
     target: { value: "2026-09-22" },
   });
 }
 
 const submitButton = () =>
-  screen.getByRole("button", { name: "Start Processing" }) as HTMLButtonElement;
+  screen.getByRole("button", { name: "Start processing" }) as HTMLButtonElement;
+
+const runSummary = () => screen.getByTestId("run-summary");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -161,9 +152,7 @@ describe("NewSermon source options", () => {
     const file = new File(["audio-bytes"], "sample-sermon.mp3", { type: "audio/mpeg" });
     await user.upload(screen.getByLabelText("Choose a sermon file"), file);
     await waitFor(() => expect(submitButton().disabled).toBe(false));
-    expect(screen.getByLabelText("Selection summary").textContent).toContain(
-      "upload:sample-sermon.mp3",
-    );
+    expect(runSummary().textContent).toContain("sample-sermon.mp3");
     await user.click(submitButton());
 
     await waitFor(() => expect(mocks.uploadFile).toHaveBeenCalledTimes(1));
@@ -181,9 +170,7 @@ describe("NewSermon source options", () => {
     await user.type(screen.getByRole("textbox", { name: "Server path" }), "/media/sample-sermon.mp3");
     await fillMetadata(user);
     await waitFor(() => expect(submitButton().disabled).toBe(false));
-    expect(screen.getByLabelText("Selection summary").textContent).toContain(
-      "server:/media/sample-sermon.mp3",
-    );
+    expect(runSummary().textContent).toContain("/media/sample-sermon.mp3");
     await user.click(submitButton());
 
     await waitFor(() => expect(mocks.createServerPath).toHaveBeenCalledTimes(1));
@@ -204,9 +191,8 @@ describe("NewSermon source options", () => {
     await user.click(useButton);
     await fillMetadata(user);
     await waitFor(() => expect(submitButton().disabled).toBe(false));
-    expect(screen.getByLabelText("Selection summary").textContent).toContain(
-      "cloud:remote:sample-remote:sample-sermon.mp3",
-    );
+    expect(runSummary().textContent).toContain("sample-remote");
+    expect(runSummary().textContent).toContain("sample-sermon.mp3");
     await user.click(submitButton());
 
     await waitFor(() => expect(mocks.createServerPath).toHaveBeenCalledTimes(1));
@@ -222,18 +208,18 @@ describe("NewSermon source options", () => {
     await fillMetadata(user);
 
     expect(submitButton().disabled).toBe(true);
-    expect(screen.getByText("Choose a file to upload.")).toBeTruthy();
+    expect(runSummary().textContent).toContain("Still needed: source file");
 
     await user.click(screen.getByRole("tab", { name: "Server path" }));
     expect(submitButton().disabled).toBe(true);
-    expect(screen.getByText("Enter an absolute path that exists on the server.")).toBeTruthy();
+    expect(runSummary().textContent).toContain("Still needed: valid server path");
 
     await user.type(screen.getByRole("textbox", { name: "Server path" }), "/media/sample-sermon.mp3");
     await waitFor(() => expect(submitButton().disabled).toBe(false));
 
     await user.click(screen.getByRole("tab", { name: "Cloud file" }));
     expect(submitButton().disabled).toBe(true);
-    expect(screen.getByText(/Pick a file with/)).toBeTruthy();
+    expect(runSummary().textContent).toContain("Still needed: cloud file");
 
     await user.click(screen.getByRole("tab", { name: "Server path" }));
     await waitFor(() => expect(submitButton().disabled).toBe(false));
@@ -258,5 +244,179 @@ describe("NewSermon source options", () => {
     expect(mocks.createServerPath.mock.calls[0][0]).toMatchObject({
       container_path: "remote:sample-remote:sermons/sample.mp3",
     });
+  });
+});
+
+/**
+ * Regression: the page used to render a developer debug strip along the
+ * bottom, reading `upload:no file · untitled · no speaker · no date · enhance ·
+ * transcribe · ai meta · live run · no edit · out:processed_sermons`. It
+ * contradicted the toggles above it and leaked an internal output path.
+ */
+describe("no internal debug string reaches the operator", () => {
+  const FORBIDDEN = [
+    "upload:no file",
+    "server:no path",
+    "cloud:no file",
+    "untitled",
+    "no speaker",
+    "no date",
+    "no enhance",
+    "no transcribe",
+    "no ai meta",
+    "ai meta",
+    "live run",
+    "no edit",
+    "out:",
+  ];
+
+  it("leaks none of them on a blank form", () => {
+    renderPage();
+    const text = document.body.textContent ?? "";
+    for (const token of FORBIDDEN) {
+      expect(text.toLowerCase()).not.toContain(token);
+    }
+  });
+
+  it("leaks none of them once the form is partly filled", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.type(screen.getByLabelText("Title (needed)"), "Sample Title");
+    await user.type(screen.getByRole("combobox", { name: "Speaker" }), "Sample Speaker");
+    fireEvent.change(screen.getByLabelText("Date (needed)"), { target: { value: "2026-09-22" } });
+    const text = document.body.textContent ?? "";
+    for (const token of FORBIDDEN) {
+      expect(text.toLowerCase()).not.toContain(token);
+    }
+  });
+
+  it("has no pipe-separated or middot-separated run of machine tokens", () => {
+    renderPage();
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/·\s*(no |out:|ai meta|live run)/);
+    expect(text).not.toMatch(/\b(no enhance|no transcribe|no edit|no speaker|no date)\b/);
+  });
+
+  it("names the recording and the destination in plain words instead", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await fillMetadata(user);
+    const summary = runSummary();
+    expect(summary.textContent).toContain("Recording");
+    expect(summary.textContent).toContain("Files are saved to");
+    expect(summary.textContent).toContain("the server's output folder");
+    expect(summary.textContent).not.toMatch(/processed_sermons/);
+  });
+});
+
+describe("the required path is short and says what is missing", () => {
+  it("numbers only the two steps that are required", () => {
+    renderPage();
+    expect(screen.getByRole("heading", { name: "The recording" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "What it is" })).toBeTruthy();
+    expect(screen.getByText("Processing options")).toBeTruthy();
+    expect(screen.getByText("What happens when you start")).toBeTruthy();
+  });
+
+  it("collapses the pipeline toggles and summarises them in a sentence", () => {
+    renderPage();
+    const details = screen.getByText("Processing options").closest("details");
+    expect(details).toBeTruthy();
+    expect(details?.open).toBe(false);
+    expect(details?.textContent).toContain("clean the audio");
+    expect(details?.textContent).toContain("upload to SermonAudio at the end");
+  });
+
+  it("re-words the summary when a toggle changes", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const details = screen.getByText("Processing options").closest("details") as HTMLDetailsElement;
+    details.open = true;
+    await user.click(screen.getByRole("switch", { name: "Dry run" }));
+    expect(details.textContent).toContain("stop before uploading");
+    expect(runSummary().textContent).toContain("Skip upload to sermonaudio");
+  });
+
+  it("lists every missing requirement in one place before submit", () => {
+    renderPage();
+    const text = runSummary().textContent ?? "";
+    expect(text).toContain("Still needed");
+    expect(text).toContain("source file");
+    expect(text).toContain("title");
+    expect(text).toContain("speaker");
+    expect(text).toContain("date");
+    expect(submitButton().disabled).toBe(true);
+  });
+
+  it("clears each requirement from the list as it is filled in", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    expect(runSummary().textContent).toContain("source file, title, speaker, date");
+
+    await user.type(screen.getByLabelText("Title (needed)"), "Sample Title");
+    expect(runSummary().textContent).not.toContain("title");
+    expect(runSummary().textContent).toContain("speaker");
+
+    await user.type(screen.getByRole("combobox", { name: "Speaker" }), "Sample Speaker");
+    fireEvent.change(screen.getByLabelText("Date (needed)"), { target: { value: "2026-09-22" } });
+    expect(runSummary().textContent).toContain("Still needed: source file");
+
+    const file = new File(["audio"], "sample.mp3", { type: "audio/mpeg" });
+    await user.upload(screen.getByLabelText("Choose a sermon file"), file);
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    expect(runSummary().textContent).not.toContain("Still needed");
+  });
+});
+
+describe("validation appears inline as the operator works", () => {
+  it("says nothing about a field nobody has touched yet", () => {
+    renderPage();
+    expect(screen.queryByText("Give the sermon a title.")).toBeNull();
+    expect(screen.queryByText("Say who gave this.")).toBeNull();
+    expect(screen.queryByText("Pick the day it was given.")).toBeNull();
+    expect(screen.queryByText("Choose a file to upload.")).toBeNull();
+  });
+
+  it("complains under the title once it has been left empty", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const title = screen.getByLabelText("Title (needed)");
+    await user.click(title);
+    await user.tab();
+    expect(screen.getByText("Give the sermon a title.")).toBeTruthy();
+    expect(title.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("complains under the date once it has been left empty", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const date = screen.getByLabelText("Date (needed)");
+    await user.click(date);
+    await user.tab();
+    expect(screen.getByText("Pick the day it was given.")).toBeTruthy();
+    expect(date.getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("stops complaining once the field is filled", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const title = screen.getByLabelText("Title (needed)");
+    await user.click(title);
+    await user.tab();
+    expect(screen.getByText("Give the sermon a title.")).toBeTruthy();
+    await user.type(title, "Sample Title");
+    await user.tab();
+    expect(screen.queryByText("Give the sermon a title.")).toBeNull();
+    expect(title.getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("only warns about a missing server path after the field has been visited", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("tab", { name: "Server path" }));
+    expect(screen.queryByText("Enter an absolute path that exists on the server.")).toBeNull();
+    await user.click(screen.getByRole("textbox", { name: "Server path" }));
+    await user.tab();
+    expect(screen.getByText("Enter an absolute path that exists on the server.")).toBeTruthy();
   });
 });

@@ -285,11 +285,48 @@ export function NewSermon() {
   }, [hasSource, source, meta.title, meta.speaker, meta.date]);
 
   const valid = missing.length === 0;
-  const helper = valid
-    ? isLive
-      ? "Ready to queue. The pipeline run appears under Jobs."
-      : "Source and details are complete. Demo mode sends nothing."
-    : `Missing: ${missing.join(", ")}.`;
+
+  /**
+   * A field the operator has not touched yet stays quiet. Once they have
+   * touched it and it is still empty, it says so underneath itself rather
+   * than waiting for the submit button to list everything at once.
+   */
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const markTouched = (field: string) => setTouched((t) => (t[field] ? t : { ...t, [field]: true }));
+  const emptyAndTouched = (field: string) => touched[field] === true;
+  const fieldError = (invalid: boolean, message: string) =>
+    invalid ? (
+      <p role="alert" className="mt-1 text-xs text-danger">
+        {message}
+      </p>
+    ) : null;
+
+  const sourceLabel = (() => {
+    if (source === "browser") {
+      const name = isLive ? fileObj?.name : fileName;
+      if (!name) return "no file chosen yet";
+      const size = isLive ? fileObj?.size : undefined;
+      return size != null ? `${name} (${formatBytes(size)})` : name;
+    }
+    if (source === "server") return serverPath.trim() || "no path yet";
+    return cloudFile ? `${cloudPick}: ${cloudFile.path}` : "no cloud file chosen yet";
+  })();
+
+  const pipelineBits: string[] = [];
+  if (enhance) pipelineBits.push("clean the audio");
+  if (transcribe) pipelineBits.push("transcribe it");
+  if (aiMeta) pipelineBits.push("write the title, summary and tags");
+  if (autoEdit) pipelineBits.push("detect and cut the ends");
+  if (dryRun) pipelineBits.push("stop before uploading");
+  else pipelineBits.push("upload to SermonAudio at the end");
+
+  const stages: { label: string; on: boolean }[] = [
+    { label: "Clean audio", on: enhance },
+    { label: "Transcribe", on: transcribe },
+    { label: "Write the summary and tags", on: aiMeta },
+    { label: "Detect and cut the ends", on: autoEdit },
+    { label: "Upload to SermonAudio", on: !dryRun },
+  ];
 
   const pickMockFile = () => setFileName("sample-sermon-upload.mp3");
 
@@ -448,42 +485,11 @@ export function NewSermon() {
     </>
   );
 
-  const sourceSummary = (() => {
-    if (source === "browser") {
-      const name = isLive ? fileObj?.name : fileName;
-      const size = isLive ? fileObj?.size : undefined;
-      return name ? `upload:${name}${size != null ? ` (${formatBytes(size)})` : ""}` : "upload:no file";
-    }
-    if (source === "server") {
-      if (!serverValid) return "server:no path";
-      return `server:${serverPath.trim()}${pathStat?.size_human ? ` (${pathStat.size_human})` : ""}`;
-    }
-    if (!cloudRef) return "cloud:no file";
-    return `cloud:${cloudRef}${cloudFile?.size ? ` (${formatBytes(cloudFile.size)})` : ""}`;
-  })();
-
-  const summaryBits = [
-    sourceSummary,
-    meta.title.trim() || "untitled",
-    meta.speaker.trim() || "no speaker",
-    meta.date || "no date",
-    enhance ? "enhance" : "no enhance",
-    transcribe ? "transcribe" : "no transcribe",
-    aiMeta ? "ai meta" : "no ai meta",
-    dryRun ? "dry run" : "live run",
-    autoEdit ? `edit:${autoEditMode}` : "no edit",
-    `out:${outputDir}`,
-  ];
-
   return (
-    <div className="flex flex-col gap-4 pb-32">
+    <div className="flex flex-col gap-4 pb-8">
       <PageHeader
-        title="New Sermon"
-        sub={
-          isLive
-            ? "Upload, describe, then queue the pipeline on the server."
-            : "Upload, describe, then queue the pipeline. Demo mode sends nothing."
-        }
+        title="New sermon"
+        sub="Choose the recording, say what it is, then queue the run. Two steps are needed; the rest is optional."
         actions={
           <Button variant="ghost" onClick={() => setConfirmReset(true)}>
             Reset
@@ -493,8 +499,8 @@ export function NewSermon() {
 
       <SectionCard
         n={1}
-        title="Source"
-        sub="Pick one source: upload a file, use a path on the server, or choose a file from cloud storage."
+        title="The recording"
+        sub="Pick one source: upload a file from this computer, use a path already on the server, or take a file from cloud storage."
       >
         <div
           role="tablist"
@@ -576,6 +582,8 @@ export function NewSermon() {
               }}
               onClick={() => {
                 if (isLive) fileInput.current?.click();
+                else pickMockFile();
+                markTouched("source");
               }}
               className={`flex min-h-[10rem] flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-6 text-center transition-colors ${
                 dragOver ? "border-accent bg-raised" : "border-line bg-ink"
@@ -613,11 +621,7 @@ export function NewSermon() {
             <p className="mt-2 text-xs text-muted">
               Large files (over ~500 MB) may take a while on slow connections. Prefer Server path or Cloud file for those.
             </p>
-            {!browserHasSource ? (
-              <p role="alert" className="mt-2 text-xs text-danger">
-                Choose a file to upload.
-              </p>
-            ) : null}
+            {fieldError(emptyAndTouched("source") && !browserHasSource, "Choose a file to upload.")}
           </div>
         ) : null}
 
@@ -638,6 +642,7 @@ export function NewSermon() {
                   id="server-path"
                   value={serverPath}
                   onChange={(e) => setServerPath(e.target.value)}
+                  onBlur={() => markTouched("source")}
                   placeholder="/media/sample-sermon.mp3"
                   inputMode="text"
                   autoComplete="off"
@@ -651,11 +656,7 @@ export function NewSermon() {
             <div className="flex flex-wrap gap-2" aria-live="polite" aria-label="Path validation">
               {serverChips}
             </div>
-            {!serverValid ? (
-              <p role="alert" className="text-xs text-danger">
-                Enter an absolute path that exists on the server.
-              </p>
-            ) : null}
+            {fieldError(emptyAndTouched("source") && !serverValid, "Enter an absolute path that exists on the server.")}
             {isLive ? (
               <p className="text-xs text-muted">
                 The server checks the path exists, then queues the real pipeline against it. Local paths are read in place.
@@ -716,9 +717,9 @@ export function NewSermon() {
                 ) : null}
               </p>
             ) : null}
-            {!cloudValid ? (
+            {!cloudValid && emptyAndTouched("source") ? (
               <p role="alert" className="text-xs text-danger">
-                Pick a file with “Use this file”.
+                Pick a file with "Use this file".
               </p>
             ) : null}
             <p className="text-xs text-muted">
@@ -820,27 +821,60 @@ export function NewSermon() {
         </p>
       </details>
 
-      <SectionCard n={2} title="Metadata" sub="Title, speaker, and date are required. The rest sharpens search and display.">
+      <SectionCard
+        n={2}
+        title="What it is"
+        sub="Title, speaker, and date are needed before the run can start. Series, event type, and scripture sharpen search and the published page, and can be filled in later from the Library."
+      >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Title (required)" htmlFor="ns-title">
-            <input id="ns-title" value={meta.title} onChange={set("title")} placeholder="Sample teaching title" className={inputCls} />
-          </Field>
-          <Field label="Speaker (required)" htmlFor="ns-speaker">
-            <Combobox
-              id="ns-speaker"
-              value={meta.speaker}
-              onChange={(value) => setMeta((m) => ({ ...m, speaker: value }))}
-              options={facetSpeakerOptions}
-              placeholder="Speaker name"
-              ariaLabel="Speaker"
-              className={inputCls}
-              required
-            />
-          </Field>
-          <Field label="Date (required)" htmlFor="ns-date">
-            <input id="ns-date" type="date" value={meta.date} onChange={set("date")} className={inputCls} />
-          </Field>
-          <Field label="Series" htmlFor="ns-series">
+          <div className="min-w-0">
+            <Field label="Title (needed)" htmlFor="ns-title">
+              <input
+                id="ns-title"
+                value={meta.title}
+                onChange={set("title")}
+                onBlur={() => markTouched("title")}
+                placeholder="Sample teaching title"
+                aria-invalid={touched.title && !meta.title.trim() ? true : undefined}
+                className={inputCls}
+              />
+            </Field>
+            {fieldError(emptyAndTouched("title") && !meta.title.trim(), "Give the sermon a title.")}
+          </div>
+          <div className="min-w-0">
+            <Field label="Speaker (needed)" htmlFor="ns-speaker">
+              <Combobox
+                id="ns-speaker"
+                value={meta.speaker}
+                onChange={(value) => {
+                  setMeta((m) => ({ ...m, speaker: value }));
+                  markTouched("speaker");
+                }}
+                onBlur={() => markTouched("speaker")}
+                options={facetSpeakerOptions}
+                placeholder="Speaker name"
+                ariaLabel="Speaker"
+                className={inputCls}
+                required
+              />
+            </Field>
+            {fieldError(emptyAndTouched("speaker") && !meta.speaker.trim(), "Say who gave this.")}
+          </div>
+          <div className="min-w-0">
+            <Field label="Date (needed)" htmlFor="ns-date">
+              <input
+                id="ns-date"
+                type="date"
+                value={meta.date}
+                onChange={set("date")}
+                onBlur={() => markTouched("date")}
+                aria-invalid={touched.date && !meta.date ? true : undefined}
+                className={inputCls}
+              />
+            </Field>
+            {fieldError(emptyAndTouched("date") && !meta.date, "Pick the day it was given.")}
+          </div>
+          <Field label="Series (optional)" htmlFor="ns-series">
             <Combobox
               id="ns-series"
               value={meta.series}
@@ -851,7 +885,7 @@ export function NewSermon() {
               className={inputCls}
             />
           </Field>
-          <Field label="Event type" htmlFor="ns-event">
+          <Field label="Event type (optional)" htmlFor="ns-event" hint="Controls how it is filed on SermonAudio.">
             <select id="ns-event" value={meta.eventType} onChange={set("eventType")} className={inputCls}>
               <option value="">Choose an event type…</option>
               {eventTypes.map((e) => (
@@ -861,26 +895,35 @@ export function NewSermon() {
               ))}
             </select>
           </Field>
-          <Field label="Scripture" htmlFor="ns-scripture" hint="Free text, e.g. Psalm 23">
+          <Field label="Scripture (optional)" htmlFor="ns-scripture" hint="Free text, e.g. Psalm 23">
             <input id="ns-scripture" value={meta.scripture} onChange={set("scripture")} placeholder="Psalm 23" className={inputCls} />
           </Field>
         </div>
       </SectionCard>
 
-      <SectionCard n={3} title="Processing options" sub="Toggle pipeline stages and the edit approval path.">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Toggle checked={enhance} onChange={setEnhance} label="Enhance audio" hint="Noise cleanup before transcription." />
+      <details className="group rounded-lg border border-line bg-surface p-4">
+        <summary className="flex min-h-[44px] cursor-pointer list-none flex-col justify-center gap-1">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="text-lg font-semibold">Processing options</span>
+            <Chip tone={dryRun ? "warn" : "neutral"}>{dryRun ? "Dry run" : "Will upload"}</Chip>
+          </span>
+          <span className="text-sm text-muted">
+            Optional. Left alone, the run will {pipelineBits.join(", ")}.
+          </span>
+        </summary>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Toggle checked={enhance} onChange={setEnhance} label="Clean the audio" hint="Noise cleanup before transcription." />
           <Toggle checked={transcribe} onChange={setTranscribe} label="Transcribe" hint="Speech-to-text for captions and search." />
-          <Toggle checked={aiMeta} onChange={setAiMeta} label="AI metadata" hint="Draft title, summary, and tags." />
-          <Toggle checked={dryRun} onChange={setDryRun} label="Dry run" hint="Process locally, skip the SermonAudio upload." />
+          <Toggle checked={aiMeta} onChange={setAiMeta} label="Write the summary and tags" hint="Let the AI draft the title, description, and hashtags." />
+          <Toggle checked={dryRun} onChange={setDryRun} label="Dry run" hint="Process locally and stop before the upload. The sermon stays in the Library as a draft." />
         </div>
 
         <div className="mt-4">
           <Toggle
             checked={autoEdit}
             onChange={setAutoEdit}
-            label="Edit Sermon"
-            hint="Auto-detect cut points, trim, and fade the video before upload. Video inputs only."
+            label="Trim the start and end"
+            hint="Detect the silent ends, cut them, and fade to black before upload. Video inputs only."
           />
         </div>
 
@@ -980,34 +1023,70 @@ export function NewSermon() {
             </div>
           </>
         ) : null}
-      </SectionCard>
+      </details>
 
-      <div className="flex flex-col gap-2">
-        <Button variant="primary" onClick={start} disabled={!valid || starting} aria-busy={starting} className="w-full sm:w-auto sm:self-start">
-          {starting ? "Queueing…" : "Start Processing"}
-        </Button>
-        <p className="text-xs text-muted" role="status" aria-live="polite">
-          {helper}
-        </p>
-        {queuedJob ? (
-          <p className="text-sm">
-            <Link to="/jobs" className="font-medium text-accent hover:underline">
-              Track job {queuedJob} under Jobs →
-            </Link>
-          </p>
-        ) : null}
-      </div>
-
-      <div
-        aria-label="Selection summary"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-ink/95 backdrop-blur"
+      <section
+        aria-labelledby="plan-h"
+        data-testid="run-summary"
+        className="rounded-lg border border-line bg-surface p-4"
       >
-        <div className="mx-auto max-w-shell overflow-x-auto px-4 py-2">
-          <p className="truncate font-mono text-xs text-muted" aria-live="polite" title={summaryBits.join(" · ")}>
-            {summaryBits.join(" · ")}
+        <h2 id="plan-h" className="text-lg font-semibold">
+          What happens when you start
+        </h2>
+        <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="min-w-0">
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted">Recording</dt>
+            <dd className="mt-0.5 text-sm [overflow-wrap:anywhere]">{sourceLabel}</dd>
+          </div>
+          <div className="min-w-0">
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted">Files are saved to</dt>
+            <dd className="mt-0.5 text-sm [overflow-wrap:anywhere]">
+              {outputIsCloud ? "a cloud folder" : "the server's output folder"}
+              {outputSource === "user" ? ", your default" : ""}
+            </dd>
+          </div>
+          <div className="min-w-0 sm:col-span-2">
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted">The run will</dt>
+            <dd className="mt-1 flex flex-wrap gap-1.5">
+              {stages.map((stage) => (
+                <Chip key={stage.label} tone={stage.on ? "ok" : "neutral"}>
+                  {stage.on ? stage.label : `Skip ${stage.label.toLowerCase()}`}
+                </Chip>
+              ))}
+            </dd>
+          </div>
+        </dl>
+        {valid ? null : (
+          <p className="mt-3 text-sm text-danger" role="status">
+            Still needed: {missing.join(", ")}.
           </p>
+        )}
+        <div className="mt-4 flex flex-col gap-2">
+          <Button
+            variant="primary"
+            onClick={start}
+            disabled={!valid || starting}
+            aria-busy={starting}
+            className="w-full sm:w-auto sm:self-start"
+          >
+            {starting ? "Queueing…" : "Start processing"}
+          </Button>
+          <p className="text-xs text-muted" role="status" aria-live="polite">
+            {valid
+              ? isLive
+                ? "The run appears under Jobs as soon as it starts."
+                : "Demo mode sends nothing."
+              : "Fill in what is marked needed to enable the button."}
+          </p>
+          {queuedJob ? (
+            <p className="text-sm">
+              <Link to="/jobs" className="font-medium text-accent hover:underline">
+                Follow this run under Jobs →
+              </Link>
+            </p>
+          ) : null}
         </div>
-      </div>
+      </section>
 
       <FileExplorerDialog
         open={localOpen}
