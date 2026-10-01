@@ -36,14 +36,74 @@ from ui.database import SermonRepository  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
+STATUS_OK = 'ok'
+STATUS_WARNING = 'warning'
+STATUS_ERROR = 'error'
+STATUS_PROCESSING = 'processing'
+STATUS_UNKNOWN = 'unknown'
+
+KNOWN_STATUSES = frozenset(
+    {STATUS_OK, STATUS_WARNING, STATUS_ERROR, STATUS_PROCESSING, STATUS_UNKNOWN}
+)
+
+# Where the operator goes to fix a check that is not OK. Every non-OK entry
+# names one, so the dashboard never reports a problem without a way out.
+REMEDIATION: dict[str, str] = {
+    'sermonaudio_api': (
+        'Open Settings, then the SermonAudio tab, and connect an account.'
+    ),
+    'llm_primary': (
+        'Open Settings, then the LLM Providers tab, and choose a primary provider.'
+    ),
+    'llm_fallback': (
+        'A fallback provider is optional. Open Settings, then the LLM Providers '
+        'tab, to add one.'
+    ),
+    'audio_enhancement': (
+        'Open Settings, then the Audio and Transcription tab, to pick an '
+        'enhancement method.'
+    ),
+    'local_storage': (
+        'Open Settings, then the General tab, to change the output location.'
+    ),
+    'database': 'Check the data volume is mounted and writable.',
+    'processing_queue': 'Open Jobs to see what is running.',
+    'system_resources': 'Nothing to do; the machine is busy.',
+}
+
+
+def with_remediation(key: str, entry: dict[str, Any]) -> dict[str, Any]:
+    """Return ``entry`` with the Settings location that fixes it appended.
+
+    Only entries that are not OK gain the sentence, and only when one exists
+    for the key, so a healthy check reads as a plain healthy check.
+    """
+    status = str(entry.get('status') or '')
+    if status in (STATUS_OK, STATUS_PROCESSING):
+        return entry
+    hint = REMEDIATION.get(key)
+    if not hint:
+        return entry
+    details = str(entry.get('details') or '').strip()
+    if hint in details:
+        return entry
+    return {**entry, 'details': f'{details} {hint}'.strip()}
+
+
 class SystemStatusManager:
     """Manages real-time system status checks"""
 
-    def __init__(self, config: dict[str, Any]):
-        """Initialize with configuration"""
+    def __init__(self, config: dict[str, Any], *, sermonaudio_accounts_exist: bool = False):
+        """Initialize with configuration.
+
+        ``config`` must be the resolved app config. An empty dict means every
+        credential check fails, so a caller that has not resolved config yet
+        should pass ``None`` to :func:`unresolved_status` instead of guessing.
+        """
         self.config = config
         self.api_key = config.get('api_key')
         self.broadcaster_id = config.get('broadcaster_id')
+        self.sermonaudio_accounts_exist = sermonaudio_accounts_exist
         self.output_directory = Path(config.get('output_directory', 'processed_sermons'))
 
         # Initialize SermonAudio API if credentials available (but not required for basic checks)
@@ -67,10 +127,21 @@ class SystemStatusManager:
         """Check SermonAudio API connection and authentication"""
         try:
             if not self.api_key or not self.broadcaster_id:
+                if self.sermonaudio_accounts_exist:
+                    return {
+                        'status': STATUS_OK,
+                        'message': 'Connected per user',
+                        'details': (
+                            'SermonAudio accounts are stored in Settings, and an '
+                            'upload uses the account of the signed-in user. There is '
+                            'no install-wide credential to test here.'
+                        ),
+                        'timestamp': datetime.now()
+                    }
                 return {
-                    'status': 'error',
-                    'message': 'API credentials not configured',
-                    'details': 'Missing api_key or broadcaster_id in config',
+                    'status': STATUS_ERROR,
+                    'message': 'SermonAudio is not connected',
+                    'details': 'No account has been connected yet.',
                     'timestamp': datetime.now()
                 }
 
@@ -233,10 +304,20 @@ class SystemStatusManager:
                 }
 
             if not llm_config.get('provider'):
+                if provider_type != 'primary':
+                    return {
+                        'status': STATUS_OK,
+                        'message': f'No {provider_type} provider set',
+                        'details': (
+                            f'The {provider_type} slot is optional. Without one, a '
+                            f'failed {provider_type} request is not retried.'
+                        ),
+                        'timestamp': datetime.now()
+                    }
                 return {
-                    'status': 'error',
-                    'message': f'{provider_type.title()} LLM not configured',
-                    'details': f'No {provider_type} LLM provider configured',
+                    'status': STATUS_ERROR,
+                    'message': 'No AI provider chosen',
+                    'details': 'Title, summary, and tags are written by the primary provider.',
                     'timestamp': datetime.now()
                 }
 
@@ -576,9 +657,12 @@ class SystemStatusManager:
 
         except ImportError:
             return {
-                'status': 'warning',
-                'message': 'Resource monitoring unavailable',
-                'details': 'Install psutil for resource monitoring',
+                'status': STATUS_UNKNOWN,
+                'message': 'Resource usage not measured',
+                'details': (
+                    'Machine load cannot be read on this install, so this is '
+                    'neither healthy nor unhealthy.'
+                ),
                 'timestamp': datetime.now()
             }
         except Exception as e:
@@ -588,6 +672,27 @@ class SystemStatusManager:
                 'details': str(e),
                 'timestamp': datetime.now()
             }
+
+UNRESOLVED_MESSAGE = 'Settings could not be read, so this check did not run.'
+
+
+def unresolved_status(keys: 'list[str]') -> dict[str, dict[str, Any]]:
+    """Every named check reporting ``unknown``.
+
+    Used when config resolution itself fails. Reporting these as warnings would
+    be a lie in the other direction: nothing is known to be wrong.
+    """
+    now = datetime.now()
+    return {
+        key: {
+            'status': STATUS_UNKNOWN,
+            'message': 'State not determined',
+            'details': UNRESOLVED_MESSAGE,
+            'timestamp': now,
+        }
+        for key in keys
+    }
+
 
 # Global instance
 _status_manager: SystemStatusManager | None = None
@@ -616,9 +721,10 @@ def get_status_manager(config: dict[str, Any] | None = None) -> SystemStatusMana
 def get_status_label(status: str) -> str:
     """Get text label for status"""
     status_map = {
-        'ok': 'OK',
-        'warning': 'Warning',
-        'error': 'Error',
-        'processing': 'Processing'
+        STATUS_OK: 'OK',
+        STATUS_WARNING: 'Warning',
+        STATUS_ERROR: 'Error',
+        STATUS_PROCESSING: 'Processing',
+        STATUS_UNKNOWN: 'Unknown',
     }
     return status_map.get(status, 'Unknown')
