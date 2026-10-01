@@ -11,12 +11,32 @@ database (`config_cache.app_config`), which is the layer the processing
 pipeline resolves. `src/core/config.py::ENV_CONFIG_MAP` remains the only
 enumeration of environment variables.
 
+## Console tabs
+
+Ten tabs, none holding more than two cards. Any tab is addressable with
+`?tab=<id>` so another page can send the operator straight to the setting that
+is blocking them (`/settings?tab=sermonaudio` from a refused publish). The
+pre-existing `?cloud=connected` link still resolves to the Cloud Mounts tab.
+
+| Tab id | Label | Cards |
+|---|---|---|
+| `general` | General | General, Processing defaults |
+| `processing` | Audio & Transcription | Audio settings, Transcription settings |
+| `llm` | LLM Providers | LLM connections, Routing |
+| `sermonaudio` | SermonAudio | Accounts, Single-account fallback, Upload routing |
+| `cloud` | Cloud Mounts | Cloud mounts |
+| `content` | Descriptions & Prompts | Validation, Prompt templates |
+| `backup` | Backup & Restore | Full data backup |
+| `account` | Appearance & Account | Theme, Display name, Password reset |
+| `users` | Users | User administration (admin only) |
+| `system` | System | Front-door state, the server's own report, Log level (admin only) |
+
 ## Legacy tab map
 
 | Legacy tab | Legacy control (config path) | Console home |
 |---|---|---|
-| General | API Key (`api_key`) | SermonAudio Accounts, per-account `api_key`; Single-account fallback for the seeded/env value |
-| General | Broadcaster ID (`broadcaster_id`) | SermonAudio Accounts, per-account `broadcaster_id`; Single-account fallback for the seeded/env value |
+| General | API Key (`api_key`) | SermonAudio tab, per-account `api_key`; Single-account fallback for the seeded/env value |
+| General | Broadcaster ID (`broadcaster_id`) | SermonAudio tab, per-account `broadcaster_id`; Single-account fallback for the seeded/env value |
 | General | Test API Connection | Removed (see below) |
 | General | Dry Run Mode (`dry_run`) | General |
 | General | Debug Mode (`debug`) | General |
@@ -30,41 +50,41 @@ enumeration of environment variables.
 | LLM | Test provider connection | LLM Providers, "Test connection" |
 | Embeddings | Primary provider (`embeddings.primary.*`) | Removed (see below) |
 | Embeddings | Fallback providers (`embeddings.fallback`) | Removed (see below) |
-| Audio | Enhancement Method (`audio_enhancement_method`) | Audio |
-| Audio | Custom HF Repo (`clear_custom_repo`) | Audio, custom method |
-| Audio | Custom ONNX file (`clear_custom_file`) | Audio, custom method |
-| Audio | Enhancement Device (`enhancement.device`) | Audio |
-| Audio | Noise Reduction (`audio_noise_reduction`) | Audio |
-| Audio | Audio Amplification (`audio_amplify`) | Audio |
-| Audio | Audio Normalization (`audio_normalize`) | Audio |
-| Audio | Gain dB (`audio_gain_db`) | Audio |
-| Audio | Target Level dB (`audio_target_level_db`) | Audio |
-| Audio | Process Audio (`metadata_processing.process_audio`) | Audio, legacy boolean, ignored when it conflicts with the enhancement method |
-| Transcription | Backend (`transcription.backend`) | Transcription |
-| Transcription | Local Model (`transcription.<local>.model`) | Transcription, local backends |
-| Transcription | Device (`transcription.<local>.device`) | Transcription, local backends |
-| Transcription | Compute Type (`transcription.compute_type`) | Transcription, local backends |
-| Transcription | Language (`transcription.<local>.language`) | Transcription, local backends |
-| Transcription | OpenAI API Key (`transcription.whisper_openai.api_key`) | Transcription, OpenAI backend |
-| Transcription | OpenAI Base URL (`transcription.whisper_openai.base_url`) | Transcription, OpenAI backend |
-| Transcription | OpenAI Model (`transcription.whisper_openai.model`) | Transcription, OpenAI backend |
-| Validation | Enable Description Validation (`metadata_processing.description.validation.enabled`) | Validation |
-| Validation | Validation criteria (`metadata_processing.description.validation.criteria`) | Validation |
-| Validation | Description Update if Missing (`metadata_processing.description.update_if_missing`) | Validation |
-| Validation | Description Update if Minimal (`metadata_processing.description.update_if_minimal`) | Validation |
-| Validation | Description Min Length (`metadata_processing.description.min_length_threshold`) | Validation |
-| Validation | Hashtag Update if Missing (`metadata_processing.hashtags.update_if_missing`) | Validation |
-| Validation | Hashtag Update if Minimal (`metadata_processing.hashtags.update_if_minimal`) | Validation |
-| Validation | Hashtag Min Length (`metadata_processing.hashtags.min_length_threshold`) | Validation |
+| Audio | Enhancement Method (`audio_enhancement_method`) | Audio & Transcription |
+| Audio | Custom HF Repo (`clear_custom_repo`) | Audio & Transcription, custom method |
+| Audio | Custom ONNX file (`clear_custom_file`) | Audio & Transcription, custom method |
+| Audio | Enhancement Device (`enhancement.device`) | Audio & Transcription |
+| Audio | Noise Reduction (`audio_noise_reduction`) | Audio & Transcription |
+| Audio | Audio Amplification (`audio_amplify`) | Audio & Transcription |
+| Audio | Audio Normalization (`audio_normalize`) | Audio & Transcription |
+| Audio | Gain dB (`audio_gain_db`) | Audio & Transcription |
+| Audio | Target Level dB (`audio_target_level_db`) | Audio & Transcription |
+| Audio | Process Audio (`metadata_processing.process_audio`) | Audio & Transcription, legacy boolean, ignored when it conflicts with the enhancement method |
+| Transcription | Backend (`transcription.backend`) | Audio & Transcription |
+| Transcription | Local Model (`transcription.<local>.model`) | Audio & Transcription, local backends |
+| Transcription | Device (`transcription.<local>.device`) | Audio & Transcription, local backends |
+| Transcription | Compute Type (`transcription.compute_type`) | Audio & Transcription, local backends |
+| Transcription | Language (`transcription.<local>.language`) | Audio & Transcription, local backends |
+| Transcription | OpenAI API Key (`transcription.whisper_openai.api_key`) | Audio & Transcription, OpenAI backend |
+| Transcription | OpenAI Base URL (`transcription.whisper_openai.base_url`) | Audio & Transcription, OpenAI backend |
+| Transcription | OpenAI Model (`transcription.whisper_openai.model`) | Audio & Transcription, OpenAI backend |
+| Validation | Enable Description Validation (`metadata_processing.description.validation.enabled`) | Descriptions & Prompts |
+| Validation | Validation criteria (`metadata_processing.description.validation.criteria`) | Descriptions & Prompts |
+| Validation | Description Update if Missing (`metadata_processing.description.update_if_missing`) | Descriptions & Prompts |
+| Validation | Description Update if Minimal (`metadata_processing.description.update_if_minimal`) | Descriptions & Prompts |
+| Validation | Description Min Length (`metadata_processing.description.min_length_threshold`) | Descriptions & Prompts |
+| Validation | Hashtag Update if Missing (`metadata_processing.hashtags.update_if_missing`) | Descriptions & Prompts |
+| Validation | Hashtag Update if Minimal (`metadata_processing.hashtags.update_if_minimal`) | Descriptions & Prompts |
+| Validation | Hashtag Min Length (`metadata_processing.hashtags.min_length_threshold`) | Descriptions & Prompts |
 | Advanced | YAML Backup & Restore (export/import `config.yaml`) | Backup & Restore (JSON full-data backup) |
 | Advanced | Reset to Defaults | Backup & Restore, "Reset to defaults" |
 | Advanced | SQL Config Manager (edit/import/export/history) | Backup & Restore, config sections read and write the same `config_cache` row |
-| Templates | Title Generation (`prompt_templates.title`) | Prompt Templates |
-| Templates | Short Title Generation (`prompt_templates.short_title`) | Prompt Templates |
-| Templates | Description Generation (`prompt_templates.description`) | Prompt Templates |
-| Templates | Hashtag Generation (`prompt_templates.hashtags`) | Prompt Templates |
-| Templates | Hashtag Verification (`prompt_templates.hashtag_verification`) | Prompt Templates |
-| Templates | Description Validation (`prompt_templates.description_validation`) | Prompt Templates, stored but no pipeline consumer |
+| Templates | Title Generation (`prompt_templates.title`) | Descriptions & Prompts, Prompt templates |
+| Templates | Short Title Generation (`prompt_templates.short_title`) | Descriptions & Prompts, Prompt templates |
+| Templates | Description Generation (`prompt_templates.description`) | Descriptions & Prompts, Prompt templates |
+| Templates | Hashtag Generation (`prompt_templates.hashtags`) | Descriptions & Prompts, Prompt templates |
+| Templates | Hashtag Verification (`prompt_templates.hashtag_verification`) | Descriptions & Prompts, Prompt templates |
+| Templates | Description Validation (`prompt_templates.description_validation`) | Descriptions & Prompts, stored but no pipeline consumer |
 
 ## Console sections with no legacy equivalent
 
@@ -77,11 +97,11 @@ surface, not migrations.
 | Single-account fallback | The seeded/env `api_key` and `broadcaster_id` the pipeline uses when no account is picked, with its winning source named (`db` / env / `default`) |
 | Cloud Mounts | Remote upload targets |
 | Routing (inside LLM Providers) | Which provider slot handles metadata, validation, transcription assist, and fallback |
-| Processing defaults | Keeper audio and video bitrates, default audio offset |
-| Appearance | Theme |
-| Account | Display name, password reset |
+| Processing defaults (inside General) | Keeper audio and video bitrates, default audio offset |
+| Appearance (inside Appearance & Account) | Theme |
+| Account (inside Appearance & Account) | Display name, password reset |
 | Users | Admin account management |
-| System | Front-door cutover state and log level |
+| System | Front-door state, the server's own `/api/status` report, log level |
 
 ## Deliberate removals
 
@@ -143,9 +163,23 @@ the job actually publishes.
 current user as `configured`, `source`, `account_name`, `broadcaster_id`,
 `masked_key`, and the refusal `message`. `source` is `user` for the user's own
 account, or the winning fallback source (an environment variable name, `db`, or
-`default`). The SermonAudio Accounts page renders this in its "Upload routing"
+`default`). The SermonAudio tab renders this in its "Upload routing"
 card, so the operator can see which account an upload will use without
 revealing the key.
+
+## Service health states
+
+`GET /api/status` resolves the same app config the pipeline resolves, through
+`ui.config_utils`, so it reports the values a run would actually use. It reports
+three states for the operator: `ok`, `warning`, and `unknown`. A check that
+could not determine its state reports `unknown`; an unreadable gauge is not a
+warning. Every non-`ok` entry carries the Settings tab that fixes it, appended to
+its `details` by `ui.system_status.with_remediation`.
+
+An install whose users have stored SermonAudio accounts reports the API as
+connected even with no install-wide credential, because an upload uses the
+account of the signed-in user. A fallback LLM provider is optional, so an empty
+fallback slot reports `ok`, not a fault.
 
 ## Environment override display
 

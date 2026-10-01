@@ -21,9 +21,47 @@ VITE_API_MODE=live VITE_API_BASE=http://127.0.0.1:8504 npm run build   # live bu
   brief artificial loading, local-only actions with `(mock)` toasts and confirms.
 - **Live mode** (FastAPI bridge serves the live bundle + `/api/*` on port 8504):
   TanStack Query hooks (`src/api/hooks.tsx`) poll live data. Mutating actions are
-  live for cancel, start processing, and delete; a failed job's Retry explains the
-  read-only bridge via toast because no retry endpoint exists. The header badge
-  reads `live` or `mock` accordingly.
+  live for cancel, start processing, and delete. The header carries no
+  live/mock badge: the console ships live, so the build mode is not the
+  operator's business.
+
+## Vocabulary
+
+One noun and one status vocabulary, asserted in
+`src/pages/SermonVocabulary.test.tsx` rather than left to review.
+
+- The thing River processes is a **sermon**. No heading, button, label, filter,
+  empty state, or aria-label says "teaching"; the fixture records keep their
+  placeholder names (`Sample Teaching N`) and the UI does not echo them.
+- Record status resolves through one function, `toSermonStatus`, from the
+  database value to the word on screen: `processed` is **uploaded**, `draft` is
+  **waiting for you**, `pending` is **queued**, `error` is **failed**. There is
+  no client-invented `rendered` state; a queued record has nothing rendered, so
+  the old "Rendered - not uploaded" label was false.
+- Service health has three operator-facing states: OK, Warning, and **Not
+  measured**. A check that could not determine its state is not a warning.
+
+## Loading, empty, and error
+
+One primitive, `AsyncSection` in `src/components/ui.tsx`, decides between still
+loading, could not load, loaded and genuinely nothing, and loaded. Every data
+region goes through it, so an empty message can never be the answer while a
+request is in flight. `MediaPlayer` takes a `loading` prop for the same reason.
+
+## Settings layout
+
+Ten tabs, none holding more than two cards; see
+`docs/SETTINGS_PARITY.md` for the full legacy-to-console map. Any tab is
+addressable with `?tab=<id>`.
+
+## New Sermon layout
+
+Two numbered steps carry the required path, `The recording` and `What it is`. The
+pipeline toggles sit behind a `<details>` disclosure whose summary line reads
+back what the run will do. A labelled "What happens when you start" panel sits
+above the action button in normal flow and names the recording, the destination,
+and each stage as an on/off chip. Required fields report under themselves once
+touched, and the missing set is listed once above the button.
 
 ## Validation
 
@@ -77,20 +115,20 @@ because they embedded instance-specific record counts.
 
 ## Settings coverage (legacy Streamlit -> web console)
 
-`ui/ui_pages/settings.py` (8 tabs) maps to `src/pages/Settings.tsx` sections as:
+`ui/ui_pages/settings.py` (8 tabs) maps to `src/pages/Settings.tsx` as:
 
 - General -> General (processing options + output settings). SermonAudio API
-  key / broadcaster ID from that tab live under SermonAudio Accounts instead.
+  key / broadcaster ID from that tab live under the SermonAudio tab instead.
 - LLM -> LLM Providers (`LlmConnections.tsx`, pre-existing).
 - Embeddings -> INTENTIONALLY OMITTED. Removed by decision; do not rebuild.
-- Audio -> Audio Processing (`AudioSettings.tsx`).
-- Transcription -> Transcription (`TranscriptionSettings.tsx`).
-- Validation -> Validation (`ValidationSettings.tsx`).
-- Advanced (YAML Backup & Restore) -> Config Backup & Restore
+- Audio -> Audio & Transcription (`AudioSettings.tsx`).
+- Transcription -> Audio & Transcription (`TranscriptionSettings.tsx`).
+- Validation -> Descriptions & Prompts (`ValidationSettings.tsx`).
+- Advanced (YAML Backup & Restore) -> Backup & Restore
   (`ConfigBackup.tsx`, masked view + mock download/upload-apply + mock
   history). The SQL Config Manager sub-tab has no web equivalent and is not
   ported; the mock history list stands in for it.
-- Templates -> Prompt Templates (`PromptTemplates.tsx`).
+- Templates -> Descriptions & Prompts, Prompt templates (`PromptTemplates.tsx`).
 
 These sections started as mock state. SermonAudio accounts, cloud mounts, LLM
 connections, and prompt templates now persist through the API. Config Backup

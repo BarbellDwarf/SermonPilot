@@ -89,23 +89,20 @@ one is in scope for a later round, not this one.
 Reordered around the question River actually opens the console to answer, which
 is "is anything stuck and what do I do about it":
 
-1. **Header.** `Start new sermon` stays the single primary action.
-2. **Needs you** (new). Drafts waiting for review and queued records, each one a
+1. **Header.** `New sermon` stays the single primary action.
+2. **At a glance.** Four tiles: Sermons, Waiting for you, Active jobs, Services.
+3. **Needs you.** Drafts waiting for review and records that failed, each one a
    direct link to its detail page. This is the resume-a-half-finished-sermon
-   entry point that does not exist today.
-3. **At a glance.** Four tiles: Sermons, Needs review, Active jobs, Services.
-4. **System status.** Four service cards, honest wording, `Unknown` available.
-5. **Active jobs**, then **Up next**, then **Recent sermons**.
+   entry point that did not exist before.
+4. **System status.** Six service cards, honest wording, `Not measured` available.
+5. **Active jobs**, **Up next**, then **Recent sermons**.
 
-Services drop below the at-a-glance numbers because they were rendered before
-anything actionable and they are the least interesting panel on a healthy
-install.
+### Settings: ten tabs, none a long scroll
 
-### Settings: nine tabs, none a long scroll
-
-The tab bar already exists. The defect is that the first tab is a stack of six
-cards. Rebalanced so no tab holds more than two cards, and every documented
-capability keeps an addressable home:
+The tab bar already existed. The defect was that the first tab held six stacked
+cards. Rebalanced so no tab holds more than two cards, the admin-only ones are
+separated from the personal ones, and every documented capability keeps an
+addressable home:
 
 | Tab | Cards inside |
 |---|---|
@@ -116,11 +113,16 @@ capability keeps an addressable home:
 | Cloud Mounts | Cloud mounts |
 | Descriptions & Prompts | Validation, Prompt templates |
 | Backup & Restore | Full data backup |
-| Account & Users | Account, Users (admin) |
-| System | Front-door state, log level (admin) |
+| Appearance & Account | Theme, display name, password reset |
+| Users | User administration (admin only) |
+| System | Front-door state, the server's own report, log level (admin only) |
+
+The System tab reports what `/api/status` actually says. It used to render three
+invented progress bars and a made-up disk figure marked `(mock)`.
 
 Deep links: `?tab=<id>` selects a tab, so any page can send River to the exact
 setting that is blocking him. `/settings?tab=sermonaudio` from a refused publish.
+The pre-existing `?cloud=connected` link still resolves.
 
 ### New Sermon: two required things, then an optional drawer
 
@@ -308,19 +310,27 @@ File ownership is disjoint. No two tickets touch the same file.
 
 | Ticket | Owns | Work |
 |---|---|---|
-| **T1** | `server/api/routers/status.py`, `ui/system_status.py`, `tests/unit/test_system_status.py`, `tests/unit/test_status_api.py` | D1: real config, drop `_context_tolerant`, add `unknown`, actionable wording, regression tests |
-| **T2** | `web/src/mock/data.ts`, `web/src/api/hooks.tsx`, `web/src/pages/Home.tsx`, `web/src/pages/Library.tsx`, `web/src/components/Shell.tsx`, `web/src/api/jobs.test.ts`, `web/src/pages/SermonVocabulary.test.tsx` | One noun, one status vocabulary, retire `rendered`, Home "Needs you" panel, drop the live/mock badge |
-| **T3** | `web/src/pages/NewSermon.tsx`, `web/src/pages/NewSermon.test.tsx`, `web/src/pages/NewSermonDemo.test.tsx` | D2 plus progressive disclosure, inline validation, "What happens next" |
-| **T4** | `web/src/components/ui.tsx`, `web/src/pages/LibraryDetail.tsx`, `web/src/components/SermonCompleted.tsx`, `web/src/pages/LibraryDetail.test.tsx`, `web/src/pages/LibraryDetail.completed.test.tsx`, `web/src/pages/LibraryDetail.actions.test.tsx`, `web/src/components/MediaPlayer.test.tsx` | D3 plus one loading/empty/error pattern across the detail surface |
-| **T5** | `web/src/components/SermonReview.tsx`, `web/src/components/SermonReview.test.tsx`, `web/src/components/Timeline.tsx`, `web/src/components/Timeline.test.tsx`, `web/src/components/MediaPlayer.tsx`, `web/src/components/sermonActions.ts`, `web/src/components/sermonActions.test.ts`, `web/src/components/SermonCompleted.tsx` | Approval-bar hierarchy, artifact de-duplication, review-surface loading states |
-| **T6** | `web/src/pages/Settings.tsx`, `web/src/pages/Settings.test.tsx` | Nine balanced tabs, `?tab=` deep links, System copy for the retired front door |
-| **T7** | `docs/CONSOLE_POLISH_PLAN.md`, `docs/SETTINGS_PARITY.md`, `web/README.md`, `docs/DEPLOYMENT.md`, `README.md`, `AGENTS.md` | Docs follow the code |
-| **T8** | everything in the D4 removal list, plus `tests/**`, `pyproject.toml`, `requirements/**`, `Dockerfile`, `docker-compose.yml`, `docker/**` | Streamlit removal, its own commits |
+| **T1** | `server/api/routers/status.py`, `ui/system_status.py`, `tests/unit/test_system_status.py` | D1: real config, drop `_context_tolerant`, add `unknown`, actionable wording, regression tests |
+| **T2** | `web/src/mock/data.ts`, `web/src/api/hooks.tsx`, `web/src/api/jobs.test.ts`, `web/src/pages/Home.tsx`, `web/src/pages/Library.tsx`, `web/src/components/Shell.tsx`, `web/src/components/ui.tsx` (state vocabulary only), `web/src/index.css`, `web/src/test/harness.tsx`, `web/src/pages/SermonVocabulary.test.tsx` | One noun, one status vocabulary, retire `rendered`, Home "Needs you", drop the live/mock badge |
+| **T3** | `web/src/pages/NewSermon.tsx`, `web/src/pages/NewSermon.test.tsx`, `web/src/pages/NewSermonDemo.test.tsx`, `web/src/components/Combobox.tsx` | D2 plus progressive disclosure, inline validation, "What happens next" |
+| **T4** | `web/src/components/ui.tsx` (async primitive), `web/src/components/MediaPlayer.tsx`, `web/src/components/MediaPlayer.test.tsx`, `web/src/pages/LibraryDetail.tsx`, `web/src/components/SermonCompleted.tsx`, `web/src/pages/LibraryDetail.completed.test.tsx`, `web/src/pages/Jobs.tsx`, `web/src/pages/Jobs.test.tsx` | D3 plus one loading/empty/error pattern, and no dead-end Retry button |
+| **T5** | `web/src/components/SermonReview.tsx`, `web/src/components/SermonReview.test.tsx`, `web/src/pages/LibraryDetail.actions.test.tsx`, `web/src/pages/LibraryDetail.completed.test.tsx` | Approval-bar hierarchy, artifact de-duplication, review loading states |
+| **T6** | `web/src/pages/Settings.tsx`, `web/src/pages/Settings.test.tsx` | Ten balanced tabs, `?tab=` deep links, real System report |
+| **T7** | `docs/CONSOLE_POLISH_PLAN.md`, `docs/SETTINGS_PARITY.md`, `web/README.md` | Docs follow the code |
+| **T8** | everything in the D4 removal list, plus `tests/**`, `pyproject.toml`, `requirements/**`, `Dockerfile`, `docker-compose.yml`, `docker/**`, `docs/DEPLOYMENT.md`, `README.md`, `AGENTS.md` | Streamlit removal, its own commits |
 
-T4 and T5 both need `SermonCompleted.tsx`. T4 owns the loading/empty pattern
-there; T5 owns the file-list layout there. They are applied in that order in one
-session, so the second edit sees the first. Noted as the one intentional overlap,
-because splitting the file is a larger refactor than the fix is worth.
+Ownership is disjoint except where two tickets had to touch the same file for
+unrelated reasons, and each of those is listed here rather than glossed:
+
+- `web/src/components/ui.tsx` is written by T2 (the state vocabulary: `Meter`,
+  the `unknown` service state, `Chip`) and then by T4 (the `AsyncSection`
+  primitive). Different regions, applied in that order, in one session.
+- `web/src/components/SermonCompleted.tsx` and
+  `web/src/pages/LibraryDetail.completed.test.tsx` are written by T4 (the
+  loading/empty pattern in the files list) and then by T5 (the file-list layout
+  and the row shape). Applied in that order.
+- `web/src/test/harness.tsx` is shared test scaffolding rather than product
+  code; T2 created it and T6 extended it.
 
 ---
 
