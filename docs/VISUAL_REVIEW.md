@@ -115,6 +115,27 @@ each behaviour that could regress silently.
 Gates after the fixes: `tsc --noEmit` clean, `vitest run` 202 passed across 19
 files, `vite build` ok, and `pytest -q` 935 passed / 9 skipped.
 
+### Where each fix landed
+
+| Finding | File | Test |
+|---------|------|------|
+| 1, 2 duplicate jobs and wrong counts | `api/hooks.tsx`, `pages/Home.tsx` | `SermonVocabulary.test.tsx` |
+| 4 truncated titles | `pages/Home.tsx` | `SermonVocabulary.test.tsx` |
+| 7 button below the fold | `pages/NewSermon.tsx` | `NewSermon.test.tsx` |
+| 9, 10, 11 card layout | `pages/Library.tsx` | `SermonVocabulary.test.tsx` |
+| 12 empty search | `pages/Library.tsx` | - |
+| 13, 19 wrong publish actions | `components/sermonActions.ts`, `pages/LibraryDetail.tsx` | `sermonActions.test.ts` |
+| 14, 15 raw timestamp, doubled scripture | `api/hooks.tsx`, `components/SermonCompleted.tsx` | - |
+| 17 the failure reason | `api/hooks.tsx`, `pages/Jobs.tsx`, `mock/data.ts` | `Jobs.test.tsx` |
+| 18 cancelled counted as failed | `api/hooks.tsx`, `pages/Jobs.tsx` | `Jobs.test.tsx` |
+| 20, 22 Jobs copy | `pages/Jobs.tsx` | `Jobs.test.tsx` |
+| 21 truncated metadata | `pages/Jobs.tsx` | - |
+| 23 unreachable tabs | `pages/Settings.tsx` | `Settings.test.tsx` |
+| 24 overlapping service row | `pages/Settings.tsx` | - |
+| 25, 26 mock data on a live console | `components/ConfigBackup.tsx` | - |
+| 27, 28 the theme | `components/theme.ts`, `App.tsx`, `components/Shell.tsx` | `theme.test.tsx` |
+| 29 header overlap at 390px | `components/Shell.tsx` | - |
+
 ## Left for River's eyes
 
 1. **The Library card grid.** The series name moved out of the chip row and into
