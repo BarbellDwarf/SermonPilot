@@ -1082,21 +1082,7 @@ export function NewSermon() {
             </dd>
           </div>
         </dl>
-        {valid ? null : (
-          <p className="mt-3 text-sm text-danger" role="status">
-            Still needed: {missing.join(", ")}.
-          </p>
-        )}
         <div className="mt-4 flex flex-col gap-2">
-          <Button
-            variant="primary"
-            onClick={start}
-            disabled={!valid || starting}
-            aria-busy={starting}
-            className="w-full sm:w-auto sm:self-start"
-          >
-            {starting ? "Queueing…" : "Start processing"}
-          </Button>
           <p className="text-xs text-muted" role="status" aria-live="polite">
             {valid
               ? isLive

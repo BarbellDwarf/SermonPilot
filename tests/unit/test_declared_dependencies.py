@@ -16,7 +16,10 @@ declaration set, so this asserts the declaration first and the import second.
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 import tomllib
+from importlib import metadata
 from pathlib import Path
 
 import pytest
@@ -24,6 +27,35 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 API_SOURCES = sorted((ROOT / "server" / "api").rglob("*.py"))
 REQUIREMENTS = ROOT / "requirements" / "requirements.txt"
+
+# Top-level packages the repo owns. They resolve from the checkout, not from a
+# distribution, so nothing in the closure audit applies to them.
+LOCAL_PACKAGES = frozenset({"server", "src", "ui", "sermon_updater"})
+
+# Imports the entrypoint's module needs that no declared distribution provides.
+# Each entry puts an import blocker ahead of the path finder, so a module that is
+# only reachable through an undeclared distribution cannot be found at all.
+BLOCKED_IMPORT_SCRIPT = """
+import sys
+sys.path.insert(0, {root!r})
+
+import importlib.abc
+
+
+class Blocker(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split(".")[0] in BLOCKED:
+            raise ModuleNotFoundError(
+                "no declared dependency provides " + fullname, name=fullname
+            )
+        return None
+
+
+BLOCKED = frozenset({blocked!r})
+sys.meta_path.insert(0, Blocker())
+import server.api.app
+print("imported")
+"""
 
 # FastAPI and Pydantic ship features that only work when an extra package is
 # present. Some raise at import time rather than at call time, which takes the
@@ -64,6 +96,51 @@ def _api_source(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _normalise(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _declared_closure() -> set[str]:
+    """Every distribution reachable from the pyproject runtime dependencies.
+
+    A transitive requirement counts as covered: FastAPI needs starlette and
+    pydantic without declaring them itself, and the image resolves them. What
+    does not count is anything behind an extras marker, which is the path that
+    disappeared when the legacy UI was removed.
+    """
+    covered: set[str] = set()
+    pending = list(_runtime_dependencies())
+    while pending:
+        name = _normalise(pending.pop())
+        if name in covered:
+            continue
+        covered.add(name)
+        try:
+            distribution = metadata.distribution(name)
+        except metadata.PackageNotFoundError:
+            continue
+        for requirement in distribution.requires or ():
+            _, _, marker = requirement.partition(";")
+            if "extra" in marker:
+                continue
+            pending.append(_distribution_name(requirement))
+    return covered
+
+
+def _undeclared_modules(covered: set[str]) -> list[str]:
+    """Top-level import names that no declared distribution provides."""
+    undeclared = []
+    for module, providers in metadata.packages_distributions().items():
+        if module in sys.stdlib_module_names or module in LOCAL_PACKAGES:
+            continue
+        if module.startswith("_"):
+            continue
+        if any(provider and _normalise(provider) in covered for provider in providers):
+            continue
+        undeclared.append(module)
+    return sorted(undeclared)
+
+
 @pytest.mark.parametrize("distribution", sorted(OPTIONAL_EXTRAS))
 def test_optional_extra_in_use_is_declared(distribution: str) -> None:
     patterns = OPTIONAL_EXTRAS[distribution]
@@ -100,6 +177,30 @@ def test_api_app_imports() -> None:
     from server.api.app import app  # noqa: F401
 
     assert app is not None
+
+
+def test_api_app_imports_on_the_declared_dependency_set_alone() -> None:
+    """Import the app with every undeclared distribution made unreachable.
+
+    Importing it in-process proves nothing, because a developer machine and a
+    CI runner may both happen to carry a package the repo never asked for. Here
+    each import name no declared distribution provides is blocked before the
+    path finder sees it, so the import succeeds only if the declared closure
+    covers everything ``server.api.app`` pulls in at startup. That is the shape
+    the image has, and it is what the deploy was missing.
+    """
+    blocked = _undeclared_modules(_declared_closure())
+    assert blocked, "no undeclared distributions found; the audit cannot see anything"
+    script = BLOCKED_IMPORT_SCRIPT.format(root=str(ROOT), blocked=blocked)
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        cwd=str(ROOT),
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "imported" in result.stdout
 
 
 def test_upload_route_is_registered() -> None:

@@ -572,13 +572,12 @@ export function useHomeData() {
     });
   const allJobs = (jobsQuery.data?.items ?? []).map((j) => toJob(j));
   const recent = (sermonsQuery.data?.items ?? []).map(toRecentSermon);
-  const running = allJobs.filter((j) => j.state === "running");
   const queued = allJobs.filter((j) => j.state === "queued");
   const data: HomeData = {
     services: servicesLive,
-    // Queued work is listed once, under Up next. Repeating it under Active jobs
-    // made the same teaching look like two different runs.
-    activeJobs: [...running, ...queued],
+    // Queued work is listed once, under Up next. Repeating it here made the
+    // same teaching look like two different runs.
+    activeJobs: allJobs.filter((j) => j.state === "running"),
     recentSermons: recent.slice(0, 4),
     upNext: queued.slice(0, 3),
     needsReview: recent.filter((s) => s.status === "draft").slice(0, 4),

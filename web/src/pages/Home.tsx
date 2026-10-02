@@ -38,15 +38,13 @@ function NeedsYouRow({ sermon, verb }: { sermon: Sermon; verb: string }) {
     <li>
       <Link
         to={`/library/${sermon.id}`}
-        className="flex min-w-0 flex-col gap-1 rounded-md border border-line bg-surface px-3 py-2 transition-colors hover:border-muted sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3"
+        className="flex min-w-0 flex-col gap-1 rounded-md border border-line bg-surface px-3 py-2 transition-colors hover:border-muted sm:flex-row sm:items-center sm:gap-x-3"
       >
-        <span className="flex shrink-0 items-center gap-2 sm:contents">
-          <Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>
-          <span className="font-mono text-xs text-muted sm:ml-auto">{verb}</span>
-        </span>
-        <span className="line-clamp-2 min-w-0 text-sm font-semibold [overflow-wrap:anywhere]">
+        <Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>
+        <span className="line-clamp-2 min-w-0 flex-1 text-sm font-semibold [overflow-wrap:anywhere]">
           {sermon.title}
         </span>
+        <span className="shrink-0 font-mono text-xs text-muted">{verb}</span>
       </Link>
     </li>
   );

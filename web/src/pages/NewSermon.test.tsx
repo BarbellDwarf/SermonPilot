@@ -60,6 +60,7 @@ const submitButton = () =>
   screen.getByRole("button", { name: "Start processing" }) as HTMLButtonElement;
 
 const runSummary = () => screen.getByTestId("run-summary");
+const runStatusBar = () => screen.getByTestId("run-status-bar");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -208,18 +209,18 @@ describe("NewSermon source options", () => {
     await fillMetadata(user);
 
     expect(submitButton().disabled).toBe(true);
-    expect(runSummary().textContent).toContain("Still needed: source file");
+    expect(runStatusBar().textContent).toContain("Still needed: source file");
 
     await user.click(screen.getByRole("tab", { name: "Server path" }));
     expect(submitButton().disabled).toBe(true);
-    expect(runSummary().textContent).toContain("Still needed: valid server path");
+    expect(runStatusBar().textContent).toContain("Still needed: valid server path");
 
     await user.type(screen.getByRole("textbox", { name: "Server path" }), "/media/sample-sermon.mp3");
     await waitFor(() => expect(submitButton().disabled).toBe(false));
 
     await user.click(screen.getByRole("tab", { name: "Cloud file" }));
     expect(submitButton().disabled).toBe(true);
-    expect(runSummary().textContent).toContain("Still needed: cloud file");
+    expect(runStatusBar().textContent).toContain("Still needed: cloud file");
 
     await user.click(screen.getByRole("tab", { name: "Server path" }));
     await waitFor(() => expect(submitButton().disabled).toBe(false));
@@ -339,7 +340,7 @@ describe("the required path is short and says what is missing", () => {
 
   it("lists every missing requirement in one place before submit", () => {
     renderPage();
-    const text = runSummary().textContent ?? "";
+    const text = runStatusBar().textContent ?? "";
     expect(text).toContain("Still needed");
     expect(text).toContain("source file");
     expect(text).toContain("title");
@@ -351,20 +352,20 @@ describe("the required path is short and says what is missing", () => {
   it("clears each requirement from the list as it is filled in", async () => {
     const user = userEvent.setup();
     renderPage();
-    expect(runSummary().textContent).toContain("source file, title, speaker, date");
+    expect(runStatusBar().textContent).toContain("source file, title, speaker, date");
 
     await user.type(screen.getByLabelText("Title (needed)"), "Sample Title");
-    expect(runSummary().textContent).not.toContain("title");
-    expect(runSummary().textContent).toContain("speaker");
+    expect(runStatusBar().textContent).not.toContain("title");
+    expect(runStatusBar().textContent).toContain("speaker");
 
     await user.type(screen.getByRole("combobox", { name: "Speaker" }), "Sample Speaker");
     fireEvent.change(screen.getByLabelText("Date (needed)"), { target: { value: "2026-09-22" } });
-    expect(runSummary().textContent).toContain("Still needed: source file");
+    expect(runStatusBar().textContent).toContain("Still needed: source file");
 
     const file = new File(["audio"], "sample.mp3", { type: "audio/mpeg" });
     await user.upload(screen.getByLabelText("Choose a teaching file"), file);
     await waitFor(() => expect(submitButton().disabled).toBe(false));
-    expect(runSummary().textContent).not.toContain("Still needed");
+    expect(runStatusBar().textContent).not.toContain("Still needed");
   });
 });
 
