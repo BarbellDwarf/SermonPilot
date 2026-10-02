@@ -744,7 +744,7 @@ def execute_validation_job(job: Job) -> JobResult:
             job.add_log("Validation cancelled by user")
             raise JobCancelledError("Job cancelled by user")
 
-        job.update_progress(20, f"Starting validation of {len(sermon_ids)} sermons...")
+        job.update_progress(20, f"Starting validation of {len(sermon_ids)} teachings...")
 
         # Import validation components
         from ui_processor import UIProcessor
@@ -769,7 +769,7 @@ def execute_validation_job(job: Job) -> JobResult:
             try:
                 progress = 20 + (i / len(sermon_ids)) * 70  # 20-90% for processing
                 job.update_progress(
-                    progress, f"Validating sermon {sermon_id} ({i+1}/{len(sermon_ids)})"
+                    progress, f"Validating teaching {sermon_id} ({i+1}/{len(sermon_ids)})"
                 )
 
                 # Effective config: job-provided values over the resolved app config.
@@ -869,7 +869,7 @@ def execute_sermon_import_job(job: Job) -> JobResult:
         if not processed_sermons_dir:
             return JobResult(
                 success=False,
-                message="No processed sermons directory specified",
+                message="No processed_sermons directory specified",
                 error="Missing processed_sermons_dir parameter"
             )
 
@@ -878,7 +878,7 @@ def execute_sermon_import_job(job: Job) -> JobResult:
             raise JobCancelledError("Job cancelled by user")
 
         job.update_progress(
-            20, f"Scanning processed sermons directory... (force_reimport={force_reimport})"
+            20, f"Scanning processed_sermons directory... (force_reimport={force_reimport})"
         )
 
         # Import sermon importer
@@ -919,7 +919,7 @@ def execute_sermon_import_job(job: Job) -> JobResult:
             try:
                 progress = 40 + (i / len(sermon_folders)) * 50  # 40-90% for processing
                 job.update_progress(
-                    progress, f"Importing sermon {sermon_id} ({i+1}/{len(sermon_folders)})"
+                    progress, f"Importing teaching {sermon_id} ({i+1}/{len(sermon_folders)})"
                 )
 
                 # Check if sermon already exists (skip check if force_reimport is True)
@@ -1208,7 +1208,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
                              f"({sermon_id or 'dry run'})"),
                     data=_trim_result_payload(result),
                 )
-            job.add_log(f"Sermon created: {sermon_id or '(dry run)'}")
+            job.add_log(f"Teaching created: {sermon_id or '(dry run)'}")
             cleanup_state["keep_upload"] = False
             return JobResult(
                 success=True,
@@ -1379,7 +1379,7 @@ def execute_auto_edit_job(job: Job) -> JobResult:
                              f"({sermon_id or 'dry run'})"),
                     data=_trim_result_payload(result),
                 )
-            job.add_log(f"Sermon created: {sermon_id or '(dry run)'}")
+            job.add_log(f"Teaching created: {sermon_id or '(dry run)'}")
             return JobResult(
                 success=True,
                 message=f"Auto-edit applied: {sermon_id or 'dry run'}",
@@ -1435,7 +1435,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
             job.add_log("Batch processing cancelled by user")
             raise JobCancelledError("Job cancelled by user")
 
-        job.update_progress(20, f"Starting batch processing of {len(sermon_ids)} sermons...")
+        job.update_progress(20, f"Starting batch processing of {len(sermon_ids)} teachings...")
 
         results = {
             'total': len(sermon_ids),
@@ -1463,7 +1463,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
             try:
                 progress = 20 + (i / len(sermon_ids)) * 70  # 20-90% for processing
                 job.update_progress(
-                    progress, f"Processing sermon {sermon_id} ({i+1}/{len(sermon_ids)})"
+                    progress, f"Processing teaching {sermon_id} ({i+1}/{len(sermon_ids)})"
                 )
 
                 sermon_result = {
@@ -1481,7 +1481,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                 )
                 if should_reprocess:
                     try:
-                        job.add_log(f"Processing sermon {sermon_id}")
+                        job.add_log(f"Processing teaching {sermon_id}")
                         form_data = job.parameters.get('form_data', {})
                         force_update = job.parameters.get('force_update', False)
                         # Use the existing sermon processing function with appropriate flags
@@ -1527,7 +1527,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
 
                 if actions.get('validate_content'):
                     try:
-                        job.add_log(f"Validating content for sermon {sermon_id}")
+                        job.add_log(f"Validating content for teaching {sermon_id}")
                         validator = DescriptionValidator(config)
                         validation_result = validator.validate_single_sermon(sermon_id)
                         if validation_result:
@@ -1559,7 +1559,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
                     'errors': [f"Processing error: {str(e)}"]
                 }
                 results['details'].append(error_result)
-                job.add_log(f"Error processing sermon {sermon_id}: {str(e)}")
+                job.add_log(f"Error processing teaching {sermon_id}: {str(e)}")
 
         summary = (
             f"Batch processing completed: {results['completed']} successful, "
@@ -1646,7 +1646,7 @@ def _push_metadata_for_sermon(
         return {"ok": False, "reason": push_result.get('error') or "metadata push failed"}
     if skipped:
         job.add_log(
-            f"Sermon {sermon_id}: pushed {', '.join(pushed) or 'nothing'}; skipped "
+            f"Teaching {sermon_id}: pushed {', '.join(pushed) or 'nothing'}; skipped "
             + ", ".join(f"{name} ({reason})" for name, reason in skipped.items())
         )
     return {"ok": True, "reason": None}
@@ -1682,7 +1682,7 @@ def execute_metadata_update_job(job: Job) -> JobResult:
             job.add_log("Metadata update cancelled by user")
             raise JobCancelledError("Job cancelled by user")
 
-        job.update_progress(10, f"Starting metadata update for {len(sermon_ids)} sermons...")
+        job.update_progress(10, f"Starting metadata update for {len(sermon_ids)} teachings...")
 
         from pathlib import Path
         sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -1706,7 +1706,7 @@ def execute_metadata_update_job(job: Job) -> JobResult:
             try:
                 progress = 10 + (i / len(sermon_ids)) * 80
                 job.update_progress(
-                    progress, f"Processing sermon {sermon_id} ({i+1}/{len(sermon_ids)})"
+                    progress, f"Processing teaching {sermon_id} ({i+1}/{len(sermon_ids)})"
                 )
 
                 if actions.get('push_metadata'):
@@ -1728,13 +1728,13 @@ def execute_metadata_update_job(job: Job) -> JobResult:
 
                 if outcome["ok"]:
                     results['completed'] += 1
-                    job.add_log(f"Sermon {sermon_id}: Updated")
+                    job.add_log(f"Teaching {sermon_id}: Updated")
                 else:
                     results['failed'] += 1
                     results['failures'].append(
                         {"sermon_id": sermon_id, "reason": outcome["reason"]}
                     )
-                    job.add_log(f"Sermon {sermon_id}: {outcome['reason']}")
+                    job.add_log(f"Teaching {sermon_id}: {outcome['reason']}")
                     logger.warning(
                         "Metadata update for %s did not complete: %s",
                         sermon_id,
@@ -1744,7 +1744,7 @@ def execute_metadata_update_job(job: Job) -> JobResult:
             except Exception as e:
                 results['failed'] += 1
                 results['failures'].append({"sermon_id": sermon_id, "reason": str(e)})
-                job.add_log(f"Sermon {sermon_id}: {str(e)}")
+                job.add_log(f"Teaching {sermon_id}: {str(e)}")
                 logger.error(f"Metadata update error for {sermon_id}: {e}")
 
         summary = f"Metadata update: {results['completed']} completed, {results['failed']} failed"

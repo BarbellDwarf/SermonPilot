@@ -61,7 +61,7 @@ fails with the same message instead of rendering.
 
 | `detail.code` | HTTP | When | Message |
 |---------------|------|------|---------|
-| `job_active` | 409 | A queued or running job already occupies the sermon | `an active job already exists for this sermon` |
+| `job_active` | 409 | A queued or running job already occupies the teaching | `an active job already exists for this teaching` |
 | `already_published` | 409 | The sermon is `processed` or its `edit_status` is `uploaded` | `This teaching is already published on SermonAudio (<id>), so there is nothing to upload. Edit its details instead.` |
 | `no_render` | 422 | No rendered output exists on disk | `No rendered output exists for this teaching, so there is nothing to upload. Render the approved cut first.` |
 | `missing_description` | 422 | The description is empty and the confirmation flag is not set | `The description is empty, so uploading would publish a SermonAudio entry without one. Regenerate the description from the transcript, then upload. To upload without a description anyway, confirm it explicitly.` |

@@ -4045,7 +4045,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 f"Existing processed sermon {sermon_id} matches "
                 f"'{title}' by {speaker_name} ({recorded_date}); reusing it"
             )
-            _report(88, f"Reusing existing sermon: {sermon_id}")
+            _report(88, f"Reusing existing teaching: {sermon_id}")
         else:
             # Persist everything generated so far as a local draft BEFORE the
             # API create so a failed create loses no work.
@@ -4172,7 +4172,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             else:
                 console_print(f"Using speaker name '{speaker_name}' as-is (no numeric ID found)")
 
-            _report(85, "Creating sermon on SermonAudio...")
+            _report(85, "Creating teaching on SermonAudio...")
             console_print("Creating sermon on SermonAudio...")
             sermon_id = create_new_sermon_api(
                 title=title,
@@ -4189,7 +4189,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
             if not sermon_id:
                 logger.error("Failed to create sermon")
-                result['error'] = "Failed to create sermon on SermonAudio API"
+                result['error'] = "Failed to create teaching on SermonAudio API"
                 if recovery_draft_id:
                     result['sermon_id'] = recovery_draft_id
                     result['output_dir'] = str(recovery_output_dir)
@@ -4205,7 +4205,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         result['sermon_id'] = sermon_id
         if auto_edit_state:
             _log_auto_edit_applied(sermon_id)
-        _report(90, f"Created sermon: {sermon_id}")
+        _report(90, f"Created teaching: {sermon_id}")
 
         # Single application path for series: the API ignores it during
         # creation, so always PATCH it onto the sermon afterwards
@@ -4423,12 +4423,12 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 except Exception as e:
                     logger.warning("Original removal after auto edit failed: %s", e)
 
-            _report(100, f"Done - sermon {sermon_id} created and uploaded")
+            _report(100, f"Done - teaching {sermon_id} created and uploaded")
             result['success'] = True
             return result
         else:
             logger.error("Failed to upload audio")
-            result['error'] = "Sermon created but audio upload failed"
+            result['error'] = "Teaching created but audio upload failed"
             # Save to local DB so user can retry upload from Library
             try:
                 from ui.database import SermonRepository
@@ -4526,7 +4526,7 @@ def publish_dry_run_sermon(
         sermon_data = repo.get_sermon(dry_run_id)
 
         if not sermon_data:
-            result['error'] = f"Dry run sermon {dry_run_id} not found in database"
+            result['error'] = f"Dry run teaching {dry_run_id} not found in database"
             return result
 
         edit_status = str(sermon_data.get('edit_status') or '')
@@ -4618,7 +4618,7 @@ def publish_dry_run_sermon(
             )
 
             if not new_sermon_id:
-                result['error'] = "Failed to create sermon on SermonAudio API"
+                result['error'] = "Failed to create teaching on SermonAudio API"
                 return result
 
             # Record immediately so a retried publish cannot create a duplicate

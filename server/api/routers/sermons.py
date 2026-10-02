@@ -367,7 +367,7 @@ def _resolve_output_root() -> Path:
 
 
 def _remove_sermon_media(sermon_id: str, file_paths: list[str]) -> list[dict]:
-    """Move a sermon's media to trash; never unlink and never touch a cloud object.
+    """Move a teaching's media to trash; never unlink and never touch a cloud object.
 
     Directories are only moved when they sit under the configured output root,
     so a file path pointing at unrelated user media is left alone. A cloud

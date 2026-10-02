@@ -441,7 +441,7 @@ def _enqueue_upload_existing(
     user: dict,
     confirm_missing_description: bool,
 ) -> dict[str, Any]:
-    """Queue the upload-only action for a sermon whose render already exists.
+    """Queue the upload-only action for a teaching whose render already exists.
 
     The refusal guards run here, before a job exists, so the console gets an
     immediate reason instead of a queued job that fails later. ``upload_only``

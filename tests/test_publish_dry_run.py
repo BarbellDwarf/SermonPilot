@@ -174,7 +174,7 @@ def test_publish_dry_run_sermon_create_failure(tmp_path: Path, monkeypatch) -> N
     result = su.publish_dry_run_sermon("draft_test")
 
     assert result["success"] is False
-    assert "Failed to create sermon" in result["error"]
+    assert "Failed to create teaching" in result["error"]
 
 
 def test_publish_dry_run_sermon_missing_sermon_returns_error(monkeypatch) -> None:
