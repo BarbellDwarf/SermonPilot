@@ -146,3 +146,8 @@ prod-requirements.txt
 
 # Local test artifacts
 tests/fixtures/
+
+# Validation captures (screenshots, reports) - local artifacts, not source.
+# web/README.md documents the screenshots as gitignored; this is the rule.
+web/validation/**/*.png
+web/validation/**/*.jpg
