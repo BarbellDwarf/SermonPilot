@@ -32,9 +32,8 @@ REQUIREMENTS = ROOT / "requirements" / "requirements.txt"
 # distribution, so nothing in the closure audit applies to them.
 LOCAL_PACKAGES = frozenset({"server", "src", "ui", "sermon_updater"})
 
-# Imports the entrypoint's module needs that no declared distribution provides.
-# Each entry puts an import blocker ahead of the path finder, so a module that is
-# only reachable through an undeclared distribution cannot be found at all.
+# Runs in a subprocess: an import blocker ahead of the path finder, so a module
+# that is only reachable through an undeclared distribution cannot be found.
 BLOCKED_IMPORT_SCRIPT = """
 import sys
 sys.path.insert(0, {root!r})
