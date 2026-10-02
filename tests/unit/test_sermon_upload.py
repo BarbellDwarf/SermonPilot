@@ -123,7 +123,7 @@ def test_upload_moves_file_to_trash_when_draft_save_fails(
     monkeypatch.setenv("SERMONPILOT_TRASH_DIR", str(trash))
 
     def fail_save(**kwargs):
-        raise HTTPException(status_code=500, detail="could not save sermon")
+        raise HTTPException(status_code=500, detail="could not save teaching")
 
     monkeypatch.setattr(writes, "_save_draft_sermon", fail_save)
 

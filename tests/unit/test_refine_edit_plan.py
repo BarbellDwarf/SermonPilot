@@ -213,7 +213,7 @@ def test_review_dir_missing_reports_error(harness, monkeypatch) -> None:
     monkeypatch.setattr(su, "_review_dir_for_refine", lambda *args, **kwargs: None)
     result = su.refine_edit_plan("s1", notes="note", config=CONFIG)
     assert result["success"] is False
-    assert "Sermon directory not found" in result["error"]
+    assert "Teaching directory not found" in result["error"]
 
 
 def test_engine_status_notes_are_not_rejection_notes() -> None:

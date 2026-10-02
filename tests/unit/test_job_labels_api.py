@@ -142,6 +142,6 @@ def test_new_sermon_job_label_avoids_the_original_path(
     job_id = r.json()["job_id"]
 
     title, description = _stored_labels(job_id)
-    assert title == f"Process sermon · {TITLE} · {SPEAKER}"
+    assert title == f"Process teaching · {TITLE} · {SPEAKER}"
     assert str(src) not in title
     assert description == f'Running the processing pipeline for "{TITLE}" ({SPEAKER}, {DATE}).'

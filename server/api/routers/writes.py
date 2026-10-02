@@ -111,7 +111,7 @@ def _save_draft_sermon(
     if not may_claim(repo.get_sermon(sermon_id), user):
         raise HTTPException(
             status_code=403,
-            detail="a sermon with this identity is owned by another user",
+            detail="a teaching with this identity is owned by another user",
         )
     ok = repo.save_sermon(
         {
@@ -131,9 +131,9 @@ def _save_draft_sermon(
         if not may_claim(repo.get_sermon(sermon_id), user):
             raise HTTPException(
                 status_code=403,
-                detail="a sermon with this identity is owned by another user",
+                detail="a teaching with this identity is owned by another user",
             )
-        raise HTTPException(status_code=500, detail="could not save sermon")
+        raise HTTPException(status_code=500, detail="could not save teaching")
 
 
 def _output_dir_for(user: dict, requested: str) -> str:
@@ -375,7 +375,7 @@ def _enqueue_plan_refine(
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "an active job already exists for this sermon",
+                "message": "an active job already exists for this teaching",
                 "job_id": active["id"],
                 "code": "job_active",
             },
@@ -408,7 +408,7 @@ def _enqueue_plan_refine(
 def refine_plan(sermon_id: str, body: RefineBody, user=Depends(require_user)):
     owner = _sermon_owner(sermon_id)
     if owner is None or not visible(owner, user):
-        raise HTTPException(status_code=404, detail="sermon not found")
+        raise HTTPException(status_code=404, detail="teaching not found")
     notes = (body.notes or "").strip()
     if not notes:
         raise HTTPException(status_code=422, detail="notes are required to refine a plan")
@@ -421,7 +421,7 @@ def refine_plan(sermon_id: str, body: RefineBody, user=Depends(require_user)):
 def re_detect_plan(sermon_id: str, user=Depends(require_user)):
     owner = _sermon_owner(sermon_id)
     if owner is None or not visible(owner, user):
-        raise HTTPException(status_code=404, detail="sermon not found")
+        raise HTTPException(status_code=404, detail="teaching not found")
     return _enqueue_plan_refine(
         sermon_id=sermon_id, notes="", re_detect=True, user_id=user.get("id")
     )
@@ -456,7 +456,7 @@ def _enqueue_upload_existing(
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "an active job already exists for this sermon",
+                "message": "an active job already exists for this teaching",
                 "job_id": active["id"],
                 "code": "job_active",
             },
@@ -513,7 +513,7 @@ def _enqueue_upload_existing(
 def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(require_user)):
     owner = _sermon_owner(sermon_id)
     if owner is None or not visible(owner, user):
-        raise HTTPException(status_code=404, detail="sermon not found")
+        raise HTTPException(status_code=404, detail="teaching not found")
     if body.upload_only:
         return _enqueue_upload_existing(
             sermon_id=sermon_id,
@@ -547,7 +547,7 @@ def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(r
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "an active job already exists for this sermon",
+                "message": "an active job already exists for this teaching",
                 "job_id": active["id"],
                 "code": "job_active",
             },
@@ -609,13 +609,13 @@ def cancel_job(job_id: str, user=Depends(require_user)):
 def upload_now(sermon_id: str, user=Depends(require_user)):
     owner = _sermon_owner(sermon_id)
     if owner is None or not visible(owner, user):
-        raise HTTPException(status_code=404, detail="sermon not found")
+        raise HTTPException(status_code=404, detail="teaching not found")
     active = _active_job_for(sermon_id)
     if active:
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "an active job already exists for this sermon",
+                "message": "an active job already exists for this teaching",
                 "job_id": active["id"],
                 "code": "job_active",
             },
@@ -640,16 +640,16 @@ def upload_now(sermon_id: str, user=Depends(require_user)):
 
 @router.post("/sermons/{sermon_id}/description/regenerate", status_code=202)
 def regenerate_description(sermon_id: str, user=Depends(require_user)):
-    """Queue a metadata job that regenerates only this sermon's description."""
+    """Queue a metadata job that regenerates only this teaching's description."""
     owner = _sermon_owner(sermon_id)
     if owner is None or not visible(owner, user):
-        raise HTTPException(status_code=404, detail="sermon not found")
+        raise HTTPException(status_code=404, detail="teaching not found")
     active = _active_job_for(sermon_id)
     if active:
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "an active job already exists for this sermon",
+                "message": "an active job already exists for this teaching",
                 "job_id": active["id"],
                 "code": "job_active",
             },
@@ -685,7 +685,7 @@ class MetadataPushBody(BaseModel):
 def push_sermon_metadata(
     sermon_id: str, body: MetadataPushBody, user=Depends(require_user)
 ):
-    """Queue a job that pushes this sermon's edited metadata to SermonAudio.
+    """Queue a job that pushes this teaching's edited metadata to SermonAudio.
 
     ``full_push`` sends title, display title, subtitle, bible text, event type
     and hashtags as well as the description. The default keeps the historical
@@ -693,13 +693,13 @@ def push_sermon_metadata(
     """
     owner = _sermon_owner(sermon_id)
     if owner is None or not visible(owner, user):
-        raise HTTPException(status_code=404, detail="sermon not found")
+        raise HTTPException(status_code=404, detail="teaching not found")
     active = _active_job_for(sermon_id)
     if active:
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "an active job already exists for this sermon",
+                "message": "an active job already exists for this teaching",
                 "job_id": active["id"],
             },
         )

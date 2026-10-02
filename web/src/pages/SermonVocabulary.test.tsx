@@ -169,7 +169,7 @@ describe("service health states", () => {
               sermonaudio_api: {
                 status: "ok",
                 message: "API connected and authenticated",
-                details: "1 sermon available",
+                details: "1 teaching available",
               },
               database: { status: "ok", message: "Database healthy", details: "small" },
               llm_primary: {

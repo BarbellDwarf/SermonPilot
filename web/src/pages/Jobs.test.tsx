@@ -24,7 +24,7 @@ vi.mock("../api/client", () => ({
 function job(overrides: Partial<Job> = {}): Job {
   return {
     id: "job-1",
-    kind: "Process sermon · Sample Teaching · Sample Speaker",
+    kind: "Process teaching · Sample Teaching · Sample Speaker",
     sermon: 'Running the processing pipeline for "Sample Teaching".',
     state: "failed",
     created: "Sep 6, 09:00",
@@ -55,7 +55,7 @@ describe("Jobs never offers an action that cannot work", () => {
     const user = userEvent.setup();
     withProviders(<Jobs />);
     await user.click(await screen.findByRole("tab", { name: /Failed/ }));
-    await waitFor(() => expect(screen.getAllByText(/Process sermon/).length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText(/Process teaching/).length).toBeGreaterThan(0));
     return user;
   }
 

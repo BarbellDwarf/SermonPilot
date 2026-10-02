@@ -71,8 +71,8 @@ def test_batch_variants_use_count_and_title() -> None:
     name, description = build_job_labels(
         JobType.SERMON_IMPORT, count=3
     )
-    assert name == "Import · 3 sermons"
-    assert "3 missing sermons" in description
+    assert name == "Import · 3 teachings"
+    assert "3 missing teachings" in description
 
     named, _ = build_job_labels(
         JobType.BATCH_PROCESSING, title=TITLE, speaker=SPEAKER, count=12
@@ -184,5 +184,5 @@ def test_validation_scope_is_carried_in_the_description() -> None:
     name, description = build_job_labels(
         JobType.VALIDATION, count=4, detail="Recent Sermons"
     )
-    assert name == "Validate descriptions · 4 sermons"
-    assert description == "Checking the generated descriptions for 4 sermons (Recent Sermons)."
+    assert name == "Validate descriptions · 4 teachings"
+    assert description == "Checking the generated descriptions for 4 teachings (Recent Sermons)."

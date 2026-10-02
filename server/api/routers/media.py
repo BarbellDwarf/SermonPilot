@@ -272,7 +272,7 @@ def artifact_candidates(
 def _load_owned_sermon(repo: Any, sermon_id: str, user: dict[str, Any] | None) -> dict[str, Any]:
     sermon = repo.get_sermon(sermon_id)
     if sermon is None or not visible(sermon.get("user_id"), user):
-        raise HTTPException(status_code=404, detail="sermon not found")
+        raise HTTPException(status_code=404, detail="teaching not found")
     return sermon
 
 

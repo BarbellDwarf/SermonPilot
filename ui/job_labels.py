@@ -1,8 +1,8 @@
 """Human-readable labels for background jobs.
 
 Job rows carry a title (the console headline) and a description (the second
-line). Both are built from the sermon's own fields so the Jobs page reads like
-a sentence instead of a sermon id. The raw id stays in the job parameters for
+line). Both are built from the teaching's own fields so the Jobs page reads like
+a sentence instead of a record id. The raw id stays in the job parameters for
 traceability.
 """
 
@@ -11,12 +11,12 @@ from __future__ import annotations
 from typing import Any
 
 LABEL_MAX_LENGTH = 60
-UNTITLED_SERMON = "Untitled sermon"
+UNTITLED_SERMON = "Untitled teaching"
 SEPARATOR = " · "
 ELLIPSIS = "…"
 
 _TYPE_ACTIONS: dict[str, str] = {
-    "sermon_processing": "Process sermon",
+    "sermon_processing": "Process teaching",
     "batch_processing": "Batch process",
     "sermon_import": "Import",
     "validation": "Validate descriptions",
@@ -74,7 +74,7 @@ def build_job_name(
     count: int | None = None,
     variant: str | None = None,
 ) -> str:
-    """A short headline: action, sermon title, speaker, then a batch hint."""
+    """A short headline: action, teaching title, speaker, then a batch hint."""
     action = _action(job_type, variant)
     title_text = _text(title)
     speaker_text = _text(speaker)
@@ -86,7 +86,7 @@ def build_job_name(
         if isinstance(count, int) and count > 1:
             label = f"{label} (+{count - 1} more)"
     elif isinstance(count, int) and count > 1:
-        label = f"{action}{SEPARATOR}{count} sermons"
+        label = f"{action}{SEPARATOR}{count} teachings"
     else:
         label = f"{action}{SEPARATOR}{UNTITLED_SERMON}"
     return truncate_label(label)
@@ -139,22 +139,22 @@ def build_job_description(
         return f"Uploading {subject} to SermonAudio."
     if kind == "metadata_update":
         if many:
-            return f"Generating descriptions and hashtags for {count} sermons."
+            return f"Generating descriptions and hashtags for {count} teachings."
         return f"Generating the description and hashtags for {subject}."
     if kind == "batch_processing":
         if variant == "push":
             if many:
-                return f"Pushing {count} sermons to the SermonAudio API."
+                return f"Pushing {count} teachings to the SermonAudio API."
             return f"Pushing {subject} to the SermonAudio API."
         if variant == "reprocess":
             return f"Re-processing {subject}."
         if many:
             steps = _text(detail) or "the selected actions"
-            return f"Processing {count} sermons: {steps}."
+            return f"Processing {count} teachings: {steps}."
         return f"Processing {subject}."
     if kind == "validation":
         if many:
-            line = f"Checking the generated descriptions for {count} sermons"
+            line = f"Checking the generated descriptions for {count} teachings"
             scope_text = _text(detail)
             if scope_text:
                 return f"{line} ({scope_text})."
@@ -163,11 +163,11 @@ def build_job_description(
     if kind == "sermon_import":
         if variant == "force_import":
             if count is not None:
-                return f"Re-importing all {count} sermons from the processed_sermons folder."
-            return "Re-importing sermons from the processed_sermons folder."
+                return f"Re-importing all {count} teachings from the processed_sermons folder."
+            return "Re-importing teachings from the processed_sermons folder."
         if count is not None:
-            return f"Importing {count} missing sermons from the processed_sermons folder."
-        return "Importing missing sermons from the processed_sermons folder."
+            return f"Importing {count} missing teachings from the processed_sermons folder."
+        return "Importing missing teachings from the processed_sermons folder."
     if kind == "audio_enhancement":
         return f"Enhancing the audio for {subject}."
     if kind == "transcript_generation":

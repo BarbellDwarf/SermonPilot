@@ -177,7 +177,7 @@ class SystemStatusManager:
                         'message': 'API connected and authenticated',
                         'details': (
                             f'Successfully connected to SermonAudio API '
-                            f'({sermon_count} sermons available)'
+                            f'({sermon_count} teachings available)'
                         ),
                         'timestamp': datetime.now()
                     }
@@ -259,7 +259,7 @@ class SystemStatusManager:
                     message = f"Database slow ({query_time:.3f}s query time)"
                 else:
                     status = 'ok'
-                    message = f"Database healthy ({stats['total_sermons']} sermons)"
+                    message = f"Database healthy ({stats['total_sermons']} teachings)"
 
                 return {
                     'status': status,
@@ -535,7 +535,7 @@ class SystemStatusManager:
             free_gb = free / (1024 * 1024 * 1024)
 
             details = (
-                f"{local_count} sermons, {audio_files} audio files, "
+                f"{local_count} teachings, {audio_files} audio files, "
                 f"{total_size_gb:.1f}GB used, {free_gb:.1f}GB free"
             )
 
@@ -544,7 +544,7 @@ class SystemStatusManager:
                 message = 'Low disk space'
             else:
                 status = 'ok'
-                message = f'{local_count} local sermons'
+                message = f'{local_count} local teachings'
 
             return {
                 'status': status,
@@ -589,13 +589,13 @@ class SystemStatusManager:
 
             if processing > 0:
                 status = 'processing'
-                message = f'{processing} sermons processing'
+                message = f'{processing} teachings processing'
             elif pending > 0:
                 status = 'warning'
-                message = f'{pending} sermons pending'
+                message = f'{pending} teachings pending'
             elif failed > 0:
                 status = 'warning'
-                message = f'{failed} sermons failed'
+                message = f'{failed} teachings failed'
             else:
                 status = 'ok'
                 message = 'No active processing'

@@ -79,7 +79,7 @@ def create_draft_sermon(request: Request, body: SermonCreateBody) -> dict:
     if not may_claim(repo.get_sermon(sermon_id), user):
         raise HTTPException(
             status_code=403,
-            detail="a sermon with this identity is owned by another user",
+            detail="a teaching with this identity is owned by another user",
         )
     ok = repo.save_sermon(
         {
@@ -99,9 +99,9 @@ def create_draft_sermon(request: Request, body: SermonCreateBody) -> dict:
         if not may_claim(repo.get_sermon(sermon_id), user):
             raise HTTPException(
                 status_code=403,
-                detail="a sermon with this identity is owned by another user",
+                detail="a teaching with this identity is owned by another user",
             )
-        raise HTTPException(status_code=500, detail="could not save sermon")
+        raise HTTPException(status_code=500, detail="could not save teaching")
     return {
         "id": sermon_id,
         "title": body.title.strip(),
@@ -208,7 +208,7 @@ def get_sermon(request: Request, sermon_id: str) -> SermonDetailOut:
     repo = get_repository()
     sermon = repo.get_sermon(sermon_id)
     if sermon is None or not visible(sermon.get("user_id"), request_user(request)):
-        raise HTTPException(status_code=404, detail="sermon not found")
+        raise HTTPException(status_code=404, detail="teaching not found")
     files = repo.get_sermon_files(sermon_id)
     content = sermon.get("content") or {}
     upload_info = sermon.get("upload_info") or {}
@@ -268,7 +268,7 @@ def get_sermon_plan(request: Request, sermon_id: str) -> SermonPlanOut:
     repo = get_repository()
     sermon = repo.get_sermon(sermon_id)
     if sermon is None or not visible(sermon.get("user_id"), request_user(request)):
-        raise HTTPException(status_code=404, detail="sermon not found")
+        raise HTTPException(status_code=404, detail="teaching not found")
     history_rows = repo.get_edit_plan_history(sermon_id)
     history = [
         _row_to_plan(sermon_id, row, len(history_rows)) for row in history_rows
@@ -283,7 +283,7 @@ def get_sermon_transcript(request: Request, sermon_id: str) -> TranscriptOut:
     repo = get_repository()
     sermon = repo.get_sermon(sermon_id)
     if sermon is None or not visible(sermon.get("user_id"), request_user(request)):
-        raise HTTPException(status_code=404, detail="sermon not found")
+        raise HTTPException(status_code=404, detail="teaching not found")
     content = sermon.get("content") or {}
     full = content.get("transcript_text") or ""
     if len(full) > _TRANSCRIPT_LIMIT:
@@ -321,7 +321,7 @@ def update_sermon(
     repo = SermonRepository(SermonDatabase(db_path=get_db_path()))
     sermon = repo.get_sermon(sermon_id)
     if sermon is None or not visible(sermon.get("user_id"), user):
-        raise HTTPException(status_code=404, detail="sermon not found")
+        raise HTTPException(status_code=404, detail="teaching not found")
     updates: dict[str, Any] = {}
     if body.title is not None:
         updates["title"] = body.title.strip() or "Untitled"
@@ -336,7 +336,7 @@ def update_sermon(
     if not updates:
         raise HTTPException(status_code=422, detail="no fields to update")
     if not repo.update_sermon_metadata(sermon_id, updates):
-        raise HTTPException(status_code=500, detail="could not update sermon")
+        raise HTTPException(status_code=500, detail="could not update teaching")
     return get_sermon(request, sermon_id)
 
 
@@ -418,10 +418,10 @@ def delete_sermon(sermon_id: str, user=Depends(require_user)) -> dict:
     repo = SermonRepository(SermonDatabase(db_path=get_db_path()))
     sermon = repo.get_sermon(sermon_id)
     if sermon is None or not visible(sermon.get("user_id"), user):
-        raise HTTPException(status_code=404, detail="sermon not found")
+        raise HTTPException(status_code=404, detail="teaching not found")
     files = repo.get_sermon_files(sermon_id)
     if not repo.delete_sermon(sermon_id):
-        raise HTTPException(status_code=500, detail="could not delete sermon")
+        raise HTTPException(status_code=500, detail="could not delete teaching")
     trash = _remove_sermon_media(
         sermon_id, [str(item.get("file_path") or "") for item in files if item.get("file_path")]
     )

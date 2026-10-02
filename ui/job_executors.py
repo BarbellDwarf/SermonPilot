@@ -736,7 +736,7 @@ def execute_validation_job(job: Job) -> JobResult:
         if not sermon_ids:
             return JobResult(
                 success=False,
-                message="No sermon IDs provided for validation",
+                message="No teaching IDs provided for validation",
                 error="Missing sermon_ids parameter"
             )
 
@@ -805,25 +805,25 @@ def execute_validation_job(job: Job) -> JobResult:
                     if validation_result.is_valid:
                         results['valid'] += 1
                         job.add_log(
-                            f"Sermon {sermon_id}: Valid "
+                            f"Teaching {sermon_id}: Valid "
                             f"(score: {validation_result.validation_score:.2f})"
                         )
                     else:
                         results['invalid'] += 1
                         job.add_log(
-                            f"Sermon {sermon_id}: Invalid "
+                            f"Teaching {sermon_id}: Invalid "
                             f"(score: {validation_result.validation_score:.2f})"
                         )
                     results['completed'] += 1
                 else:
                     results['errors'] += 1
                     results['details'].append({'sermon_id': sermon_id, 'status': 'error'})
-                    job.add_log(f"Sermon {sermon_id}: Validation failed")
+                    job.add_log(f"Teaching {sermon_id}: Validation failed")
 
             except Exception as e:
                 results['errors'] += 1
                 results['details'].append({'sermon_id': sermon_id, 'status': 'error'})
-                job.add_log(f"Error validating sermon {sermon_id}: {str(e)}")
+                job.add_log(f"Error validating teaching {sermon_id}: {str(e)}")
                 logger.error(f"Validation error for sermon {sermon_id}: {e}")
 
         job.update_progress(95, "Finalizing validation results...")
@@ -857,9 +857,9 @@ def execute_validation_job(job: Job) -> JobResult:
 
 
 def execute_sermon_import_job(job: Job) -> JobResult:
-    """Execute a sermon import job"""
+    """Execute a teaching import job"""
     try:
-        job.update_progress(10, "Initializing sermon import...")
+        job.update_progress(10, "Initializing teaching import...")
 
         # Get parameters
         processed_sermons_dir = job.parameters.get('processed_sermons_dir')
@@ -874,7 +874,7 @@ def execute_sermon_import_job(job: Job) -> JobResult:
             )
 
         if job.cancelled or job.status == JobStatus.CANCELLED:
-            job.add_log("Sermon import cancelled by user")
+            job.add_log("Teaching import cancelled by user")
             raise JobCancelledError("Job cancelled by user")
 
         job.update_progress(
@@ -890,17 +890,17 @@ def execute_sermon_import_job(job: Job) -> JobResult:
         repo = SermonRepository()
 
         # Scan for sermons
-        job.update_progress(30, "Discovering sermon folders...")
+        job.update_progress(30, "Discovering teaching folders...")
         sermon_folders = importer.scan_processed_folder()
 
         if not sermon_folders:
             return JobResult(
                 success=True,
-                message="No new sermons found to import",
+                message="No new teachings found to import",
                 data={'imported': 0, 'skipped': 0, 'errors': 0}
             )
 
-        job.update_progress(40, f"Found {len(sermon_folders)} sermon folders to process...")
+        job.update_progress(40, f"Found {len(sermon_folders)} teaching folders to process...")
 
         # Track results
         results = {
@@ -913,7 +913,7 @@ def execute_sermon_import_job(job: Job) -> JobResult:
         # Process each sermon folder
         for i, sermon_id in enumerate(sermon_folders):
             if job.cancelled or job.status == JobStatus.CANCELLED:
-                job.add_log("Sermon import cancelled by user")
+                job.add_log("Teaching import cancelled by user")
                 raise JobCancelledError("Job cancelled by user")
 
             try:
@@ -926,12 +926,12 @@ def execute_sermon_import_job(job: Job) -> JobResult:
                 existing_sermon = repo.get_sermon(sermon_id)
                 if existing_sermon and not force_reimport:
                     results['skipped'] += 1
-                    job.add_log(f"Sermon {sermon_id}: Already exists, skipping")
+                    job.add_log(f"Teaching {sermon_id}: Already exists, skipping")
                     continue
 
                 # Import or re-import the sermon
                 if force_reimport and existing_sermon:
-                    job.add_log(f"Sermon {sermon_id}: Force re-importing...")
+                    job.add_log(f"Teaching {sermon_id}: Force re-importing...")
                     # Delete existing sermon if force reimport
                     repo.delete_sermon(sermon_id)
 
@@ -944,7 +944,7 @@ def execute_sermon_import_job(job: Job) -> JobResult:
                     )
 
                     results['imported'] += 1
-                    job.add_log(f"Sermon {sermon_id}: Imported successfully - {sermon_title}")
+                    job.add_log(f"Teaching {sermon_id}: Imported successfully - {sermon_title}")
                     results['details'].append({
                         'sermon_id': sermon_id,
                         'status': 'imported',
@@ -953,12 +953,12 @@ def execute_sermon_import_job(job: Job) -> JobResult:
                 else:
                     results['errors'] += 1
                     results['details'].append({'sermon_id': sermon_id, 'status': 'error'})
-                    job.add_log(f"Sermon {sermon_id}: Failed to import")
+                    job.add_log(f"Teaching {sermon_id}: Failed to import")
 
             except Exception as e:
                 results['errors'] += 1
                 results['details'].append({'sermon_id': sermon_id, 'status': 'error'})
-                job.add_log(f"Error importing sermon {sermon_id}: {str(e)}")
+                job.add_log(f"Error importing teaching {sermon_id}: {str(e)}")
                 logger.error(f"Import error for sermon {sermon_id}: {e}")
 
         job.update_progress(95, "Finalizing import results...")
@@ -1011,7 +1011,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
         if job.cancelled or job.status == JobStatus.CANCELLED:
             raise JobCancelledError("Job cancelled by user")
 
-        job.update_progress(5, "Initializing sermon processing...")
+        job.update_progress(5, "Initializing teaching processing...")
 
         form_data = job.parameters.get('form_data') or {}
         reviews_before_upload = (
@@ -1167,7 +1167,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
         processing_temp_dir = result.get('processing_temp_dir')
 
         if result.get('cancelled'):
-            job.add_log("Sermon processing cancelled by user")
+            job.add_log("Teaching processing cancelled by user")
             raise JobCancelledError("Job cancelled by user")
 
         if result.get('success'):
@@ -1212,7 +1212,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             cleanup_state["keep_upload"] = False
             return JobResult(
                 success=True,
-                message=f"Sermon processed successfully: {sermon_id or 'dry run'}",
+                message=f"Teaching processed successfully: {sermon_id or 'dry run'}",
                 data=_trim_result_payload(result),
             )
         else:
@@ -1228,12 +1228,12 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
     except JobCancelledError:
         raise
     except Exception as e:
-        error_msg = f"Sermon processing job failed: {e}"
+        error_msg = f"Teaching processing job failed: {e}"
         job.add_log(error_msg)
         logger.exception(error_msg)
         return JobResult(
             success=False,
-            message="Sermon processing job failed",
+            message="Teaching processing job failed",
             error=str(e),
         )
     finally:
@@ -1417,7 +1417,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
         if not sermon_ids:
             return JobResult(
                 success=False,
-                message="No sermon IDs provided for batch processing",
+                message="No teaching IDs provided for batch processing",
                 error="Missing sermon_ids parameter"
             )
 
@@ -1546,7 +1546,7 @@ def execute_batch_processing_job(job: Job) -> JobResult:
 
                 results['details'].append(sermon_result)
                 job.add_log(
-                    f"Sermon {sermon_id}: "
+                    f"Teaching {sermon_id}: "
                     f"{len(sermon_result['actions_performed'])} actions completed"
                 )
 
@@ -1631,7 +1631,7 @@ def _push_metadata_for_sermon(
 
     sermon = SermonRepository().get_sermon(sermon_id)
     if not sermon:
-        return {"ok": False, "reason": "sermon not found locally"}
+        return {"ok": False, "reason": "teaching not found locally"}
 
     push_result = sermon_updater.push_sermon_metadata(
         sermon_id, sermon, full_push=bool(actions.get('full_push', True))
@@ -1662,7 +1662,7 @@ def execute_metadata_update_job(job: Job) -> JobResult:
         if not sermon_ids:
             return JobResult(
                 success=False,
-                message="No sermon IDs provided",
+                message="No teaching IDs provided",
                 error="Missing sermon_ids parameter"
             )
 
@@ -1758,7 +1758,7 @@ def execute_metadata_update_job(job: Job) -> JobResult:
             return JobResult(
                 success=False,
                 message=summary,
-                error=reasons or "one or more sermons did not update",
+                error=reasons or "one or more teachings did not update",
                 data=results,
             )
         return JobResult(success=True, message=summary, data=results)
@@ -1857,7 +1857,7 @@ def execute_auto_edit_apply_job(job: Job) -> JobResult:
         ):
             return JobResult(
                 success=False,
-                message=f"Edit plan {plan_id} not found for sermon {sermon_id}",
+                message=f"Edit plan {plan_id} not found for teaching {sermon_id}",
                 error="update_edit_plan_status matched no row"
             )
         job.add_log(f"Edit plan {plan_id} approved "
@@ -2226,7 +2226,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
                 )
             err = (
                 "Processing finished but the plan still needs review. "
-                "Check the plan for the new sermon record."
+                "Check the plan for the new teaching record."
             )
             job.add_log(err)
             return JobResult(

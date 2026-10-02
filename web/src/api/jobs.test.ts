@@ -5,7 +5,7 @@ import type { ApiJob } from "./client";
 const base: ApiJob = {
   id: "job-1",
   type: "sermon_processing",
-  title: "Process sermon · Sample Teaching · Sample Speaker",
+  title: "Process teaching · Sample Teaching · Sample Speaker",
   description: 'Running the processing pipeline for "Sample Teaching" (Sample Speaker, 2026-01-01).',
   status: "queued",
   created_at: "2026-01-01 09:00:00",

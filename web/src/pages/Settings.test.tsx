@@ -53,7 +53,7 @@ beforeEach(() => {
   mocks.status.mockResolvedValue({
     checked_at: "2026-09-06T12:00:00",
     status: {
-      sermonaudio_api: { status: "ok", message: "Connected", details: "12 sermons available" },
+      sermonaudio_api: { status: "ok", message: "Connected", details: "12 teachings available" },
       database: { status: "ok", message: "Healthy", details: "small" },
       llm_primary: { status: "ok", message: "Configured", details: "gpt-4o-mini" },
       local_storage: { status: "warning", message: "Low disk space", details: "0.4GB free" },
@@ -138,7 +138,7 @@ describe("Settings System tab reports the server's own account", () => {
     const user = userEvent.setup();
     const panel = await openSystem(user);
     await within(panel).findByText("Output folder");
-    expect(within(panel).getByText("12 sermons available")).toBeTruthy();
+    expect(within(panel).getByText("12 teachings available")).toBeTruthy();
     expect(within(panel).getByText("0.4GB free")).toBeTruthy();
     expect(panel.textContent ?? "").not.toContain("61 GB free of 120 GB");
     expect(panel.textContent ?? "").not.toContain("mock");

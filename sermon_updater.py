@@ -1639,7 +1639,7 @@ def refine_edit_plan(
 
         review_dir = _review_dir_for_refine(sermon_id, repo, config)
         if review_dir is None:
-            result['error'] = f"Sermon directory not found for {sermon_id}"
+            result['error'] = f"Teaching directory not found for {sermon_id}"
             return result
 
         segments = read_transcript_timestamps(review_dir)
