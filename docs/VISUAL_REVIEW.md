@@ -109,9 +109,11 @@ remaining findings below are ones the harness is not looking for.
 
 ## What was fixed in code
 
-All 18 blockers and the 8 should-fix items above are fixed. Tests were added
-for each behaviour that could regress silently, and the numbers are in the
-commit message.
+All 18 blockers and the 8 should-fix items above are fixed. Tests were added for
+each behaviour that could regress silently.
+
+Gates after the fixes: `tsc --noEmit` clean, `vitest run` 202 passed across 19
+files, `vite build` ok, and `pytest -q` 935 passed / 9 skipped.
 
 ## Left for River's eyes
 
@@ -141,5 +143,7 @@ commit message.
   measures correctly against WCAG AA, but whether it reads as a considered light
   theme rather than an inverted dark one is a judgement call.
 - **Print styles, high-contrast mode, and 200% browser zoom were not rendered.**
-- **The Python suite did not run.** The host has no GPU or whisper dependencies,
-  so the console changes are gated on tsc, vitest and the build only.
+- **The Python suite did run** on the author host after all: `pytest -q` gives
+  935 passed, 9 skipped. The 9 skips are the `heavy`-marked tests that need
+  `--run-heavy` and a GPU. Nothing in this pass touched Python, so that suite is
+  a regression check, not a gate on these changes.
