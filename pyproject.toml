@@ -37,6 +37,10 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "httpx>=0.27.0",
+    # Upload + branding routes take File()/Form() parameters, which FastAPI
+    # refuses to register without this. Optional to FastAPI, so a transitive
+    # path is not a guarantee.
+    "python-multipart>=0.0.20,<1.0",
     # Data and process introspection
     "plotly>=6.3.0",
     "pandas>=2.1.3",
