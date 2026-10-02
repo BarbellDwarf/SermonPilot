@@ -102,7 +102,7 @@ symbols rather than lines because both moved during the console polish.
 
 The console's wording is product surface, asserted in `web/src/pages/SermonVocabulary.test.tsx` and `web/src/pages/Settings.test.tsx`. Changing it is a behaviour change, not a copy edit.
 
-- **One noun:** sermon. No heading, button, label, filter, empty state, or aria-label says "teaching". Fixture records keep their placeholder names (`Sample Teaching N`).
+- **One noun:** teaching. No heading, button, label, filter, empty state, aria-label, job title, job log line, status card, prompt template, or API error detail says "sermon". The app processes classes as well as pulpit messages, so "sermon" is too narrow for the thing the operator manages. This reaches the Python layer too: `ui/job_labels.py`, `ui/job_executors.py`, `ui/system_status.py`, `ui/config_utils.py`, `src/auto_edit.py`, and the `sermon_updater.py` fallback metadata all emit console-visible copy. Fixture records keep their placeholder names (`Sample Teaching N`). Named nouns stay: SermonAudio, SermonPilot, the `eventType` value `Sermon Clip`, the `sermons` table and its columns, the `sermon_processing` job-type key, and directory names like `processed_sermons` that stand for a recording on the operator's own disk.
 - **One status vocabulary:** `toSermonStatus()` in `web/src/api/hooks.tsx` maps the database value to the word on screen. `processed` -> uploaded, `draft` -> waiting for you, `pending` -> queued, `error` -> failed. There is no client-invented `rendered` state.
 - **Service health:** ok, warning, and *not measured*. A check that could not determine its state is never a warning.
 
