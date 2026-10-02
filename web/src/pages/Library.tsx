@@ -35,24 +35,21 @@ function SermonCard({ sermon }: { sermon: LibrarySermon }) {
         aria-label={`${sermon.title} by ${sermon.speaker}, ${sermonStatusLabel[sermon.status]}`}
         className="block text-left transition-colors hover:opacity-90"
       >
-        {/* The chip row does not wrap. A teaching with no series gets no chip at all,
-            rather than the empty bordered box the old markup rendered, and the
-            series name is what gives way when the row is tight, so the duration
-            always lands on the same line as the status. */}
-        <div className="flex items-center gap-2">
+        {/* Status and duration only, on one line, so the two line up across every card
+            in the grid. The series name moved to the metadata line below: on the
+            chip row it fought the status chip for space and pushed
+            "Waiting for you" onto two lines. A teaching with no series shows
+            nothing rather than an empty bordered box. */}
+        <div className="flex flex-nowrap items-center gap-2">
           <Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>
-          {sermon.series ? (
-            <span className="min-w-0 truncate rounded border border-line px-1.5 py-0.5 font-mono text-xs text-muted">
-              {sermon.series}
-            </span>
-          ) : null}
           <span className="ml-auto shrink-0 font-mono text-xs text-muted">{sermon.duration}</span>
         </div>
-        <p className="mt-2 line-clamp-2 min-h-[2.75rem] text-base font-semibold [overflow-wrap:anywhere]">
+        <p className="mt-2 line-clamp-2 text-base font-semibold [overflow-wrap:anywhere]">
           {sermon.title}
         </p>
-        <p className="mt-0.5 truncate text-sm text-muted">
+        <p className="mt-0.5 text-sm text-muted [overflow-wrap:anywhere]">
           {sermon.speaker} · {sermon.date}
+          {sermon.series ? ` · ${sermon.series}` : ""}
         </p>
       </Link>
       <button

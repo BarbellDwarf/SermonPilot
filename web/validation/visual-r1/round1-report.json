@@ -1,0 +1,402 @@
+{
+  "findings": [
+    {
+      "kind": "ellipsis",
+      "step": "06-jobs/desktop/dark",
+      "el": "p.truncate.font-mono.text-xs \"job-1045 · created Sep 28, 21:03 · running\"",
+      "full": "job-1045 · created Sep 28, 21:03 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06-jobs/desktop/dark",
+      "el": "p.truncate.font-mono.text-xs \"job-1043 · created Sep 28, 21:01 · running\"",
+      "full": "job-1043 · created Sep 28, 21:01 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06e-jobs-completed/desktop/dark",
+      "el": "p.truncate.font-mono.text-xs \"job-1045 · created Sep 28, 21:03 · running\"",
+      "full": "job-1045 · created Sep 28, 21:03 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06e-jobs-completed/desktop/dark",
+      "el": "p.truncate.font-mono.text-xs \"job-1043 · created Sep 28, 21:01 · running\"",
+      "full": "job-1043 · created Sep 28, 21:01 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06-jobs/desktop/light",
+      "el": "p.truncate.font-mono.text-xs \"job-1045 · created Sep 28, 21:03 · running\"",
+      "full": "job-1045 · created Sep 28, 21:03 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06-jobs/desktop/light",
+      "el": "p.truncate.font-mono.text-xs \"job-1043 · created Sep 28, 21:01 · running\"",
+      "full": "job-1043 · created Sep 28, 21:01 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06e-jobs-completed/desktop/light",
+      "el": "p.truncate.font-mono.text-xs \"job-1045 · created Sep 28, 21:03 · running\"",
+      "full": "job-1045 · created Sep 28, 21:03 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06e-jobs-completed/desktop/light",
+      "el": "p.truncate.font-mono.text-xs \"job-1043 · created Sep 28, 21:01 · running\"",
+      "full": "job-1043 · created Sep 28, 21:01 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/dark",
+      "el": "span.min-w-0.flex-1.truncate \"Ruth 2 (Re-recorded)\"",
+      "full": "Ruth 2 (Re-recorded)"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/dark",
+      "el": "span.min-w-0.flex-1.truncate \"Ruth 3: A Quiet Boundary\"",
+      "full": "Ruth 3: A Quiet Boundary"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/dark",
+      "el": "span.min-w-0.flex-1.truncate \"Ruth 4 and the Line\"",
+      "full": "Ruth 4 and the Line"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/dark",
+      "el": "p.truncate.text-sm.font-semibold \"Enhance and transcribe Midweek Testimonies, September 24\"",
+      "full": "Enhance and transcribe Midweek Testimonies, September 24"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/dark",
+      "el": "p.truncate.font-mono.text-xs \"Clean, enhance, transcribe, and write the description. · sin\"",
+      "full": "Clean, enhance, transcribe, and write the description. · since Sep 28, 21:03"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/dark",
+      "el": "p.truncate.text-sm.font-semibold \"Enhance and transcribe Midweek Testimonies, September 24\"",
+      "full": "Enhance and transcribe Midweek Testimonies, September 24"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/dark",
+      "el": "p.truncate.font-mono.text-xs \"Clean, enhance, transcribe, and write the description. · sin\"",
+      "full": "Clean, enhance, transcribe, and write the description. · since Sep 28, 21:01"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/dark",
+      "el": "p.truncate.text-sm.font-semibold \"Enhance and transcribe Midweek Testimonies, September 24\"",
+      "full": "Enhance and transcribe Midweek Testimonies, September 24"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/dark",
+      "el": "p.truncate.font-mono.text-xs \"Clean, enhance, transcribe, and write the description. · sin\"",
+      "full": "Clean, enhance, transcribe, and write the description. · since Sep 28, 21:01"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06-jobs/mobile/dark",
+      "el": "p.truncate.text-sm.font-semibold \"Enhance and transcribe Midweek Testimonies, September 24 — C\"",
+      "full": "Enhance and transcribe Midweek Testimonies, September 24 — Clean, enhance, transcribe, and write the description."
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06-jobs/mobile/dark",
+      "el": "p.truncate.font-mono.text-xs \"job-1045 · created Sep 28, 21:03 · running\"",
+      "full": "job-1045 · created Sep 28, 21:03 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06-jobs/mobile/dark",
+      "el": "p.truncate.text-sm.font-semibold \"Enhance and transcribe Midweek Testimonies, September 24 — C\"",
+      "full": "Enhance and transcribe Midweek Testimonies, September 24 — Clean, enhance, transcribe, and write the description."
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06-jobs/mobile/dark",
+      "el": "p.truncate.font-mono.text-xs \"job-1043 · created Sep 28, 21:01 · running\"",
+      "full": "job-1043 · created Sep 28, 21:01 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06e-jobs-completed/mobile/dark",
+      "el": "p.truncate.text-sm.font-semibold \"Enhance and transcribe Midweek Testimonies, September 24 — C\"",
+      "full": "Enhance and transcribe Midweek Testimonies, September 24 — Clean, enhance, transcribe, and write the description."
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06e-jobs-completed/mobile/dark",
+      "el": "p.truncate.font-mono.text-xs \"job-1045 · created Sep 28, 21:03 · running\"",
+      "full": "job-1045 · created Sep 28, 21:03 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06e-jobs-completed/mobile/dark",
+      "el": "p.truncate.text-sm.font-semibold \"Enhance and transcribe Midweek Testimonies, September 24 — C\"",
+      "full": "Enhance and transcribe Midweek Testimonies, September 24 — Clean, enhance, transcribe, and write the description."
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06e-jobs-completed/mobile/dark",
+      "el": "p.truncate.font-mono.text-xs \"job-1043 · created Sep 28, 21:01 · running\"",
+      "full": "job-1043 · created Sep 28, 21:01 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "07-settings-07-backup/mobile/dark",
+      "el": "p.truncate.text-sm.font-semibold \"Audio method -> deepfilternet (mock)\"",
+      "full": "Audio method -> deepfilternet (mock)"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "07-settings-07-backup/mobile/dark",
+      "el": "p.truncate.text-sm.font-semibold \"Transcription backend -> local (mock)\"",
+      "full": "Transcription backend -> local (mock)"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "07-settings-07-backup/mobile/dark",
+      "el": "p.truncate.text-sm.font-semibold \"Initial sample data (mock)\"",
+      "full": "Initial sample data (mock)"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/light",
+      "el": "span.min-w-0.flex-1.truncate \"Ruth 2 (Re-recorded)\"",
+      "full": "Ruth 2 (Re-recorded)"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/light",
+      "el": "span.min-w-0.flex-1.truncate \"Ruth 3: A Quiet Boundary\"",
+      "full": "Ruth 3: A Quiet Boundary"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/light",
+      "el": "span.min-w-0.flex-1.truncate \"Ruth 4 and the Line\"",
+      "full": "Ruth 4 and the Line"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/light",
+      "el": "p.truncate.text-sm.font-semibold \"Enhance and transcribe Midweek Testimonies, September 24\"",
+      "full": "Enhance and transcribe Midweek Testimonies, September 24"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/light",
+      "el": "p.truncate.font-mono.text-xs \"Clean, enhance, transcribe, and write the description. · sin\"",
+      "full": "Clean, enhance, transcribe, and write the description. · since Sep 28, 21:03"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/light",
+      "el": "p.truncate.text-sm.font-semibold \"Enhance and transcribe Midweek Testimonies, September 24\"",
+      "full": "Enhance and transcribe Midweek Testimonies, September 24"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/light",
+      "el": "p.truncate.font-mono.text-xs \"Clean, enhance, transcribe, and write the description. · sin\"",
+      "full": "Clean, enhance, transcribe, and write the description. · since Sep 28, 21:01"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/light",
+      "el": "p.truncate.text-sm.font-semibold \"Enhance and transcribe Midweek Testimonies, September 24\"",
+      "full": "Enhance and transcribe Midweek Testimonies, September 24"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "01-home/mobile/light",
+      "el": "p.truncate.font-mono.text-xs \"Clean, enhance, transcribe, and write the description. · sin\"",
+      "full": "Clean, enhance, transcribe, and write the description. · since Sep 28, 21:01"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06-jobs/mobile/light",
+      "el": "p.truncate.text-sm.font-semibold \"Enhance and transcribe Midweek Testimonies, September 24 — C\"",
+      "full": "Enhance and transcribe Midweek Testimonies, September 24 — Clean, enhance, transcribe, and write the description."
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06-jobs/mobile/light",
+      "el": "p.truncate.font-mono.text-xs \"job-1045 · created Sep 28, 21:03 · running\"",
+      "full": "job-1045 · created Sep 28, 21:03 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06-jobs/mobile/light",
+      "el": "p.truncate.text-sm.font-semibold \"Enhance and transcribe Midweek Testimonies, September 24 — C\"",
+      "full": "Enhance and transcribe Midweek Testimonies, September 24 — Clean, enhance, transcribe, and write the description."
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06-jobs/mobile/light",
+      "el": "p.truncate.font-mono.text-xs \"job-1043 · created Sep 28, 21:01 · running\"",
+      "full": "job-1043 · created Sep 28, 21:01 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06e-jobs-completed/mobile/light",
+      "el": "p.truncate.text-sm.font-semibold \"Enhance and transcribe Midweek Testimonies, September 24 — C\"",
+      "full": "Enhance and transcribe Midweek Testimonies, September 24 — Clean, enhance, transcribe, and write the description."
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06e-jobs-completed/mobile/light",
+      "el": "p.truncate.font-mono.text-xs \"job-1045 · created Sep 28, 21:03 · running\"",
+      "full": "job-1045 · created Sep 28, 21:03 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06e-jobs-completed/mobile/light",
+      "el": "p.truncate.text-sm.font-semibold \"Enhance and transcribe Midweek Testimonies, September 24 — C\"",
+      "full": "Enhance and transcribe Midweek Testimonies, September 24 — Clean, enhance, transcribe, and write the description."
+    },
+    {
+      "kind": "ellipsis",
+      "step": "06e-jobs-completed/mobile/light",
+      "el": "p.truncate.font-mono.text-xs \"job-1043 · created Sep 28, 21:01 · running\"",
+      "full": "job-1043 · created Sep 28, 21:01 · running"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "07-settings-07-backup/mobile/light",
+      "el": "p.truncate.text-sm.font-semibold \"Audio method -> deepfilternet (mock)\"",
+      "full": "Audio method -> deepfilternet (mock)"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "07-settings-07-backup/mobile/light",
+      "el": "p.truncate.text-sm.font-semibold \"Transcription backend -> local (mock)\"",
+      "full": "Transcription backend -> local (mock)"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "07-settings-07-backup/mobile/light",
+      "el": "p.truncate.text-sm.font-semibold \"Initial sample data (mock)\"",
+      "full": "Initial sample data (mock)"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "10-jobs-completed/desktop/dark",
+      "el": "p.truncate.font-mono.text-xs \"job-1042 · created Sep 28, 15:05 · finished Sep 28, 15:17 · \"",
+      "full": "job-1042 · created Sep 28, 15:05 · finished Sep 28, 15:17 · 12m"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "11-jobs-failed/desktop/dark",
+      "el": "p.truncate.font-mono.text-xs \"job-1044 · created Sep 28, 20:13 · finished Sep 28, 20:21 · \"",
+      "full": "job-1044 · created Sep 28, 20:13 · finished Sep 28, 20:21 · 8m"
+    },
+    {
+      "kind": "ellipsis",
+      "step": "11-jobs-failed/desktop/dark",
+      "el": "p.truncate.font-mono.text-xs \"job-1041 · created Sep 27, 18:05 · finished Sep 27, 18:07 · \"",
+      "full": "job-1041 · created Sep 27, 18:05 · finished Sep 27, 18:07 · 2m"
+    }
+  ],
+  "consoleErrors": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    }
+  ],
+  "failedRequests": [
+    {
+      "url": "http://127.0.0.1:8504/api/auth/me",
+      "status": 401
+    },
+    {
+      "url": "http://127.0.0.1:8504/api/branding",
+      "status": 500
+    },
+    {
+      "url": "http://127.0.0.1:8504/api/branding",
+      "status": 500
+    },
+    {
+      "url": "http://127.0.0.1:8504/api/branding",
+      "status": 500
+    },
+    {
+      "url": "http://127.0.0.1:8504/api/branding",
+      "status": 500
+    },
+    {
+      "url": "http://127.0.0.1:8504/api/sermons/does-not-exist",
+      "status": 404
+    },
+    {
+      "url": "http://127.0.0.1:8504/api/media/sermons/does-not-exist",
+      "status": 404
+    },
+    {
+      "url": "http://127.0.0.1:8504/api/sermons/does-not-exist/plan",
+      "status": 404
+    },
+    {
+      "url": "http://127.0.0.1:8504/api/sermons/does-not-exist",
+      "status": 404
+    },
+    {
+      "url": "http://127.0.0.1:8504/api/media/sermons/does-not-exist",
+      "status": 404
+    },
+    {
+      "url": "http://127.0.0.1:8504/api/sermons/does-not-exist/plan",
+      "status": 404
+    }
+  ]
+}

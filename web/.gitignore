@@ -22,3 +22,7 @@ validation/phase4b/*
 !validation/phase4b/r2-live-1680x1050-detail.png
 !validation/phase4b/r2-live-1680x1050-jobs-failed.png
 !validation/phase4b/r2-live-1680x1050-library-light.png
+!validation/visual-r1/
+validation/visual-r1/*
+!validation/visual-r1/*.png
+!validation/visual-r1/*-report.json

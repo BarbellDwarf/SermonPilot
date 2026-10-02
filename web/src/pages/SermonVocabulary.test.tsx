@@ -84,6 +84,20 @@ describe("one noun and one status vocabulary", () => {
     expect(toLibrarySermon(row({ status: "pending" })).status).toBe("queued");
   });
 
+  it("keeps each Library card's status and duration on one line", async () => {
+    withProviders(<Library />);
+    await screen.findAllByText("Uploaded");
+    for (const card of Array.from(document.querySelectorAll("ol > li"))) {
+      const row = card.querySelector("li > a > div");
+      expect(row?.className ?? "").toContain("flex-nowrap");
+      // The status chip must not wrap: a two-line chip pushed the duration out
+      // of line with every other card in the grid.
+      const chip = row?.querySelector("span.rounded-full");
+      expect(chip?.className ?? "").not.toContain("flex-wrap");
+      expect(chip?.getBoundingClientRect().height ?? 0).toBeLessThan(40);
+    }
+  });
+
   it("uses one word for the thing on every page, and never says sermon", async () => {
     const home = withProviders(<Home />);
     await screen.findAllByText("Uploaded");
