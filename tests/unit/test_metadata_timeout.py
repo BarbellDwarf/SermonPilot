@@ -173,7 +173,7 @@ def test_pipeline_continues_when_model_is_not_found(
     assert any("llama3" in record.message for record in caplog.records)
     assert any("not available" in record.message for record in caplog.records)
     assert result["description"] != "Summary generation failed"
-    assert result["title"] == "Sermon by Test Speaker"
+    assert result["title"] == "Teaching by Test Speaker"
 
 
 def test_metadata_stage_deadline_is_enforced(
@@ -225,4 +225,4 @@ def test_metadata_stage_deadline_is_enforced(
     assert any(
         "metadata stage exceeded its budget" in record.message for record in caplog.records
     )
-    assert result["title"] == "Sermon by Test Speaker"
+    assert result["title"] == "Teaching by Test Speaker"

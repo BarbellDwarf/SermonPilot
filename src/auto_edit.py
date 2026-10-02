@@ -31,7 +31,7 @@ _OUTPUT_TOKEN_RESERVE = 2048
 _ELISION_MARKER = "[... middle of the transcript elided to fit the model context ...]"
 
 DEFAULT_DETECTION_SYSTEM_PROMPT = (
-    "You are a precise sermon video editor. You analyse timestamped sermon transcripts and "
+    "You are a precise teaching video editor. You analyse timestamped teaching transcripts and "
     "return strict JSON only. Never wrap the JSON in markdown fences. Never add prose before "
     "or after the JSON."
 )
@@ -44,7 +44,7 @@ DETECTION_TEMPLATE_NAME = "cut_detection"
 # {refinement}, {qa_margin_seconds}) are substituted by _render_template, which
 # only touches ``{word}`` tokens, so the literal JSON braces below survive.
 DEFAULT_DETECTION_USER_PROMPT = """\
-You are analysing a timestamped transcript of a recorded sermon video.
+You are analysing a timestamped transcript of a recorded teaching video.
 Identify two cut points so the publisher can trim pre-service content and post-service Q&A
 from the uploaded video.
 
@@ -53,7 +53,7 @@ Transcript:
 {elision_note}
 Follow these rules exactly:
 
-1. Identify where the sermon/class TEACHING starts. Ignore pre-service noise, music, prayer,
+1. Identify where the TEACHING starts. Ignore pre-service noise, music, prayer,
    announcements, welcome, and Scripture reading unless it is the main body of the teaching.
 2. Identify the first transition into OPEN Q&A: the speaker invites questions from the audience
    or the transcript shows an audience question-and-answer cadence (short exchanges, gestures

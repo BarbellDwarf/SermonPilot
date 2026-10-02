@@ -164,8 +164,8 @@ BUILTIN_PROMPT_TEMPLATES: dict[str, Any] = {
         "enabled": False,
         "system": "",
         "user": (
-            "You are a sermon title generator.\n"
-            "Create a compelling, descriptive title for this sermon.\n\n"
+            "You are a teaching title generator.\n"
+            "Create a compelling, descriptive title for this teaching.\n\n"
             "{context}\n\n"
             "Guidelines for the title:\n"
             "- Maximum 85 characters (STRICT LIMIT for API)\n"
@@ -176,16 +176,16 @@ BUILTIN_PROMPT_TEMPLATES: dict[str, Any] = {
             "- If a Bible reference is given, you may include it briefly\n"
             "- Do not use quotation marks around the title\n"
             "- Return ONLY the title, no explanation or commentary\n\n"
-            "Sermon content (first 1000 characters):\n"
+            "Teaching content (first 1000 characters):\n"
             "{transcript}...\n\n"
-            "Generate a compelling sermon title:"
+            "Generate a compelling teaching title:"
         ),
     },
     "short_title": {
         "enabled": False,
         "system": "",
         "user": (
-            "Shorten this sermon title to a concise version\n"
+            "Shorten this teaching title to a concise version\n"
             "(maximum 30 characters, STRICT LIMIT).\n"
             "Keep the core meaning but make it brief. No quotes, no explanation, "
             "just the shortened title.\n\n"
@@ -226,7 +226,7 @@ BUILTIN_PROMPT_TEMPLATES: dict[str, Any] = {
         "system": "",
         "user": (
             "Generate 5-10 highly relevant, search-friendly hashtags (<=150 chars total) for this "
-            "sermon. Combine multi-word phrases (#ChristianLiving). Avoid duplicates & generic "
+            "teaching. Combine multi-word phrases (#ChristianLiving). Avoid duplicates & generic "
             "(#sermon #church) unless uniquely relevant. Output ONLY space-delimited hashtags.\n\n"
             "Text:\n{text}\n\nHashtags:"
         ),
@@ -243,8 +243,8 @@ BUILTIN_PROMPT_TEMPLATES: dict[str, Any] = {
             "3. Keep hashtags space-separated\n"
             "4. Maximum 150 characters total\n"
             "5. If you see obvious formatting issues, fix them\n"
-            "6. If no valid hashtags found, generate 3-5 relevant ones for the sermon topic\n\n"
-            "Original sermon topic context: {original_text}...\n\n"
+            "6. If no valid hashtags found, generate 3-5 relevant ones for the teaching topic\n\n"
+            "Original teaching topic context: {original_text}...\n\n"
             "Hashtag input to verify:\n{initial_hashtags}\n\n"
             "Valid hashtags only:"
         ),

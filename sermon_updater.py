@@ -3787,20 +3787,20 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 hashtags = hashtags or ''
         else:
             if not title:
-                title = f"Sermon by {speaker_name}"
+                title = f"Teaching by {speaker_name}"
                 if bible_text:
                     title += f" - {bible_text}"
 
             description_failed = bool(metadata_notes.get('description_error'))
             if not description and not description_failed:
-                description = f"A sermon by {speaker_name}"
+                description = f"A teaching by {speaker_name}"
                 if bible_text:
                     description += f" on {bible_text}"
                 description += f" from {event_type} on {recorded_date}."
 
             if not hashtags:
                 base_tags = [
-                    "#sermon",
+                    "#teaching",
                     f"#{speaker_name.replace(' ', '')}",
                     f"#{event_type.replace(' ', '').replace('-', '')}",
                 ]
@@ -5061,8 +5061,8 @@ def generate_summary(
         role_desc = 'Bible class summarization assistant'
         body_desc = 'Sunday School, Midweek, or class/lecture event'
     else:
-        role_desc = 'sermon summarization assistant'
-        body_desc = 'sermon'
+        role_desc = 'teaching summarization assistant'
+        body_desc = 'teaching'
 
     # Build speaker instruction
     speaker_instruction = (
