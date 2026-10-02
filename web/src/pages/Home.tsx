@@ -29,16 +29,24 @@ export const serviceStateLabel: Record<string, string> = {
   unknown: "Not measured",
 };
 
+/**
+ * The title is the reason this row exists, so it wraps to two lines rather
+ * than truncating. At 390px the row stacks: chip and verb above, title below.
+ */
 function NeedsYouRow({ sermon, verb }: { sermon: Sermon; verb: string }) {
   return (
     <li>
       <Link
         to={`/library/${sermon.id}`}
-        className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-line bg-surface px-3 py-2 transition-colors hover:border-muted"
+        className="flex min-w-0 flex-col gap-1 rounded-md border border-line bg-surface px-3 py-2 transition-colors hover:border-muted sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-3"
       >
-        <Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{sermon.title}</span>
-        <span className="font-mono text-xs text-muted">{verb}</span>
+        <span className="flex shrink-0 items-center gap-2 sm:contents">
+          <Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>
+          <span className="font-mono text-xs text-muted sm:ml-auto">{verb}</span>
+        </span>
+        <span className="line-clamp-2 min-w-0 text-sm font-semibold [overflow-wrap:anywhere]">
+          {sermon.title}
+        </span>
       </Link>
     </li>
   );
@@ -46,16 +54,16 @@ function NeedsYouRow({ sermon, verb }: { sermon: Sermon; verb: string }) {
 
 export function Home() {
   const { data, isLoading: loading, error, retry } = useHomeData();
-  const { services, activeJobs, recentSermons, upNext, needsReview, failed } = data;
+  const { services, activeJobs, recentSermons, upNext, needsReview, failed, teachingCount } = data;
   const okCount = services.filter((s) => s.state === "ok").length;
   const unknownCount = services.filter((s) => s.state === "unknown").length;
+  const needsYouCount = needsReview.length + failed.length;
   const stats: [string, string][] = [
-    ["Teachings", String(recentSermons.length)],
-    ["Waiting for you", String(needsReview.length)],
+    ["Teachings", String(teachingCount)],
+    ["Waiting for you", String(needsYouCount)],
     ["Active jobs", String(activeJobs.length)],
     ["Services ok", `${okCount}/${services.length}`],
   ];
-  const needsYouCount = needsReview.length + failed.length;
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -171,10 +179,12 @@ export function Home() {
                 <Card className="flex flex-wrap items-center gap-x-4 gap-y-2">
                   <Chip tone={j.state === "running" ? "accent" : "neutral"}>{j.state}</Chip>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{j.kind}</p>
-                    <p className="truncate font-mono text-xs text-muted">{j.sermon} · since {j.created}</p>
+                    <p className="text-sm font-semibold [overflow-wrap:anywhere]">{j.kind}</p>
+                    <p className="text-xs text-muted [overflow-wrap:anywhere]">
+                      {j.sermon} · since {j.created}
+                    </p>
                   </div>
-                  <span className="font-mono text-xs text-muted">{j.duration}</span>
+                  <span className="shrink-0 font-mono text-xs text-muted">{j.duration}</span>
                 </Card>
               </li>
             ))}
@@ -201,8 +211,10 @@ export function Home() {
                 <Card className="flex flex-wrap items-center gap-x-4 gap-y-2">
                   <Chip tone="neutral">{j.state}</Chip>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{j.kind}</p>
-                    <p className="truncate font-mono text-xs text-muted">{j.sermon} · since {j.created}</p>
+                    <p className="text-sm font-semibold [overflow-wrap:anywhere]">{j.kind}</p>
+                    <p className="text-xs text-muted [overflow-wrap:anywhere]">
+                      {j.sermon} · since {j.created}
+                    </p>
                   </div>
                 </Card>
               </li>

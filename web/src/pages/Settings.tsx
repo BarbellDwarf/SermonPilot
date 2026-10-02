@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { adminApi, api, isLive, meApi, metaApi, type AdminUser } from "../api/client";
 import { useUserSettings } from "../api/useUserSettings";
+import type { Theme } from "../components/theme";
 import { AudioSettingsSection } from "../components/AudioSettings";
 import { CloudMountsSection } from "../components/CloudMounts";
 import { ConfigBackupSection } from "../components/ConfigBackup";
@@ -81,32 +82,43 @@ function SaveRow({ dirty, saved, onSave }: { dirty: boolean; saved: boolean; onS
   );
 }
 
-function AppearanceSection({ show }: { show: (m: string) => void }) {
-  const [savedTheme, setSavedTheme] = useUserSettings<string>("settings.theme", "dark");
-  const [theme, setTheme] = useState(savedTheme);
-  const isDirty = isLive ? theme !== savedTheme : theme !== savedTheme;
+const THEME_OPTIONS = [
+  { id: "dark", label: "Dark" },
+  { id: "light", label: "Light" },
+  { id: "system", label: "Match the system" },
+] as const;
+
+function AppearanceSection({
+  show,
+  theme,
+  onTheme,
+}: {
+  show: (m: string) => void;
+  theme: Theme;
+  onTheme: (t: Theme) => void;
+}) {
   return (
-    <SectionCard title="Appearance" sub="Theme applies instantly in this mock and persists on save.">
+    <SectionCard title="Appearance" sub="The theme applies at once and is remembered on this device.">
       <fieldset>
         <legend className="text-sm font-semibold">Theme</legend>
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {["dark", "light", "system"].map((t) => (
-            <label key={t} className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md border border-line p-3 text-sm">
-              <input type="radio" name="theme" value={t} checked={theme === t} onChange={() => setTheme(t)} />
-              <span className="font-semibold capitalize">{t}</span>
+          {THEME_OPTIONS.map((o) => (
+            <label key={o.id} className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md border border-line p-3 text-sm">
+              <input
+                type="radio"
+                name="theme"
+                value={o.id}
+                checked={theme === o.id}
+                onChange={() => {
+                  onTheme(o.id);
+                  show(`Theme set to ${o.label.toLowerCase()}.`);
+                }}
+              />
+              <span className="font-semibold">{o.label}</span>
             </label>
           ))}
         </div>
       </fieldset>
-      <SaveRow
-        dirty={isDirty}
-        saved={!isDirty}
-        onSave={() => {
-          setSavedTheme(theme);
-          setTheme(theme);
-          show(`Appearance saved: theme ${theme}${isLive ? "" : " (mock)"}.`);
-        }}
-      />
     </SectionCard>
   );
 }
@@ -390,12 +402,12 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
               return (
                 <li
                   key={id}
-                  className="flex min-w-0 flex-col gap-1 rounded-md border border-line bg-ink p-3 sm:flex-row sm:items-center sm:gap-3"
+                  className="flex min-w-0 flex-col gap-1 rounded-md border border-line bg-ink p-3 sm:grid sm:grid-cols-[auto_minmax(0,10rem)_minmax(0,1fr)] sm:items-center sm:gap-3"
                 >
                   <Chip tone={tone}>
                     {tone === "warn" ? "Warning" : tone === "error" ? "Problem" : tone === "ok" ? "OK" : "Not measured"}
                   </Chip>
-                  <span className="min-w-0 flex-1 text-sm font-semibold">{label}</span>
+                  <span className="min-w-0 text-sm font-semibold">{label}</span>
                   <span className="min-w-0 text-xs text-muted [overflow-wrap:anywhere]">
                     {entry.details || entry.message || ""}
                   </span>
@@ -433,7 +445,15 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
   );
 }
 
-export function Settings({ user }: { user: { display_name: string; role?: string } }) {
+export function Settings({
+  user,
+  theme,
+  onTheme,
+}: {
+  user: { display_name: string; role?: string };
+  theme: Theme;
+  onTheme: (t: Theme) => void;
+}) {
   const { toast, show } = useSectionToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [active, setActive] = useState<TabId>(() => tabFromParams(searchParams));
@@ -480,7 +500,7 @@ export function Settings({ user }: { user: { display_name: string; role?: string
       <div
         role="tablist"
         aria-label="Settings sections"
-        className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1"
+        className="-mx-1 flex flex-wrap gap-1 px-1 pb-1"
       >
         {TABS.map((t) => {
           const selected = active === t.id;
@@ -497,7 +517,7 @@ export function Settings({ user }: { user: { display_name: string; role?: string
               tabIndex={selected ? 0 : -1}
               onClick={() => select(t.id)}
               onKeyDown={(e) => onTabKeyDown(e, t.id)}
-              className={`min-h-[44px] shrink-0 rounded-md border px-4 text-sm font-semibold transition-colors ${
+              className={`min-h-[44px] shrink-0 whitespace-nowrap rounded-md border px-4 text-sm font-semibold transition-colors ${
                 selected
                   ? "border-accent bg-raised text-mist"
                   : "border-line bg-surface text-muted hover:border-muted hover:text-mist"
@@ -548,7 +568,7 @@ export function Settings({ user }: { user: { display_name: string; role?: string
           "account",
           <>
             <AccountSection show={show} user={user} />
-            <AppearanceSection show={show} />
+            <AppearanceSection show={show} theme={theme} onTheme={onTheme} />
           </>,
         )}
       {active === "users" && panel("users", <UsersSection show={show} />)}

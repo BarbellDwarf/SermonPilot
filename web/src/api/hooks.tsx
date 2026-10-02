@@ -110,6 +110,7 @@ export function toJob(j: ApiJob, logs: string[] = []): Job {
     finished: j.completed_at ? fmtStamp(j.completed_at) : null,
     duration: j.duration,
     log: logs,
+    error: j.error || null,
   };
 }
 
@@ -251,7 +252,7 @@ export function useSermonDetail(id: string | undefined) {
           transcriptAvailable: live.data.transcript_available,
           transcriptLength: live.data.transcript_length,
           sermonaudioId: live.data.sermonaudio_id,
-          uploadedAt: live.data.upload_date,
+          uploadedAt: live.data.upload_date ? fmtStamp(live.data.upload_date) : null,
           uploadStatus: live.data.upload_status,
           bibleText: live.data.bible_text,
           scriptureReference: live.data.scripture_reference,
@@ -386,6 +387,7 @@ export interface JobsData {
   active: Job[];
   completed: Job[];
   failed: Job[];
+  cancelled: Job[];
 }
 
 export function useJobDetail(id: string, enabled: boolean) {
@@ -406,11 +408,18 @@ export function useJobDetail(id: string, enabled: boolean) {
   };
 }
 
+/**
+ * Cancelled work is not a failure, so it gets its own tab rather than being
+ * counted under Failed: a run an operator stopped on purpose says nothing
+ * about whether the pipeline is healthy, and lumping the two together made the
+ * failure count unreadable.
+ */
 function partitionJobs(jobs: Job[]): JobsData {
   return {
     active: jobs.filter((j) => j.state === "queued" || j.state === "running"),
     completed: jobs.filter((j) => j.state === "done"),
-    failed: jobs.filter((j) => j.state === "failed" || j.state === "cancelled"),
+    failed: jobs.filter((j) => j.state === "failed"),
+    cancelled: jobs.filter((j) => j.state === "cancelled"),
   };
 }
 
@@ -428,6 +437,7 @@ export function useJobsData() {
       active: activeJobs,
       completed: completedJobs,
       failed: failedJobs,
+      cancelled: [] as Job[],
     }),
     [],
   );
@@ -470,6 +480,8 @@ export interface HomeData {
   /** Records whose last run failed. */
   failed: Sermon[];
   needsReviewTotal: number;
+  /** Every record on the server, not the handful shown in Recent teachings. */
+  teachingCount: number;
 }
 
 function toRecentSermon(s: ApiSermonListItem): Sermon {
@@ -538,6 +550,7 @@ export function useHomeData() {
       needsReview: recentSermons.filter((s) => s.status === "draft").slice(0, 4),
       failed: recentSermons.filter((s) => s.status === "failed").slice(0, 4),
       needsReviewTotal: recentSermons.filter((s) => s.status === "draft").length,
+      teachingCount: recentSermons.length,
     }),
     [],
   );
@@ -559,14 +572,19 @@ export function useHomeData() {
     });
   const allJobs = (jobsQuery.data?.items ?? []).map((j) => toJob(j));
   const recent = (sermonsQuery.data?.items ?? []).map(toRecentSermon);
+  const running = allJobs.filter((j) => j.state === "running");
+  const queued = allJobs.filter((j) => j.state === "queued");
   const data: HomeData = {
     services: servicesLive,
-    activeJobs: allJobs.filter((j) => j.state === "queued" || j.state === "running"),
+    // Queued work is listed once, under Up next. Repeating it under Active jobs
+    // made the same teaching look like two different runs.
+    activeJobs: [...running, ...queued],
     recentSermons: recent.slice(0, 4),
-    upNext: allJobs.filter((j) => j.state === "queued").slice(0, 3),
+    upNext: queued.slice(0, 3),
     needsReview: recent.filter((s) => s.status === "draft").slice(0, 4),
     failed: recent.filter((s) => s.status === "failed").slice(0, 4),
     needsReviewTotal: recent.filter((s) => s.status === "draft").length,
+    teachingCount: sermonsQuery.data?.total ?? recent.length,
   };
   const isLoading = statusQuery.isPending || jobsQuery.isPending || sermonsQuery.isPending;
   const isError = statusQuery.isError || jobsQuery.isError || sermonsQuery.isError;

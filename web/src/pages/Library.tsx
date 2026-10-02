@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { type LibrarySermon, type LibrarySermonStatus } from "../mock/data";
-import { Chip, EmptyState, PageHeader, SkeletonList } from "../components/ui";
+import { Chip, EmptyState, PageHeader, SkeletonList, buttonClass } from "../components/ui";
 import { MediaPlayer } from "../components/MediaPlayer";
 import { QueryError, useLibrarySermons, type LibrarySort } from "../api/hooks";
 import { isLive } from "../api/client";
@@ -35,14 +35,22 @@ function SermonCard({ sermon }: { sermon: LibrarySermon }) {
         aria-label={`${sermon.title} by ${sermon.speaker}, ${sermonStatusLabel[sermon.status]}`}
         className="block text-left transition-colors hover:opacity-90"
       >
-        <div className="flex flex-wrap items-center gap-2">
+        {/* The chip row does not wrap. A teaching with no series gets no chip at all,
+            rather than the empty bordered box the old markup rendered, and the
+            series name is what gives way when the row is tight, so the duration
+            always lands on the same line as the status. */}
+        <div className="flex items-center gap-2">
           <Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>
-          <span className="rounded border border-line px-1.5 py-0.5 font-mono text-xs text-muted">
-            {sermon.series}
-          </span>
-          <span className="ml-auto font-mono text-xs text-muted">{sermon.duration}</span>
+          {sermon.series ? (
+            <span className="min-w-0 truncate rounded border border-line px-1.5 py-0.5 font-mono text-xs text-muted">
+              {sermon.series}
+            </span>
+          ) : null}
+          <span className="ml-auto shrink-0 font-mono text-xs text-muted">{sermon.duration}</span>
         </div>
-        <p className="mt-2 text-base font-semibold [overflow-wrap:anywhere]">{sermon.title}</p>
+        <p className="mt-2 line-clamp-2 min-h-[2.75rem] text-base font-semibold [overflow-wrap:anywhere]">
+          {sermon.title}
+        </p>
         <p className="mt-0.5 truncate text-sm text-muted">
           {sermon.speaker} · {sermon.date}
         </p>
@@ -173,8 +181,26 @@ export function Library() {
         <QueryError message={error} onRetry={retry} />
       ) : visible.length === 0 ? (
         <EmptyState
-          title="No teachings match"
-          body="Try a different search term, or clear the search to see everything."
+          title={query.trim() ? "No teachings match" : "No teachings here yet"}
+          body={
+            query.trim()
+              ? `Nothing matches “${query.trim()}”. Try a shorter search, or clear the filters to see all ${isLive ? total : rows.length}.`
+              : "Once a run finishes, the teaching lands here with its status."
+          }
+          action={
+            query.trim() || status !== "all" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  setStatus("all");
+                }}
+                className={buttonClass()}
+              >
+                Clear the search
+              </button>
+            ) : null
+          }
         />
       ) : (
         <>

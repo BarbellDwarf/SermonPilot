@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useEffect, useState, type ReactNode } from "react";
 import type { AuthUser } from "../api/client";
+import type { Theme } from "./theme";
 import { Chip } from "./ui";
 
 export type Section = "home" | "new" | "library" | "jobs" | "settings";
@@ -23,13 +24,15 @@ function Icon({ path }: { path: string }) {
 
 interface ShellProps {
   dark: boolean;
+  /** The stored choice, so the toggle can say what it will switch to. */
+  theme: Theme;
   onToggleTheme: () => void;
   user?: AuthUser | null;
   onLogout?: () => void;
   children: ReactNode;
 }
 
-export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellProps) {
+export function Shell({ dark, theme, onToggleTheme, user, onLogout, children }: ShellProps) {
   const [drawer, setDrawer] = useState(false);
 
   useEffect(() => {
@@ -89,19 +92,27 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
                   {user.display_name}
                 </span>
                 <Chip tone={user.role === "admin" ? "accent" : "neutral"}>{user.role}</Chip>
+                {/* Below 420px the wordmark, the role chip and the toggle already
+                    fill the bar, so the label gives way to an icon rather than
+                    overlapping the theme toggle. */}
                 <button
                   type="button"
                   onClick={onLogout}
-                  className="inline-flex min-h-[44px] items-center rounded-md px-3 text-sm font-medium text-muted hover:bg-raised hover:text-mist"
+                  aria-label="Log out"
+                  className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-muted hover:bg-raised hover:text-mist max-[419px]:w-11 max-[419px]:justify-center max-[419px]:px-0"
                 >
-                  Logout
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-5 w-5 shrink-0 min-[420px]:hidden" aria-hidden="true">
+                    <path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 8l-4 4 4 4M6 12h10" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span className="min-[420px]:inline">Logout</span>
                 </button>
               </div>
             ) : null}
             <button
               type="button"
               onClick={onToggleTheme}
-              aria-label={dark ? "Switch to light theme" : "Switch to dark theme"}
+              aria-label={`Switch to ${dark ? "light" : "dark"} theme`}
+              title={`Theme: ${theme === "system" ? "matching the system" : theme}`}
               className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted hover:bg-raised hover:text-mist"
             >
               {dark ? (

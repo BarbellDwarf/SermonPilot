@@ -31,6 +31,7 @@ function job(overrides: Partial<Job> = {}): Job {
     finished: "Sep 6, 09:04",
     duration: "4m",
     log: [],
+    error: null,
     ...overrides,
   };
 }
@@ -41,6 +42,7 @@ function jobsData(items: Job[], isLoading = false) {
       active: items.filter((j) => j.state === "queued" || j.state === "running"),
       completed: items.filter((j) => j.state === "done"),
       failed: items.filter((j) => j.state === "failed"),
+      cancelled: items.filter((j) => j.state === "cancelled"),
     },
     isLoading,
     error: null as string | null,
@@ -92,5 +94,60 @@ describe("Jobs never offers an action that cannot work", () => {
     withProviders(<Jobs />);
 
     expect(await screen.findByText("No active jobs")).toBeTruthy();
+  });
+
+  it("does not promise a Retry button the live console does not have", async () => {
+    mocks.jobs.mockReturnValue(jobsData([]));
+    mocks.detail.mockReturnValue({ data: null, logs: [], isLoading: false, error: null });
+    const user = userEvent.setup();
+    withProviders(<Jobs />);
+
+    await user.click(await screen.findByRole("tab", { name: /Failed/ }));
+    expect(await screen.findByText("No failed jobs")).toBeTruthy();
+    expect(screen.getByText(/the reason it stopped/).textContent).not.toMatch(/Retry/i);
+  });
+});
+
+/**
+ * The visual pass found the API's failure reason arriving on every failed and
+ * cancelled job and never reaching the screen, so an operator saw "failed" with
+ * no idea what broke. These pin the reason to the row that has one.
+ */
+describe("a job row carries the reason it stopped", () => {
+  async function openTab(items: Job[], tab: RegExp) {
+    mocks.jobs.mockReturnValue(jobsData(items));
+    mocks.detail.mockReturnValue({ data: null, logs: [], isLoading: false, error: null });
+    const user = userEvent.setup();
+    withProviders(<Jobs />);
+    await user.click(await screen.findByRole("tab", { name: tab }));
+    return user;
+  }
+
+  it("shows the recorded reason on a failed job", async () => {
+    await openTab(
+      [job({ error: "The remote endpoint rejected the upload: 502 Bad Gateway." })],
+      /Failed/,
+    );
+    expect((await screen.findByTestId("job-error")).textContent).toContain("502 Bad Gateway");
+  });
+
+  it("shows the recorded reason on a cancelled job, in its own tab", async () => {
+    await openTab(
+      [
+        job({
+          state: "cancelled",
+          finished: null,
+          error: "Stopped by the operator before the upload started.",
+        }),
+      ],
+      /Cancelled/,
+    );
+    expect((await screen.findByTestId("job-error")).textContent).toContain("before the upload");
+  });
+
+  it("does not count a cancelled run as a failure", async () => {
+    await openTab([job({ state: "cancelled", error: null })], /Cancelled/);
+    await waitFor(() => expect(screen.getAllByText(/0 failed/).length).toBeGreaterThan(0));
+    expect(screen.getAllByText(/1 cancelled/).length).toBeGreaterThan(0);
   });
 });

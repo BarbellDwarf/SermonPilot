@@ -257,9 +257,24 @@ export function LibraryDetail() {
   const viewMode = sermonViewMode({ status: sermon.status, planStatus: plan?.status });
   const showCompleted = viewMode === "completed" && !editingOverride;
 
+  /**
+   * A draft with a plan is the one record whose next step is a decision, and the
+   * review screen holds that decision. Publishing from the header on top of it
+   * left the page offering an upload while the cut it would upload was still
+   * unreviewed, so a draft goes to the review screen instead.
+   */
+  const draftNeedsReview =
+    sermon.status === "draft" && Boolean(plan) && plan?.status !== "processed";
   const headerActions = (
     <>
-      {actions.canPublishLegacy ? (
+      {draftNeedsReview ? (
+        <Link
+          to={`/jobs`}
+          className="inline-flex min-h-[44px] items-center rounded-md border border-line px-4 text-sm font-semibold text-mist transition-colors hover:border-muted"
+        >
+          Watch the run under Jobs
+        </Link>
+      ) : actions.canPublishLegacy ? (
         <Button variant="primary" onClick={push} disabled={pushing} aria-busy={pushing}>
           {pushing ? "Pushing…" : "Push to SermonAudio"}
         </Button>

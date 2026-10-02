@@ -142,6 +142,49 @@ describe("Home leads with what needs a decision", () => {
     const status = screen.getByRole("heading", { name: "System status" });
     expect(needs.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+
+  it("counts every waiting record in the summary, not just the drafts", async () => {
+    withProviders(<Home />);
+    const heading = await screen.findByRole("heading", { name: "Needs you" });
+    const scope = within(heading.closest("section") as HTMLElement);
+    await waitFor(() =>
+      expect(scope.queryByLabelText("Loading")).toBeNull(),
+    );
+    const rows = scope.getAllByRole("link").filter((l) =>
+      (l.getAttribute("href") ?? "").startsWith("/library/"),
+    );
+    const stat = screen
+      .getAllByText("Waiting for you")
+      .map((label) => label.parentElement?.textContent ?? "")
+      .find((text) => /\d/.test(text));
+    expect(stat).toBeTruthy();
+    expect(Number(stat?.replace(/\D/g, ""))).toBe(rows.length);
+  });
+
+  it("never truncates a title in Needs you, because the title is the whole point", async () => {
+    withProviders(<Home />);
+    const heading = await screen.findByRole("heading", { name: "Needs you" });
+    const scope = within(heading.closest("section") as HTMLElement);
+    await waitFor(() => expect(scope.queryByLabelText("Loading")).toBeNull());
+    const rows = scope
+      .getAllByRole("link")
+      .filter((l) => (l.getAttribute("href") ?? "").startsWith("/library/"));
+    expect(rows.length).toBeGreaterThan(0);
+    for (const link of rows) {
+      const title = link.querySelector("span.line-clamp-2");
+      expect(title).toBeTruthy();
+      expect(title?.className).not.toMatch(/\btruncate\b/);
+    }
+  });
+
+  it("lists a queued job once, not in both Active jobs and Up next", () => {
+    withProviders(<Home />);
+    const titles = Array.from(
+      document.querySelectorAll("main section li p.font-semibold"),
+    ).map((p) => p.textContent?.trim() ?? "");
+    const repeats = titles.filter((t, i) => titles.indexOf(t) !== i);
+    expect(repeats).toEqual([]);
+  });
 });
 
 describe("service health states", () => {
@@ -210,7 +253,7 @@ describe("service health states", () => {
 describe("the header carries no developer scaffolding", () => {
   it("does not tell the operator which data mode the build is in", () => {
     withProviders(
-      <Shell dark={false} onToggleTheme={() => {}}>
+      <Shell dark={false} theme="light" onToggleTheme={() => {}}>
         <p>body</p>
       </Shell>,
     );

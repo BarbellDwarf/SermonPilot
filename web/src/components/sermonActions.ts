@@ -42,6 +42,11 @@ export function sermonActionMatrix({ status, hasRender }: SermonActionState): Se
   return {
     published,
     canUploadExisting: !published && hasRender,
-    canPublishLegacy: !published && status !== "draft",
+    // A queued record has not been processed and a draft has not been approved,
+    // so neither has anything worth publishing yet. Offering the upload as the
+    // primary action on both put a button that could only fail in front of the
+    // operator. A record that already carries a render, or one whose last run
+    // failed partway through publishing, can still be pushed.
+    canPublishLegacy: !published && (hasRender || status === "failed"),
   };
 }

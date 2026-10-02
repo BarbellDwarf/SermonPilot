@@ -497,6 +497,32 @@ export function NewSermon() {
         }
       />
 
+      {/* The start button sat 400px below the fold at 1440x1000, so the
+          operator scrolled a 1500px form to find out whether they could start.
+          This bar sticks to the bottom of the viewport: what is still missing,
+          and the button itself, stay in view the whole way down. */}
+      <div
+        data-testid="run-status-bar"
+        className="sticky bottom-0 z-20 -mx-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur lg:-mx-8 lg:px-8"
+      >
+        <p className="min-w-0 flex-1 text-sm" role="status" aria-live="polite">
+          {valid ? (
+            <span className="text-ok">Everything needed is filled in.</span>
+          ) : (
+            <span className="text-danger">Still needed: {missing.join(", ")}.</span>
+          )}
+        </p>
+        <Button
+          variant="primary"
+          onClick={start}
+          disabled={!valid || starting}
+          aria-busy={starting}
+          className="shrink-0"
+        >
+          {starting ? "Queueing…" : "Start processing"}
+        </Button>
+      </div>
+
       <SectionCard
         n={1}
         title="The recording"

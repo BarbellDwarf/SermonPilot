@@ -37,7 +37,14 @@ const TABS = [
 ];
 
 function renderSettings(route = "/settings") {
-  return withProviders(<Settings user={{ display_name: "Operator", role: "admin" }} />, route);
+  return withProviders(
+    <Settings
+      user={{ display_name: "Operator", role: "admin" }}
+      theme="dark"
+      onTheme={() => {}}
+    />,
+    route,
+  );
 }
 
 function sectionCards(): string[] {
@@ -124,6 +131,17 @@ describe("Settings deep links", () => {
     renderSettings();
     await user.click(screen.getByRole("tab", { name: "LLM Providers" }));
     await waitFor(() => expect(screen.getByTestId("location-search").textContent).toContain("tab=llm"));
+  });
+
+  it("wraps the tab strip instead of hiding the last tabs off the right edge", () => {
+    const { container } = renderSettings();
+    const strip = screen.getByRole("tablist", { name: "Settings sections" });
+    // A wrapping row never needs a horizontal scrollbar; an overflow-x-auto
+    // strip was cutting Appearance, Users and System off at 1440px.
+    expect(strip.className).toContain("flex-wrap");
+    expect(strip.className).not.toContain("overflow-x-auto");
+    expect(strip.scrollWidth).toBeLessThanOrEqual(strip.clientWidth);
+    expect(container).toBeTruthy();
   });
 });
 

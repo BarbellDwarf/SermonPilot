@@ -330,13 +330,20 @@ export function SermonCompleted({
         {scriptureReference || bibleText ? (
           <div data-testid="detail-scripture" className="mt-3 border-t border-line pt-3">
             {scriptureReference ? (
-              <p className="text-xs font-medium text-muted">Scripture</p>
+              <>
+                <p className="text-xs font-medium text-muted">Scripture</p>
+                <p className="mt-0.5 text-sm text-mist [overflow-wrap:anywhere]">{scriptureReference}</p>
+              </>
             ) : null}
-            {scriptureReference ? (
-              <p className="mt-0.5 text-sm text-mist [overflow-wrap:anywhere]">{scriptureReference}</p>
-            ) : null}
-            {bibleText ? (
-              <p className="mt-1 whitespace-pre-wrap text-sm text-mist [overflow-wrap:anywhere]">{bibleText}</p>
+            {/* The passage text and the reference are separate columns. Printing
+                both when they hold the same string showed the reference twice. */}
+            {bibleText && bibleText.trim() !== scriptureReference?.trim() ? (
+              <>
+                <p className="mt-2 text-xs font-medium text-muted">Passage</p>
+                <p className="mt-0.5 whitespace-pre-wrap text-sm text-mist [overflow-wrap:anywhere]">
+                  {bibleText}
+                </p>
+              </>
             ) : null}
           </div>
         ) : null}

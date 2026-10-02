@@ -36,6 +36,8 @@ export interface Job {
   finished: string | null;
   duration: string;
   log: string[];
+  /** Why the run stopped, when the pipeline recorded a reason. */
+  error: string | null;
 }
 
 export const services: ServiceStatus[] = [
@@ -51,6 +53,7 @@ export const activeJobs: Job[] = [
     kind: "Enhance + Transcribe",
     sermon: "Sample Teaching 1",
     state: "running",
+    error: null,
     created: "09:41",
     finished: null,
     duration: "12m so far",
@@ -61,6 +64,7 @@ export const activeJobs: Job[] = [
     kind: "Metadata",
     sermon: "Sample Teaching 2",
     state: "queued",
+    error: null,
     created: "09:38",
     finished: null,
     duration: "waiting",
@@ -165,6 +169,7 @@ export const completedJobs: Job[] = [
     kind: "Full pipeline",
     sermon: "Sample Teaching 5",
     state: "done",
+    error: null,
     created: "Yesterday 16:02",
     finished: "Yesterday 16:41",
     duration: "39m",
@@ -175,6 +180,7 @@ export const completedJobs: Job[] = [
     kind: "Transcribe only",
     sermon: "Sample Teaching 6",
     state: "done",
+    error: null,
     created: "Yesterday 14:10",
     finished: "Yesterday 14:26",
     duration: "16m",
@@ -188,6 +194,7 @@ export const failedJobs: Job[] = [
     kind: "Full pipeline",
     sermon: "Sample Teaching 4",
     state: "failed",
+    error: "The remote endpoint did not answer the upload. Nothing was published.",
     created: "Yesterday 15:03",
     finished: "Yesterday 15:19",
     duration: "16m",
