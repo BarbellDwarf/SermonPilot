@@ -707,7 +707,7 @@ describe("SermonReview mobile layout", () => {
     expect(screen.queryByTestId("more-actions")).toBeNull();
     for (const name of [
       /Approve · Render-only/,
-      /Approve · Render\+upload/,
+      /Approve · Generate & Upload/,
       "Reject with notes",
       "Re-detect",
       "History",
@@ -810,6 +810,183 @@ describe("SermonReview details", () => {
     );
     await waitFor(() => {
       expect(screen.getByTestId("details-save-state").textContent).toContain("Saved");
+    });
+  });
+});
+
+describe("SermonReview metadata generation", () => {
+  it("fills one field from the backend and marks it generated", async () => {
+    const user = userEvent.setup();
+    const generate = vi
+      .spyOn(writeApi, "generateMetadata")
+      .mockResolvedValue({ field: "title", value: "Generated Teaching", needs_review: false });
+    const onToast = vi.fn();
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description="Original description."
+        hashtags="#old #tags"
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={onToast}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Generate title" }));
+
+    await waitFor(() => expect(generate).toHaveBeenCalledWith("s-1", "title"));
+    await waitFor(() =>
+      expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe(
+        "Generated Teaching",
+      ),
+    );
+    expect(screen.getByTestId("generated-title")).toBeTruthy();
+    expect(screen.queryByTestId("generated-description")).toBeNull();
+    expect(onToast).toHaveBeenCalledWith("title generated.");
+  });
+
+  it("shows a busy state on the field while the request is pending", async () => {
+    const user = userEvent.setup();
+    let resolveGeneration: (value: {
+      field: "description";
+      value: string;
+      needs_review: boolean;
+    }) => void = () => {};
+    const pending = new Promise<{
+      field: "description";
+      value: string;
+      needs_review: boolean;
+    }>((resolve) => {
+      resolveGeneration = resolve;
+    });
+    vi.spyOn(writeApi, "generateMetadata").mockReturnValue(pending);
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description=""
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Generate description" });
+    await user.click(button);
+
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    expect(button.textContent).toContain("Generating");
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+
+    resolveGeneration({
+      field: "description",
+      value: "A generated description.",
+      needs_review: false,
+    });
+    await waitFor(() =>
+      expect((screen.getByLabelText("Description") as HTMLTextAreaElement).value).toBe(
+        "A generated description.",
+      ),
+    );
+    expect(button.getAttribute("aria-busy")).toBe("false");
+  });
+
+  it("shows the backend error in place and retries cleanly", async () => {
+    const user = userEvent.setup();
+    const generate = vi
+      .spyOn(writeApi, "generateMetadata")
+      .mockRejectedValueOnce(
+        new ApiError("The configured LLM cannot generate a hashtags: no model.", 503, {
+          code: "generation_unavailable",
+          message: "The configured LLM cannot generate a hashtags: no model.",
+        }),
+      )
+      .mockResolvedValueOnce({
+        field: "hashtags",
+        value: "#faith #hope",
+        needs_review: false,
+      });
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description="A description."
+        hashtags=""
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Generate hashtags" }));
+
+    const alert = await screen.findByTestId("generate-error-hashtags");
+    expect(alert.textContent).toContain("no model");
+
+    await user.click(screen.getByRole("button", { name: "Generate hashtags" }));
+    await waitFor(() =>
+      expect((screen.getByLabelText("Hashtags") as HTMLInputElement).value).toBe(
+        "#faith #hope",
+      ),
+    );
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId("generate-error-hashtags")).toBeNull();
+  });
+
+  it("clears the generated mark once the value is typed by hand", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(writeApi, "generateMetadata").mockResolvedValue({
+      field: "title",
+      value: "Generated Teaching",
+      needs_review: false,
+    });
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description="A description."
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Generate title" }));
+    await waitFor(() => expect(screen.getByTestId("generated-title")).toBeTruthy());
+
+    const title = screen.getByLabelText("Title");
+    await user.clear(title);
+    await user.type(title, "Typed Teaching");
+
+    expect(screen.queryByTestId("generated-title")).toBeNull();
+  });
+
+  it("generates missing metadata as part of the upload action", async () => {
+    const user = userEvent.setup();
+    const apply = vi
+      .spyOn(writeApi, "applyPlan")
+      .mockResolvedValue({ job_id: "j-generate", status: "queued" });
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description=""
+        hashtags=""
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /Approve · Generate & Upload/ }),
+    );
+
+    await waitFor(() => expect(apply).toHaveBeenCalled());
+    expect(apply.mock.calls[0][1]).toMatchObject({
+      render_only: false,
+      generate_metadata: true,
     });
   });
 });
@@ -1111,7 +1288,7 @@ describe("SermonReview state-aware action row", () => {
     const bar = screen.getByTestId("approval-bar");
     expect(within(bar).queryByTestId("upload-existing-render")).toBeNull();
     expect(within(bar).getByRole("button", { name: /Re-render · Render-only/ })).toBeTruthy();
-    expect(within(bar).getByRole("button", { name: /Re-render · Render\+upload/ })).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: /Re-render · Generate & Upload/ })).toBeTruthy();
     expect(within(bar).queryByRole("button", { name: /Approve/ })).toBeNull();
   });
 

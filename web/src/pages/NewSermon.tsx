@@ -104,7 +104,7 @@ export function NewSermon() {
   const [meta, setMeta] = useState(initialMeta);
   const [enhance, setEnhance] = useState(true);
   const [transcribe, setTranscribe] = useState(true);
-  const [aiMeta, setAiMeta] = useState(true);
+  const [generateMetadata, setGenerateMetadata] = useState(true);
   const [dryRun, setDryRun] = useState(false);
   const [autoEdit, setAutoEdit] = useState(false);
   const [autoEditMode, setAutoEditMode] = useState<AutoEditMode>("interactive");
@@ -309,7 +309,7 @@ export function NewSermon() {
     setMeta(initialMeta);
     setEnhance(true);
     setTranscribe(true);
-    setAiMeta(true);
+    setGenerateMetadata(true);
     setDryRun(false);
     setAutoEdit(false);
     setAutoEditMode("interactive");
@@ -328,7 +328,7 @@ export function NewSermon() {
     setMeta(initialMeta);
     setEnhance(true);
     setTranscribe(true);
-    setAiMeta(true);
+    setGenerateMetadata(true);
     setDryRun(false);
     setAutoEdit(false);
     setAutoEditMode("interactive");
@@ -346,7 +346,7 @@ export function NewSermon() {
     scripture: meta.scripture.trim(),
     skip_audio: !enhance,
     skip_transcription: !transcribe,
-    skip_ai_generation: !aiMeta,
+    skip_ai_generation: !generateMetadata,
     dry_run: dryRun,
     auto_edit_enabled: autoEdit,
     auto_edit_mode: autoEdit ? autoEditMode : null,
@@ -469,7 +469,7 @@ export function NewSermon() {
     meta.date || "no date",
     enhance ? "enhance" : "no enhance",
     transcribe ? "transcribe" : "no transcribe",
-    aiMeta ? "ai meta" : "no ai meta",
+    generateMetadata ? "metadata on upload" : "no metadata on upload",
     dryRun ? "dry run" : "live run",
     autoEdit ? `edit:${autoEditMode}` : "no edit",
     `out:${outputDir}`,
@@ -871,7 +871,12 @@ export function NewSermon() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Toggle checked={enhance} onChange={setEnhance} label="Enhance audio" hint="Noise cleanup before transcription." />
           <Toggle checked={transcribe} onChange={setTranscribe} label="Transcribe" hint="Speech-to-text for captions and search." />
-          <Toggle checked={aiMeta} onChange={setAiMeta} label="AI metadata" hint="Draft title, summary, and tags." />
+          <Toggle
+            checked={generateMetadata}
+            onChange={setGenerateMetadata}
+            label="Generate metadata on upload"
+            hint="Fill any empty title, summary, and tags from the transcript."
+          />
           <Toggle checked={dryRun} onChange={setDryRun} label="Dry run" hint="Process locally, skip the SermonAudio upload." />
         </div>
 

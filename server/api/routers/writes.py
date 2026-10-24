@@ -20,7 +20,7 @@ import sqlite3
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
@@ -320,6 +320,7 @@ class ApplyBody(BaseModel):
     enhance_audio: bool | None = None
     upload_only: bool = False
     confirm_missing_description: bool = False
+    generate_metadata: bool = True
 
 
 def _record_apply_revision(
@@ -581,6 +582,7 @@ def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(r
             "plan_id": plan_id,
             "plan_revision": plan_revision,
             "enhance_audio": body.enhance_audio,
+            "generate_metadata": bool(body.generate_metadata),
             "config": _resolved_job_config(),
         },
         user_id=user.get("id"),
@@ -675,6 +677,143 @@ def regenerate_description(sermon_id: str, user=Depends(require_user)):
         user_id=user.get("id"),
     )
     return {"job_id": job_id, "status": "queued"}
+
+
+class MetadataGenerateBody(BaseModel):
+    field: Literal["title", "description", "hashtags"]
+
+
+_METADATA_FIELD_TIMEOUT_SECONDS = 300.0
+
+
+@router.post("/sermons/{sermon_id}/metadata/generate")
+def generate_metadata_field(
+    sermon_id: str,
+    body: MetadataGenerateBody,
+    user=Depends(require_user),
+) -> dict[str, Any]:
+    """Generate one metadata field from this sermon's transcript.
+
+    Runs on the request thread with a bounded wall-clock timeout so the editor
+    can show a real result instead of a queued job it has to poll. The value is
+    persisted before it is returned, so a later Generate & Upload picks it up.
+    """
+    owner = _sermon_owner(sermon_id)
+    if owner is None or not visible(owner, user):
+        raise HTTPException(status_code=404, detail="sermon not found")
+
+    from server.api.accounts import get_db_path
+    from ui.database import SermonDatabase, SermonRepository
+
+    repo = SermonRepository(SermonDatabase(db_path=get_db_path()))
+    sermon = repo.get_sermon(sermon_id)
+    if sermon is None:
+        raise HTTPException(status_code=404, detail="sermon not found")
+    content = sermon.get("content") or {}
+    transcript = str(content.get("transcript_text") or "").strip()
+    if not transcript:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "no_transcript",
+                "message": (
+                    "This teaching has no transcript yet. Generation needs a "
+                    "transcript, so finish transcription first."
+                ),
+            },
+        )
+
+    import sermon_updater
+    from src.llm_manager import (
+        LLMModelNotConfiguredError,
+        LLMModelNotFoundError,
+        LLMTimeoutError,
+        _call_with_deadline,
+    )
+
+    config = _resolved_job_config()
+    sermon_updater.refresh_runtime_config(config or None)
+
+    speaker = str(sermon.get("speaker") or "")
+    event_type = str(sermon.get("event_type") or "")
+    bible_text = str(sermon.get("bible_text") or sermon.get("scripture_reference") or "")
+
+    def _generate() -> tuple[str, bool]:
+        if body.field == "title":
+            return (
+                sermon_updater.generate_title(
+                    transcript=transcript,
+                    speaker_name=speaker,
+                    event_type=event_type,
+                    bible_text=bible_text,
+                ),
+                False,
+            )
+        if body.field == "description":
+            summary, info = sermon_updater.generate_validated_summary(
+                transcript,
+                event_type=event_type,
+                speaker_name=speaker,
+            )
+            return summary, bool((info or {}).get("description_needs_review"))
+        return sermon_updater.generate_hashtags(transcript), False
+
+    label = body.field
+    try:
+        value, needs_review = _call_with_deadline(
+            _generate, _METADATA_FIELD_TIMEOUT_SECONDS, f"metadata-{body.field}"
+        )
+    except LLMTimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "code": "generation_timeout",
+                "message": f"The LLM did not finish the {label} before the timeout. Try again.",
+            },
+        ) from None
+    except (LLMModelNotConfiguredError, LLMModelNotFoundError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "generation_unavailable",
+                "message": f"The configured LLM cannot generate a {label}: {exc}",
+            },
+        ) from None
+    except sermon_updater.DescriptionGenerationError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "generation_failed",
+                "message": f"The LLM did not return a usable {label}: {exc}",
+            },
+        ) from None
+    except Exception as exc:
+        logger.warning("Metadata generation for %s (%s) failed: %s", sermon_id, body.field, exc)
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "generation_failed",
+                "message": f"The {label} could not be generated: {exc}",
+            },
+        ) from None
+
+    text = str(value or "").strip()
+    if not text:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "generation_empty",
+                "message": f"The LLM returned an empty {label}. Try again.",
+            },
+        )
+
+    updates: dict[str, Any] = {body.field: text}
+    if body.field == "description":
+        updates["description_needs_review"] = needs_review
+    if not repo.update_sermon_metadata(sermon_id, updates):
+        raise HTTPException(status_code=500, detail="could not save the generated field")
+
+    return {"field": body.field, "value": text, "needs_review": needs_review}
 
 
 class MetadataPushBody(BaseModel):

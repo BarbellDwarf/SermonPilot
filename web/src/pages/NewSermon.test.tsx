@@ -259,4 +259,25 @@ describe("NewSermon source options", () => {
       container_path: "remote:sample-remote:sermons/sample.mp3",
     });
   });
+
+  it("sends the generate-metadata-on-upload choice with the submission", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await fillMetadata(user);
+
+    const toggle = screen.getByRole("switch", { name: "Generate metadata on upload" });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+
+    await user.click(toggle);
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+
+    const file = new File(["audio-bytes"], "sample-sermon.mp3", { type: "audio/mpeg" });
+    await user.upload(screen.getByLabelText("Choose a sermon file"), file);
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    await user.click(submitButton());
+
+    await waitFor(() => expect(mocks.uploadFile).toHaveBeenCalledTimes(1));
+    const form = mocks.uploadFile.mock.calls[0][0] as FormData;
+    expect(form.get("skip_ai_generation")).toBe("true");
+  });
 });

@@ -40,6 +40,7 @@ export interface ApiSermonDetail extends ApiSermonListItem {
   upload_status: string | null;
   bible_text: string | null;
   scripture_reference: string | null;
+  hashtags: string | null;
 }
 
 export interface SermonDetailsPatch {
@@ -56,6 +57,8 @@ export interface SermonDetailsPatch {
   church_name?: string;
   notes?: string;
 }
+
+export type ApiMetadataField = "title" | "description" | "hashtags";
 
 export interface ApiTranscript {
   id: string;
@@ -512,7 +515,7 @@ export const backupApi = {
 };
 
 export const writeApi = {
-  applyPlan: (id: string, body: { start: number; end: number; audio_offset: number; render_only: boolean; re_detect?: boolean; enhance_audio?: boolean; remove_segments?: ApiRemoveSegment[] }) =>
+  applyPlan: (id: string, body: { start: number; end: number; audio_offset: number; render_only: boolean; re_detect?: boolean; enhance_audio?: boolean; generate_metadata?: boolean; remove_segments?: ApiRemoveSegment[] }) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/plan/apply`, "POST", body),
   uploadOnly: (id: string, body?: { confirm_missing_description?: boolean }) =>
     send<{ job_id: string; status: string; render?: { name: string; size: number; size_human: string } }>(
@@ -528,6 +531,12 @@ export const writeApi = {
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/upload`, "POST"),
   regenerateDescription: (id: string) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/description/regenerate`, "POST"),
+  generateMetadata: (id: string, field: ApiMetadataField) =>
+    send<{ field: ApiMetadataField; value: string; needs_review: boolean }>(
+      `/api/sermons/${encodeURIComponent(id)}/metadata/generate`,
+      "POST",
+      { field },
+    ),
   pushMetadata: (id: string, fullPush = true) =>
     send<{ job_id: string; status: string; full_push: boolean }>(
       `/api/sermons/${encodeURIComponent(id)}/metadata/push`,

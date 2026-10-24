@@ -151,7 +151,7 @@ describe("LibraryDetail state-aware header actions", () => {
 
     expect(screen.queryByRole("button", { name: "Push to SermonAudio" })).toBeNull();
     expect(screen.getByRole("button", { name: /Re-render · Render-only/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Re-render · Render\+upload/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Re-render · Generate & Upload/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
   });
 

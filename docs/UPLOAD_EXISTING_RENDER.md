@@ -5,7 +5,7 @@ SermonAudio API. The upload-only action publishes that same file later, using
 the metadata already stored on the sermon row, without rendering again.
 
 The action exists because the two approve buttons both re-render: "Approve ·
-Render-only" and "Approve · Render+upload" run `process_new_sermon`, which can
+Render-only" and "Approve · Generate & Upload" run `process_new_sermon`, which can
 re-run enhancement, cut detection and the encode. When the render already
 exists, the operator wants the upload and nothing else.
 
@@ -90,7 +90,8 @@ only offers actions that can succeed for that state:
   record is published, since there is nothing left to push.
 - The two apply actions both re-render, so they remain for every state. On a
   published record they read **Re-render · Render-only** and **Re-render ·
-  Render+upload** so the framing matches a re-edit rather than a first review.
+  Generate & Upload** so the framing matches a re-edit rather than a first
+  review.
 - The plan chip is labelled **Plan: …** to separate the plan's review state from
   the record's own status chip.
 

@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { mediaStreamUrl, writeApi, type ApiMediaItem, ApiError } from "../api/client";
+import {
+  mediaStreamUrl,
+  writeApi,
+  type ApiMediaItem,
+  ApiError,
+  type ApiMetadataField,
+} from "../api/client";
 import type { SermonMediaData } from "../api/hooks";
 import type { EditPlan, LibrarySermon, PlanStatus, RemoveSegment } from "../mock/data";
 import { formatCut, parseCut } from "../utils/time";
@@ -183,6 +189,7 @@ export interface DetailsPatch {
   series_title?: string;
   recorded_date?: string;
   description?: string;
+  hashtags?: string;
 }
 
 export interface TranscriptState {
@@ -202,6 +209,7 @@ export interface SermonReviewProps {
   sermon: LibrarySermon;
   description: string | null;
   descriptionNeedsReview?: boolean;
+  hashtags?: string | null;
   plan: EditPlan;
   history?: EditPlan[];
   sourceDurationSec?: number | null;
@@ -280,6 +288,7 @@ export function SermonReview({
   sermon,
   description,
   descriptionNeedsReview = false,
+  hashtags = null,
   plan: initial,
   history: planHistory,
   sourceDurationSec,
@@ -334,8 +343,15 @@ export function SermonReview({
     series: sermon.series,
     date: sermon.date,
     description: description ?? "",
+    hashtags: hashtags ?? "",
   });
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [generated, setGenerated] = useState<Set<ApiMetadataField>>(() => new Set());
+  const [generating, setGenerating] = useState<Set<ApiMetadataField>>(() => new Set());
+  const [generateErrors, setGenerateErrors] = useState<
+    Partial<Record<ApiMetadataField, string>>
+  >({});
+  const [descriptionReviewCleared, setDescriptionReviewCleared] = useState(false);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -565,6 +581,7 @@ export function SermonReview({
           })),
           render_only: renderOnly,
           enhance_audio: enhance,
+          generate_metadata: !renderOnly,
         })
         .then(() => {
           setApplying(false);
@@ -672,6 +689,47 @@ export function SermonReview({
     }, 900);
   };
 
+  const setMetadataValue = (field: ApiMetadataField, value: string) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    setGenerated((current) => {
+      if (!current.has(field)) return current;
+      const next = new Set(current);
+      next.delete(field);
+      return next;
+    });
+  };
+
+  const generateField = (field: ApiMetadataField) => {
+    if (generating.has(field)) return;
+    if (!live) {
+      onToast("Metadata generation is available in the live console.");
+      return;
+    }
+    setGenerating((current) => new Set(current).add(field));
+    setGenerateErrors((current) => ({ ...current, [field]: undefined }));
+    void writeApi
+      .generateMetadata(sermon.id, field)
+      .then((result) => {
+        setMetadataValue(field, result.value);
+        setGenerated((current) => new Set(current).add(field));
+        if (field === "description" && !result.needs_review) {
+          setDescriptionReviewCleared(true);
+        }
+        onToast(`${field} generated.`);
+      })
+      .catch((e) => {
+        const message = (e as Error).message || "Generation failed. Try again.";
+        setGenerateErrors((current) => ({ ...current, [field]: message }));
+      })
+      .finally(() => {
+        setGenerating((current) => {
+          const next = new Set(current);
+          next.delete(field);
+          return next;
+        });
+      });
+  };
+
   const saveDetails = () => {
     const patch: DetailsPatch = {
       title: form.title,
@@ -679,6 +737,7 @@ export function SermonReview({
       series_title: form.series,
       recorded_date: form.date,
       description: form.description,
+      hashtags: form.hashtags,
     };
     setSaveState("saving");
     Promise.resolve(onSaveDetails?.(patch))
@@ -691,7 +750,8 @@ export function SermonReview({
     form.speaker !== sermon.speaker ||
     form.series !== sermon.series ||
     form.date !== sermon.date ||
-    form.description !== (description ?? "");
+    form.description !== (description ?? "") ||
+    form.hashtags !== (hashtags ?? "");
 
   const statusPills = (
     <div className="flex flex-wrap items-center gap-2">
@@ -930,8 +990,9 @@ export function SermonReview({
               <Button
                 onClick={() => approve(false)}
                 disabled={errors.length > 0 || applying}
+                title="Generates any empty title, description, or hashtags, then renders and uploads."
               >
-                {applyVerb} · Render+upload
+                {applying ? "Queueing…" : `${applyVerb} · Generate & Upload`}
               </Button>
               {actions.canUploadExisting ? (
                 <Button
@@ -1464,15 +1525,47 @@ export function SermonReview({
               }}
             >
               <div>
-                <label htmlFor="details-title" className="text-xs font-medium text-muted">
-                  Title
-                </label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label htmlFor="details-title" className="text-xs font-medium text-muted">
+                    Title
+                  </label>
+                  <div className="flex items-center gap-2">
+                    {generated.has("title") ? (
+                      <span data-testid="generated-title">
+                        <Chip tone="info">Generated</Chip>
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      data-testid="generate-title"
+                      aria-label="Generate title"
+                      aria-busy={generating.has("title")}
+                      onClick={() => generateField("title")}
+                      disabled={generating.has("title")}
+                      className="inline-flex min-h-[32px] min-w-[7rem] items-center justify-center rounded-md border border-line px-2 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {generating.has("title") ? "Generating…" : "Generate"}
+                    </button>
+                  </div>
+                </div>
                 <input
                   id="details-title"
                   value={form.title}
-                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                  onChange={(e) => setMetadataValue("title", e.target.value)}
+                  aria-invalid={generateErrors.title ? true : undefined}
+                  aria-describedby={generateErrors.title ? "generate-error-title" : undefined}
                   className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 text-sm text-mist"
                 />
+                {generateErrors.title ? (
+                  <p
+                    id="generate-error-title"
+                    role="alert"
+                    data-testid="generate-error-title"
+                    className="mt-1 rounded-md border border-danger bg-ink px-2 py-1 text-xs text-danger"
+                  >
+                    {generateErrors.title}
+                  </p>
+                ) : null}
               </div>
               <div>
                 <label htmlFor="details-speaker" className="text-xs font-medium text-muted">
@@ -1511,17 +1604,51 @@ export function SermonReview({
                 </div>
               </div>
               <div>
-                <label htmlFor="details-description" className="text-xs font-medium text-muted">
-                  Description
-                </label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label htmlFor="details-description" className="text-xs font-medium text-muted">
+                    Description
+                  </label>
+                  <div className="flex items-center gap-2">
+                    {generated.has("description") ? (
+                      <span data-testid="generated-description">
+                        <Chip tone="info">Generated</Chip>
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      data-testid="generate-description"
+                      aria-label="Generate description"
+                      aria-busy={generating.has("description")}
+                      onClick={() => generateField("description")}
+                      disabled={generating.has("description")}
+                      className="inline-flex min-h-[32px] min-w-[7rem] items-center justify-center rounded-md border border-line px-2 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {generating.has("description") ? "Generating…" : "Generate"}
+                    </button>
+                  </div>
+                </div>
                 <textarea
                   id="details-description"
                   value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                  onChange={(e) => setMetadataValue("description", e.target.value)}
+                  aria-invalid={generateErrors.description ? true : undefined}
+                  aria-describedby={
+                    generateErrors.description ? "generate-error-description" : undefined
+                  }
                   rows={4}
                   className="mt-1 w-full min-w-0 rounded-md border border-line bg-ink px-3 py-2 text-sm text-mist"
                 />
-                {descriptionNeedsReview ? (
+                {generateErrors.description ? (
+                  <p
+                    id="generate-error-description"
+                    role="alert"
+                    data-testid="generate-error-description"
+                    className="mt-1 rounded-md border border-danger bg-ink px-2 py-1 text-xs text-danger"
+                  >
+                    {generateErrors.description}
+                  </p>
+                ) : null}
+                {descriptionNeedsReview && !descriptionReviewCleared ? (
                   <div
                     role="alert"
                     className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-danger bg-ink p-3 text-sm text-danger"
@@ -1533,6 +1660,50 @@ export function SermonReview({
                       </Button>
                     ) : null}
                   </div>
+                ) : null}
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label htmlFor="details-hashtags" className="text-xs font-medium text-muted">
+                    Hashtags
+                  </label>
+                  <div className="flex items-center gap-2">
+                    {generated.has("hashtags") ? (
+                      <span data-testid="generated-hashtags">
+                        <Chip tone="info">Generated</Chip>
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      data-testid="generate-hashtags"
+                      aria-label="Generate hashtags"
+                      aria-busy={generating.has("hashtags")}
+                      onClick={() => generateField("hashtags")}
+                      disabled={generating.has("hashtags")}
+                      className="inline-flex min-h-[32px] min-w-[7rem] items-center justify-center rounded-md border border-line px-2 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {generating.has("hashtags") ? "Generating…" : "Generate"}
+                    </button>
+                  </div>
+                </div>
+                <input
+                  id="details-hashtags"
+                  value={form.hashtags}
+                  onChange={(e) => setMetadataValue("hashtags", e.target.value)}
+                  aria-invalid={generateErrors.hashtags ? true : undefined}
+                  aria-describedby={generateErrors.hashtags ? "generate-error-hashtags" : undefined}
+                  placeholder="#faith #hope"
+                  className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 text-sm text-mist"
+                />
+                {generateErrors.hashtags ? (
+                  <p
+                    id="generate-error-hashtags"
+                    role="alert"
+                    data-testid="generate-error-hashtags"
+                    className="mt-1 rounded-md border border-danger bg-ink px-2 py-1 text-xs text-danger"
+                  >
+                    {generateErrors.hashtags}
+                  </p>
                 ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">

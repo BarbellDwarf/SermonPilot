@@ -164,6 +164,33 @@ def test_executor_forwards_enhancement_off_to_the_pipeline(tmp_path, monkeypatch
     kwargs = process.call_args.kwargs
     assert kwargs["skip_audio"] is True
     assert "enhanced_audio_file" not in kwargs
+    assert "skip_ai_generation" not in kwargs
+
+
+def test_executor_skips_metadata_when_generation_is_off(tmp_path, monkeypatch) -> None:
+    repo, sermon_id, plan_id, _media = _repo_with_sermon(tmp_path)
+    revision = repo.get_current_edit_plan(sermon_id)["revision"]
+    rendered = {
+        "success": True,
+        "sermon_id": "draft_rendered_1",
+        "edit_plan_status": "auto_applied",
+        "auto_edit_applied": True,
+        "error": None,
+    }
+    process = Mock(return_value=dict(rendered))
+    monkeypatch.setattr("sermon_updater.process_new_sermon", process)
+    import ui.database as db
+
+    monkeypatch.setattr(db, "SermonRepository", lambda *a, **k: repo)
+
+    from ui.job_executors import execute_library_auto_edit_apply_job
+
+    job = _apply_job(sermon_id, plan_id, revision)
+    job.parameters["generate_metadata"] = False
+    result = execute_library_auto_edit_apply_job(job)
+
+    assert result.success is True
+    assert process.call_args.kwargs["skip_ai_generation"] is True
 
 
 def test_executor_defaults_to_settings_enhancement(tmp_path, monkeypatch) -> None:

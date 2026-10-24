@@ -260,6 +260,7 @@ def get_sermon(request: Request, sermon_id: str) -> SermonDetailOut:
             if sermon.get("scripture_reference")
             else None
         ),
+        hashtags=str(content["hashtags"]) if content.get("hashtags") else None,
     )
 
 

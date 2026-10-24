@@ -207,6 +207,7 @@ export interface SermonDetailData {
   uploadStatus: string | null;
   bibleText: string | null;
   scriptureReference: string | null;
+  hashtags: string | null;
 }
 
 export function useSermonDetail(id: string | undefined) {
@@ -234,6 +235,7 @@ export function useSermonDetail(id: string | undefined) {
             uploadStatus: null,
             bibleText: null,
             scriptureReference: null,
+            hashtags: null,
           } as SermonDetailData)
         : null,
       isLoading: false,
@@ -256,6 +258,7 @@ export function useSermonDetail(id: string | undefined) {
           uploadStatus: live.data.upload_status,
           bibleText: live.data.bible_text,
           scriptureReference: live.data.scripture_reference,
+          hashtags: live.data.hashtags,
         } as SermonDetailData)
       : null,
     isLoading: live.isPending,

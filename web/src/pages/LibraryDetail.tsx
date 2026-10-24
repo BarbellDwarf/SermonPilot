@@ -305,6 +305,7 @@ export function LibraryDetail() {
           sermon={sermon}
           description={detail?.description ?? null}
           descriptionNeedsReview={detail?.descriptionNeedsReview ?? false}
+          hashtags={detail?.hashtags ?? null}
           plan={plan}
           history={planHistory}
           sourceDurationSec={detail?.durationSeconds}

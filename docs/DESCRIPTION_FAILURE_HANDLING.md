@@ -52,6 +52,37 @@ The route queues a `metadata_update` job through the normal job queue with
 `actions: {generate_description: true}`. It never regenerates synchronously,
 and it returns `409` when another job for the sermon is already active.
 
+## Per-field generation
+
+Each metadata field the generator produces has its own **Generate** button in
+the review details panel:
+
+```
+POST /api/sermons/{sermon_id}/metadata/generate
+{ "field": "title" | "description" | "hashtags" }
+```
+
+The route runs on the request thread with a 300-second wall-clock bound and
+returns `{field, value, needs_review}`. It persists the value before returning
+so a later Generate & Upload reads it from the row. A sermon without a
+transcript is refused with `detail.code == "no_transcript"`; provider
+timeouts, missing models, and unusable output return `504`, `503`, or `502`
+with a message the editor shows in place. The console marks a generated value
+with a **Generated** chip until the operator types in that field.
+
+## Generate & Upload
+
+The review page's publish action is **Approve · Generate & Upload** (or
+**Re-render · Generate & Upload** once published). It sends
+`generate_metadata: true` with the apply request. The pipeline fills any empty
+title, description, or hashtags before upload and makes no LLM call for fields
+that already hold a value. The uploaded transcript is the cut-down transcript
+finalized from the applied plan, not the full source transcript.
+
+The new-sermon flow carries the same choice as **Generate metadata on upload**
+(`skip_ai_generation` in the payload). It defaults on, matching the previous
+default, and the job stores the choice with the submission.
+
 ## Budgets and retries
 
 Defaults, read from the resolved config (`llm` block):

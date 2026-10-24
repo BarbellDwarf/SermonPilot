@@ -2117,6 +2117,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
         render_only = bool(params.get("render_only", False))
         re_detect = bool(params.get("re_detect", False))
         plan_id = params.get("plan_id")
+        generate_metadata = bool(params.get("generate_metadata", True))
         if not render_only:
             refusal = sermonaudio_refusal(job)
             if refusal is not None:
@@ -2176,6 +2177,7 @@ def execute_library_auto_edit_apply_job(job: Job) -> JobResult:
             config=config or None,
             enhance_audio=request_enhance,
             remove_segments=remove_segments,
+            generate_metadata=generate_metadata,
         )
 
         if result.get("cancelled"):

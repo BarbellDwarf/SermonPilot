@@ -53,6 +53,7 @@ class SermonDetailOut(BaseModel):
     upload_status: str | None = None
     bible_text: str | None = None
     scripture_reference: str | None = None
+    hashtags: str | None = None
 
 
 class RemoveSegmentOut(BaseModel):

@@ -794,6 +794,7 @@ def run_library_apply(
     config: dict[str, Any] | None = None,
     enhance_audio: bool | None = None,
     remove_segments: list[dict[str, float]] | None = None,
+    generate_metadata: bool = True,
 ) -> dict[str, Any]:
     sermon_id = str(sermon_id or "")
     plan = _find_plan(repo, sermon_id, plan_id)
@@ -947,6 +948,8 @@ def run_library_apply(
         apply_kwargs["cancel_check"] = cancel_check
     if cancel_log is not None:
         apply_kwargs["cancel_log"] = cancel_log
+    if not generate_metadata:
+        apply_kwargs["skip_ai_generation"] = True
 
     _set_edit_status(repo, sermon_id, "applied")
     try:
