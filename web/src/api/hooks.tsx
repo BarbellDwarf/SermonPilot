@@ -18,9 +18,25 @@ import {
   type ServiceStatus,
 } from "../mock/data";
 import { Button, Card, useBriefLoading } from "../components/ui";
-import { api, filesApi, isLive, mediaApi, type ApiEditPlan, type ApiJob, type ApiMediaItem, type ApiSermonListItem } from "./client";
+import { ApiError, api, filesApi, isLive, mediaApi, type ApiEditPlan, type ApiJob, type ApiMediaItem, type ApiSermonListItem } from "./client";
 
 export type LibrarySort = "date" | "title" | "duration";
+
+export function describeLoadError(
+  error: unknown,
+  subject: string,
+  notFound = `${subject} could not be found (404).`,
+): string | null {
+  if (!error) return null;
+  if (error instanceof ApiError) {
+    if (error.status === 404) return notFound;
+    if (error.status >= 500) return `Server error (${error.status}). Try again in a moment.`;
+    const reason = error.message ? `: ${error.message}` : "";
+    return `${subject} could not be loaded (${error.status}${reason}).`;
+  }
+  const reason = error instanceof Error && error.message ? ` (${error.message})` : "";
+  return `${subject} could not be loaded. Check the API bridge and try again.${reason}`;
+}
 
 export function QueryError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
@@ -185,7 +201,7 @@ export function useLibrarySermons(query: string, sort: LibrarySort) {
   return {
     items: filtered,
     isLoading: live.isPending,
-    error: live.isError ? "The teachings list could not be loaded. Check the API bridge and try again." : null,
+    error: describeLoadError(live.error, "The teachings list"),
     retry: () => void live.refetch(),
     total: serverTotal,
     hasMore: loaded.length < serverTotal,
@@ -262,7 +278,11 @@ export function useSermonDetail(id: string | undefined) {
         } as SermonDetailData)
       : null,
     isLoading: live.isPending,
-    error: live.isError ? "This teaching could not be loaded. Check the API bridge and try again." : null,
+    error: describeLoadError(
+      live.error,
+      "This teaching",
+      "This teaching is no longer in the library (it may have been applied or removed).",
+    ),
     retry: () => void live.refetch(),
   };
 }
@@ -281,7 +301,7 @@ export function useSermonTranscript(id: string | undefined, enabled: boolean) {
   return {
     data: live.data ?? null,
     isLoading: live.isPending,
-    error: live.isError ? "The transcript could not be loaded." : null,
+    error: describeLoadError(live.error, "The transcript"),
   };
 }
 
@@ -324,7 +344,7 @@ export function useSermonMedia(id: string | undefined, enabled = true): SermonMe
     primary: live.data?.primary ?? null,
     audio: live.data?.audio ?? null,
     isLoading: live.isPending,
-    error: live.isError ? "Media previews could not be loaded." : null,
+    error: describeLoadError(live.error, "Media previews"),
     retry: () => void live.refetch(),
   };
 }
@@ -381,7 +401,7 @@ export function useSermonPlan(id: string | undefined) {
     plan: live.data?.plan ? toEditPlan(live.data.plan) : undefined,
     history: (live.data?.history ?? []).map(toEditPlan),
     isLoading: live.isPending,
-    error: live.isError ? "The auto-edit plan could not be loaded." : null,
+    error: describeLoadError(live.error, "The auto-edit plan"),
     retry: () => void live.refetch(),
   };
 }
@@ -406,7 +426,7 @@ export function useJobDetail(id: string, enabled: boolean) {
   return {
     logs: live.data?.logs ?? null,
     isLoading: live.isPending,
-    error: live.isError ? "The job log could not be loaded." : null,
+    error: describeLoadError(live.error, "The job log"),
   };
 }
 
@@ -442,7 +462,7 @@ export function useJobsData() {
   return {
     data: partitionJobs((live.data?.items ?? []).map((j) => toJob(j))),
     isLoading: live.isPending,
-    error: live.isError ? "Jobs could not be loaded. Check the API bridge and try again." : null,
+    error: describeLoadError(live.error, "Jobs"),
     retry: () => void live.refetch(),
   };
 }
@@ -547,11 +567,11 @@ export function useHomeData() {
     upNext: allJobs.filter((j) => j.state === "queued").slice(0, 3),
   };
   const isLoading = statusQuery.isPending || jobsQuery.isPending || sermonsQuery.isPending;
-  const isError = statusQuery.isError || jobsQuery.isError || sermonsQuery.isError;
+  const queryError = statusQuery.error ?? jobsQuery.error ?? sermonsQuery.error;
   return {
     data,
     isLoading,
-    error: isError ? "Home data could not be loaded. Check the API bridge and try again." : null,
+    error: describeLoadError(queryError, "Home data"),
     retry: () => {
       void statusQuery.refetch();
       void jobsQuery.refetch();
