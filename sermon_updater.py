@@ -1729,6 +1729,8 @@ def refine_edit_plan(
 
 def _media_type_for_ext(path: str | Path) -> str:
     ext = Path(path).suffix.lower()
+    if ext in {".txt", ".text"}:
+        return "text/plain"
     return "video/mp4" if ext == ".mp4" else "video/mp4" if is_video_file(path) else "audio/mpeg"
 
 
@@ -3089,6 +3091,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             )
             _report(55, "Skipped transcription")
 
+        full_transcript = transcript
+        full_transcript_segments = list(transcript_segments)
         result['transcript'] = transcript
         result['transcript_segments'] = transcript_segments
         result['transcript_length'] = len(transcript) if transcript else 0
@@ -3293,7 +3297,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     'edit_status': 'pending_review',
                     'file_paths': review_file_paths,
                     'content': {
-                        'transcript_text': transcript or '',
+                        'transcript_text': full_transcript or transcript or '',
                         'description': review_description,
                         'hashtags': review_hashtags,
                     },
@@ -3585,6 +3589,32 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             result['auto_edit_applied'] = True
             result['edit_plan_status'] = 'auto_applied'
             console_print(f"✂️ Auto edit ready: {edited_path.name}")
+
+        transcript_finalized = False
+        if auto_edit_state:
+            from src.auto_edit import finalize_transcript
+
+            kept_segments, kept_text = finalize_transcript(
+                full_transcript_segments,
+                auto_edit_state['plan'],
+                auto_edit_state['plan'].audio_offset,
+            )
+            if kept_segments:
+                transcript_finalized = True
+                transcript = kept_text
+                transcript_segments = kept_segments
+                result['transcript'] = transcript
+                result['transcript_segments'] = transcript_segments
+                result['transcript_length'] = len(transcript)
+                console_print(
+                    f"Finalized transcript for the applied edit "
+                    f"({len(full_transcript)} -> {len(transcript)} characters)"
+                )
+            else:
+                logger.warning(
+                    "Applied edit has no timestamped transcript to cut; "
+                    "keeping the full transcript"
+                )
 
         # Step 3: Generate metadata using transcript or fallback
         metadata_notes: dict = {}
@@ -4000,7 +4030,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         'metadata': str(get_file_path(output_dir, "metadata")),
                     },
                     'content': {
-                        'transcript_text': transcript or '',
+                        'transcript_text': full_transcript or transcript or '',
                         'description': description or '',
                         'hashtags': hashtags or '',
                     },
@@ -4152,7 +4182,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                             ),
                         },
                         'content': {
-                            'transcript_text': transcript or '',
+                            'transcript_text': full_transcript or transcript or '',
                             'description': description or '',
                             'hashtags': hashtags or '',
                         },
@@ -4330,6 +4360,25 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 if transcript_segments:
                     save_transcript_timestamps(output_dir, transcript_segments)
                 console_print(f"Transcript saved ({len(transcript)} characters)")
+                if auto_edit_state and transcript_finalized:
+                    transcript_path = get_file_path(output_dir, "transcript")
+                    if upload_media_file(
+                        sermon_id, str(transcript_path), "transcript"
+                    ):
+                        console_print(
+                            "Finalized transcript attached to SermonAudio"
+                        )
+                    else:
+                        logger.warning(
+                            "Transcript upload failed for sermon %s; the media "
+                            "upload still stands",
+                            sermon_id,
+                        )
+                        console_print(
+                            "Finalized transcript upload failed; the media "
+                            "upload still stands",
+                            level="warning",
+                        )
 
             # Cancellation checkpoint: stop before persisting the local record
             # as 'processed' if the user cancelled while uploading
@@ -4380,7 +4429,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         'metadata': str(get_file_path(output_dir, "metadata")),
                     },
                     'content': {
-                        'transcript_text': transcript or '',
+                        'transcript_text': full_transcript or transcript or '',
                         'description': description or '',
                         'hashtags': hashtags or '',
                     },
@@ -4458,7 +4507,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                         'audio': str(final_upload_path),
                     },
                     'content': {
-                        'transcript_text': transcript or '',
+                        'transcript_text': full_transcript or transcript or '',
                         'description': description or '',
                         'hashtags': hashtags or '',
                     },

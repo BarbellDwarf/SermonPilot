@@ -156,14 +156,18 @@ streamlit run streamlit_app.py \
 STREAMLIT_PID=$!
 
 # Start read-only web API + SPA (opt out with SERMONPILOT_WEB_API=0)
-if [ "${SERMONPILOT_WEB_API:-}" != "0" ]; then
-    echo "🌐 Starting web API..."
+start_web_api() {
     # --proxy-headers trusts X-Forwarded-Proto/Host from the TLS-terminating
     # reverse proxy; --forwarded-allow-ips='*' accepts all upstreams, which is
     # fine because this console only listens on the LAN/docker network.
     uvicorn server.api.app:app --host 0.0.0.0 --port "${SERMONPILOT_WEB_PORT:-8504}" \
         --proxy-headers --forwarded-allow-ips='*' &
     UVICORN_PID=$!
+}
+
+if [ "${SERMONPILOT_WEB_API:-}" != "0" ]; then
+    echo "🌐 Starting web API..."
+    start_web_api
 fi
 
 # Start the ingest watcher (opt in with INGEST_WATCHER_ENABLED=1; default off).
@@ -177,7 +181,10 @@ case "${INGEST_WATCHER_ENABLED:-}" in
         ;;
 esac
 
-# Wait for background processes
+# Wait for background processes. The web API is supervised: a segfault in
+# uvicorn must not leave the container "Up" with nothing answering on any
+# port. Restart it in place, and give up after five failures in ten minutes
+# so Docker's restart policy can recreate the container.
 PIDS=("$STREAMLIT_PID")
 if [ -n "${UVICORN_PID:-}" ]; then
     PIDS+=("$UVICORN_PID")
@@ -188,4 +195,37 @@ fi
 if [ -n "${WORKER_PID:-}" ]; then
     PIDS+=("$WORKER_PID")
 fi
-wait "${PIDS[@]}"
+
+if [ -n "${UVICORN_PID:-}" ]; then
+    UVICORN_FAILURES=0
+    UVICORN_WINDOW_START=$SECONDS
+    while true; do
+        if ! kill -0 "$UVICORN_PID" 2>/dev/null; then
+            wait "$UVICORN_PID" 2>/dev/null || true
+            if [ $((SECONDS - UVICORN_WINDOW_START)) -ge 600 ]; then
+                UVICORN_FAILURES=0
+                UVICORN_WINDOW_START=$SECONDS
+            fi
+            UVICORN_FAILURES=$((UVICORN_FAILURES + 1))
+            if [ "$UVICORN_FAILURES" -gt 5 ]; then
+                echo "Web API died ${UVICORN_FAILURES} times in 10 minutes; exiting so Docker can recreate the container"
+                for pid in "${PIDS[@]}"; do
+                    if [ "$pid" != "$UVICORN_PID" ]; then
+                        kill -TERM "$pid" 2>/dev/null || true
+                    fi
+                done
+                exit 1
+            fi
+            UVICORN_DELAY=$((UVICORN_FAILURES * 2))
+            if [ "$UVICORN_DELAY" -gt 10 ]; then
+                UVICORN_DELAY=10
+            fi
+            echo "Web API exited; restarting in ${UVICORN_DELAY}s (failure ${UVICORN_FAILURES}/5 in 10 minutes)"
+            sleep "$UVICORN_DELAY"
+            start_web_api
+        fi
+        sleep 1
+    done
+else
+    wait "${PIDS[@]}"
+fi

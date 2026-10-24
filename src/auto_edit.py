@@ -590,6 +590,86 @@ def validate_plan(
     return problems
 
 
+def kept_transcript_spans(plan: EditPlan) -> list[tuple[float, float]]:
+    """Source-time ranges the render keeps, in output order."""
+    end = float(plan.end)
+    cursor = max(float(plan.start), 0.0)
+    spans: list[tuple[float, float]] = []
+    for segment in plan.remove_segments:
+        cut_start = max(float(segment["start_sec"]), cursor)
+        cut_end = min(float(segment["end_sec"]), end)
+        if cut_start > cursor:
+            spans.append((cursor, cut_start))
+        cursor = max(cursor, cut_end)
+    if end > cursor:
+        spans.append((cursor, end))
+    return [(start, stop) for start, stop in spans if stop > start]
+
+
+def _segment_times(segment: dict[str, Any]) -> tuple[float, float] | None:
+    try:
+        start = float(segment.get("start", segment.get("start_sec", 0.0)))
+        end = float(segment.get("end", segment.get("end_sec", start)))
+    except (TypeError, ValueError):
+        return None
+    if not (math.isfinite(start) and math.isfinite(end)) or end < start:
+        return None
+    return start, end
+
+
+def finalize_transcript(
+    segments: list[dict[str, Any]],
+    plan: EditPlan,
+    audio_offset: float | None = None,
+) -> tuple[list[dict[str, Any]], str]:
+    """Cut a timestamped transcript to the applied plan's kept ranges.
+
+    Entries wholly inside a removed range are dropped. An entry straddling a
+    boundary stays once, clipped to the first kept span it touches, so the
+    text never repeats. Timestamps are mapped onto the rendered timeline
+    (concatenated kept spans plus the plan's A/V offset) so a transcript
+    seek lands on the matching audio.
+    """
+    spans = kept_transcript_spans(plan)
+    span_offsets: list[float] = []
+    elapsed = 0.0
+    for span_start, span_end in spans:
+        span_offsets.append(elapsed)
+        elapsed += span_end - span_start
+    shift = float(
+        audio_offset if audio_offset is not None else plan.audio_offset or 0.0
+    )
+
+    kept: list[dict[str, Any]] = []
+    for segment in segments:
+        times = _segment_times(segment)
+        if times is None:
+            continue
+        start, end = times
+        for (span_start, span_end), output_start in zip(
+            spans, span_offsets, strict=True
+        ):
+            if end <= span_start or start >= span_end:
+                continue
+            clipped_start = max(start, span_start)
+            clipped_end = min(end, span_end)
+            item = dict(segment)
+            item["start"] = round(
+                output_start + clipped_start - span_start + shift, 3
+            )
+            item["end"] = round(
+                output_start + clipped_end - span_start + shift, 3
+            )
+            item.pop("start_sec", None)
+            item.pop("end_sec", None)
+            kept.append(item)
+            break
+
+    kept.sort(key=lambda item: float(item["start"]))
+    text = " ".join(str(item.get("text", "")).strip() for item in kept).strip()
+    return kept, text
+
+
 XFADE_SECONDS = 0.8
 MAX_AUDIO_OFFSET = 5.0
 DEFAULT_FADE_OUT_TAIL_SECONDS = 2.0

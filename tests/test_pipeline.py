@@ -6,6 +6,7 @@ transcription, or LLM calls and save the draft locally.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -210,8 +211,11 @@ def test_auto_edit_auto_applies_and_uploads_edited_file(
     assert result["final_upload_path"].endswith("_edited.mp4")
     create.assert_called_once()
     apply_edit.assert_called_once()
-    upload.assert_called_once()
-    upload_args = upload.call_args
+    media_uploads = [
+        call for call in upload.call_args_list if call.args[2] != "transcript"
+    ]
+    assert len(media_uploads) == 1
+    upload_args = media_uploads[0]
     assert upload_args.args[0] == "111"
     assert upload_args.args[1] == result["final_upload_path"]
     assert upload_args.args[2] == "original-video"
@@ -222,6 +226,79 @@ def test_auto_edit_auto_applies_and_uploads_edited_file(
     assert row is not None
     assert row["status"] == "auto_applied"
     assert row["needs_review"] == 0
+
+
+def test_auto_edit_uploads_only_the_kept_transcript(tmp_path: Path, monkeypatch) -> None:
+    audio_file = _make_video(tmp_path)
+    _auto_edit_config(tmp_path, monkeypatch, auto_edit={"auto_confidence_threshold": 0.8})
+
+    plan_file = tmp_path / "plan.json"
+    plan_file.write_text(
+        json.dumps(
+            {
+                "start": 15.0,
+                "end": 45.0,
+                "audio_offset": 0.0,
+                "remove_segments": [{"start_sec": 20.0, "end_sec": 25.0}],
+                "confidence": 1.0,
+                "needs_review": False,
+                "evidence": "approved",
+                "qa_judgment": "approved",
+            }
+        ),
+        encoding="utf-8",
+    )
+    segments = [
+        {"start": 0.0, "end": 10.0, "text": "before the teaching"},
+        {"start": 16.0, "end": 19.0, "text": "kept opening"},
+        {"start": 21.0, "end": 24.0, "text": "removed aside"},
+        {"start": 26.0, "end": 30.0, "text": "kept close"},
+        {"start": 50.0, "end": 60.0, "text": "after the teaching"},
+    ]
+    full_transcript = " ".join(segment["text"] for segment in segments)
+
+    uploaded: dict[str, str] = {}
+    upload = Mock(return_value=True)
+    monkeypatch.setattr(su, "upload_media_file", upload)
+    monkeypatch.setattr(su, "apply_edit", _stub_apply_edit(tmp_path))
+    monkeypatch.setattr(su, "create_new_sermon_api", Mock(return_value="112"))
+    monkeypatch.setattr(su, "resolve_speaker_id", lambda name: None)
+    monkeypatch.setattr(su, "set_sermon_published", lambda *args, **kwargs: True)
+    monkeypatch.setattr(su, "trash_original_after_edit", Mock(return_value=None))
+
+    def _read_transcript(sermon_id, path, upload_type):
+        if upload_type == "transcript":
+            uploaded["text"] = Path(path).read_text(encoding="utf-8")
+        return True
+
+    upload.side_effect = _read_transcript
+
+    result = su.process_new_sermon(
+        str(audio_file),
+        speaker_name=f"Cut Speaker {tmp_path.name}",
+        recorded_date="2024-01-01",
+        title=f"Cut Title {tmp_path.name}",
+        description="Test description",
+        hashtags="#test",
+        dry_run=False,
+        skip_audio=True,
+        skip_ai_generation=True,
+        auto_edit_mode="auto",
+        edit_plan_file=str(plan_file),
+        reuse_transcript=full_transcript,
+        reuse_transcript_segments=segments,
+    )
+
+    assert result["success"] is True
+    assert result["transcript"] == "kept opening kept close"
+    assert uploaded["text"] == "kept opening kept close"
+    assert "removed aside" not in uploaded["text"]
+    assert "before the teaching" not in uploaded["text"]
+    assert "after the teaching" not in uploaded["text"]
+
+    from ui.database import SermonRepository
+    repo = SermonRepository()
+    assert repo.get_sermon("112")["content"]["transcript_text"] == full_transcript
 
 
 @pytest.mark.parametrize(

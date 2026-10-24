@@ -44,10 +44,17 @@ export interface ApiSermonDetail extends ApiSermonListItem {
 
 export interface SermonDetailsPatch {
   title?: string;
+  subtitle?: string;
   speaker?: string;
   series_title?: string;
   recorded_date?: string;
+  event_type?: string;
+  bible_text?: string;
+  scripture_reference?: string;
   description?: string;
+  hashtags?: string;
+  church_name?: string;
+  notes?: string;
 }
 
 export interface ApiTranscript {

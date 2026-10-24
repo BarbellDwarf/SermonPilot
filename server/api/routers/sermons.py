@@ -304,10 +304,17 @@ def get_sermon_transcript(request: Request, sermon_id: str) -> TranscriptOut:
 
 class SermonUpdateBody(BaseModel):
     title: str | None = None
+    subtitle: str | None = None
     speaker: str | None = None
     series_title: str | None = None
     recorded_date: str | None = None
+    event_type: str | None = None
+    bible_text: str | None = None
+    scripture_reference: str | None = None
     description: str | None = None
+    hashtags: str | None = None
+    church_name: str | None = None
+    notes: str | None = None
 
 
 @router.patch("/{sermon_id}", response_model=SermonDetailOut)
@@ -323,16 +330,26 @@ def update_sermon(
     if sermon is None or not visible(sermon.get("user_id"), user):
         raise HTTPException(status_code=404, detail="sermon not found")
     updates: dict[str, Any] = {}
-    if body.title is not None:
-        updates["title"] = body.title.strip() or "Untitled"
-    if body.speaker is not None:
-        updates["speaker"] = body.speaker.strip()
-    if body.series_title is not None:
-        updates["series_title"] = body.series_title.strip()
-    if body.recorded_date is not None:
-        updates["recorded_date"] = body.recorded_date.strip()
-    if body.description is not None:
-        updates["description"] = body.description.strip()
+    fields = (
+        "title",
+        "subtitle",
+        "speaker",
+        "series_title",
+        "recorded_date",
+        "event_type",
+        "bible_text",
+        "scripture_reference",
+        "description",
+        "hashtags",
+        "church_name",
+        "notes",
+    )
+    for field in fields:
+        value = getattr(body, field)
+        if value is None:
+            continue
+        text = value.strip()
+        updates[field] = (text or "Untitled") if field == "title" else text
     if not updates:
         raise HTTPException(status_code=422, detail="no fields to update")
     if not repo.update_sermon_metadata(sermon_id, updates):
