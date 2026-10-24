@@ -38,6 +38,7 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [pendingApply, setPendingApply] = useState(false);
   const [pendingReset, setPendingReset] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [copied, setCopied] = useState(false);
   const uid = useId();
 
@@ -47,6 +48,7 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
   const applyLive = (text: string) => {
     try {
       const parsed = JSON.parse(text) as { settings?: Record<string, unknown> };
+      setApplying(true);
       void backupApi
         .restore({ settings: parsed.settings ?? {} })
         .then((r) => {
@@ -56,15 +58,13 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
           ]);
           setRestoreText("");
           show("Backup applied.");
-          setPendingApply(false);
         })
         .catch((e) => {
           setRestoreError((e as Error).message);
-          setPendingApply(false);
-        });
+        })
+        .finally(() => setApplying(false));
     } catch {
       setRestoreError("Backup data must be the JSON downloaded from this page.");
-      setPendingApply(false);
     }
   };
 
@@ -76,16 +76,12 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
     }
     if (maskedInUpload) {
       setRestoreError(
-        "This backup contains masked secrets ('***'). Applying it would overwrite stored keys with the mask, so the restore was rejected (mock). Paste a backup with real values first.",
+        "This backup contains masked secrets ('***'). Applying it would overwrite stored keys with the mask, so the restore was rejected. Paste a backup with real values first.",
       );
       return;
     }
     if (!text.startsWith("{")) {
       setRestoreError("Backup data must be the JSON downloaded from this page.");
-      return;
-    }
-    if (isLive) {
-      applyLive(text);
       return;
     }
     setRestoreError(null);
@@ -97,9 +93,9 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
     void f.text().then((t) => {
       setRestoreText(t);
       setRestoreError(null);
-      show(`Backup file loaded (mock): ${f.name}.`);
+      show(`Backup file loaded${isLive ? "" : " (mock)"}: ${f.name}.`);
     }).catch(() => {
-      setRestoreError("Could not read that file in this browser (mock).");
+      setRestoreError("Could not read that file in this browser.");
     });
   };
 
@@ -138,7 +134,11 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
   return (
     <SectionCard
       title="Backup & Restore"
-      sub="Everything lives in the app database. Download is a full data backup; upload restores it (mock). Secrets stay masked and masked values can never be applied."
+      sub={
+        isLive
+          ? "Everything lives in the app database. Download is a full data backup; upload restores it. Secrets stay masked and masked values can never be applied."
+          : "Everything lives in the app database. Download is a full data backup; upload restores it (mock). Secrets stay masked and masked values can never be applied."
+      }
     >
       <details open className="rounded-md border border-line p-3">
         <summary className="min-h-[44px] cursor-pointer text-sm font-semibold">
@@ -154,10 +154,18 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
           <Button
             onClick={() => {
               const text = backup ? JSON.stringify(backup, null, 2) : MASKED_BACKUP;
-              void navigator.clipboard?.writeText(text).catch(() => undefined);
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 2000);
-              show(`Backup copied${isLive ? "" : " (mock)"}.`);
+              if (!navigator.clipboard) {
+                show("Copy failed: clipboard unavailable.");
+                return;
+              }
+              void navigator.clipboard
+                .writeText(text)
+                .then(() => {
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 2000);
+                  show(`Backup copied${isLive ? "" : " (mock)"}.`);
+                })
+                .catch(() => show("Copy failed."));
             }}
             aria-label="Copy masked backup"
           >
@@ -205,8 +213,14 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
           </p>
         ) : null}
         <div className="mt-2 flex flex-wrap gap-2">
-          <Button variant="primary" onClick={requestApply} aria-label="Apply pasted backup">
-            Apply backup
+          <Button
+            variant="primary"
+            onClick={requestApply}
+            disabled={applying}
+            aria-busy={applying}
+            aria-label="Apply pasted backup"
+          >
+            {applying ? "Applying…" : "Apply backup"}
           </Button>
           <Button
             onClick={() => {
@@ -222,7 +236,11 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
 
       <div className="mt-4">
         <h3 className="text-sm font-semibold">Backup history</h3>
-        <p className="mt-0.5 text-xs text-muted">Mock snapshot list. Restoring adds a new entry.</p>
+        <p className="mt-0.5 text-xs text-muted">
+          {isLive
+            ? "Snapshot capture is not wired yet; this list is sample data and restore stays disabled."
+            : "Mock snapshot list. Restoring adds a new entry."}
+        </p>
         <ul className="mt-2 flex flex-col gap-2" aria-label="Backup history">
           {history.map((h) => (
             <li
@@ -244,6 +262,8 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
                   ]);
                   show(`Backup restored (mock): ${h.id}.`);
                 }}
+                disabled={isLive}
+                title={isLive ? "Snapshot restore is not available in the console yet." : undefined}
                 aria-label={`Restore snapshot ${h.id}`}
               >
                 Restore
@@ -256,10 +276,18 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
       <div className="mt-4 rounded-md border border-danger p-3">
         <h3 className="text-sm font-semibold">Reset to defaults</h3>
         <p className="mt-0.5 text-xs text-muted">
-          Resets every settings tab to sample defaults (mock). Stored data is replaced. This cannot be undone.
+          {isLive
+            ? "Reset to defaults is not wired in the console yet. Use the backup restore above instead."
+            : "Resets every settings tab to sample defaults (mock). Stored data is replaced. This cannot be undone."}
         </p>
         <div className="mt-2">
-          <Button variant="danger" onClick={() => setPendingReset(true)} aria-label="Reset all settings to defaults">
+          <Button
+            variant="danger"
+            onClick={() => setPendingReset(true)}
+            disabled={isLive}
+            title={isLive ? "Reset to defaults is not available in the console yet." : undefined}
+            aria-label="Reset all settings to defaults"
+          >
             Reset to defaults
           </Button>
         </div>
@@ -271,6 +299,10 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
         body="Replace the current data with the pasted backup? This cannot be undone."
         confirmLabel="Apply"
         onConfirm={() => {
+          if (isLive) {
+            applyLive(restoreText.trim());
+            return;
+          }
           setHistory((hs) => [
             { id: `bkp-${Date.now() % 100000}`, when: "just now", note: "Pasted backup applied (mock)" },
             ...hs,

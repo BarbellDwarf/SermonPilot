@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { isLive, settingsApi } from "../api/client";
 
-export function useUserSettings<T>(key: string, fallback: T): [T, (v: T) => void, boolean] {
+export function useUserSettings<T>(key: string, fallback: T): [T, (v: T) => Promise<void>, boolean] {
   const [value, setValue] = useState<T>(fallback);
   const [loaded, setLoaded] = useState(!isLive);
 
@@ -22,10 +22,14 @@ export function useUserSettings<T>(key: string, fallback: T): [T, (v: T) => void
     };
   }, [key, loaded]);
 
-  const save = (v: T) => {
-    setValue(v);
-    if (!isLive) return;
-    void settingsApi.put(key, v).catch(() => undefined);
+  const save = (v: T): Promise<void> => {
+    if (!isLive) {
+      setValue(v);
+      return Promise.resolve();
+    }
+    return settingsApi.put(key, v).then(() => {
+      setValue(v);
+    });
   };
 
   return [value, save, loaded];

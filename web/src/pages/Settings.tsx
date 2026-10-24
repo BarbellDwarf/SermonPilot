@@ -48,13 +48,29 @@ function useSectionToast() {
   return { toast, show };
 }
 
-function SaveRow({ dirty, saved, onSave }: { dirty: boolean; saved: boolean; onSave: () => void }) {
+function SaveRow({
+  dirty,
+  saved,
+  onSave,
+  busy = false,
+  error = null,
+}: {
+  dirty: boolean;
+  saved: boolean;
+  onSave: () => void;
+  busy?: boolean;
+  error?: string | null;
+}) {
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2">
-      <Button variant="primary" onClick={onSave} disabled={!dirty}>
-        Save
+      <Button variant="primary" onClick={onSave} disabled={!dirty || busy} aria-busy={busy}>
+        {busy ? "Saving…" : "Save"}
       </Button>
-      {!dirty ? (
+      {error ? (
+        <span className="text-xs text-danger" role="alert">
+          {error}
+        </span>
+      ) : !dirty ? (
         <span className="text-xs text-muted">{saved ? "Saved." : "No unsaved changes."}</span>
       ) : (
         <span className="text-xs text-warn" role="status">
@@ -68,11 +84,18 @@ function SaveRow({ dirty, saved, onSave }: { dirty: boolean; saved: boolean; onS
 function AppearanceSection({ show }: { show: (m: string) => void }) {
   const [savedTheme, setSavedTheme] = useUserSettings<string>("settings.theme", "dark");
   const [theme, setTheme] = useState(savedTheme);
-  const isDirty = isLive ? theme !== savedTheme : theme !== savedTheme;
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const isDirty = theme !== savedTheme;
+
+  useEffect(() => {
+    setTheme(savedTheme);
+  }, [savedTheme]);
+
   return (
-    <SectionCard title="Appearance" sub="Theme applies instantly in this mock and persists on save.">
+    <SectionCard title="Appearance" sub="Theme preference is stored with your account. The header toggle changes the current view.">
       <fieldset>
-        <legend className="text-sm font-semibold">Theme</legend>
+        <legend className="text-sm font-semibold">Preferred theme</legend>
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
           {["dark", "light", "system"].map((t) => (
             <label key={t} className="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md border border-line p-3 text-sm">
@@ -85,10 +108,18 @@ function AppearanceSection({ show }: { show: (m: string) => void }) {
       <SaveRow
         dirty={isDirty}
         saved={!isDirty}
+        busy={saving}
+        error={saveError}
         onSave={() => {
-          setSavedTheme(theme);
-          setTheme(theme);
-          show(`Appearance saved: theme ${theme}${isLive ? "" : " (mock)"}.`);
+          setSaving(true);
+          setSaveError(null);
+          void setSavedTheme(theme)
+            .then(() => {
+              setTheme(theme);
+              show(`Appearance saved: theme ${theme}${isLive ? "" : " (mock)"}.`);
+            })
+            .catch((e) => setSaveError(`Could not save: ${(e as Error).message}`))
+            .finally(() => setSaving(false));
         }}
       />
     </SectionCard>
@@ -99,6 +130,8 @@ function AccountSection({ show, user }: { show: (m: string) => void; user: { dis
   const [savedName, setSavedName] = useState(user.display_name);
   const [name, setName] = useState(user.display_name);
   const [sent, setSent] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const dirty = name !== savedName;
   return (
     <SectionCard title="Account" sub="Display name shows in the header. Passwords are never displayed.">
@@ -114,25 +147,36 @@ function AccountSection({ show, user }: { show: (m: string) => void; user: { dis
                 setSent(true);
                 show("Password reset link sent (mock).");
               }}
+              disabled={isLive}
+              title={isLive ? "Password reset is not available in this console." : undefined}
             >
               {sent ? "Resend reset link" : "Send reset link"}
             </Button>
           </div>
-          <p className="mt-1 text-xs text-muted">A reset link goes to the account email. No passwords are stored here.</p>
+          <p className="mt-1 text-xs text-muted">
+            {isLive
+              ? "An admin resets passwords from the Users section below."
+              : "A reset link goes to the account email. No passwords are stored here."}
+          </p>
         </div>
       </div>
       <SaveRow
         dirty={dirty}
         saved={!dirty}
+        busy={saving}
+        error={saveError}
         onSave={() => {
           if (isLive) {
+            setSaving(true);
+            setSaveError(null);
             void meApi
               .patch({ display_name: name })
               .then(() => {
                 setSavedName(name);
                 show("Account saved.");
               })
-              .catch((e) => show(`Could not save: ${(e as Error).message}`));
+              .catch((e) => setSaveError(`Could not save: ${(e as Error).message}`))
+              .finally(() => setSaving(false));
             return;
           }
           setSavedName(name);
@@ -156,6 +200,8 @@ function UsersSection({ show }: { show: (m: string) => void }) {
   const [newUser, setNewUser] = useState("");
   const [newPass, setNewPass] = useState("");
   const [newRole, setNewRole] = useState("user");
+  const [creating, setCreating] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = () => {
     if (!isLive) return;
@@ -175,7 +221,8 @@ function UsersSection({ show }: { show: (m: string) => void }) {
   }, []);
 
   const create = () => {
-    if (!newUser.trim() || !newPass) return;
+    if (!newUser.trim() || !newPass || creating) return;
+    setCreating(true);
     void adminApi
       .createUser({ username: newUser.trim(), display_name: newName.trim() || newUser.trim(), password: newPass, role: newRole })
       .then(() => {
@@ -186,22 +233,31 @@ function UsersSection({ show }: { show: (m: string) => void }) {
         show("User created.");
         load();
       })
-      .catch((e) => show(`Could not create user: ${(e as Error).message}`));
+      .catch((e) => show(`Could not create user: ${(e as Error).message}`))
+      .finally(() => setCreating(false));
   };
 
   const patch = (id: string, body: { is_active?: boolean; new_password?: string }) => {
+    if (busyId) return;
+    setBusyId(id);
     void adminApi
       .patchUser(id, body)
       .then(() => {
         show(body.new_password ? "Password reset." : body.is_active === false ? "User deactivated." : "User enabled.");
         load();
       })
-      .catch((e) => show(`Could not update user: ${(e as Error).message}`));
+      .catch((e) => show(`Could not update user: ${(e as Error).message}`))
+      .finally(() => setBusyId(null));
   };
 
   return (
     <SectionCard title="Users" sub={isLive ? "Admins manage access. Deactivating blocks sign-in without deleting history." : "Admins manage access. Disabling a row blocks sign-in without deleting history. (mock)"}>
-      {error ? <p className="text-xs text-danger" role="alert">{error}</p> : null}
+      {error ? (
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <p className="text-xs text-danger" role="alert">{error}</p>
+          <Button onClick={load}>Retry</Button>
+        </div>
+      ) : null}
       <ul className="flex flex-col gap-2">
         {users.map((u) => (
           <li key={u.id} className="flex flex-wrap items-center gap-2 rounded-md border border-line p-3">
@@ -210,8 +266,13 @@ function UsersSection({ show }: { show: (m: string) => void }) {
               <p className="font-mono text-xs text-muted">{u.username} · {u.role}</p>
             </div>
             <Chip tone={u.is_active ? "ok" : "neutral"}>{u.is_active ? "enabled" : "disabled"}</Chip>
-            <Button onClick={() => patch(u.id, { is_active: !u.is_active })} aria-pressed={!u.is_active}>
-              {u.is_active ? "Deactivate" : "Enable"}
+            <Button
+              onClick={() => patch(u.id, { is_active: !u.is_active })}
+              aria-pressed={!u.is_active}
+              disabled={busyId !== null}
+              aria-busy={busyId === u.id}
+            >
+              {busyId === u.id ? "Saving…" : u.is_active ? "Deactivate" : "Enable"}
             </Button>
           </li>
         ))}
@@ -248,8 +309,8 @@ function UsersSection({ show }: { show: (m: string) => void }) {
             </select>
           </Field>
           <div className="sm:col-span-2">
-            <Button variant="primary" onClick={create} disabled={!newUser.trim() || !newPass}>
-              Create user
+            <Button variant="primary" onClick={create} disabled={!newUser.trim() || !newPass || creating} aria-busy={creating}>
+              {creating ? "Creating…" : "Create user"}
             </Button>
           </div>
         </div>
@@ -263,9 +324,17 @@ function ProcessingSection({ show }: { show: (m: string) => void }) {
   const [audioBitrate, setAudioBitrate] = useState(saved.a);
   const [videoBitrate, setVideoBitrate] = useState(saved.v);
   const [offset, setOffset] = useState(saved.o);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const cur = { a: audioBitrate, v: videoBitrate, o: offset };
-  const isDirty = isLive && (cur.a !== saved.a || cur.v !== saved.v || cur.o !== saved.o);
+  const isDirty = cur.a !== saved.a || cur.v !== saved.v || cur.o !== saved.o;
   const offsetOk = /^-?\d+(\.\d+)?$/.test(offset.trim());
+
+  useEffect(() => {
+    setAudioBitrate(saved.a);
+    setVideoBitrate(saved.v);
+    setOffset(saved.o);
+  }, [saved.a, saved.v, saved.o]);
   return (
     <SectionCard title="Processing defaults" sub="Keeper bitrates and the default audio offset for new runs.">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -282,10 +351,16 @@ function ProcessingSection({ show }: { show: (m: string) => void }) {
       {!offsetOk ? <p className="mt-2 text-xs text-danger" role="alert">Offset must be a number in seconds.</p> : null}
       <SaveRow
         dirty={isDirty && offsetOk}
-        saved={saved !== null && !isDirty}
+        saved={!isDirty}
+        busy={saving}
+        error={saveError}
         onSave={() => {
-          setSaved(cur);
-          show(`Processing defaults saved${isLive ? "" : " (mock)"}.`);
+          setSaving(true);
+          setSaveError(null);
+          void setSaved(cur)
+            .then(() => show(`Processing defaults saved${isLive ? "" : " (mock)"}.`))
+            .catch((e) => setSaveError(`Could not save: ${(e as Error).message}`))
+            .finally(() => setSaving(false));
         }}
       />
     </SectionCard>
@@ -296,7 +371,13 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
   const [savedLevel, setSavedLevel] = useUserSettings<string>("settings.logLevel", "info");
   const [logLevel, setLogLevel] = useState(savedLevel);
   const [retired, setRetired] = useState<boolean | null>(isLive ? null : false);
-  const dirty = isLive ? logLevel !== savedLevel : logLevel !== savedLevel;
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const dirty = logLevel !== savedLevel;
+
+  useEffect(() => {
+    setLogLevel(savedLevel);
+  }, [savedLevel]);
   const bars = [
     { label: "Processed media", pct: 62 },
     { label: "Source uploads", pct: 24 },
@@ -366,9 +447,15 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
       <SaveRow
         dirty={dirty}
         saved={!dirty}
+        busy={saving}
+        error={saveError}
         onSave={() => {
-          setSavedLevel(logLevel);
-          show(`System saved: log level ${logLevel}${isLive ? "" : " (mock)"}.`);
+          setSaving(true);
+          setSaveError(null);
+          void setSavedLevel(logLevel)
+            .then(() => show(`System saved: log level ${logLevel}${isLive ? "" : " (mock)"}.`))
+            .catch((e) => setSaveError(`Could not save: ${(e as Error).message}`))
+            .finally(() => setSaving(false));
         }}
       />
     </SectionCard>
@@ -447,7 +534,7 @@ export function Settings({ user }: { user: { display_name: string; role?: string
         <ProcessingSection show={show} />
         <AppearanceSection show={show} />
         <AccountSection show={show} user={user} />
-        <UsersSection show={show} />
+        {user.role === "admin" ? <UsersSection show={show} /> : null}
         <SystemSection show={show} isAdmin={user.role === "admin"} />
         </div>
       )}

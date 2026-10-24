@@ -212,7 +212,7 @@ def test_auto_edit_auto_applies_and_uploads_edited_file(
     create.assert_called_once()
     apply_edit.assert_called_once()
     media_uploads = [
-        call for call in upload.call_args_list if call.args[2] != "transcript"
+        call for call in upload.call_args_list if call.args[2] != "text"
     ]
     assert len(media_uploads) == 1
     upload_args = media_uploads[0]
@@ -267,7 +267,7 @@ def test_auto_edit_uploads_only_the_kept_transcript(tmp_path: Path, monkeypatch)
     monkeypatch.setattr(su, "trash_original_after_edit", Mock(return_value=None))
 
     def _read_transcript(sermon_id, path, upload_type):
-        if upload_type == "transcript":
+        if upload_type == "text":
             uploaded["text"] = Path(path).read_text(encoding="utf-8")
         return True
 

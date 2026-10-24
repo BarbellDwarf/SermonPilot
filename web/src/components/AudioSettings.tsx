@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { isLive } from "../api/client";
 import { fieldSource, useConfigForm } from "../api/useConfigSection";
 import { Button, EnvSourceBadge, Field, SectionCard, Toggle, inputCls } from "./ui";
@@ -76,6 +76,7 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
     normalize,
   );
 
+  const [saving, setSaving] = useState(false);
   const gainErr = numError(cur.gainDb, -10, 10);
   const levelErr = numError(cur.targetLevelDb, -30, -10);
   const customOk =
@@ -83,6 +84,8 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
   const valid = !gainErr && !levelErr && customOk;
 
   const onSave = () => {
+    if (saving) return;
+    setSaving(true);
     void save((c) => ({
       [PATHS.method]: c.method,
       [PATHS.device]: c.device,
@@ -95,7 +98,8 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
       [PATHS.targetLevelDb]: Number(c.targetLevelDb),
     }))
       .then(() => show(isLive ? "Audio settings saved." : "Audio settings saved (mock)."))
-      .catch((e) => show(`Could not save: ${(e as Error).message}`));
+      .catch((e) => show(`Could not save: ${(e as Error).message}`))
+      .finally(() => setSaving(false));
   };
 
   return (
@@ -274,8 +278,8 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" disabled={!dirty || !valid} onClick={onSave}>
-          Save
+        <Button variant="primary" disabled={!dirty || !valid || saving} onClick={onSave} aria-busy={saving}>
+          {saving ? "Saving…" : "Save"}
         </Button>
         {!dirty ? (
           <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>

@@ -60,6 +60,7 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
     normalize,
   );
   const [newCriterion, setNewCriterion] = useState("");
+  const [saving, setSaving] = useState(false);
   const uid = useId();
 
   const descErr = intError(cur.descMinLength, 10, 200);
@@ -83,6 +84,8 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
   };
 
   const onSave = () => {
+    if (saving) return;
+    setSaving(true);
     void save((c) => ({
       [PATHS.enabled]: c.enabled,
       [PATHS.criteria]: c.criteria,
@@ -94,7 +97,8 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
       [PATHS.hashMinLength]: Number(c.hashMinLength),
     }))
       .then(() => show(isLive ? "Validation settings saved." : "Validation settings saved (mock)."))
-      .catch((e) => show(`Could not save: ${(e as Error).message}`));
+      .catch((e) => show(`Could not save: ${(e as Error).message}`))
+      .finally(() => setSaving(false));
   };
 
   return (
@@ -122,7 +126,7 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
             <ul className="mt-2 flex flex-col gap-2" aria-label="Validation criteria">
               {cur.criteria.map((c, i) => (
                 <li
-                  key={`${i}-${c}`}
+                  key={i}
                   className="flex flex-wrap items-center gap-2 rounded-md border border-line p-2"
                 >
                   <input
@@ -239,8 +243,8 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" disabled={!dirty || !valid} onClick={onSave}>
-          Save
+        <Button variant="primary" disabled={!dirty || !valid || saving} onClick={onSave} aria-busy={saving}>
+          {saving ? "Saving…" : "Save"}
         </Button>
         {!dirty ? (
           <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>

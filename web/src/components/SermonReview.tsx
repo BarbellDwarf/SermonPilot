@@ -219,7 +219,7 @@ export interface SermonReviewProps {
   headerActions?: ReactNode;
   transcript?: TranscriptState;
   onSaveDetails?: (patch: DetailsPatch) => Promise<void> | void;
-  onRegenerateDescription?: () => void;
+  onRegenerateDescription?: () => Promise<void> | void;
   onRefresh?: () => void;
   onToast: (msg: string) => void;
   onUpload?: () => void;
@@ -346,12 +346,55 @@ export function SermonReview({
     hashtags: hashtags ?? "",
   });
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [regenerating, setRegenerating] = useState(false);
   const [generated, setGenerated] = useState<Set<ApiMetadataField>>(() => new Set());
   const [generating, setGenerating] = useState<Set<ApiMetadataField>>(() => new Set());
   const [generateErrors, setGenerateErrors] = useState<
     Partial<Record<ApiMetadataField, string>>
   >({});
   const [descriptionReviewCleared, setDescriptionReviewCleared] = useState(false);
+  const planKey = `${initial.sermonId}:${initial.revision}:${initial.startSec}:${initial.endSec}:${initial.offsetSec}:${initial.status}:${JSON.stringify(initial.removeSegments ?? [])}`;
+  const planKeyRef = useRef(planKey);
+
+  useEffect(() => {
+    if (planKeyRef.current === planKey) return;
+    planKeyRef.current = planKey;
+    setPlan(initial);
+    setStartText(formatCut(initial.startSec));
+    setEndText(formatCut(initial.endSec));
+    setOffsetText(initial.offsetSec.toFixed(1));
+    setRemoveSegments([...(initial.removeSegments ?? [])]);
+    setSelection(null);
+    setRemovalError(null);
+  }, [initial, planKey]);
+
+  useEffect(() => {
+    setForm({
+      title: sermon.title,
+      speaker: sermon.speaker,
+      series: sermon.series,
+      date: sermon.date,
+      description: description ?? "",
+      hashtags: hashtags ?? "",
+    });
+  }, [
+    sermon.title,
+    sermon.speaker,
+    sermon.series,
+    sermon.date,
+    description,
+    hashtags,
+  ]);
+
+  useEffect(() => {
+    setGenerated(new Set());
+    setGenerateErrors({});
+    setDescriptionReviewCleared(false);
+    setSaveState("idle");
+    setSeek(null);
+    setPlayhead(0);
+    setPlayWindow(null);
+  }, [sermon.id]);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -484,7 +527,7 @@ export function SermonReview({
       startSec,
       endSec,
       nonce: (playWindow?.nonce ?? 0) + 1,
-      jumpAtSec: segment.endSec,
+      jumpAtSec: segment.startSec,
       jumpToSec: segment.endSec,
     });
   };
@@ -745,6 +788,12 @@ export function SermonReview({
       .catch(() => setSaveState("error"));
   };
 
+  const regenerateDescription = () => {
+    if (regenerating || !onRegenerateDescription) return;
+    setRegenerating(true);
+    Promise.resolve(onRegenerateDescription()).finally(() => setRegenerating(false));
+  };
+
   const detailsDirty =
     form.title !== sermon.title ||
     form.speaker !== sermon.speaker ||
@@ -752,6 +801,10 @@ export function SermonReview({
     form.date !== sermon.date ||
     form.description !== (description ?? "") ||
     form.hashtags !== (hashtags ?? "");
+
+  useEffect(() => {
+    if (detailsDirty) setSaveState("idle");
+  }, [detailsDirty]);
 
   const statusPills = (
     <div className="flex flex-wrap items-center gap-2">
@@ -1037,7 +1090,13 @@ export function SermonReview({
           {narrow ? detectionAlert : null}
           <CollapsibleSection id="player-plan" title="Player & plan">
             <div className="flex min-w-0 flex-col gap-3">
-              {live ? (
+              {live && media.error ? (
+                <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md border border-danger bg-ink p-3 text-sm text-danger">
+                  <span className="min-w-0 flex-1">{media.error}</span>
+                  <Button onClick={media.retry}>Retry media</Button>
+                </div>
+              ) : null}
+              {live && !media.error ? (
                 <MediaPlayer
                   sermonId={sermon.id}
                   kind={activeKind}
@@ -1053,7 +1112,7 @@ export function SermonReview({
                   playWindow={playWindow}
                   onTime={setPlayhead}
                 />
-              ) : (
+              ) : live ? null : (
                 <p className="rounded-md border border-dashed border-line bg-ink px-3 py-6 text-center text-sm text-muted">
                   Preview available in the live console.
                 </p>
@@ -1300,7 +1359,12 @@ export function SermonReview({
                 <Button onClick={reset} disabled={!dirty || applying}>
                   Reset to plan values
                 </Button>
-                <Button variant="danger" onClick={() => setConfirmRestore(true)}>
+                <Button
+                  variant="danger"
+                  onClick={() => setConfirmRestore(true)}
+                  disabled={live}
+                  title={live ? "Restore original is not available in the console yet." : undefined}
+                >
                   Restore original
                 </Button>
               </div>
@@ -1655,8 +1719,13 @@ export function SermonReview({
                   >
                     <span className="font-semibold">Description generation failed - retry.</span>
                     {onRegenerateDescription ? (
-                      <Button variant="secondary" onClick={onRegenerateDescription}>
-                        Retry generation
+                      <Button
+                        variant="secondary"
+                        onClick={regenerateDescription}
+                        disabled={regenerating}
+                        aria-busy={regenerating}
+                      >
+                        {regenerating ? "Queueing…" : "Retry generation"}
                       </Button>
                     ) : null}
                   </div>
@@ -1707,7 +1776,11 @@ export function SermonReview({
                 ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Button type="submit" variant="primary" disabled={!detailsDirty || saveState === "saving"}>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={!onSaveDetails || !detailsDirty || saveState === "saving"}
+                >
                   {saveState === "saving" ? "Saving…" : "Save details"}
                 </Button>
                 <span data-testid="details-save-state" className="text-xs text-muted" aria-live="polite">

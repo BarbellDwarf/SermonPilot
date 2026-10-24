@@ -48,6 +48,13 @@ export function LibraryDetail() {
 
   useEffect(() => {
     setEditingOverride(false);
+    setDeleted(false);
+    setConfirmDelete(false);
+    setDeleting(false);
+    setTrash([]);
+    setTranscriptOpen(false);
+    setCopied(false);
+    setPushing(false);
   }, [id]);
 
   const { data: detail, isLoading, error, retry } = useSermonDetail(id);
@@ -169,9 +176,9 @@ export function LibraryDetail() {
   };
 
   const regenerateDescription = () => {
-    if (!id) return;
+    if (!id) return Promise.resolve();
     if (isLive) {
-      void writeApi
+      return writeApi
         .regenerateDescription(id)
         .then(() => {
           showToast("Description regeneration queued.");
@@ -184,15 +191,15 @@ export function LibraryDetail() {
               : `Could not queue: ${msg}`,
           );
         });
-      return;
     }
     showToast("Description regeneration queued (mock).");
+    return Promise.resolve();
   };
 
   const pushDetails = () => {
-    if (!id) return;
+    if (!id) return Promise.resolve();
     if (isLive) {
-      void writeApi
+      return writeApi
         .pushMetadata(id, true)
         .then(() => {
           showToast("Metadata push queued.");
@@ -205,9 +212,9 @@ export function LibraryDetail() {
               : `Could not queue: ${msg}`,
           );
         });
-      return;
     }
     showToast("Metadata push queued (mock).");
+    return Promise.resolve();
   };
 
   const saveDetails = (patch: DetailsPatch) => {
@@ -239,8 +246,12 @@ export function LibraryDetail() {
     timestampsAvailable: media.byKind["transcript_timestamps"]?.available ?? false,
     copied,
     onCopy: () => {
+      if (!navigator.clipboard) {
+        showToast("Copy failed: clipboard unavailable.");
+        return;
+      }
       void navigator.clipboard
-        ?.writeText(transcript.data?.transcript ?? "")
+        .writeText(transcript.data?.transcript ?? "")
         .then(() => {
           setCopied(true);
           window.setTimeout(() => setCopied(false), 2000);

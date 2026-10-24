@@ -51,6 +51,7 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
   const [savedOutputDir, setSavedOutputDir] = useState<string | null>(null);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [remotes, setRemotes] = useState<ApiCloudRemote[]>([]);
   const remoteMatch = /^remote:([A-Za-z0-9._-]{1,64}):(.*)$/.exec(outputDir.trim());
   const [cloudRemote, setCloudRemote] = useState(remoteMatch?.[1] ?? "");
@@ -74,7 +75,7 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
   }, []);
 
   const outputDirty = savedOutputDir !== null && outputDir !== savedOutputDir;
-  const dirtyAll = (isLive ? dirty : false) || outputDirty;
+  const dirtyAll = dirty || outputDirty;
 
   const chooseRemote = (name: string) => {
     setCloudRemote(name);
@@ -87,8 +88,12 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
   };
 
   const onSave = () => {
+    if (saving) return;
+    setSaving(true);
     const persistOutput = outputDirty
-      ? outputDirApi.put(outputDir).then(() => setSavedOutputDir(outputDir))
+      ? isLive
+        ? outputDirApi.put(outputDir).then(() => setSavedOutputDir(outputDir))
+        : Promise.resolve().then(() => setSavedOutputDir(outputDir))
       : Promise.resolve();
     persistOutput
       .then(() =>
@@ -101,7 +106,8 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
         })),
       )
       .then(() => show(isLive ? "General settings saved." : "General settings saved (mock)."))
-      .catch((e) => show(`Could not save: ${(e as Error).message}`));
+      .catch((e) => show(`Could not save: ${(e as Error).message}`))
+      .finally(() => setSaving(false));
   };
 
   const overrides = overrideList(fields);
@@ -218,8 +224,8 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" disabled={!dirtyAll} onClick={onSave}>
-          Save
+        <Button variant="primary" disabled={!dirtyAll || saving} onClick={onSave} aria-busy={saving}>
+          {saving ? "Saving…" : "Save"}
         </Button>
         {!dirtyAll ? (
           <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>

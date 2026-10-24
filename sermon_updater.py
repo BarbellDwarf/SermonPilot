@@ -4362,8 +4362,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 console_print(f"Transcript saved ({len(transcript)} characters)")
                 if auto_edit_state and transcript_finalized:
                     transcript_path = get_file_path(output_dir, "transcript")
+                    # SermonAudio only accepts uploadType "text" for transcripts
+                    # with a broadcasting API key; "transcript" and its variants
+                    # are rejected as insufficient permission.
                     if upload_media_file(
-                        sermon_id, str(transcript_path), "transcript"
+                        sermon_id, str(transcript_path), "text"
                     ):
                         console_print(
                             "Finalized transcript attached to SermonAudio"

@@ -97,7 +97,7 @@ export function PromptTemplatesSection({ show }: { show: (m: string) => void }) 
   const [loaded, setLoaded] = useState(!isLive);
   const [busy, setBusy] = useState(false);
   const [pendingReset, setPendingReset] = useState<TaskKey | null>(null);
-  const dirty = isLive && JSON.stringify(cur) !== JSON.stringify(saved);
+  const dirty = JSON.stringify(cur) !== JSON.stringify(saved);
 
   useEffect(() => {
     if (!isLive || loaded) return;

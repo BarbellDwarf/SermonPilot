@@ -32,6 +32,7 @@ export function SermonAudioCredentialsSection({ show }: { show: (m: string) => v
   const savedBroadcaster = String(fieldValue(fields, "broadcaster_id", ""));
   const [broadcasterId, setBroadcasterId] = useState(savedBroadcaster);
   const [apiKey, setApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setBroadcasterId(savedBroadcaster);
@@ -43,6 +44,8 @@ export function SermonAudioCredentialsSection({ show }: { show: (m: string) => v
   const dirty = broadcasterId !== savedBroadcaster || apiKey !== "";
 
   const onSave = () => {
+    if (saving) return;
+    setSaving(true);
     const values: Record<string, unknown> = { broadcaster_id: broadcasterId };
     if (apiKey.trim()) values["api_key"] = apiKey;
     void save(values)
@@ -50,7 +53,8 @@ export function SermonAudioCredentialsSection({ show }: { show: (m: string) => v
         setApiKey("");
         show(isLive ? "SermonAudio credentials saved." : "SermonAudio credentials saved (mock).");
       })
-      .catch((e) => show(`Could not save: ${(e as Error).message}`));
+      .catch((e) => show(`Could not save: ${(e as Error).message}`))
+      .finally(() => setSaving(false));
   };
 
   return (
@@ -99,8 +103,8 @@ export function SermonAudioCredentialsSection({ show }: { show: (m: string) => v
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" disabled={!dirty} onClick={onSave}>
-          Save fallback credentials
+        <Button variant="primary" disabled={!dirty || saving} onClick={onSave} aria-busy={saving}>
+          {saving ? "Saving…" : "Save fallback credentials"}
         </Button>
         {!dirty ? (
           <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>

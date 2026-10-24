@@ -65,6 +65,10 @@ export function MediaPlayer({
   };
 
   useEffect(() => {
+    setFailed(false);
+  }, [sermonId, kind]);
+
+  useEffect(() => {
     applySeek(mediaRef.current);
   }, [seekToSec, seekNonce]);
 
@@ -178,9 +182,10 @@ export function MediaPlayer({
           ? markers.map((marker) => (
               <span
                 key={`${marker.label}-${marker.atSec}`}
+                data-testid="media-marker"
                 aria-hidden="true"
                 title={`${marker.label} at ${formatCut(marker.atSec)}`}
-                className="pointer-events-none absolute top-0 h-2 w-1 rounded-b bg-warn"
+                className="pointer-events-none absolute bottom-0 h-2 w-1 rounded-t bg-warn"
                 style={{ left: `${position(marker.atSec)}%` }}
               />
             ))

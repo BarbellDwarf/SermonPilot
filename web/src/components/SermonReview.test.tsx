@@ -235,6 +235,69 @@ describe("SermonReview single player and plan", () => {
     expect(keep.getAttribute("data-end-sec")).toBe("2512.3");
   });
 
+  it("adopts a refreshed plan revision from the parent", () => {
+    const view = renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    expect((screen.getByLabelText(/^Start \(/) as HTMLInputElement).value).toBe("00:08.5");
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <SermonReview
+          sermon={sermon()}
+          description={null}
+          plan={plan({ revision: 3, revisionsTotal: 3, startSec: 100, endSec: 1200 })}
+          media={media()}
+          isLive
+          onToast={noop}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect((screen.getByLabelText(/^Start \(/) as HTMLInputElement).value).toBe("01:40.0");
+    expect(screen.getByTestId("timeline-region-keep").getAttribute("data-start-sec")).toBe("100");
+  });
+
+  it("resets metadata fields when the parent switches sermons", () => {
+    const view = renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Sample Teaching");
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <SermonReview
+          sermon={sermon({ id: "s-2", title: "Second Teaching" })}
+          description={null}
+          plan={plan({ sermonId: "s-2" })}
+          media={media()}
+          isLive
+          onToast={noop}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Second Teaching");
+  });
+
   it("keeps the timeline span on the source duration when the end changes", () => {
     renderReview(
       <SermonReview
@@ -374,6 +437,9 @@ describe("SermonReview single player and plan", () => {
     await user.click(screen.getByRole("button", { name: /Preview join 1/ }));
     const video = document.querySelector("video") as HTMLVideoElement;
     expect(video.currentTime).toBeCloseTo(startSec - 10, 1);
+    video.currentTime = startSec;
+    fireEvent.timeUpdate(video);
+    expect(video.currentTime).toBeCloseTo(endSec, 1);
     video.currentTime = endSec;
     fireEvent.timeUpdate(video);
     expect(video.currentTime).toBeCloseTo(endSec, 1);
@@ -669,6 +735,28 @@ describe("SermonReview mobile layout", () => {
     expect(
       summary.compareDocumentPosition(player!) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("renders one refine panel outside the pinned approval bar", async () => {
+    setViewportWidth(390);
+    const user = userEvent.setup();
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+    await user.click(screen.getByRole("menuitem", { name: "Reject with notes" }));
+
+    expect(document.querySelectorAll("#refine-notes").length).toBe(1);
+    const bar = screen.getByTestId("approval-bar");
+    expect(within(bar).queryByLabelText("Reject with notes")).toBeNull();
   });
 
   it("matches the content padding to the pinned bar height on a narrow viewport", () => {

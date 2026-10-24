@@ -132,6 +132,21 @@ except Exception as e:
     print(f'Database initialization warning: {e}')
 "
 
+start_worker() {
+    python -m ui.job_worker &
+    WORKER_PID=$!
+}
+
+start_streamlit() {
+    streamlit run streamlit_app.py \
+        --server.port=8501 \
+        --server.address=0.0.0.0 \
+        --server.headless=true \
+        --server.maxUploadSize=${STREAMLIT_SERVER_MAX_UPLOAD_SIZE:-30720} \
+        --browser.gatherUsageStats=false &
+    STREAMLIT_PID=$!
+}
+
 # Start the headless job worker. Set SERMONPILOT_JOB_WORKER_ENABLED=0 for a
 # submit-only deployment.
 case "${SERMONPILOT_JOB_WORKER_ENABLED:-1}" in
@@ -140,20 +155,13 @@ case "${SERMONPILOT_JOB_WORKER_ENABLED:-1}" in
         ;;
     *)
         echo "Starting job worker..."
-        python -m ui.job_worker &
-        WORKER_PID=$!
+        start_worker
         ;;
 esac
 
 # Start main application
 echo "Starting Streamlit application..."
-streamlit run streamlit_app.py \
-    --server.port=8501 \
-    --server.address=0.0.0.0 \
-    --server.headless=true \
-    --server.maxUploadSize=${STREAMLIT_SERVER_MAX_UPLOAD_SIZE:-30720} \
-    --browser.gatherUsageStats=false &
-STREAMLIT_PID=$!
+start_streamlit
 
 # Start read-only web API + SPA (opt out with SERMONPILOT_WEB_API=0)
 start_web_api() {
@@ -181,51 +189,68 @@ case "${INGEST_WATCHER_ENABLED:-}" in
         ;;
 esac
 
-# Wait for background processes. The web API is supervised: a segfault in
-# uvicorn must not leave the container "Up" with nothing answering on any
-# port. Restart it in place, and give up after five failures in ten minutes
-# so Docker's restart policy can recreate the container.
-PIDS=("$STREAMLIT_PID")
-if [ -n "${UVICORN_PID:-}" ]; then
-    PIDS+=("$UVICORN_PID")
-fi
-if [ -n "${INGEST_WATCHER_PID:-}" ]; then
-    PIDS+=("$INGEST_WATCHER_PID")
-fi
-if [ -n "${WORKER_PID:-}" ]; then
-    PIDS+=("$WORKER_PID")
-fi
+# Wait for background processes. Every long-running role is supervised: a
+# segfault in uvicorn, a dead job worker, or a crashed Streamlit must not
+# leave the container "Up" with that role gone. Restart in place with a short
+# backoff, and give up after five failures in ten minutes so Docker's restart
+# policy can recreate the container.
+UVICORN_FAILURES=0
+UVICORN_WINDOW_START=$SECONDS
+STREAMLIT_FAILURES=0
+STREAMLIT_WINDOW_START=$SECONDS
+WORKER_FAILURES=0
+WORKER_WINDOW_START=$SECONDS
 
-if [ -n "${UVICORN_PID:-}" ]; then
-    UVICORN_FAILURES=0
-    UVICORN_WINDOW_START=$SECONDS
-    while true; do
-        if ! kill -0 "$UVICORN_PID" 2>/dev/null; then
-            wait "$UVICORN_PID" 2>/dev/null || true
-            if [ $((SECONDS - UVICORN_WINDOW_START)) -ge 600 ]; then
-                UVICORN_FAILURES=0
-                UVICORN_WINDOW_START=$SECONDS
-            fi
-            UVICORN_FAILURES=$((UVICORN_FAILURES + 1))
-            if [ "$UVICORN_FAILURES" -gt 5 ]; then
-                echo "Web API died ${UVICORN_FAILURES} times in 10 minutes; exiting so Docker can recreate the container"
-                for pid in "${PIDS[@]}"; do
-                    if [ "$pid" != "$UVICORN_PID" ]; then
-                        kill -TERM "$pid" 2>/dev/null || true
-                    fi
-                done
-                exit 1
-            fi
-            UVICORN_DELAY=$((UVICORN_FAILURES * 2))
-            if [ "$UVICORN_DELAY" -gt 10 ]; then
-                UVICORN_DELAY=10
-            fi
-            echo "Web API exited; restarting in ${UVICORN_DELAY}s (failure ${UVICORN_FAILURES}/5 in 10 minutes)"
-            sleep "$UVICORN_DELAY"
-            start_web_api
+restart_process() {
+    local label="$1" pid_var="$2" failures_var="$3" window_var="$4" start_fn="$5"
+    local pid="${!pid_var}"
+    if [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null; then
+        return 0
+    fi
+    wait "$pid" 2>/dev/null || true
+    local failures="${!failures_var}"
+    local window="${!window_var}"
+    if [ $((SECONDS - window)) -ge 600 ]; then
+        failures=0
+        window=$SECONDS
+    fi
+    failures=$((failures + 1))
+    printf -v "$failures_var" '%s' "$failures"
+    printf -v "$window_var" '%s' "$window"
+    if [ "$failures" -gt 5 ]; then
+        echo "${label} died ${failures} times in 10 minutes; exiting so Docker can recreate the container"
+        return 1
+    fi
+    local delay=$((failures * 2))
+    if [ "$delay" -gt 10 ]; then
+        delay=10
+    fi
+    echo "${label} exited; restarting in ${delay}s (failure ${failures}/5 in 10 minutes)"
+    sleep "$delay"
+    "$start_fn"
+}
+
+stop_container() {
+    local dead_pid="$1"
+    local var pid
+    for var in UVICORN_PID STREAMLIT_PID INGEST_WATCHER_PID WORKER_PID; do
+        pid="${!var-}"
+        if [ -n "$pid" ] && [ "$pid" != "$dead_pid" ]; then
+            kill -TERM "$pid" 2>/dev/null || true
         fi
-        sleep 1
     done
-else
-    wait "${PIDS[@]}"
-fi
+    exit 1
+}
+
+while true; do
+    if [ -n "${UVICORN_PID:-}" ]; then
+        restart_process "Web API" UVICORN_PID UVICORN_FAILURES UVICORN_WINDOW_START start_web_api || stop_container "$UVICORN_PID"
+    fi
+    if [ -n "${STREAMLIT_PID:-}" ]; then
+        restart_process "Streamlit" STREAMLIT_PID STREAMLIT_FAILURES STREAMLIT_WINDOW_START start_streamlit || stop_container "$STREAMLIT_PID"
+    fi
+    if [ -n "${WORKER_PID:-}" ]; then
+        restart_process "Job worker" WORKER_PID WORKER_FAILURES WORKER_WINDOW_START start_worker || stop_container "$WORKER_PID"
+    fi
+    sleep 1
+done

@@ -147,6 +147,7 @@ export function NewSermon() {
     const trimmed = serverPath.trim();
     if (!trimmed.startsWith("/") || trimmed.length <= 3) {
       setPathStat(null);
+      setStatPending(false);
       return;
     }
     setStatPending(true);
@@ -576,6 +577,7 @@ export function NewSermon() {
               }}
               onClick={() => {
                 if (isLive) fileInput.current?.click();
+                else pickMockFile();
               }}
               className={`flex min-h-[10rem] flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-6 text-center transition-colors ${
                 dragOver ? "border-accent bg-raised" : "border-line bg-ink"

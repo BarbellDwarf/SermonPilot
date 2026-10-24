@@ -92,6 +92,7 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
   const savedKey = JSON.stringify(saved);
   const [cur, setCur] = useState<TranscriptionState>(saved);
   const [openaiKey, setOpenaiKey] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setCur(saved);
@@ -110,6 +111,8 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
   const isLocal = LOCAL_BACKENDS.has(cur.backend);
 
   const onSave = () => {
+    if (saving) return;
+    setSaving(true);
     const values: Record<string, unknown> = {
       "transcription.backend": cur.backend,
       "transcription.compute_type": cur.computeType,
@@ -127,7 +130,8 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
         setOpenaiKey("");
         show(isLive ? "Transcription settings saved." : "Transcription settings saved (mock).");
       })
-      .catch((e) => show(`Could not save: ${(e as Error).message}`));
+      .catch((e) => show(`Could not save: ${(e as Error).message}`))
+      .finally(() => setSaving(false));
   };
 
   return (
@@ -274,8 +278,8 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
       ) : null}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" disabled={!dirty || !valid} onClick={onSave}>
-          Save
+        <Button variant="primary" disabled={!dirty || !valid || saving} onClick={onSave} aria-busy={saving}>
+          {saving ? "Saving…" : "Save"}
         </Button>
         {!dirty ? (
           <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>

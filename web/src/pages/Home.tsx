@@ -76,7 +76,9 @@ export function Home() {
             View all
           </Link>
         </div>
-        {activeJobs.length === 0 ? (
+        {loading ? (
+          <SkeletonList rows={2} />
+        ) : activeJobs.length === 0 ? (
           <EmptyState
             title="No jobs running"
             body="Everything is idle. Start a new sermon and it will show up here."
@@ -86,8 +88,6 @@ export function Home() {
               </Link>
             }
           />
-        ) : loading ? (
-          <SkeletonList rows={2} />
         ) : (
           <ol className="flex flex-col gap-2">
             {activeJobs.map((j) => (

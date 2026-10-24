@@ -78,6 +78,34 @@ describe("MediaPlayer", () => {
     );
   });
 
+  it("clears a previous media error when the selected artifact changes", () => {
+    const { rerender } = render(
+      <MediaPlayer sermonId="s-1" kind="processed" contentType="video/mp4" available />,
+    );
+    fireEvent.error(document.querySelector("video") as HTMLVideoElement);
+    expect(screen.getByText("Preview unavailable.")).toBeTruthy();
+
+    rerender(<MediaPlayer sermonId="s-1" kind="source" contentType="video/mp4" available />);
+    expect(document.querySelector("video[data-media-kind='source']")).toBeTruthy();
+    expect(screen.queryByText("Preview unavailable.")).toBeNull();
+  });
+
+  it("anchors cut markers to the bottom edge of the player", () => {
+    render(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        contentType="video/mp4"
+        available
+        markers={[{ atSec: 12.5, label: "Start" }]}
+      />,
+    );
+
+    const marker = screen.getByTestId("media-marker");
+    expect(marker.className).toContain("bottom-0");
+    expect(marker.className).not.toContain("top-0");
+  });
+
   it("seeks to the start of a play window and pauses at the end", () => {
     const { rerender } = render(
       <MediaPlayer sermonId="s-1" kind="processed" contentType="video/mp4" available />,

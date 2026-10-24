@@ -78,3 +78,12 @@ def test_production_entrypoint_starts_the_worker_module() -> None:
     entrypoint = Path(__file__).parents[1] / "docker" / "start_production.sh"
 
     assert "python -m ui.job_worker" in entrypoint.read_text(encoding="utf-8")
+
+
+def test_production_entrypoint_supervises_every_long_running_role() -> None:
+    entrypoint = Path(__file__).parents[1] / "docker" / "start_production.sh"
+    script = entrypoint.read_text(encoding="utf-8")
+
+    for label in ("Web API", "Streamlit", "Job worker"):
+        assert f'restart_process "{label}"' in script
+    assert "-gt 5" in script

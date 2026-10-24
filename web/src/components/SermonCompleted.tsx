@@ -48,8 +48,8 @@ export interface SermonCompletedProps {
   scriptureReference?: string | null;
   onEdit: () => void;
   onSaveDetails?: (patch: DetailsPatch) => Promise<void> | void;
-  onRegenerateDescription?: () => void;
-  onPushDetails?: () => void;
+  onRegenerateDescription?: () => Promise<void> | void;
+  onPushDetails?: () => Promise<void> | void;
 }
 
 export function SermonCompleted({
@@ -74,6 +74,8 @@ export function SermonCompleted({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [seek, setSeek] = useState<{ sec: number; n: number } | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [pushingDetails, setPushingDetails] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [form, setForm] = useState({
     title: sermon.title,
     speaker: sermon.speaker,
@@ -91,6 +93,11 @@ export function SermonCompleted({
       description: description ?? "",
     });
   }, [sermon.title, sermon.speaker, sermon.series, sermon.date, description]);
+
+  useEffect(() => {
+    setSaveState("idle");
+    setSeek(null);
+  }, [sermon.id]);
 
   const requestSeek = (sec: number) => setSeek((previous) => ({ sec, n: (previous?.n ?? 0) + 1 }));
 
@@ -115,6 +122,22 @@ export function SermonCompleted({
     form.series !== sermon.series ||
     form.date !== sermon.date ||
     form.description !== (description ?? "");
+
+  useEffect(() => {
+    if (detailsDirty) setSaveState("idle");
+  }, [detailsDirty]);
+
+  const pushDetails = () => {
+    if (pushingDetails || !onPushDetails) return;
+    setPushingDetails(true);
+    Promise.resolve(onPushDetails()).finally(() => setPushingDetails(false));
+  };
+
+  const regenerateDescription = () => {
+    if (regenerating || !onRegenerateDescription) return;
+    setRegenerating(true);
+    Promise.resolve(onRegenerateDescription()).finally(() => setRegenerating(false));
+  };
 
   const saveDetails = () => {
     const patch: DetailsPatch = {
@@ -159,7 +182,13 @@ export function SermonCompleted({
         aria-label="Playback"
         className="rounded-lg border border-line bg-surface p-3"
       >
-        {isLive ? (
+        {isLive && media.error ? (
+          <div role="alert" className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-danger bg-ink p-3 text-sm text-danger">
+            <span className="min-w-0 flex-1">{media.error}</span>
+            <Button onClick={media.retry}>Retry media</Button>
+          </div>
+        ) : null}
+        {isLive && !media.error ? (
           <MediaPlayer
             sermonId={sermon.id}
             kind={activeKind}
@@ -169,7 +198,7 @@ export function SermonCompleted({
             seekToSec={seek?.sec ?? null}
             seekNonce={seek?.n}
           />
-        ) : (
+        ) : isLive ? null : (
           <p className="rounded-md border border-dashed border-line bg-ink px-3 py-6 text-center text-sm text-muted">
             Preview available in the live console.
           </p>
@@ -190,10 +219,12 @@ export function SermonCompleted({
               <button
                 type="button"
                 data-testid="push-details"
-                onClick={onPushDetails}
-                className={linkClass}
+                onClick={pushDetails}
+                disabled={pushingDetails}
+                aria-busy={pushingDetails}
+                className={`${linkClass} disabled:cursor-not-allowed disabled:opacity-45`}
               >
-                Push details to SermonAudio
+                {pushingDetails ? "Pushing…" : "Push details to SermonAudio"}
               </button>
             ) : null}
             <button
@@ -283,15 +314,24 @@ export function SermonCompleted({
                 >
                   <span className="font-semibold">Description generation failed - retry.</span>
                   {onRegenerateDescription ? (
-                    <Button variant="secondary" onClick={onRegenerateDescription}>
-                      Retry generation
+                    <Button
+                      variant="secondary"
+                      onClick={regenerateDescription}
+                      disabled={regenerating}
+                      aria-busy={regenerating}
+                    >
+                      {regenerating ? "Queueing…" : "Retry generation"}
                     </Button>
                   ) : null}
                 </div>
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="submit" variant="primary" disabled={!detailsDirty || saveState === "saving"}>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={!onSaveDetails || !detailsDirty || saveState === "saving"}
+              >
                 {saveState === "saving" ? "Saving…" : "Save details"}
               </Button>
               <span data-testid="details-save-state" className="text-xs text-muted" aria-live="polite">

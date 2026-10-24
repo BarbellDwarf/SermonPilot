@@ -24,15 +24,11 @@ type PendingAction = { job: Job; action: "cancel" | "delete" };
 
 function JobRow({ job, onAction, readOnly, onNotify }: { job: Job; onAction: (a: PendingAction) => void; readOnly: boolean; onNotify: (msg: string) => void }) {
   const [open, setOpen] = useState(false);
-  const [retrying, setRetrying] = useState(false);
   const fullTitle = `${job.kind} — ${job.sermon}`;
   const detail = useJobDetail(job.id, open);
   const lines = readOnly ? (detail.logs ?? []) : job.log;
 
-  const retry = () => {
-    setRetrying(true);
-    window.setTimeout(() => setRetrying(false), 1500);
-  };
+  const retry = () => onNotify("Retry is unavailable in demo mode.");
 
   return (
     <li className="min-w-0">
@@ -95,9 +91,7 @@ function JobRow({ job, onAction, readOnly, onNotify }: { job: Job; onAction: (a:
                   </Button>
                 ) : null}
                 {job.state === "failed" ? (
-                  <Button onClick={retry} disabled={retrying} aria-busy={retrying}>
-                    {retrying ? "Retrying…" : "Retry"}
-                  </Button>
+                  <Button onClick={retry}>Retry</Button>
                 ) : null}
                 {job.state === "done" || job.state === "failed" ? (
                   <Button variant="danger" onClick={() => onAction({ job, action: "delete" })}>
