@@ -18,7 +18,7 @@ import {
   type ServiceStatus,
 } from "../mock/data";
 import { Button, Card, useBriefLoading } from "../components/ui";
-import { ApiError, api, filesApi, isLive, mediaApi, type ApiEditPlan, type ApiJob, type ApiMediaItem, type ApiSermonListItem } from "./client";
+import { api, filesApi, isLive, mediaApi, type ApiEditPlan, type ApiJob, type ApiMediaItem, type ApiSermonListItem } from "./client";
 
 export type LibrarySort = "date" | "title" | "duration";
 
@@ -28,11 +28,16 @@ export function describeLoadError(
   notFound = `${subject} could not be found (404).`,
 ): string | null {
   if (!error) return null;
-  if (error instanceof ApiError) {
-    if (error.status === 404) return notFound;
-    if (error.status >= 500) return `Server error (${error.status}). Try again in a moment.`;
-    const reason = error.message ? `: ${error.message}` : "";
-    return `${subject} could not be loaded (${error.status}${reason}).`;
+  const candidate = error as { status?: unknown };
+  const status =
+    typeof error === "object" && error !== null && typeof candidate.status === "number"
+      ? candidate.status
+      : null;
+  if (status !== null) {
+    if (status === 404) return notFound;
+    if (status >= 500) return `Server error (${status}). Try again in a moment.`;
+    const reason = error instanceof Error && error.message ? `: ${error.message}` : "";
+    return `${subject} could not be loaded (${status}${reason}).`;
   }
   const reason = error instanceof Error && error.message ? ` (${error.message})` : "";
   return `${subject} could not be loaded. Check the API bridge and try again.${reason}`;

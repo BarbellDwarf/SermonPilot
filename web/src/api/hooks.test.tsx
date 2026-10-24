@@ -33,6 +33,14 @@ describe("describeLoadError", () => {
       "Jobs could not be loaded (403: forbidden).",
     );
   });
+
+  it("uses the numeric status even when the error is not an ApiError instance", () => {
+    const error = Object.assign(new Error("missing"), { status: 404 });
+    expect(describeLoadError(error, "This teaching", NOT_FOUND)).toBe(NOT_FOUND);
+    expect(describeLoadError(Object.assign(new Error("boom"), { status: 500 }), "Jobs")).toBe(
+      "Server error (500). Try again in a moment.",
+    );
+  });
 });
 
 describe("QueryError", () => {

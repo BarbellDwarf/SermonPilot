@@ -233,6 +233,26 @@ export async function authFetch(path: string, init?: RequestInit): Promise<Respo
   return res;
 }
 
+async function responseError(res: Response, method: string, path: string): Promise<ApiError> {
+  let message = `${method} ${path} failed with ${res.status}`;
+  let detail: unknown;
+  try {
+    const parsed = (await res.json()) as { detail?: unknown };
+    detail = parsed.detail;
+    if (typeof parsed.detail === "string") {
+      message = parsed.detail;
+    } else if (
+      parsed.detail &&
+      typeof parsed.detail === "object" &&
+      typeof (parsed.detail as ApiErrorDetail).message === "string"
+    ) {
+      message = (parsed.detail as ApiErrorDetail).message as string;
+    }
+  } catch {
+  }
+  return new ApiError(message, res.status, detail);
+}
+
 async function authed<T>(path: string, params?: Record<string, string | number>): Promise<T> {
   const qs = params
     ? `?${new URLSearchParams(
@@ -241,7 +261,7 @@ async function authed<T>(path: string, params?: Record<string, string | number>)
     : "";
   const res = await authFetch(`${path}${qs}`, { headers: { Accept: "application/json" } });
   if (!res.ok) {
-    throw new Error(`GET ${path} failed with ${res.status}`);
+    throw await responseError(res, "GET", path);
   }
   return (await res.json()) as T;
 }
@@ -368,23 +388,7 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T>
   });
   if (res.status === 204) return undefined as T;
   if (!res.ok) {
-    let message = `${method} ${path} failed with ${res.status}`;
-    let detail: unknown;
-    try {
-      const parsed = (await res.json()) as { detail?: unknown };
-      detail = parsed.detail;
-      if (typeof parsed.detail === "string") {
-        message = parsed.detail;
-      } else if (
-        parsed.detail &&
-        typeof parsed.detail === "object" &&
-        typeof (parsed.detail as ApiErrorDetail).message === "string"
-      ) {
-        message = (parsed.detail as ApiErrorDetail).message as string;
-      }
-    } catch {
-    }
-    throw new ApiError(message, res.status, detail);
+    throw await responseError(res, method, path);
   }
   return (await res.json()) as T;
 }
@@ -770,7 +774,13 @@ export const mediaApi = {
     const res = await authFetch(
       `/api/media/sermons/${encodeURIComponent(id)}/${encodeURIComponent(kind)}`,
     );
-    if (!res.ok) throw new Error(`media ${kind} failed with ${res.status}`);
+    if (!res.ok) {
+      throw await responseError(
+        res,
+        "GET",
+        `/api/media/sermons/${encodeURIComponent(id)}/${encodeURIComponent(kind)}`,
+      );
+    }
     return (await res.json()) as T;
   },
 };
@@ -861,7 +871,9 @@ export const metaApi = {
     const res = await fetch(`${BASE}/api/meta/retirement`, {
       headers: { Accept: "application/json" },
     });
-    if (!res.ok) throw new Error(`GET /api/meta/retirement failed with ${res.status}`);
+    if (!res.ok) {
+      throw await responseError(res, "GET", "/api/meta/retirement");
+    }
     return (await res.json()) as { streamlit_ready: boolean };
   },
 };
