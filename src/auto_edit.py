@@ -670,6 +670,106 @@ def finalize_transcript(
     return kept, text
 
 
+def _plan_from_edit_row(row: dict[str, Any]) -> EditPlan:
+    start = row.get("proposed_start")
+    if start is None:
+        start = row.get("final_start")
+    end = row.get("proposed_end")
+    if end is None:
+        end = row.get("final_end")
+    raw = row.get("remove_segments")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (TypeError, ValueError):
+            raw = []
+    segments: list[dict[str, float]] = []
+    for item in raw or []:
+        try:
+            segments.append(
+                {
+                    "start_sec": float(item["start_sec"]),
+                    "end_sec": float(item["end_sec"]),
+                }
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    return EditPlan(
+        start=float(start or 0.0),
+        end=float(end or 0.0),
+        audio_offset=float(row.get("audio_offset") or 0.0),
+        remove_segments=segments,
+    )
+
+
+def _record_transcript_segments(record: dict[str, Any]) -> list[dict[str, Any]]:
+    for holder in (record, record.get("content") or {}):
+        segments = holder.get("transcript_segments")
+        if isinstance(segments, list) and segments:
+            return segments
+    file_paths = record.get("file_paths") or {}
+    candidates: list[Path] = []
+    timestamps = file_paths.get("transcript_timestamps")
+    if timestamps:
+        candidates.append(Path(str(timestamps)))
+    for key in ("metadata", "audio"):
+        path = file_paths.get(key)
+        if path:
+            candidates.append(Path(str(path)).parent / "transcript_timestamps.json")
+    for path in candidates:
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(loaded, list) and loaded:
+            return loaded
+    return []
+
+
+def _record_finalized_transcript(record: dict[str, Any]) -> str:
+    for holder in (record, record.get("content") or {}):
+        text = str(holder.get("finalized_transcript") or "").strip()
+        if text:
+            return text
+    if str(record.get("edit_status") or "") in {"rendered", "uploaded"}:
+        audio = (record.get("file_paths") or {}).get("audio")
+        if audio:
+            try:
+                return (Path(str(audio)).parent / "transcript.txt").read_text(
+                    encoding="utf-8"
+                ).strip()
+            except OSError:
+                return ""
+    return ""
+
+
+def transcript_for_llm(
+    record: dict[str, Any], plan: dict[str, Any] | EditPlan | None = None
+) -> str:
+    """The transcript an LLM should read: the edit's kept ranges, never the raw source."""
+    content = record.get("content") or {}
+    full = str(
+        content.get("transcript_text") or record.get("transcript_text") or ""
+    ).strip()
+    finalized = _record_finalized_transcript(record)
+    if finalized:
+        return finalized
+    if not plan or not full:
+        return full
+    if isinstance(plan, dict) and str(plan.get("status") or "") in {
+        "rejected",
+        "reverted",
+        "superseded",
+    }:
+        return full
+    edit_plan = plan if isinstance(plan, EditPlan) else _plan_from_edit_row(plan)
+    segments = _record_transcript_segments(record)
+    if not segments:
+        return full
+    _, text = finalize_transcript(segments, edit_plan, edit_plan.audio_offset)
+    return text or full
+
+
 XFADE_SECONDS = 0.8
 MAX_AUDIO_OFFSET = 5.0
 DEFAULT_FADE_OUT_TAIL_SECONDS = 2.0

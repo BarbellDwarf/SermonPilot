@@ -126,6 +126,57 @@ def test_generate_hashtags_persists_to_content(client, scoped_setup, monkeypatch
     assert detail["hashtags"] == "#faith #hope"
 
 
+def test_generate_reads_the_edit_transcript_not_the_full_source(
+    client, scoped_setup, monkeypatch, tmp_path
+):
+    s = scoped_setup
+    _seed_transcript("s-a", "opening REMOVED-SENTINEL closing")
+    timestamps = tmp_path / "transcript_timestamps.json"
+    timestamps.write_text(
+        json.dumps(
+            [
+                {"start": 11.0, "end": 15.0, "text": "opening"},
+                {"start": 21.0, "end": 29.0, "text": "REMOVED-SENTINEL"},
+                {"start": 31.0, "end": 35.0, "text": "closing"},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    conn = sqlite3.connect(get_db_path())
+    conn.execute(
+        "INSERT OR REPLACE INTO sermon_files (sermon_id, file_type, file_path)"
+        " VALUES ('s-a', 'transcript_timestamps', ?)",
+        (str(timestamps),),
+    )
+    conn.execute(
+        "INSERT INTO edit_plans"
+        " (sermon_id, revision, proposed_start, proposed_end, remove_segments, status)"
+        " VALUES ('s-a', 1, 10.0, 40.0, ?, 'pending_review')",
+        (json.dumps([{"start_sec": 20.0, "end_sec": 30.0}]),),
+    )
+    conn.commit()
+    conn.close()
+
+    updater = _stub_runtime(monkeypatch)
+    seen: dict = {}
+
+    def _generate_title(**kwargs):
+        seen.update(kwargs)
+        return "Generated Title"
+
+    monkeypatch.setattr(updater, "generate_title", _generate_title)
+
+    r = client.post(
+        "/api/sermons/s-a/metadata/generate",
+        json={"field": "title"},
+        headers=s["a"]["headers"],
+    )
+
+    assert r.status_code == 200, r.text
+    assert "REMOVED-SENTINEL" not in seen["transcript"]
+    assert seen["transcript"] == "opening closing"
+
+
 def test_generate_reports_a_timeout(client, scoped_setup, monkeypatch):
     s = scoped_setup
     _seed_transcript("s-a")

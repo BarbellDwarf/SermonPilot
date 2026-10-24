@@ -266,8 +266,15 @@ def generate_ai_content(sermon, gen_description=True, gen_hashtags=True):
                     )
             st.success("Transcript fetched from SermonAudio!")
         else:
-            # Fall back to local transcript
-            transcript = _get_transcript(sermon)
+            # Fall back to the local transcript, cut to any edit plan
+            from src.auto_edit import transcript_for_llm
+            from ui.database import SermonRepository
+
+            repo = SermonRepository()
+            record = repo.get_sermon(sermon_id) or sermon
+            transcript = transcript_for_llm(record, repo.get_current_edit_plan(sermon_id))
+            if not transcript:
+                transcript = _get_transcript(sermon)
             if not transcript:
                 _set_feedback(
                     "No transcript available locally or on SermonAudio. "

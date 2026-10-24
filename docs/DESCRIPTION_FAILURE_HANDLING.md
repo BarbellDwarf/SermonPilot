@@ -64,7 +64,10 @@ POST /api/sermons/{sermon_id}/metadata/generate
 
 The route runs on the request thread with a 300-second wall-clock bound and
 returns `{field, value, needs_review}`. It persists the value before returning
-so a later Generate & Upload reads it from the row. A sermon without a
+so a later Generate & Upload reads it from the row. Generation reads the
+transcript cut to the current edit plan's kept ranges, so material the render
+drops is never sent to the model; the review panel still shows the full
+transcript. A sermon without a
 transcript is refused with `detail.code == "no_transcript"`; provider
 timeouts, missing models, and unusable output return `504`, `503`, or `502`
 with a message the editor shows in place. The console marks a generated value

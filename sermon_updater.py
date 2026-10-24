@@ -490,6 +490,22 @@ def get_sermon_transcript(sermon_id: str) -> str:
         return ""
 
 
+def _metadata_transcript(sermon_id: str) -> str:
+    """Stored transcript cut to the sermon's edit plan, or empty when unavailable."""
+    try:
+        from src.auto_edit import transcript_for_llm
+        from ui.database import SermonRepository
+
+        repo = SermonRepository()
+        record = repo.get_sermon(sermon_id)
+        if not record:
+            return ""
+        return transcript_for_llm(record, repo.get_current_edit_plan(sermon_id))
+    except Exception as exc:
+        logger.warning("Could not read the stored transcript for %s: %s", sermon_id, exc)
+        return ""
+
+
 def get_sermon_details(sermon_id: str) -> dict:
     """Retrieve full sermon details from the SermonAudio API.
 
@@ -1057,7 +1073,9 @@ def validate_and_regenerate_descriptions(
                     continue
 
                 # Get sermon transcript for regeneration
-                transcript = get_sermon_transcript(sermon_id)
+                transcript = _metadata_transcript(sermon_id) or get_sermon_transcript(
+                    sermon_id
+                )
                 if not transcript:
                     console_print(f"      Could not get transcript for {sermon_id}", "error")
                     failed_regeneration += 1
@@ -5582,7 +5600,9 @@ def process_single_sermon(sermon_id: str, no_upload: bool = False, verbose: bool
             transcript = transcribe(audio_file, model_size="base", config=config,
                                     backend_override=transcription_backend)
         else:
-            transcript = get_sermon_transcript(sermon_id)
+            transcript = _metadata_transcript(sermon_id) or get_sermon_transcript(
+                sermon_id
+            )
         if not transcript:
             logger.warning("No transcript available for sermon %s", sermon_id)
         else:

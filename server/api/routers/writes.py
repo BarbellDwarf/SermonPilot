@@ -709,8 +709,9 @@ def generate_metadata_field(
     sermon = repo.get_sermon(sermon_id)
     if sermon is None:
         raise HTTPException(status_code=404, detail="sermon not found")
-    content = sermon.get("content") or {}
-    transcript = str(content.get("transcript_text") or "").strip()
+    from src.auto_edit import transcript_for_llm
+
+    transcript = transcript_for_llm(sermon, repo.get_current_edit_plan(sermon_id))
     if not transcript:
         raise HTTPException(
             status_code=422,
