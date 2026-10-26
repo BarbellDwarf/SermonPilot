@@ -53,11 +53,11 @@ describe("GeneralSettingsSection environment overrides", () => {
     render(<GeneralSettingsSection show={() => {}} />);
 
     const toggle = await screen.findByRole("switch", { name: "Dry Run Mode (default)" });
-    const row = toggle.closest("label");
+    const row = toggle;
     expect(row).toBeTruthy();
     expect(within(row as HTMLElement).getByText("SA_DRY_RUN")).toBeTruthy();
 
-    const keepRow = screen.getByRole("switch", { name: "Save Original Audio" }).closest("label");
+    const keepRow = screen.getByRole("switch", { name: "Save Original Audio" });
     expect(within(keepRow as HTMLElement).getByText("SA_KEEP_ORIGINAL")).toBeTruthy();
 
     expect(screen.queryByText(/Overridden by the environment:/)).toBeNull();

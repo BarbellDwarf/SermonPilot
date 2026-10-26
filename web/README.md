@@ -147,6 +147,8 @@ NOT started — design at the write-path/render phase.
 Jobs page redesigned: compact scannable rows, expandable metadata, always-visible timestamps.
 Chrome, Home, and Library: one header with an account menu, a mobile bottom tab bar, row overflow actions, and compact page headers.
 Settings: grouped section list (mobile select), inline environment-override notes, advanced disclosures, and master/detail editors for providers and prompts.
+New Teaching, review, and completed pages: one source select, switch-based processing options with dry run under Advanced, a single primary action with an overflow menu, a player-first mobile review with cut controls above the action, and collapsible files, transcript, previews, and history panels.
+Responsive pass: every page holds at 1440x900 and 390x844 with no horizontal overflow, 44px touch targets, visible focus rings, menus that close on Escape or outside click, and polling that does not move the layout.
 
 ## P5f Files API scoping decision (Sep 17, operator-approved default)
 /api/me/files lists/downloads ONLY from the user's own configured output directory

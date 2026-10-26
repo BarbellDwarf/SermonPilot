@@ -287,30 +287,33 @@ export function Toggle({
   label,
   hint,
   source,
+  testId,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
   hint?: string;
   source?: string;
+  testId?: string;
 }) {
   return (
-    <label className="flex min-h-[44px] cursor-pointer items-start gap-3 rounded-md border border-line p-3">
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        onClick={(e) => {
-          e.preventDefault();
-          onChange(!checked);
-        }}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      data-testid={testId}
+      onClick={() => onChange(!checked)}
+      className="flex min-h-[44px] w-full items-start gap-3 rounded-md border border-line p-3 text-left"
+    >
+      <span
+        aria-hidden="true"
         className={`mt-0.5 flex h-6 w-11 shrink-0 items-center rounded-full border border-line p-0.5 transition-colors ${
           checked ? "justify-end bg-accent" : "justify-start bg-ink"
         }`}
       >
-        <span className="h-4 w-4 rounded-full bg-white" aria-hidden="true" />
-      </button>
+        <span className="h-4 w-4 rounded-full bg-white" />
+      </span>
       <span className="min-w-0 text-sm">
         <span className="flex flex-wrap items-center gap-2">
           <span className="font-semibold">{label}</span>
@@ -318,7 +321,7 @@ export function Toggle({
         </span>
         {hint ? <span className="block text-muted">{hint}</span> : null}
       </span>
-    </label>
+    </button>
   );
 }
 

@@ -7,13 +7,14 @@ import { formatCut } from "../utils/time";
 import { MediaPlayer } from "./MediaPlayer";
 import { TranscriptViewer } from "./TranscriptViewer";
 import {
+  CollapsibleSection,
   artifactLabel,
   planStatusLabel,
   preferredKind,
   type DetailsPatch,
   type TranscriptState,
 } from "./SermonReview";
-import { Button, PageHeader } from "./ui";
+import { Button, Menu, PageHeader } from "./ui";
 
 const SA_LINK_BASE = "https://www.sermonaudio.com/sermoninfo.asp?SID=";
 
@@ -39,7 +40,9 @@ export interface SermonCompletedProps {
   media: SermonMediaData;
   isLive: boolean;
   statusChip?: ReactNode;
-  headerActions?: ReactNode;
+  onDelete?: () => void;
+  deleting?: boolean;
+  onUpload?: () => void;
   transcript?: TranscriptState;
   history?: EditPlan[];
   sermonaudioId?: string | null;
@@ -59,7 +62,9 @@ export function SermonCompleted({
   media,
   isLive,
   statusChip,
-  headerActions,
+  onDelete,
+  deleting = false,
+  onUpload,
   transcript,
   history,
   sermonaudioId,
@@ -165,10 +170,39 @@ export function SermonCompleted({
         actions={
           <>
             {statusChip}
-            <Button variant="primary" data-testid="edit-sermon" onClick={onEdit}>
-              Edit teaching
-            </Button>
-            {headerActions}
+            {onPushDetails ? (
+              <Button
+                variant="primary"
+                data-testid="push-details"
+                onClick={pushDetails}
+                disabled={pushingDetails}
+                aria-busy={pushingDetails}
+              >
+                {pushingDetails ? "Pushing…" : "Push details"}
+              </Button>
+            ) : null}
+            <Menu
+              label="More actions"
+              trigger="More actions"
+              triggerTestId="completed-more-actions"
+              menuTestId="completed-actions"
+              menuClassName="w-64"
+              items={[
+                { label: "Edit teaching", onSelect: onEdit, testId: "edit-sermon" },
+                ...(onUpload ? [{ label: "Push to SermonAudio", onSelect: onUpload }] : []),
+                ...(onDelete
+                  ? [
+                      {
+                        label: deleting ? "Deleting…" : "Delete",
+                        onSelect: onDelete,
+                        disabled: deleting,
+                        danger: true,
+                        testId: "delete-sermon",
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </>
         }
       />
@@ -211,18 +245,6 @@ export function SermonCompleted({
             Details
           </h2>
           <div className="flex flex-wrap items-center gap-2">
-            {onPushDetails ? (
-              <button
-                type="button"
-                data-testid="push-details"
-                onClick={pushDetails}
-                disabled={pushingDetails}
-                aria-busy={pushingDetails}
-                className={`${linkClass} disabled:cursor-not-allowed disabled:opacity-45`}
-              >
-                {pushingDetails ? "Pushing…" : "Push details to SermonAudio"}
-              </button>
-            ) : null}
             <button
               type="button"
               data-testid="edit-details"
@@ -405,16 +427,18 @@ export function SermonCompleted({
         </dl>
       </section>
 
-      <section
-        data-testid="completed-transcript"
-        aria-labelledby="completed-transcript-h"
-        className="rounded-lg border border-line bg-surface p-3"
+      <CollapsibleSection
+        id="completed-transcript"
+        title="Transcript"
+        testId="completed-transcript"
+        summary={
+          transcript?.plainText
+            ? `${transcript.totalLength} characters`
+            : "Plain text and timecoded segments"
+        }
       >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 id="completed-transcript-h" className="text-lg font-semibold">
-            Transcript
-          </h2>
-          {transcript ? (
+        {transcript ? (
+          <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
               {media.byKind["transcript"]?.available ? (
                 <a href={mediaStreamUrl(sermon.id, "transcript")} download className={linkClass}>
@@ -436,48 +460,48 @@ export function SermonCompleted({
                 {transcript.open ? "Hide transcript" : "Show transcript"}
               </button>
             </div>
-          ) : null}
-        </div>
-        {transcript?.open ? (
-          <div id="completed-transcript-body" className="mt-2">
-            {!isLive ? (
-              <p className="text-sm text-muted">Transcripts are available in the live bridge.</p>
-            ) : transcript.loading ? (
-              <p className="font-mono text-xs text-muted">Loading transcript…</p>
-            ) : transcript.error ? (
-              <p className="font-mono text-xs text-danger">{transcript.error}</p>
-            ) : transcript.plainText || transcript.timestampsAvailable ? (
-              <>
-                {transcript.plainText ? (
-                  <p className="mb-2 font-mono text-xs text-muted">
-                    {transcript.totalLength} characters
-                    {transcript.truncated ? " (truncated)" : ""}
-                  </p>
-                ) : null}
-                <TranscriptViewer
-                  id={sermon.id}
-                  plainText={transcript.plainText}
-                  timestampsAvailable={transcript.timestampsAvailable}
-                  onSeek={requestSeek}
-                />
-              </>
-            ) : (
-              <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
-            )}
+            {transcript.open ? (
+              <div id="completed-transcript-body">
+                {!isLive ? (
+                  <p className="text-sm text-muted">Transcripts are available in the live bridge.</p>
+                ) : transcript.loading ? (
+                  <p className="font-mono text-xs text-muted">Loading transcript…</p>
+                ) : transcript.error ? (
+                  <p className="font-mono text-xs text-danger">{transcript.error}</p>
+                ) : transcript.plainText || transcript.timestampsAvailable ? (
+                  <>
+                    {transcript.plainText ? (
+                      <p className="mb-2 font-mono text-xs text-muted">
+                        {transcript.totalLength} characters
+                        {transcript.truncated ? " (truncated)" : ""}
+                      </p>
+                    ) : null}
+                    <TranscriptViewer
+                      id={sermon.id}
+                      plainText={transcript.plainText}
+                      timestampsAvailable={transcript.timestampsAvailable}
+                      onSeek={requestSeek}
+                    />
+                  </>
+                ) : (
+                  <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
+                )}
+              </div>
+            ) : null}
           </div>
-        ) : null}
-      </section>
+        ) : (
+          <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
+        )}
+      </CollapsibleSection>
 
-      <section
-        data-testid="completed-files"
-        aria-labelledby="completed-files-h"
-        className="rounded-lg border border-line bg-surface p-3"
+      <CollapsibleSection
+        id="completed-files"
+        title="Files & previews"
+        testId="completed-files"
+        summary={`${files.length} artifact(s)`}
       >
-        <h2 id="completed-files-h" className="text-lg font-semibold">
-          Files
-        </h2>
         {files.length > 0 ? (
-          <ul className="mt-3 flex flex-col gap-2">
+          <ul className="flex flex-col gap-2">
             {files.map((item) => (
               <li
                 key={item.kind}
@@ -501,20 +525,18 @@ export function SermonCompleted({
             ))}
           </ul>
         ) : (
-          <p className="mt-2 text-sm text-muted">No files recorded for this teaching.</p>
+          <p className="text-sm text-muted">No files recorded for this teaching.</p>
         )}
-      </section>
+      </CollapsibleSection>
 
-      <section
-        data-testid="completed-history"
-        aria-labelledby="completed-history-h"
-        className="rounded-lg border border-line bg-surface p-3"
+      <CollapsibleSection
+        id="completed-history"
+        title="Edit history"
+        testId="completed-history"
+        summary={history && history.length > 0 ? `${history.length} revision(s)` : "No revisions"}
       >
-        <h2 id="completed-history-h" className="text-lg font-semibold">
-          Edit history
-        </h2>
         {history && history.length > 0 ? (
-          <ol className="mt-3 flex flex-col gap-2">
+          <ol className="flex flex-col gap-2">
             {history.map((row) => (
               <li
                 key={row.revision}
@@ -534,9 +556,9 @@ export function SermonCompleted({
             ))}
           </ol>
         ) : (
-          <p className="mt-2 text-sm text-muted">No edit history recorded.</p>
+          <p className="text-sm text-muted">No edit history recorded.</p>
         )}
-      </section>
+      </CollapsibleSection>
     </div>
   );
 }

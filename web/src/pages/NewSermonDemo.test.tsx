@@ -27,7 +27,7 @@ describe("NewSermon demo mode", () => {
   it("browses the mock cloud fallback without a live API", async () => {
     const user = userEvent.setup();
     renderPage();
-    await user.click(screen.getByRole("tab", { name: "Cloud file" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Source" }), "cloud");
     await user.selectOptions(screen.getByLabelText("Cloud remote"), "sermons-drive");
     expect(await screen.findByText("sample-sermon.mp3")).toBeTruthy();
   });

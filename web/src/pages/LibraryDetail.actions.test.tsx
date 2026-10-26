@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -147,19 +147,29 @@ describe("LibraryDetail state-aware header actions", () => {
     renderDetail();
 
     expect(screen.getByTestId("sermon-completed")).toBeTruthy();
+    await user.click(screen.getByTestId("completed-more-actions"));
     await user.click(screen.getByTestId("edit-sermon"));
 
-    expect(screen.queryByRole("button", { name: "Push to SermonAudio" })).toBeNull();
-    expect(screen.getByRole("button", { name: /Re-render · Render-only/ })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Push to SermonAudio" })).toBeNull();
     expect(screen.getByRole("button", { name: /Re-render · Generate & Upload/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+    const menu = screen.getByTestId("more-actions");
+    expect(within(menu).getByRole("menuitem", { name: /Re-render · Render-only/ })).toBeTruthy();
+    expect(within(menu).getByRole("menuitem", { name: "Delete" })).toBeTruthy();
   });
 
-  it("keeps the legacy push for a locally rendered sermon that is not published", () => {
+  it("keeps the legacy push for a locally rendered sermon that is not published", async () => {
+    const user = userEvent.setup();
     setSermon("rendered", true);
     renderDetail();
 
-    expect(screen.getByRole("button", { name: "Push to SermonAudio" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Push to SermonAudio" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+    expect(
+      within(screen.getByTestId("more-actions")).getByRole("menuitem", {
+        name: "Push to SermonAudio",
+      }),
+    ).toBeTruthy();
   });
 
   it("passes the detail duration to the review timeline", () => {

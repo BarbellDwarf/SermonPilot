@@ -66,7 +66,6 @@ export function Timeline({
   durationSec,
   startSec,
   endSec,
-  offsetSec = 0,
   endingSec,
   currentSec = 0,
   clips = [],
@@ -263,7 +262,6 @@ export function Timeline({
         />
         {clips.map((clip) => {
           const left = pct(clip.startSec);
-          const width = Math.max(pct(clip.endSec) - left, 0);
           return (
             <button
               key={clip.id}
@@ -279,9 +277,14 @@ export function Timeline({
                 onSeek?.(clip.startSec, clip.id);
                 onPlayRegion?.(clip.id, clip.startSec, clip.endSec);
               }}
-              style={{ left: `${left}%`, width: `${Math.max(width, 0.6)}%`, touchAction: "none" }}
-              className="absolute bottom-0 z-20 h-2 rounded-t border border-accent/60 bg-accent/40 before:absolute before:-top-9 before:inset-x-0 before:h-11 before:content-['']"
-            />
+              style={{ left: `${left}%`, touchAction: "none" }}
+              className="absolute bottom-0 z-20 h-11 min-w-[44px] -translate-x-1/2 rounded-t border border-transparent bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              <span
+                aria-hidden="true"
+                className="absolute inset-x-0 bottom-0 h-2 rounded-t border border-accent/60 bg-accent/40"
+              />
+            </button>
           );
         })}
         <button
@@ -458,12 +461,6 @@ export function Timeline({
         </button>
         <span className="font-mono text-xs text-muted" aria-live="polite">
           {removeSegments.length === 1 ? "1 cut removed" : `${removeSegments.length} cuts removed`}
-        </span>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-xs text-muted">
-        <span data-testid="timeline-offset">offset {offsetSec >= 0 ? "+" : ""}{offsetSec.toFixed(1)}s</span>
-        <span data-testid="timeline-labels">
-          keep {startSec.toFixed(1)}s – {endSec.toFixed(1)}s · ending {ending.toFixed(1)}s · {removeSegments.length === 1 ? "1 cut removed" : `${removeSegments.length} cuts removed`}
         </span>
       </div>
     </div>

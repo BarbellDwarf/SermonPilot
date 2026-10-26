@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
@@ -131,26 +131,61 @@ afterEach(() => {
 });
 
 describe("NewSermon source options", () => {
-  it("renders three peer options and marks exactly one selected at a time", async () => {
+  it("exposes one source select and shows only the picker for the chosen source", async () => {
     const user = userEvent.setup();
     renderPage();
 
-    const upload = screen.getByRole("tab", { name: "Upload" });
-    const server = screen.getByRole("tab", { name: "Server path" });
-    const cloud = screen.getByRole("tab", { name: "Cloud file" });
-    expect(upload).toBeTruthy();
-    expect(server).toBeTruthy();
-    expect(cloud).toBeTruthy();
-    expect(upload.getAttribute("aria-selected")).toBe("true");
+    const source = screen.getByRole("combobox", { name: "Source" }) as HTMLSelectElement;
+    expect(Array.from(source.options).map((o) => o.textContent)).toEqual([
+      "Upload",
+      "Server path",
+      "Cloud file",
+    ]);
+    expect(source.value).toBe("browser");
+    expect(document.getElementById("source-panel-browser")).toBeTruthy();
+    expect(document.getElementById("source-panel-server")).toBeNull();
+    expect(document.getElementById("source-panel-cloud")).toBeNull();
 
-    await user.click(server);
-    expect(server.getAttribute("aria-selected")).toBe("true");
-    expect(upload.getAttribute("aria-selected")).toBe("false");
-    expect(cloud.getAttribute("aria-selected")).toBe("false");
+    await user.selectOptions(source, "server");
+    expect(document.getElementById("source-panel-server")).toBeTruthy();
+    expect(document.getElementById("source-panel-browser")).toBeNull();
 
-    await user.click(cloud);
-    expect(cloud.getAttribute("aria-selected")).toBe("true");
-    expect(server.getAttribute("aria-selected")).toBe("false");
+    await user.selectOptions(source, "cloud");
+    expect(document.getElementById("source-panel-cloud")).toBeTruthy();
+    expect(document.getElementById("source-panel-server")).toBeNull();
+  });
+
+  it("keeps dry run off by default and hides it inside the advanced disclosure", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const details = screen.getByText("Advanced options").closest("details");
+    expect(details?.hasAttribute("open")).toBe(false);
+    const dryRun = screen.getByRole("switch", { name: "Dry run" });
+    expect(dryRun.getAttribute("aria-checked")).toBe("false");
+
+    await user.click(screen.getByText("Advanced options"));
+    expect(screen.getByRole("switch", { name: "Dry run" }).getAttribute("aria-checked")).toBe("false");
+    await user.click(dryRun);
+    expect(dryRun.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("keeps a single primary action in the footer bar", () => {
+    renderPage();
+    const footer = screen.getByLabelText("Selection summary");
+    expect(within(footer).getAllByRole("button").map((b) => b.textContent?.trim())).toEqual([
+      "Start Processing",
+    ]);
+    expect(within(footer).getByRole("status").textContent).toContain("Missing:");
+  });
+
+  it("keeps reset in the header overflow menu", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+    expect(screen.getByRole("menuitem", { name: "Reset form" })).toBeTruthy();
   });
 
   it("queues a browser upload carrying the file", async () => {
@@ -177,7 +212,7 @@ describe("NewSermon source options", () => {
   it("queues a server path as container_path", async () => {
     const user = userEvent.setup();
     renderPage();
-    await user.click(screen.getByRole("tab", { name: "Server path" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Source" }), "server");
     await user.type(screen.getByRole("textbox", { name: "Server path" }), "/media/sample-sermon.mp3");
     await fillMetadata(user);
     await waitFor(() => expect(submitButton().disabled).toBe(false));
@@ -197,7 +232,7 @@ describe("NewSermon source options", () => {
     const user = userEvent.setup();
     renderPage();
     await waitFor(() => expect(mocks.listCloud).toHaveBeenCalled());
-    await user.click(screen.getByRole("tab", { name: "Cloud file" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Source" }), "cloud");
     await user.selectOptions(screen.getByLabelText("Cloud remote"), "sample-remote");
 
     const useButton = await screen.findByRole("button", { name: "Use this file" });
@@ -224,21 +259,21 @@ describe("NewSermon source options", () => {
     expect(submitButton().disabled).toBe(true);
     expect(screen.getByText("Choose a file to upload.")).toBeTruthy();
 
-    await user.click(screen.getByRole("tab", { name: "Server path" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Source" }), "server");
     expect(submitButton().disabled).toBe(true);
     expect(screen.getByText("Enter an absolute path that exists on the server.")).toBeTruthy();
 
     await user.type(screen.getByRole("textbox", { name: "Server path" }), "/media/sample-sermon.mp3");
     await waitFor(() => expect(submitButton().disabled).toBe(false));
 
-    await user.click(screen.getByRole("tab", { name: "Cloud file" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Source" }), "cloud");
     expect(submitButton().disabled).toBe(true);
     expect(screen.getByText(/Pick a file with/)).toBeTruthy();
 
-    await user.click(screen.getByRole("tab", { name: "Server path" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Source" }), "server");
     await waitFor(() => expect(submitButton().disabled).toBe(false));
 
-    await user.click(screen.getByRole("tab", { name: "Upload" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Source" }), "browser");
     expect(submitButton().disabled).toBe(true);
   });
 
@@ -247,9 +282,7 @@ describe("NewSermon source options", () => {
     const entry = `/new?server_path=${encodeURIComponent("remote:sample-remote:sermons/sample.mp3")}`;
     renderPage(entry);
 
-    expect(screen.getByRole("tab", { name: "Cloud file" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    expect((screen.getByRole("combobox", { name: "Source" }) as HTMLSelectElement).value).toBe("cloud");
     await fillMetadata(user);
     await waitFor(() => expect(submitButton().disabled).toBe(false));
     await user.click(submitButton());

@@ -295,7 +295,8 @@ export function LibraryDetail() {
           media={media}
           isLive={isLive}
           statusChip={<Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>}
-          headerActions={headerActions}
+          onDelete={() => setConfirmDelete(true)}
+          deleting={deleting}
           transcript={transcriptState}
           history={planHistory}
           sermonaudioId={detail?.sermonaudioId ?? null}
@@ -323,7 +324,8 @@ export function LibraryDetail() {
           media={media}
           isLive={isLive}
           statusChip={<Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>}
-          headerActions={headerActions}
+          onDelete={() => setConfirmDelete(true)}
+          deleting={deleting}
           transcript={transcriptState}
           onSaveDetails={saveDetails}
           onRegenerateDescription={regenerateDescription}

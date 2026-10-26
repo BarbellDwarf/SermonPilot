@@ -22,6 +22,7 @@ interface MediaPlayerProps {
   available: boolean;
   emptyMessage?: string;
   markers?: MediaMarker[];
+  markerJumps?: boolean;
   seekToSec?: number | null;
   seekNonce?: number;
   playWindow?: PlayWindow | null;
@@ -43,6 +44,7 @@ export function MediaPlayer({
   available,
   emptyMessage,
   markers = [],
+  markerJumps = true,
   seekToSec = null,
   seekNonce = 0,
   playWindow = null,
@@ -199,7 +201,7 @@ export function MediaPlayer({
         {label ? <span>{label}</span> : null}
       </div>
 
-      {markers.length > 0 ? (
+      {markerJumps && markers.length > 0 ? (
         <div className="mt-1 flex flex-wrap gap-1">
           {markers.map((marker) => (
             <button

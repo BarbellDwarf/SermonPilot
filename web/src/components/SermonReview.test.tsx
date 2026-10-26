@@ -128,6 +128,16 @@ function media(): SermonMediaData {
 
 const noop = () => {};
 
+async function openMore(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: "More actions" }));
+  return screen.getByTestId("more-actions");
+}
+
+async function clickMore(user: ReturnType<typeof userEvent.setup>, name: string | RegExp) {
+  const menu = await openMore(user);
+  await user.click(within(menu).getByRole("menuitem", { name }));
+}
+
 const transcriptState: TranscriptState = {
   open: false,
   onToggle: noop,
@@ -430,7 +440,7 @@ describe("SermonReview single player and plan", () => {
     await user.click(cutButton);
     const removal = screen.getByTestId("timeline-removal-0");
     expect(screen.getByTestId("removal-list")).toBeTruthy();
-    expect(screen.getByTestId("timeline-labels").textContent).toContain("1 cut removed");
+    expect(screen.getAllByText("1 cut removed").length).toBeGreaterThan(0);
     const startSec = Number(removal.getAttribute("data-start-sec"));
     const endSec = Number(removal.getAttribute("data-end-sec"));
 
@@ -444,7 +454,7 @@ describe("SermonReview single player and plan", () => {
     fireEvent.timeUpdate(video);
     expect(video.currentTime).toBeCloseTo(endSec, 1);
 
-    await user.click(screen.getByRole("button", { name: /Approve · Render-only/ }));
+    await clickMore(user, /Render-only/);
     await waitFor(() => expect(apply).toHaveBeenCalled());
     expect(apply.mock.calls[0][1]).toMatchObject({
       remove_segments: [{ start_sec: startSec, end_sec: endSec }],
@@ -452,7 +462,7 @@ describe("SermonReview single player and plan", () => {
 
     await user.click(screen.getByRole("button", { name: /Undo removal 1/ }));
     expect(screen.queryByTestId("timeline-removal-0")).toBeNull();
-    expect(screen.getByTestId("timeline-labels").textContent).toContain("0 cuts removed");
+    expect(screen.getAllByText("0 cuts removed").length).toBeGreaterThan(0);
   });
 
   it("shows the removal count and distinct removal markers", () => {
@@ -472,7 +482,7 @@ describe("SermonReview single player and plan", () => {
       />,
     );
 
-    expect(screen.getByTestId("timeline-labels").textContent).toContain("2 cuts removed");
+    expect(screen.getAllByText("2 cuts removed").length).toBeGreaterThan(0);
     expect(screen.getAllByTestId(/^timeline-removal-/)).toHaveLength(2);
     expect(screen.getByTestId("timeline-removal-0").getAttribute("data-region")).toBe("removal");
   });
@@ -547,7 +557,7 @@ describe("SermonReview single player and plan", () => {
 });
 
 describe("SermonReview artifacts", () => {
-  it("groups media rows and reveals preview cards behind the disclosure", async () => {
+  it("groups files, transcript, previews, and history into collapsible panels", async () => {
     const user = userEvent.setup();
     renderReview(
       <SermonReview
@@ -562,24 +572,22 @@ describe("SermonReview artifacts", () => {
 
     expect(screen.getAllByTestId("artifact-primary-row").length).toBe(3);
     expect(screen.getByTestId("artifact-group-files-media")).toBeTruthy();
-    expect(screen.getByTestId("artifact-group-files-transcripts")).toBeTruthy();
+    const files = screen.getByTestId("files-panel");
+    const previews = screen.getByTestId("previews-panel");
+    expect(screen.getByTestId("transcript-panel")).toBeTruthy();
+    expect(screen.getByTestId("history-panel")).toBeTruthy();
+    expect(document.getElementById("files-body")?.hasAttribute("hidden")).toBe(true);
+    expect(document.getElementById("previews-body")?.hasAttribute("hidden")).toBe(true);
 
-    const disclosure = screen.getByTestId("artifacts-disclosure");
-    const hidden = document.getElementById("all-files");
-    expect(disclosure.textContent).toContain("Show all files");
-    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-    expect(hidden?.hasAttribute("hidden")).toBe(true);
+    await user.click(within(files).getByRole("button", { name: "Expand Files" }));
+    await user.click(within(previews).getByRole("button", { name: "Expand Previews" }));
 
-    await user.click(disclosure);
-
-    expect(disclosure.textContent).toContain("Hide files");
-    expect(disclosure.getAttribute("aria-expanded")).toBe("true");
-    expect(hidden?.hasAttribute("hidden")).toBe(false);
-    expect(screen.getByTestId("artifact-group-files-previews")).toBeTruthy();
+    expect(document.getElementById("files-body")?.hasAttribute("hidden")).toBe(false);
+    expect(document.getElementById("previews-body")?.hasAttribute("hidden")).toBe(false);
     expect(screen.getAllByTestId("artifact-preview-row").length).toBe(3);
   });
 
-  it("omits the files disclosure when nothing is hidden", () => {
+  it("renders an empty previews panel when no preview artifacts exist", () => {
     renderReview(
       <SermonReview
         sermon={sermon()}
@@ -591,11 +599,10 @@ describe("SermonReview artifacts", () => {
       />,
     );
 
-    expect(screen.queryByTestId("artifacts-disclosure")).toBeNull();
+    expect(screen.getByTestId("previews-empty").textContent).toContain("Previews appear after a render");
   });
 
-  it("renders no preview card when the previews are unavailable, and explains instead", async () => {
-    const user = userEvent.setup();
+  it("renders no preview card when the previews are unavailable, and explains instead", () => {
     renderReview(
       <SermonReview
         sermon={sermon()}
@@ -606,8 +613,6 @@ describe("SermonReview artifacts", () => {
         onToast={noop}
       />,
     );
-
-    await user.click(screen.getByTestId("artifacts-disclosure"));
 
     expect(screen.queryAllByTestId("artifact-preview-row").length).toBe(0);
     expect(screen.getByTestId("previews-empty").textContent).toContain("Previews appear after a render");
@@ -660,7 +665,7 @@ describe("SermonReview mobile layout", () => {
     ).toBeTruthy();
   });
 
-  it("makes the approval row sticky and collapses files and cut adjusts on a narrow viewport", () => {
+  it("orders the player and cut controls before the approval action on a narrow viewport", () => {
     setViewportWidth(390);
     renderReview(
       <SermonReview
@@ -673,16 +678,24 @@ describe("SermonReview mobile layout", () => {
       />,
     );
 
-    expect(screen.getByTestId("approval-bar").className).toContain("sticky");
-    expect(document.getElementById("files-body")?.hasAttribute("hidden")).toBe(true);
+    const player = document.getElementById("player-plan");
+    const start = document.getElementById("cut-start");
+    const bar = screen.getByTestId("approval-bar");
+    expect(player).toBeTruthy();
+    expect(start).toBeTruthy();
+    expect(
+      player!.compareDocumentPosition(start!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      start!.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(bar.className).toContain("order-2");
+    expect(screen.queryByTestId("timeline-labels")).toBeNull();
+    expect(document.getElementById("previews-body")?.hasAttribute("hidden")).toBe(true);
     expect(document.getElementById("history-body")?.hasAttribute("hidden")).toBe(true);
-
-    const adjust = screen.getByTestId("adjust-cuts-disclosure");
-    expect(adjust.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByTestId("adjust-cuts-summary").textContent).toContain("Start");
   });
 
-  it("pins a compact one-row bar and keeps the secondary actions behind More actions on a narrow viewport", async () => {
+  it("keeps one primary action and every secondary action behind More actions", async () => {
     setViewportWidth(390);
     const user = userEvent.setup();
     renderReview(
@@ -694,25 +707,34 @@ describe("SermonReview mobile layout", () => {
         isLive
         onToast={noop}
         onUpload={noop}
+        onDelete={noop}
       />,
     );
 
     const bar = screen.getByTestId("approval-bar");
-    expect(bar.className).toContain("sticky");
-    expect(within(bar).getByRole("button", { name: "Approve" })).toBeTruthy();
+    expect(within(bar).getAllByRole("button").length).toBe(2);
+    expect(within(bar).getByRole("button", { name: /Approve · Generate & Upload/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Reject with notes" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Re-detect" })).toBeNull();
     expect(screen.queryByRole("button", { name: "History" })).toBeNull();
 
     await user.click(within(bar).getByRole("button", { name: "More actions" }));
     const menu = screen.getByTestId("more-actions");
-    for (const name of ["Reject with notes", "Re-detect", "History", "Upload"]) {
+    for (const name of [
+      /Approve · Render-only/,
+      "Upload existing render",
+      "Reject with notes",
+      "Re-detect",
+      "History",
+      "Push to SermonAudio",
+      "Delete",
+    ]) {
       expect(within(menu).getByRole("menuitem", { name })).toBeTruthy();
     }
     expect(within(bar).queryByRole("button", { name: "History" })).toBeNull();
   });
 
-  it("renders a non-sticky status summary above the player on a narrow viewport", () => {
+  it("renders the plan status summary above the player", () => {
     setViewportWidth(390);
     renderReview(
       <SermonReview
@@ -726,7 +748,6 @@ describe("SermonReview mobile layout", () => {
     );
 
     const summary = screen.getByTestId("approval-summary");
-    expect(summary.className).not.toContain("sticky");
     expect(summary.textContent).toContain("Plan: Pending review");
     expect(summary.textContent).toContain("QA: Pass");
 
@@ -737,7 +758,7 @@ describe("SermonReview mobile layout", () => {
     ).toBeTruthy();
   });
 
-  it("renders one refine panel outside the pinned approval bar", async () => {
+  it("renders one refine panel after the action row", async () => {
     setViewportWidth(390);
     const user = userEvent.setup();
     renderReview(
@@ -756,11 +777,11 @@ describe("SermonReview mobile layout", () => {
 
     expect(document.querySelectorAll("#refine-notes").length).toBe(1);
     const bar = screen.getByTestId("approval-bar");
-    expect(within(bar).queryByLabelText("Reject with notes")).toBeNull();
+    expect(within(bar).getByLabelText("Reject with notes")).toBeTruthy();
   });
 
-  it("matches the content padding to the pinned bar height on a narrow viewport", () => {
-    setViewportWidth(390);
+  it("keeps the desktop single-primary action bar and column layout", async () => {
+    const user = userEvent.setup();
     renderReview(
       <SermonReview
         sermon={sermon()}
@@ -773,40 +794,24 @@ describe("SermonReview mobile layout", () => {
     );
 
     const bar = screen.getByTestId("approval-bar");
-    const content = screen.getByTestId("approval-content");
-    expect(bar.style.height).toBe("64px");
-    expect(content.style.paddingTop).toBe(bar.style.height);
-  });
+    expect(within(bar).getAllByRole("button").length).toBe(2);
+    expect(within(bar).getByRole("button", { name: /Approve · Generate & Upload/ })).toBeTruthy();
+    expect(screen.getByTestId("approval-summary")).toBeTruthy();
 
-  it("keeps the desktop full action row and column layout unchanged", () => {
-    renderReview(
-      <SermonReview
-        sermon={sermon()}
-        description={null}
-        plan={plan()}
-        media={media()}
-        isLive
-        onToast={noop}
-      />,
-    );
-
-    const bar = screen.getByTestId("approval-bar");
-    expect(screen.queryByTestId("approval-summary")).toBeNull();
-    expect(screen.queryByTestId("more-actions")).toBeNull();
+    await user.click(within(bar).getByRole("button", { name: "More actions" }));
+    const menu = screen.getByTestId("more-actions");
     for (const name of [
       /Approve · Render-only/,
-      /Approve · Generate & Upload/,
       "Reject with notes",
       "Re-detect",
       "History",
     ]) {
-      expect(within(bar).getByRole("button", { name })).toBeTruthy();
+      expect(within(menu).getByRole("menuitem", { name })).toBeTruthy();
     }
-    expect(bar.className).toContain("lg:static");
 
     const content = screen.getByTestId("approval-content");
-    expect(content.style.paddingTop).toBe("");
     expect(content.className).toContain("lg:grid-cols-[minmax(0,1fr)_20rem]");
+    expect(bar.className).toContain("lg:order-1");
 
     const player = document.getElementById("player-plan");
     const details = document.getElementById("details");
@@ -838,10 +843,10 @@ describe("SermonReview enhancement choice", () => {
       />,
     );
 
-    const toggle = screen.getByTestId("apply-enhance-audio") as HTMLInputElement;
-    expect(toggle.checked).toBe(false);
+    const toggle = screen.getByTestId("apply-enhance-audio");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
 
-    await user.click(screen.getByRole("button", { name: /Approve · Render-only/ }));
+    await clickMore(user, /Render-only/);
     await waitFor(() => expect(apply).toHaveBeenCalled());
     expect(apply.mock.calls[0][1]).toMatchObject({ enhance_audio: false });
   });
@@ -863,10 +868,10 @@ describe("SermonReview enhancement choice", () => {
       />,
     );
 
-    const toggle = screen.getByTestId("apply-enhance-audio") as HTMLInputElement;
-    expect(toggle.checked).toBe(true);
+    const toggle = screen.getByTestId("apply-enhance-audio");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
 
-    await user.click(screen.getByRole("button", { name: /Approve · Render-only/ }));
+    await clickMore(user, /Render-only/);
     await waitFor(() => expect(apply).toHaveBeenCalled());
     expect(apply.mock.calls[0][1]).toMatchObject({ enhance_audio: true });
   });
@@ -1098,7 +1103,7 @@ describe("SermonReview refine controls", () => {
     );
 
     expect(screen.getByText(/Detection: ok/)).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "History" }));
+    await clickMore(user, "History");
     expect(screen.getByText(/Teaching starts after the welcome/)).toBeTruthy();
     expect(screen.getByText("revision 1")).toBeTruthy();
     expect(screen.getByText(/Keep only the second class/)).toBeTruthy();
@@ -1120,7 +1125,7 @@ describe("SermonReview refine controls", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "History" }));
+    await clickMore(user, "History");
     expect(screen.getByText("No rejection notes yet.")).toBeTruthy();
   });
 
@@ -1139,7 +1144,7 @@ describe("SermonReview refine controls", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Reject with notes" }));
+    await clickMore(user, "Reject with notes");
     const box = screen.getByLabelText("Reject with notes") as HTMLTextAreaElement;
     expect(
       (screen.getByRole("button", { name: /Re-run with notes/ }) as HTMLButtonElement).disabled,
@@ -1172,7 +1177,7 @@ describe("SermonReview refine controls", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Re-detect" }));
+    await clickMore(user, "Re-detect");
 
     await waitFor(
       () => {
@@ -1200,9 +1205,10 @@ describe("SermonReview refine controls", () => {
 
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(screen.getByText("Detection: unavailable")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Reject with notes" }));
+    await clickMore(user, "Reject with notes");
     expect(screen.getByLabelText("Reject with notes")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Re-detect" })).toBeTruthy();
+    const menu = await openMore(user);
+    expect(within(menu).getByRole("menuitem", { name: "Re-detect" })).toBeTruthy();
   });
 });
 
@@ -1263,7 +1269,7 @@ describe("SermonReview upload existing render", () => {
       />,
     );
 
-    await user.click(screen.getByTestId("upload-existing-render"));
+    await user.click((await openMore(user)).querySelector('[data-testid="upload-existing-render"]') as HTMLElement);
 
     await waitFor(() =>
       expect(upload).toHaveBeenCalledWith("s-1", { confirm_missing_description: false }),
@@ -1295,7 +1301,7 @@ describe("SermonReview upload existing render", () => {
       />,
     );
 
-    await user.click(screen.getByTestId("upload-existing-render"));
+    await user.click((await openMore(user)).querySelector('[data-testid="upload-existing-render"]') as HTMLElement);
 
     const confirm = await screen.findByRole("button", { name: "Upload anyway" });
     const dialog = confirm.closest("dialog");
@@ -1307,7 +1313,8 @@ describe("SermonReview upload existing render", () => {
     expect(upload.mock.calls[1][1]).toMatchObject({ confirm_missing_description: true });
   });
 
-  it("hides the upload action once the teaching is published", () => {
+  it("hides the upload action once the teaching is published", async () => {
+    const user = userEvent.setup();
     renderReview(
       <SermonReview
         sermon={sermon({ status: "processed" })}
@@ -1319,10 +1326,12 @@ describe("SermonReview upload existing render", () => {
       />,
     );
 
-    expect(screen.queryByTestId("upload-existing-render")).toBeNull();
+    const menu = await openMore(user);
+    expect(within(menu).queryByTestId("upload-existing-render")).toBeNull();
   });
 
-  it("omits the upload action when no render exists", () => {
+  it("omits the upload action when no render exists", async () => {
+    const user = userEvent.setup();
     const source = media();
     const withoutProcessed = {
       ...source,
@@ -1340,10 +1349,12 @@ describe("SermonReview upload existing render", () => {
       />,
     );
 
-    expect(screen.queryByTestId("upload-existing-render")).toBeNull();
+    const menu = await openMore(user);
+    expect(within(menu).queryByTestId("upload-existing-render")).toBeNull();
   });
 
-  it("keeps the upload action for a draft that has a render", () => {
+  it("keeps the upload action for a draft that has a render", async () => {
+    const user = userEvent.setup();
     renderReview(
       <SermonReview
         sermon={sermon({ status: "draft" })}
@@ -1355,12 +1366,14 @@ describe("SermonReview upload existing render", () => {
       />,
     );
 
-    expect(screen.getByTestId("upload-existing-render")).toBeTruthy();
+    const menu = await openMore(user);
+    expect(within(menu).getByTestId("upload-existing-render")).toBeTruthy();
   });
 });
 
 describe("SermonReview state-aware action row", () => {
-  it("drops the publish-only actions and keeps the re-render actions for a published record", () => {
+  it("drops the publish-only actions and keeps the re-render actions for a published record", async () => {
+    const user = userEvent.setup();
     renderReview(
       <SermonReview
         sermon={sermon({ status: "processed" })}
@@ -1374,8 +1387,9 @@ describe("SermonReview state-aware action row", () => {
     );
 
     const bar = screen.getByTestId("approval-bar");
-    expect(within(bar).queryByTestId("upload-existing-render")).toBeNull();
-    expect(within(bar).getByRole("button", { name: /Re-render · Render-only/ })).toBeTruthy();
+    const menu = await openMore(user);
+    expect(within(menu).queryByTestId("upload-existing-render")).toBeNull();
+    expect(within(menu).getByRole("menuitem", { name: /Re-render · Render-only/ })).toBeTruthy();
     expect(within(bar).getByRole("button", { name: /Re-render · Generate & Upload/ })).toBeTruthy();
     expect(within(bar).queryByRole("button", { name: /Approve/ })).toBeNull();
   });
@@ -1392,8 +1406,7 @@ describe("SermonReview state-aware action row", () => {
       />,
     );
 
-    const bar = screen.getByTestId("approval-bar");
-    expect(within(bar).getByText(/Plan: Pending review/)).toBeTruthy();
+    expect(screen.getByTestId("approval-summary").textContent).toContain("Plan: Pending review");
   });
 
   it("hides the legacy push in the mobile overflow for a published record", async () => {
@@ -1413,7 +1426,7 @@ describe("SermonReview state-aware action row", () => {
 
     await user.click(screen.getByRole("button", { name: "More actions" }));
     const menu = screen.getByTestId("more-actions");
-    expect(within(menu).queryByRole("menuitem", { name: "Upload" })).toBeNull();
+    expect(within(menu).queryByRole("menuitem", { name: "Push to SermonAudio" })).toBeNull();
     expect(within(menu).queryByTestId("upload-existing-render")).toBeNull();
     expect(within(menu).getByRole("menuitem", { name: /Re-render · Render-only/ })).toBeTruthy();
   });
@@ -1435,7 +1448,7 @@ describe("SermonReview state-aware action row", () => {
 
     await user.click(screen.getByRole("button", { name: "More actions" }));
     const menu = screen.getByTestId("more-actions");
-    expect(within(menu).getByRole("menuitem", { name: "Upload" })).toBeTruthy();
+    expect(within(menu).getByRole("menuitem", { name: "Push to SermonAudio" })).toBeTruthy();
     expect(within(menu).getByRole("menuitem", { name: /Approve · Render-only/ })).toBeTruthy();
   });
 });

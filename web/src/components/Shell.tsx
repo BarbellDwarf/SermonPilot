@@ -46,7 +46,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
       </a>
       <header className="sticky top-0 z-30 border-b border-line bg-ink/95 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-shell items-center gap-3 px-4 lg:px-8">
-          <Link to="/" className="flex min-w-0 items-center gap-2 rounded-md" aria-label="SermonPilot home">
+          <Link to="/" className="flex min-h-[44px] min-w-0 items-center gap-2 rounded-md" aria-label="SermonPilot home">
             <span className="flex h-8 w-8 items-center justify-center rounded-md bg-accent font-mono text-sm font-bold text-[var(--accent-ink)]" aria-hidden="true">
               SP
             </span>

@@ -247,7 +247,7 @@ describe("Timeline", () => {
     const removal = screen.getByTestId("timeline-removal-0");
     expect(removal.getAttribute("data-region")).toBe("removal");
     expect(removal.className).toContain("danger");
-    expect(screen.getByTestId("timeline-labels").textContent).toContain("1 cut removed");
+    expect(screen.getByText("1 cut removed")).toBeTruthy();
   });
 
   it("selects an interior range and exposes keyboard nudging handles", async () => {

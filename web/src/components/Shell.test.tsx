@@ -82,6 +82,15 @@ describe("Shell chrome", () => {
     expect(document.activeElement).toBe(screen.getByTestId("account-menu-trigger"));
   });
 
+  it("keeps the same nav membership in both breakpoint treatments", () => {
+    renderShell();
+    const hrefs = (name: string) =>
+      [...screen.getByRole("navigation", { name }).querySelectorAll("a")].map((a) =>
+        a.getAttribute("href"),
+      );
+    expect(hrefs("Primary")).toEqual(hrefs("Sections"));
+  });
+
   it("uses one mobile nav treatment with no drawer and no header nav", () => {
     renderShell();
 

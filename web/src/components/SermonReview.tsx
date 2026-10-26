@@ -14,7 +14,7 @@ import { MediaPlayer, type PlayWindow } from "./MediaPlayer";
 import { Timeline, type TimelineClip, type TimelineRange } from "./Timeline";
 import { TranscriptViewer } from "./TranscriptViewer";
 import { sermonActionMatrix } from "./sermonActions";
-import { Button, Chip, ConfirmDialog, Menu, PageHeader } from "./ui";
+import { Button, Chip, ConfirmDialog, Menu, PageHeader, Toggle } from "./ui";
 
 export const planStatusLabel: Record<PlanStatus, string> = {
   draft: "Draft",
@@ -38,26 +38,8 @@ const PREVIEW_KINDS = ["snippet_start", "snippet_end", "snippet_ending"] as cons
 
 const TRANSCRIPT_KINDS = ["transcript", "transcript_timestamps"] as const;
 
-const MOBILE_BREAKPOINT_PX = 1024;
-
-const MOBILE_APPROVAL_BAR_PX = 64;
-
-function useIsNarrow(breakpoint = MOBILE_BREAKPOINT_PX): boolean {
-  const query = `(max-width: ${breakpoint - 1}px)`;
-  const read = () =>
-    typeof window !== "undefined" && typeof window.matchMedia === "function"
-      ? window.matchMedia(query).matches
-      : false;
-  const [narrow, setNarrow] = useState(read);
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-    const mql = window.matchMedia(query);
-    const onChange = () => setNarrow(mql.matches);
-    mql.addEventListener?.("change", onChange);
-    return () => mql.removeEventListener?.("change", onChange);
-  }, [query]);
-  return narrow;
-}
+const chipButtonClass =
+  "inline-flex min-h-[44px] items-center rounded-full border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted";
 
 function ArtifactGroup({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
@@ -213,7 +195,8 @@ export interface SermonReviewProps {
   media: SermonMediaData;
   isLive: boolean;
   statusChip?: ReactNode;
-  headerActions?: ReactNode;
+  onDelete?: () => void;
+  deleting?: boolean;
   transcript?: TranscriptState;
   onSaveDetails?: (patch: DetailsPatch) => Promise<void> | void;
   onRegenerateDescription?: () => Promise<void> | void;
@@ -224,13 +207,14 @@ export interface SermonReviewProps {
   onShowCompleted?: () => void;
 }
 
-function CollapsibleSection({
+export function CollapsibleSection({
   id,
   title,
   summary,
-  defaultOpen = true,
+  defaultOpen = false,
   open,
   onToggle,
+  testId,
   className = "",
   children,
 }: {
@@ -240,6 +224,7 @@ function CollapsibleSection({
   defaultOpen?: boolean;
   open?: boolean;
   onToggle?: (next: boolean) => void;
+  testId?: string;
   className?: string;
   children: ReactNode;
 }) {
@@ -253,6 +238,7 @@ function CollapsibleSection({
   return (
     <section
       id={id}
+      data-testid={testId}
       aria-labelledby={`${id}-h`}
       className={`rounded-lg border border-line bg-surface ${className}`}
     >
@@ -292,7 +278,8 @@ export function SermonReview({
   media,
   isLive: live,
   statusChip,
-  headerActions,
+  onDelete,
+  deleting = false,
   transcript,
   onSaveDetails,
   onRegenerateDescription,
@@ -326,12 +313,8 @@ export function SermonReview({
   const [seek, setSeek] = useState<{ sec: number; n: number } | null>(null);
   const [playhead, setPlayhead] = useState(0);
   const [playerKind, setPlayerKind] = useState<string>(() => preferredKind(media));
-  const [allFilesOpen, setAllFilesOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const narrow = useIsNarrow();
-  const [filesOpen, setFilesOpen] = useState(!narrow);
-  const [adjustOpen, setAdjustOpen] = useState(!narrow);
   const [form, setForm] = useState({
     title: sermon.title,
     speaker: sermon.speaker,
@@ -485,7 +468,6 @@ export function SermonReview({
     (item): item is ApiMediaItem => !!item,
   );
   const availablePreviews = previewArtifacts.filter((item) => item.available);
-  const hasHiddenFiles = previewArtifacts.length > 0;
 
   const requestSeek = (sec: number) => setSeek((previous) => ({ sec, n: (previous?.n ?? 0) + 1 }));
 
@@ -798,21 +780,17 @@ export function SermonReview({
   );
 
   const enhanceControl = (
-    <label className="flex w-fit flex-wrap items-center gap-2 text-sm text-mist">
-      <input
-        type="checkbox"
-        checked={enhance}
-        onChange={(e) => setEnhance(e.target.checked)}
-        data-testid="apply-enhance-audio"
-        className="h-4 w-4"
-      />
-      Enhance audio
-      <span className="text-xs text-muted">
-        {enhance
-          ? "requested for this apply (defaults to Audio settings)"
-          : "skipped for this apply"}
-      </span>
-    </label>
+    <Toggle
+      checked={enhance}
+      onChange={setEnhance}
+      label="Enhance audio"
+      testId="apply-enhance-audio"
+      hint={
+        enhance
+          ? "Requested for this apply (defaults to Audio settings)."
+          : "Skipped for this apply."
+      }
+    />
   );
 
   const notesPanel = notesOpen ? (
@@ -867,145 +845,36 @@ export function SermonReview({
               </Button>
             ) : null}
             {statusChip}
-            {headerActions}
           </>
         }
       />
 
-      {narrow ? (
-        <section
-          data-testid="approval-summary"
-          aria-label="Plan status"
-          className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-3"
-        >
-          {statusPills}
-          {enhanceControl}
-        </section>
-      ) : null}
-
       <section
-        aria-label="Approval"
-        data-testid="approval-bar"
-        style={narrow ? { height: MOBILE_APPROVAL_BAR_PX, marginBottom: -MOBILE_APPROVAL_BAR_PX } : undefined}
-        className={
-          narrow
-            ? "sticky top-16 z-20 flex items-center gap-2 rounded-lg border border-line bg-surface px-3 shadow-lg"
-            : "flex flex-col gap-2 rounded-lg border border-line bg-surface p-3 shadow-lg lg:static lg:z-auto lg:shadow-none"
-        }
+        data-testid="approval-summary"
+        aria-label="Plan status"
+        className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-3"
       >
-        {narrow ? (
-          <>
-            <Button
-              variant="primary"
-              className="min-w-0 flex-1 whitespace-nowrap"
-              onClick={() => approve(false)}
-              disabled={errors.length > 0 || applying}
-              aria-busy={applying}
-            >
-              {applying ? "Queueing…" : applyVerb}
-            </Button>
-            <Menu
-              label="More actions"
-              trigger="More actions"
-              triggerTestId="more-actions-trigger"
-              menuTestId="more-actions"
-              menuClassName="w-64"
-              items={[
-                {
-                  label: `${applyVerb} · Render-only`,
-                  onSelect: () => approve(true),
-                  disabled: errors.length > 0 || applying,
-                },
-                ...(actions.canUploadExisting
-                  ? [
-                      {
-                        label: uploading ? "Uploading…" : "Upload existing render",
-                        onSelect: () => uploadExisting(false),
-                        disabled: applying || uploading,
-                        testId: "upload-existing-render",
-                      },
-                    ]
-                  : []),
-                {
-                  label: "Reject with notes",
-                  onSelect: () => setNotesOpen((value) => !value),
-                  expanded: notesOpen,
-                  controls: "refine-notes",
-                },
-                {
-                  label: "Re-detect",
-                  onSelect: reDetect,
-                  disabled: refining,
-                },
-                {
-                  label: "History",
-                  onSelect: () => setHistoryOpen((value) => !value),
-                  expanded: historyOpen,
-                  controls: "history",
-                },
-                ...(onUpload && actions.canPublishLegacy
-                  ? [{ label: "Upload", onSelect: () => onUpload() }]
-                  : []),
-              ]}
-            />
-          </>
-        ) : (
-          <>
-            {statusPills}
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="primary" onClick={() => approve(true)} disabled={errors.length > 0 || applying} aria-busy={applying}>
-                {applying ? "Queueing…" : `${applyVerb} · Render-only`}
-              </Button>
-              <Button
-                onClick={() => approve(false)}
-                disabled={errors.length > 0 || applying}
-                title="Generates any empty title, description, or hashtags, then renders and uploads."
-              >
-                {applying ? "Queueing…" : `${applyVerb} · Generate & Upload`}
-              </Button>
-              {actions.canUploadExisting ? (
-                <Button
-                  data-testid="upload-existing-render"
-                  onClick={() => uploadExisting(false)}
-                  disabled={applying || uploading}
-                  aria-busy={uploading}
-                  title="Publish the render already on disk without re-rendering."
-                >
-                  {uploading ? "Uploading…" : "Upload existing render"}
-                </Button>
-              ) : null}
-              <Button
-                className="w-full min-[480px]:w-auto"
-                onClick={() => setNotesOpen((v) => !v)}
-                aria-expanded={notesOpen}
-                aria-controls="refine-notes"
-              >
-                Reject with notes
-              </Button>
-              <Button className="w-full min-[480px]:w-auto" onClick={reDetect} disabled={refining}>
-                Re-detect
-              </Button>
-              <Button onClick={() => setHistoryOpen((v) => !v)} aria-expanded={historyOpen} aria-controls="history">
-                History
-              </Button>
-            </div>
-            {enhanceControl}
-            {notesPanel}
-            {detectionAlert}
-          </>
-        )}
+        {statusPills}
+        {enhanceControl}
+        {detectionAlert}
       </section>
 
       <div
         data-testid="approval-content"
-        style={narrow ? { paddingTop: MOBILE_APPROVAL_BAR_PX } : undefined}
         className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]"
       >
         <div className="flex min-w-0 flex-col gap-4 lg:order-1">
-          {narrow ? notesPanel : null}
-          {narrow ? detectionAlert : null}
-          <CollapsibleSection id="player-plan" title="Player & plan">
-            <div className="flex min-w-0 flex-col gap-3">
+          <section
+            id="player-plan"
+            aria-labelledby="player-plan-h"
+            className="order-1 rounded-lg border border-line bg-surface lg:order-2"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 p-3">
+              <h2 id="player-plan-h" className="text-lg font-semibold">
+                Player &amp; plan
+              </h2>
+            </div>
+            <div className="flex min-w-0 flex-col gap-3 border-t border-line p-3">
               {live && media.error ? (
                 <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md border border-danger bg-ink p-3 text-sm text-danger">
                   <span className="min-w-0 flex-1">{media.error}</span>
@@ -1023,6 +892,7 @@ export function SermonReview({
                     { atSec: safeStart, label: "Start" },
                     { atSec: safeEnd, label: "End" },
                   ]}
+                  markerJumps={false}
                   seekToSec={seek?.sec ?? null}
                   seekNonce={seek?.n}
                   playWindow={playWindow}
@@ -1162,7 +1032,7 @@ export function SermonReview({
                             aria-label={`Preview join ${index + 1}`}
                             title="Play 10 seconds before and after this join"
                             onClick={() => playJoin(segment)}
-                            className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                            className={chipButtonClass}
                           >
                             Preview join {index + 1}
                           </button>
@@ -1170,7 +1040,7 @@ export function SermonReview({
                             type="button"
                             aria-label={`Undo removal ${index + 1}`}
                             onClick={() => undoRemoval(index)}
-                            className="inline-flex min-h-[44px] items-center rounded-md border border-danger px-3 text-xs font-medium text-danger transition-colors hover:bg-danger hover:text-[var(--danger-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
+                            className="inline-flex min-h-[44px] items-center rounded-full border border-danger px-3 text-xs font-medium text-danger transition-colors hover:bg-danger hover:text-[var(--danger-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
                           >
                             Undo removal {index + 1}
                           </button>
@@ -1180,97 +1050,73 @@ export function SermonReview({
                   </ul>
                 </section>
               ) : null}
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2" aria-label="Clip previews">
                 {clips.map((clip) => (
                   <button
                     key={clip.id}
                     type="button"
                     data-testid={`region-chip-${clip.id}`}
                     onClick={() => playRegion(clip.id, clip.startSec, clip.endSec)}
-                    className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted"
+                    className={chipButtonClass}
                   >
-                    Play {artifactLabel(clip.id)} · {formatCut(clip.startSec)}
+                    Play {artifactLabel(clip.id)}
                   </button>
                 ))}
               </div>
-              <div className="rounded-md border border-line bg-ink">
-                <button
-                  type="button"
-                  data-testid="adjust-cuts-disclosure"
-                  onClick={() => setAdjustOpen((v) => !v)}
-                  aria-expanded={adjustOpen}
-                  aria-controls="adjust-cuts-body"
-                  className="flex min-h-[44px] w-full items-center justify-between gap-2 px-3 text-left text-sm font-semibold text-mist"
-                >
-                  <span>Adjust cuts</span>
-                  <span aria-hidden="true" className="font-mono text-xs text-muted">
-                    {adjustOpen ? "Hide" : "Show"}
-                  </span>
-                </button>
-                {!adjustOpen ? (
-                  <p
-                    data-testid="adjust-cuts-summary"
-                    className="border-t border-line px-3 py-2 font-mono text-xs text-muted"
-                  >
-                    Start {formatCut(safeStart)} · End {formatCut(safeEnd)} ·{" "}
-                    {finalDuration !== null ? formatCut(finalDuration) : "—"}
-                  </p>
-                ) : null}
-                <fieldset id="adjust-cuts-body" hidden={!adjustOpen} className="border-t border-line p-3">
-                  <legend className="sr-only">Adjust cuts</legend>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <div>
-                      <label htmlFor="cut-start" className="text-xs font-medium text-muted">
-                        Start (mm:ss.s or seconds)
-                      </label>
-                      <input
-                        id="cut-start"
-                        value={startText}
-                        onChange={(e) => setStartText(e.target.value)}
-                        inputMode="decimal"
-                        className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 font-mono text-sm text-mist"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="cut-end" className="text-xs font-medium text-muted">
-                        End (mm:ss.s or seconds)
-                      </label>
-                      <input
-                        id="cut-end"
-                        value={endText}
-                        onChange={(e) => setEndText(e.target.value)}
-                        inputMode="decimal"
-                        className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 font-mono text-sm text-mist"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="cut-offset" className="text-xs font-medium text-muted">
-                        Audio offset, s (±5, 0.1 steps)
-                      </label>
-                      <input
-                        id="cut-offset"
-                        value={offsetText}
-                        onChange={(e) => setOffsetText(e.target.value)}
-                        inputMode="decimal"
-                        step={0.1}
-                        className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 font-mono text-sm text-mist"
-                      />
-                    </div>
+              <fieldset className="rounded-md border border-line bg-ink p-3">
+                <legend className="px-1 text-sm font-semibold">Start &amp; end</legend>
+                <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label htmlFor="cut-start" className="text-xs font-medium text-muted">
+                      Start (mm:ss.s or seconds)
+                    </label>
+                    <input
+                      id="cut-start"
+                      value={startText}
+                      onChange={(e) => setStartText(e.target.value)}
+                      inputMode="decimal"
+                      className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 font-mono text-sm text-mist"
+                    />
                   </div>
-                  <p className="mt-2 font-mono text-xs text-muted" aria-live="polite">
-                    Computed duration: {duration !== null ? formatCut(duration) : "—"}
-                  </p>
-                  {errors.length > 0 ? (
-                    <ul className="mt-2 flex flex-col gap-1" role="alert">
-                      {errors.map((e) => (
-                        <li key={e} className="text-xs text-danger">
-                          {e}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </fieldset>
-              </div>
+                  <div>
+                    <label htmlFor="cut-end" className="text-xs font-medium text-muted">
+                      End (mm:ss.s or seconds)
+                    </label>
+                    <input
+                      id="cut-end"
+                      value={endText}
+                      onChange={(e) => setEndText(e.target.value)}
+                      inputMode="decimal"
+                      className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 font-mono text-sm text-mist"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="cut-offset" className="text-xs font-medium text-muted">
+                      Audio offset, s (±5, 0.1 steps)
+                    </label>
+                    <input
+                      id="cut-offset"
+                      value={offsetText}
+                      onChange={(e) => setOffsetText(e.target.value)}
+                      inputMode="decimal"
+                      step={0.1}
+                      className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 font-mono text-sm text-mist"
+                    />
+                  </div>
+                </div>
+                <p className="mt-2 font-mono text-xs text-muted" aria-live="polite">
+                  Kept duration: {finalDuration !== null ? formatCut(finalDuration) : "—"}
+                </p>
+                {errors.length > 0 ? (
+                  <ul className="mt-2 flex flex-col gap-1" role="alert">
+                    {errors.map((e) => (
+                      <li key={e} className="text-xs text-danger">
+                        {e}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </fieldset>
               <div className="flex flex-wrap items-center gap-2">
                 <Button onClick={reset} disabled={!dirty || applying}>
                   Reset to plan values
@@ -1285,15 +1131,86 @@ export function SermonReview({
                 </Button>
               </div>
             </div>
-          </CollapsibleSection>
+          </section>
 
-          <CollapsibleSection
-            id="files"
-            title="Files"
-            open={filesOpen}
-            onToggle={setFilesOpen}
+          <section
+            aria-label="Approval"
+            data-testid="approval-bar"
+            className="order-2 flex flex-col gap-3 rounded-lg border border-line bg-surface p-3 shadow-lg lg:order-1"
           >
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="primary"
+                data-testid="approve-primary"
+                className="min-w-0 flex-1 sm:flex-none"
+                onClick={() => approve(false)}
+                disabled={errors.length > 0 || applying}
+                aria-busy={applying}
+                title="Generates any empty title, description, or hashtags, then renders and uploads."
+              >
+                {applying ? "Queueing…" : `${applyVerb} · Generate & Upload`}
+              </Button>
+              <Menu
+                label="More actions"
+                trigger="More actions"
+                triggerTestId="more-actions-trigger"
+                menuTestId="more-actions"
+                menuClassName="w-64"
+                items={[
+                  {
+                    label: `${applyVerb} · Render-only`,
+                    onSelect: () => approve(true),
+                    disabled: errors.length > 0 || applying,
+                    testId: "render-only-action",
+                  },
+                  ...(actions.canUploadExisting
+                    ? [
+                        {
+                          label: uploading ? "Uploading…" : "Upload existing render",
+                          onSelect: () => uploadExisting(false),
+                          disabled: applying || uploading,
+                          testId: "upload-existing-render",
+                        },
+                      ]
+                    : []),
+                  {
+                    label: "Reject with notes",
+                    onSelect: () => setNotesOpen((value) => !value),
+                    expanded: notesOpen,
+                    controls: "refine-notes",
+                  },
+                  {
+                    label: "Re-detect",
+                    onSelect: reDetect,
+                    disabled: refining,
+                  },
+                  {
+                    label: "History",
+                    onSelect: () => setHistoryOpen(true),
+                    testId: "open-history",
+                  },
+                  ...(onUpload && actions.canPublishLegacy
+                    ? [{ label: "Push to SermonAudio", onSelect: () => onUpload() }]
+                    : []),
+                  ...(onDelete
+                    ? [
+                        {
+                          label: deleting ? "Deleting…" : "Delete",
+                          onSelect: onDelete,
+                          disabled: deleting,
+                          danger: true,
+                          testId: "delete-sermon",
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            </div>
+            {notesPanel}
+          </section>
+
+          <div className="order-3 flex flex-col gap-3">
+            <CollapsibleSection id="files" title="Files" testId="files-panel">
               <ArtifactGroup id="files-media" title="Media">
                 {primaryArtifacts.length === 0 && extraMediaArtifacts.length === 0 ? (
                   <p className="text-sm text-muted">No source, render, or keeper files recorded yet.</p>
@@ -1321,155 +1238,133 @@ export function SermonReview({
                   </ul>
                 )}
               </ArtifactGroup>
+            </CollapsibleSection>
 
-              <ArtifactGroup id="files-transcripts" title="Transcripts">
-                {transcript ? (
-                  <div
-                    data-testid="transcript-entry"
-                    className="rounded-md border border-line bg-ink p-3"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-semibold">Transcript</p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {transcript.open && transcript.plainText ? (
-                          <button
-                            type="button"
-                            onClick={transcript.onCopy}
-                            className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted"
-                          >
-                            {transcript.copied ? "Copied" : "Copy"}
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={transcript.onToggle}
-                          aria-expanded={transcript.open}
-                          aria-controls="transcript-body"
-                          className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted"
-                        >
-                          {transcript.open ? "Hide transcript" : "Show transcript"}
+            <CollapsibleSection id="transcript" title="Transcript" testId="transcript-panel" summary="Plain text and timecoded segments">
+              {transcript ? (
+                <div data-testid="transcript-entry">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">Transcript</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {transcript.open && transcript.plainText ? (
+                        <button type="button" onClick={transcript.onCopy} className={chipButtonClass}>
+                          {transcript.copied ? "Copied" : "Copy"}
                         </button>
-                      </div>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={transcript.onToggle}
+                        aria-expanded={transcript.open}
+                        aria-controls="transcript-body"
+                        className={chipButtonClass}
+                      >
+                        {transcript.open ? "Hide transcript" : "Show transcript"}
+                      </button>
                     </div>
-                    {transcript.open ? (
-                      <div id="transcript-body" className="mt-2">
-                        {!live ? (
-                          <p className="text-sm text-muted">Transcripts are available in the live bridge.</p>
-                        ) : transcript.loading ? (
-                          <p className="font-mono text-xs text-muted">Loading transcript…</p>
-                        ) : transcript.error ? (
-                          <p className="font-mono text-xs text-danger">{transcript.error}</p>
-                        ) : transcript.plainText || transcript.timestampsAvailable ? (
-                          <>
-                            {transcript.plainText ? (
-                              <p className="mb-2 font-mono text-xs text-muted">
-                                {transcript.totalLength} characters
-                                {transcript.truncated ? " (truncated)" : ""}
-                              </p>
-                            ) : null}
-                            <TranscriptViewer
-                              id={sermon.id}
-                              plainText={transcript.plainText}
-                              timestampsAvailable={transcript.timestampsAvailable}
-                              onSeek={requestSeek}
-                            />
-                          </>
-                        ) : (
-                          <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
-                        )}
-                      </div>
-                    ) : null}
                   </div>
-                ) : (
-                  <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
-                )}
-              </ArtifactGroup>
-
-              {hasHiddenFiles ? (
-                <div className="flex flex-col gap-3">
-                  <button
-                    type="button"
-                    data-testid="artifacts-disclosure"
-                    onClick={() => setAllFilesOpen((v) => !v)}
-                    aria-expanded={allFilesOpen}
-                    aria-controls="all-files"
-                    className="inline-flex min-h-[44px] w-fit items-center rounded-md border border-line px-3 text-sm font-medium text-mist transition-colors hover:border-muted"
-                  >
-                    {allFilesOpen ? "Hide files" : "Show all files"}
-                  </button>
-                  <div id="all-files" hidden={!allFilesOpen} className="flex flex-col gap-3">
-                    <ArtifactGroup id="files-previews" title="Previews">
-                      {availablePreviews.length === 0 ? (
-                        <p data-testid="previews-empty" className="text-sm text-muted">
-                          Previews appear after a render.
-                        </p>
+                  {transcript.open ? (
+                    <div id="transcript-body" className="mt-2">
+                      {!live ? (
+                        <p className="text-sm text-muted">Transcripts are available in the live bridge.</p>
+                      ) : transcript.loading ? (
+                        <p className="font-mono text-xs text-muted">Loading transcript…</p>
+                      ) : transcript.error ? (
+                        <p className="font-mono text-xs text-danger">{transcript.error}</p>
+                      ) : transcript.plainText || transcript.timestampsAvailable ? (
+                        <>
+                          {transcript.plainText ? (
+                            <p className="mb-2 font-mono text-xs text-muted">
+                              {transcript.totalLength} characters
+                              {transcript.truncated ? " (truncated)" : ""}
+                            </p>
+                          ) : null}
+                          <TranscriptViewer
+                            id={sermon.id}
+                            plainText={transcript.plainText}
+                            timestampsAvailable={transcript.timestampsAvailable}
+                            onSeek={requestSeek}
+                          />
+                        </>
                       ) : (
-                        <ul className="flex flex-col gap-2">
-                          {availablePreviews.map((item) => (
-                            <ArtifactRow
-                              key={item.kind}
-                              sermonId={sermon.id}
-                              item={item}
-                              testId="artifact-preview-row"
-                              live={live}
-                              onOpen={setPlayerKind}
-                            />
-                          ))}
-                        </ul>
+                        <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
                       )}
-                    </ArtifactGroup>
-                  </div>
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
-          </CollapsibleSection>
+              ) : (
+                <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
+              )}
+            </CollapsibleSection>
 
-          <CollapsibleSection
-            id="history"
-            title="History"
-            open={historyOpen}
-            onToggle={setHistoryOpen}
-            summary={`${noteRows.length} note(s)`}
-          >
-            {noteRows.length > 0 ? (
-              <ul className="flex flex-col gap-1">
-                {noteRows.map((row) => (
-                  <li key={`${row.revision}:${row.note}`} className="text-xs text-muted">
-                    <span className="font-mono">revision {row.revision}</span>: {row.note}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted">No rejection notes yet.</p>
-            )}
-            {statusLog.length > 0 ? (
-              <p className="mt-2 font-mono text-xs text-muted">{statusLog.join(" · ")}</p>
-            ) : null}
-            {!detectionFailed && plan.reasoning ? (
-              <p className="mt-2 max-w-prose text-sm text-muted">
-                <span className="font-semibold">Reasoning:</span> {plan.reasoning}
-              </p>
-            ) : null}
-            {!detectionFailed ? (
-              <dl className="mt-2 grid grid-cols-1 gap-1 font-mono text-xs text-muted sm:grid-cols-3">
-                <div>
-                  <dt className="inline">start </dt>
-                  <dd className="inline text-mist">{formatCut(plan.startSec)}</dd>
-                </div>
-                <div>
-                  <dt className="inline">end </dt>
-                  <dd className="inline text-mist">{formatCut(plan.endSec)}</dd>
-                </div>
-                <div>
-                  <dt className="inline">offset </dt>
-                  <dd className="inline text-mist">
-                    {plan.offsetSec >= 0 ? "+" : ""}
-                    {plan.offsetSec.toFixed(1)}s
-                  </dd>
-                </div>
-              </dl>
-            ) : null}
-          </CollapsibleSection>
+            <CollapsibleSection id="previews" title="Previews" testId="previews-panel">
+              {availablePreviews.length === 0 ? (
+                <p data-testid="previews-empty" className="text-sm text-muted">
+                  Previews appear after a render.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {availablePreviews.map((item) => (
+                    <ArtifactRow
+                      key={item.kind}
+                      sermonId={sermon.id}
+                      item={item}
+                      testId="artifact-preview-row"
+                      live={live}
+                      onOpen={setPlayerKind}
+                    />
+                  ))}
+                </ul>
+              )}
+            </CollapsibleSection>
+
+            <CollapsibleSection
+              id="history"
+              title="History"
+              open={historyOpen}
+              onToggle={setHistoryOpen}
+              testId="history-panel"
+              summary={`${noteRows.length} note(s)`}
+            >
+              {noteRows.length > 0 ? (
+                <ul className="flex flex-col gap-1">
+                  {noteRows.map((row) => (
+                    <li key={`${row.revision}:${row.note}`} className="text-xs text-muted">
+                      <span className="font-mono">revision {row.revision}</span>: {row.note}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted">No rejection notes yet.</p>
+              )}
+              {statusLog.length > 0 ? (
+                <p className="mt-2 font-mono text-xs text-muted">{statusLog.join(" · ")}</p>
+              ) : null}
+              {!detectionFailed && plan.reasoning ? (
+                <p className="mt-2 max-w-prose text-sm text-muted">
+                  <span className="font-semibold">Reasoning:</span> {plan.reasoning}
+                </p>
+              ) : null}
+              {!detectionFailed ? (
+                <dl className="mt-2 grid grid-cols-1 gap-1 font-mono text-xs text-muted sm:grid-cols-3">
+                  <div>
+                    <dt className="inline">start </dt>
+                    <dd className="inline text-mist">{formatCut(plan.startSec)}</dd>
+                  </div>
+                  <div>
+                    <dt className="inline">end </dt>
+                    <dd className="inline text-mist">{formatCut(plan.endSec)}</dd>
+                  </div>
+                  <div>
+                    <dt className="inline">offset </dt>
+                    <dd className="inline text-mist">
+                      {plan.offsetSec >= 0 ? "+" : ""}
+                      {plan.offsetSec.toFixed(1)}s
+                    </dd>
+                  </div>
+                </dl>
+              ) : null}
+            </CollapsibleSection>
+          </div>
         </div>
 
         <aside id="details" aria-labelledby="details-h" className="lg:order-2 lg:sticky lg:top-4 lg:self-start">
@@ -1522,7 +1417,7 @@ export function SermonReview({
                       aria-busy={generating.has("title")}
                       onClick={() => generateField("title")}
                       disabled={generating.has("title")}
-                      className="inline-flex min-h-[32px] min-w-[7rem] items-center justify-center rounded-md border border-line px-2 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
+                      className="inline-flex min-h-[44px] min-w-[7rem] items-center justify-center rounded-full border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       {generating.has("title") ? "Generating…" : "Generate"}
                     </button>
@@ -1601,7 +1496,7 @@ export function SermonReview({
                       aria-busy={generating.has("description")}
                       onClick={() => generateField("description")}
                       disabled={generating.has("description")}
-                      className="inline-flex min-h-[32px] min-w-[7rem] items-center justify-center rounded-md border border-line px-2 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
+                      className="inline-flex min-h-[44px] min-w-[7rem] items-center justify-center rounded-full border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       {generating.has("description") ? "Generating…" : "Generate"}
                     </button>
@@ -1665,7 +1560,7 @@ export function SermonReview({
                       aria-busy={generating.has("hashtags")}
                       onClick={() => generateField("hashtags")}
                       disabled={generating.has("hashtags")}
-                      className="inline-flex min-h-[32px] min-w-[7rem] items-center justify-center rounded-md border border-line px-2 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
+                      className="inline-flex min-h-[44px] min-w-[7rem] items-center justify-center rounded-full border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
                     >
                       {generating.has("hashtags") ? "Generating…" : "Generate"}
                     </button>

@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import {
+  Advanced,
   Button,
   Chip,
   ConfirmDialog,
   Field,
+  Menu,
   PageHeader,
   SectionCard,
   Toast,
@@ -417,16 +419,8 @@ export function NewSermon() {
       });
   };
 
-  const onTabsKey = (e: React.KeyboardEvent) => {
-    if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(e.key)) return;
-    e.preventDefault();
-    const index = sourceOptions.findIndex((o) => o.id === source);
-    let next = index;
-    if (e.key === "ArrowRight") next = (index + 1) % sourceOptions.length;
-    else if (e.key === "ArrowLeft") next = (index - 1 + sourceOptions.length) % sourceOptions.length;
-    else if (e.key === "Home") next = 0;
-    else next = sourceOptions.length - 1;
-    setSource(sourceOptions[next].id);
+  const onSourceChange = (next: SourceKind) => {
+    setSource(next);
   };
 
   const serverChips = isLive ? (
@@ -477,54 +471,52 @@ export function NewSermon() {
   ];
 
   return (
-    <div className="flex flex-col gap-4 pb-32">
+    <div className="flex flex-col gap-4 pb-4">
       <PageHeader
         title="New teaching"
         actions={
-          <Button variant="ghost" onClick={() => setConfirmReset(true)}>
-            Reset
-          </Button>
+          <Menu
+            label="More actions"
+            trigger="More actions"
+            triggerTestId="new-teaching-more"
+            triggerClassName="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-line bg-raised px-4 text-sm font-semibold text-mist transition-colors hover:border-muted"
+            items={[
+              {
+                label: "Reset form",
+                onSelect: () => setConfirmReset(true),
+                danger: true,
+                testId: "new-teaching-reset",
+              },
+            ]}
+          />
         }
       />
 
       <SectionCard
         n={1}
         title="Source"
-        sub="Pick one source: upload a file, use a path on the server, or choose a file from cloud storage."
+        sub="Pick one source, then choose the file for that source."
       >
-        <div
-          role="tablist"
-          aria-label="Source kind"
-          onKeyDown={onTabsKey}
-          className="flex gap-1 overflow-x-auto rounded-lg border border-line bg-ink p-1"
-        >
-          {sourceOptions.map((t) => {
-            const selected = source === t.id;
-            return (
-              <button
-                key={t.id}
-                id={`source-tab-${t.id}`}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                aria-controls={`source-panel-${t.id}`}
-                tabIndex={selected ? 0 : -1}
-                onClick={() => setSource(t.id)}
-                className={`flex min-h-[44px] flex-1 items-center justify-center whitespace-nowrap rounded-md px-3 text-sm font-semibold transition-colors ${
-                  selected ? "bg-raised text-mist" : "text-muted hover:bg-raised hover:text-mist"
-                }`}
-              >
+        <Field label="Source" htmlFor="source-kind">
+          <select
+            id="source-kind"
+            value={source}
+            onChange={(e) => onSourceChange(e.target.value as SourceKind)}
+            className={inputCls}
+          >
+            {sourceOptions.map((t) => (
+              <option key={t.id} value={t.id}>
                 {t.label}
-              </button>
-            );
-          })}
-        </div>
+              </option>
+            ))}
+          </select>
+        </Field>
 
         {source === "browser" ? (
           <div
             id="source-panel-browser"
             role="tabpanel"
-            aria-labelledby="source-tab-browser"
+            aria-label="Upload source"
             className="mt-3"
           >
             <input
@@ -622,7 +614,7 @@ export function NewSermon() {
           <div
             id="source-panel-server"
             role="tabpanel"
-            aria-labelledby="source-tab-server"
+            aria-label="Server path source"
             className="mt-3 flex flex-col gap-3"
           >
             <Field
@@ -665,7 +657,7 @@ export function NewSermon() {
           <div
             id="source-panel-cloud"
             role="tabpanel"
-            aria-labelledby="source-tab-cloud"
+            aria-label="Cloud file source"
             className="mt-3 flex flex-col gap-3"
           >
             <Field
@@ -864,7 +856,7 @@ export function NewSermon() {
         </div>
       </SectionCard>
 
-      <SectionCard n={3} title="Processing options" sub="Toggle pipeline stages and the edit approval path.">
+      <SectionCard n={3} title="Processing options" sub="Turn pipeline stages on or off, then reveal the advanced knobs when needed.">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Toggle checked={enhance} onChange={setEnhance} label="Enhance audio" hint="Noise cleanup before transcription." />
           <Toggle checked={transcribe} onChange={setTranscribe} label="Transcribe" hint="Speech-to-text for captions and search." />
@@ -874,10 +866,6 @@ export function NewSermon() {
             label="Generate metadata on upload"
             hint="Fill any empty title, summary, and tags from the transcript."
           />
-          <Toggle checked={dryRun} onChange={setDryRun} label="Dry run" hint="Process locally, skip the SermonAudio upload." />
-        </div>
-
-        <div className="mt-4">
           <Toggle
             checked={autoEdit}
             onChange={setAutoEdit}
@@ -887,8 +875,8 @@ export function NewSermon() {
         </div>
 
         {autoEdit ? (
-          <>
-            <fieldset className="mt-4">
+          <div className="mt-4 flex flex-col gap-3">
+            <fieldset>
               <legend className="text-sm font-semibold">Approval mode</legend>
               <div className="mt-2 grid grid-cols-1 gap-2">
                 {(
@@ -914,7 +902,7 @@ export function NewSermon() {
               </div>
             </fieldset>
 
-            <fieldset className="mt-4">
+            <fieldset>
               <legend className="text-sm font-semibold">Ending card image</legend>
               <p className="mt-1 text-xs text-muted">
                 Fade to black plays under the ending card; with no card it simply fades the picture itself.
@@ -977,37 +965,52 @@ export function NewSermon() {
               </div>
             </fieldset>
 
-            <div className="mt-3">
-              <Toggle checked={fadeBlack} onChange={setFadeBlack} label="Fade to black" hint="Short fade into the ending hold." />
-            </div>
-          </>
+            <Toggle checked={fadeBlack} onChange={setFadeBlack} label="Fade to black" hint="Short fade into the ending hold." />
+          </div>
         ) : null}
+
+        <div className="mt-4">
+          <Advanced label="Advanced options">
+            <Toggle
+              checked={dryRun}
+              onChange={setDryRun}
+              label="Dry run"
+              hint="Process locally, skip the SermonAudio upload. Off by default."
+            />
+          </Advanced>
+        </div>
       </SectionCard>
 
-      <div className="flex flex-col gap-2">
-        <Button variant="primary" onClick={start} disabled={!valid || starting} aria-busy={starting} className="w-full sm:w-auto sm:self-start">
-          {starting ? "Queueing…" : "Start Processing"}
-        </Button>
-        <p className="text-xs text-muted" role="status" aria-live="polite">
-          {helper}
+      {queuedJob ? (
+        <p className="text-sm">
+          <Link to="/jobs" className="font-medium text-accent hover:underline">
+            Track job {queuedJob} under Jobs →
+          </Link>
         </p>
-        {queuedJob ? (
-          <p className="text-sm">
-            <Link to="/jobs" className="font-medium text-accent hover:underline">
-              Track job {queuedJob} under Jobs →
-            </Link>
-          </p>
-        ) : null}
-      </div>
+      ) : null}
 
       <div
         aria-label="Selection summary"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-ink/95 backdrop-blur"
+        className="sticky bottom-[4.5rem] z-20 -mx-4 border-t border-line bg-ink/95 px-4 py-3 backdrop-blur md:bottom-0"
       >
-        <div className="mx-auto max-w-shell overflow-x-auto px-4 py-2">
-          <p className="truncate font-mono text-xs text-muted" aria-live="polite" title={summaryBits.join(" · ")}>
-            {summaryBits.join(" · ")}
-          </p>
+        <div className="mx-auto flex max-w-shell flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="truncate font-mono text-xs text-muted" aria-live="polite" title={summaryBits.join(" · ")}>
+              {summaryBits.join(" · ")}
+            </p>
+            <p className="text-xs text-muted" role="status" aria-live="polite">
+              {helper}
+            </p>
+          </div>
+          <Button
+            variant="primary"
+            onClick={start}
+            disabled={!valid || starting}
+            aria-busy={starting}
+            className="w-full shrink-0 sm:w-auto"
+          >
+            {starting ? "Queueing…" : "Start Processing"}
+          </Button>
         </div>
       </div>
 

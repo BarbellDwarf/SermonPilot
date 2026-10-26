@@ -184,7 +184,7 @@ describe("LibraryDetail completed sermons", () => {
       expect(within(files).getByText(label)).toBeTruthy();
     }
     expect(within(files).queryByText("Transcript")).toBeNull();
-    expect(screen.getByTestId("edit-sermon")).toBeTruthy();
+    expect(screen.getByTestId("completed-more-actions")).toBeTruthy();
 
     expect(screen.queryByTestId("sermon-review")).toBeNull();
     expect(screen.queryByTestId("timeline-region-keep")).toBeNull();
@@ -207,9 +207,9 @@ describe("LibraryDetail completed sermons", () => {
     expect(document.querySelector("#cut-start")).toBeTruthy();
     expect(document.querySelector("#cut-end")).toBeTruthy();
     expect(document.querySelector("#cut-offset")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Approve · Render-only/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Reject with notes" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Re-detect" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Approve · Generate & Upload/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Reject with notes" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Re-detect" })).toBeNull();
 
     expect(screen.queryByTestId("sermon-completed")).toBeNull();
     expect(screen.queryByTestId("edit-sermon")).toBeNull();
@@ -228,10 +228,11 @@ describe("LibraryDetail completed sermons", () => {
     setSermon("processed", "pending_review");
     renderDetail();
 
+    await user.click(screen.getByTestId("completed-more-actions"));
     await user.click(screen.getByTestId("edit-sermon"));
     expect(screen.getByTestId("sermon-review")).toBeTruthy();
     expect(screen.getByTestId("timeline-region-keep")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Re-render · Render-only/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Re-render · Generate & Upload/ })).toBeTruthy();
     expect(screen.getByTestId("show-completed-view")).toBeTruthy();
 
     await user.click(screen.getByTestId("show-completed-view"));
@@ -264,6 +265,21 @@ describe("LibraryDetail completed details editing", () => {
     expect(screen.queryByTestId("sermon-review")).toBeNull();
   });
 
+  it("keeps one primary header action and moves edit and delete into overflow", async () => {
+    const user = userEvent.setup();
+    setSermon("processed", "pending_review");
+    renderDetail();
+
+    expect(screen.getByRole("button", { name: "Push details" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit teaching" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+
+    await user.click(screen.getByTestId("completed-more-actions"));
+    const menu = screen.getByTestId("completed-actions");
+    expect(within(menu).getByRole("menuitem", { name: "Edit teaching" })).toBeTruthy();
+    expect(within(menu).getByRole("menuitem", { name: "Delete" })).toBeTruthy();
+  });
+
   it("queues a full metadata push from the finished view", async () => {
     const user = userEvent.setup();
     setSermon("processed", "pending_review");
@@ -286,6 +302,7 @@ describe("LibraryDetail completed details editing", () => {
     renderDetail();
 
     const section = screen.getByTestId("completed-transcript");
+    await user.click(within(section).getByRole("button", { name: "Expand Transcript" }));
     await user.click(within(section).getByRole("button", { name: "Show transcript" }));
 
     expect(screen.getByText("hello world")).toBeTruthy();
