@@ -11,12 +11,17 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 
 def _row_to_list_item(row: dict) -> JobListItem:
+    try:
+        progress = float(row.get("progress") or 0)
+    except (TypeError, ValueError):
+        progress = 0.0
     return JobListItem(
         id=str(row.get("id") or ""),
         type=str(row.get("type") or ""),
         title=str(row.get("title") or ""),
         description=row.get("description"),
         status=str(row.get("status") or ""),
+        progress=progress,
         created_at=str(row.get("created_at")) if row.get("created_at") else None,
         completed_at=str(row.get("completed_at")) if row.get("completed_at") else None,
         duration=mapping.job_duration(row.get("created_at"), row.get("completed_at")),

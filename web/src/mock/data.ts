@@ -19,17 +19,24 @@ export interface Sermon {
   updated: string;
 }
 
-export type JobState = "queued" | "running" | "done" | "failed" | "cancelled";
+export type JobState = "queued" | "running" | "done" | "failed" | "cancelled" | "interrupted";
 
 export interface Job {
   id: string;
+  type: string;
+  title: string;
   kind: string;
   sermon: string;
+  description: string;
   state: JobState;
   created: string;
+  createdAt: string;
   finished: string | null;
   duration: string;
+  progress: number;
+  error: string | null;
   log: string[];
+  parameters?: Record<string, unknown> | null;
 }
 
 export const services: ServiceStatus[] = [
@@ -39,26 +46,69 @@ export const services: ServiceStatus[] = [
   { id: "storage", label: "Storage", detail: "61 GB free of 120 GB", state: "ok", level: 51 },
 ];
 
+function minutesAgo(minutes: number): { iso: string; label: string; time: string } {
+  const date = new Date(Date.now() - minutes * 60_000);
+  return {
+    iso: date.toISOString(),
+    label: `${date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false })}`,
+    time: date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }),
+  };
+}
+
+const runningStart = minutesAgo(12);
+const runningEnhance = minutesAgo(8);
+const runningTranscribe = minutesAgo(3);
+
 export const activeJobs: Job[] = [
   {
     id: "job-1042",
+    type: "sermon_processing",
+    title: "Process + auto-edit · Sunday Teaching · Sample Speaker",
     kind: "Enhance + Transcribe",
-    sermon: "Sample Teaching 1",
+    sermon: "Sunday Teaching",
+    description:
+      'Processing "Sunday Teaching" (Sample Speaker, 2026-10-25) and auto-editing the video.',
     state: "running",
-    created: "09:41",
+    created: runningStart.label,
+    createdAt: runningStart.iso,
     finished: null,
-    duration: "12m so far",
-    log: ["09:41 job accepted", "09:42 enhancement pass 1/2", "09:47 transcription started"],
+    duration: "running",
+    progress: 44.5,
+    error: null,
+    log: [
+      `${runningStart.time} job accepted`,
+      `${runningEnhance.time} enhancement pass 1/2`,
+      `${runningTranscribe.time} transcription started`,
+    ],
+    parameters: {
+      sermon_id: "s-01",
+      form_data: {
+        speaker_name: "Sample Speaker",
+        recorded_date: "2026-10-25",
+        whisper_model: "base",
+        skip_audio: false,
+        dry_run: false,
+      },
+      actions: ["enhance", "transcribe"],
+    },
   },
   {
     id: "job-1041",
+    type: "metadata_update",
+    title: "Generate metadata · Midweek Class · Sample Speaker",
     kind: "Metadata",
-    sermon: "Sample Teaching 2",
+    sermon: "Midweek Class",
+    description:
+      'Generating the description and hashtags for "Midweek Class" (Sample Speaker, 2026-10-24).',
     state: "queued",
-    created: "09:38",
+    created: "Oct 25, 09:38",
+    createdAt: "2026-10-25T09:38:00",
     finished: null,
     duration: "waiting",
+    progress: 0,
+    error: null,
     log: ["09:38 job accepted", "09:38 waiting for worker"],
+    parameters: { sermon_id: "s-02", actions: { generate_description: true } },
   },
 ];
 
@@ -154,35 +204,58 @@ export const editPlans: Record<string, EditPlan> = {
 export const completedJobs: Job[] = [
   {
     id: "job-1039",
+    type: "sermon_processing",
+    title: "Process sermon · Sunday Teaching · Sample Speaker",
     kind: "Full pipeline",
-    sermon: "Sample Teaching 5",
+    sermon: "Sunday Teaching",
+    description:
+      'Running the processing pipeline for "Sunday Teaching" (Sample Speaker, 2026-10-24).',
     state: "done",
-    created: "Yesterday 16:02",
-    finished: "Yesterday 16:41",
+    created: "Oct 24, 16:02",
+    createdAt: "2026-10-24T16:02:00",
+    finished: "Oct 24, 16:41",
     duration: "39m",
+    progress: 100,
+    error: null,
     log: ["16:02 job accepted", "16:20 enhancement done", "16:33 transcription done", "16:41 upload done"],
+    parameters: { sermon_id: "s-01", form_data: { whisper_model: "base", dry_run: false } },
   },
   {
     id: "job-1038",
+    type: "transcript_generation",
+    title: "Transcribe · Midweek Class · Sample Speaker",
     kind: "Transcribe only",
-    sermon: "Sample Teaching 6",
+    sermon: "Midweek Class",
+    description: 'Transcribing "Midweek Class" (Sample Speaker, 2026-10-24).',
     state: "done",
-    created: "Yesterday 14:10",
-    finished: "Yesterday 14:26",
+    created: "Oct 24, 14:10",
+    createdAt: "2026-10-24T14:10:00",
+    finished: "Oct 24, 14:26",
     duration: "16m",
+    progress: 100,
+    error: null,
     log: ["14:10 job accepted", "14:26 transcription done"],
+    parameters: { sermon_id: "s-02", form_data: { whisper_model: "small" } },
   },
 ];
 
 export const failedJobs: Job[] = [
   {
     id: "job-1037",
+    type: "sermon_processing",
+    title: "Process sermon · Midweek Class · Sample Speaker",
     kind: "Full pipeline",
-    sermon: "Sample Teaching 4",
+    sermon: "Midweek Class",
+    description:
+      'Running the processing pipeline for "Midweek Class" (Sample Speaker, 2026-10-23).',
     state: "failed",
-    created: "Yesterday 15:03",
-    finished: "Yesterday 15:19",
+    created: "Oct 23, 15:03",
+    createdAt: "2026-10-23T15:03:00",
+    finished: "Oct 23, 15:19",
     duration: "16m",
+    progress: 68,
+    error: "Upload rejected: gateway timeout\nCheck the SermonAudio bridge and retry.",
     log: ["15:03 job accepted", "15:11 enhancement done", "15:19 upload rejected: gateway timeout"],
+    parameters: { sermon_id: "s-02", form_data: { whisper_model: "base", dry_run: false } },
   },
 ];

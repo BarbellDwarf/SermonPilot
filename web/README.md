@@ -142,6 +142,9 @@ root README for the operator-facing summary.
 2. AUDIO DISCLAIMER INTRO (optional per-sermon): optional pre-roll text card ('audio issues during recording...') rendered like the ending card — form option in New Sermon, persisted per sermon, rendered at render time.
 NOT started — design at the write-path/render phase.
 
+## UI simplification (Oct 2026)
+Jobs page redesigned: compact scannable rows, expandable metadata, always-visible timestamps.
+
 ## P5f Files API scoping decision (Sep 17, operator-approved default)
 /api/me/files lists/downloads ONLY from the user's own configured output directory
 (settings.general.output_dir, default processed_sermons). Path-traversal blocked

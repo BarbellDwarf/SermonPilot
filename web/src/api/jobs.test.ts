@@ -8,6 +8,7 @@ const base: ApiJob = {
   title: "Process sermon · Sample Teaching · Sample Speaker",
   description: 'Running the processing pipeline for "Sample Teaching" (Sample Speaker, 2026-01-01).',
   status: "queued",
+  progress: 12.5,
   created_at: "2026-01-01 09:00:00",
   completed_at: null,
   duration: "—",
@@ -20,6 +21,9 @@ describe("toJob", () => {
     expect(job.kind).toBe(base.title);
     expect(job.sermon).toBe(base.description);
     expect(job.state).toBe("queued");
+    expect(job.progress).toBe(12.5);
+    expect(job.createdAt).toBe(base.created_at);
+    expect(job.created).toContain("Jan 1");
   });
 
   it("falls back to the job type when a label is missing", () => {

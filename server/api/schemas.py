@@ -96,6 +96,7 @@ class JobListItem(BaseModel):
     title: str
     description: str | None = None
     status: str
+    progress: float = 0.0
     created_at: str | None = None
     completed_at: str | None = None
     duration: str

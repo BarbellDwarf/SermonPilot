@@ -100,6 +100,7 @@ export interface ApiJob {
   title: string;
   description: string | null;
   status: string;
+  progress: number;
   created_at: string | null;
   completed_at: string | null;
   duration: string;

@@ -120,18 +120,26 @@ const JOB_STATE_MAP: Record<string, JobState> = {
   done: "done",
   failed: "failed",
   cancelled: "cancelled",
+  interrupted: "interrupted",
 };
 
 export function toJob(j: ApiJob, logs: string[] = []): Job {
   return {
     id: j.id,
+    type: j.type,
+    title: j.title,
     kind: j.title || j.type,
     sermon: j.description || j.type,
+    description: j.description ?? "",
     state: JOB_STATE_MAP[j.status] ?? "queued",
     created: fmtStamp(j.created_at),
+    createdAt: j.created_at ?? "",
     finished: j.completed_at ? fmtStamp(j.completed_at) : null,
     duration: j.duration,
+    progress: typeof j.progress === "number" ? j.progress : 0,
+    error: j.error ?? null,
     log: logs,
+    parameters: null,
   };
 }
 
@@ -426,10 +434,16 @@ export function useJobDetail(id: string, enabled: boolean) {
   });
 
   if (!isLive) {
-    return { logs: null as string[] | null, isLoading: false, error: null as string | null };
+    return {
+      logs: null as string[] | null,
+      parameters: null as Record<string, unknown> | null,
+      isLoading: false,
+      error: null as string | null,
+    };
   }
   return {
     logs: live.data?.logs ?? null,
+    parameters: live.data?.parameters ?? null,
     isLoading: live.isPending,
     error: describeLoadError(live.error, "The job log"),
   };
