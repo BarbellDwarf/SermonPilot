@@ -1,7 +1,8 @@
 import { Link } from "react-router-dom";
 import { type SermonStatus } from "../mock/data";
-import { Card, Chip, EmptyState, Meter, PageHeader, SkeletonList, buttonClass } from "../components/ui";
+import { Chip, EmptyState, Meter, PageHeader, SkeletonList, buttonClass } from "../components/ui";
 import { QueryError, useHomeData } from "../api/hooks";
+import { STATUS_DOT, STATUS_TEXT, jobRowTitle, jobStatus } from "./jobRow";
 
 const sermonTone: Record<SermonStatus, string> = {
   ready: "ok",
@@ -10,25 +11,31 @@ const sermonTone: Record<SermonStatus, string> = {
   failed: "error",
 };
 
+const sermonLabel: Record<SermonStatus, string> = {
+  ready: "Processed",
+  processing: "Processing",
+  draft: "Draft",
+  failed: "Failed",
+};
+
 export function Home() {
   const { data, isLoading: loading, error, retry } = useHomeData();
-  const { services, activeJobs, recentSermons, upNext } = data;
+  const { services, activeJobs, recentSermons } = data;
   const okCount = services.filter((s) => s.state === "ok").length;
   const queuedCount = activeJobs.filter((j) => j.state === "queued").length;
   const stats: [string, string][] = [
-    ["Teachings", String(recentSermons.length)],
     ["Active jobs", String(activeJobs.length)],
     ["Queued", String(queuedCount)],
     ["Services ok", `${okCount}/${services.length}`],
   ];
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Home"
-        sub="Pipeline health, active work, and recent teachings."
         actions={
           <Link to="/new" className={buttonClass("primary")}>
-            Start new sermon
+            New teaching
           </Link>
         }
       />
@@ -36,39 +43,55 @@ export function Home() {
       {error ? <QueryError message={error} onRetry={retry} /> : null}
 
       <section aria-label="At a glance">
-        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <dl className="grid grid-cols-3 divide-x divide-line rounded-lg border border-line bg-surface">
           {stats.map(([term, value]) => (
-            <Card key={term} className="px-4 py-3">
-              <dt className="text-xs font-medium uppercase tracking-wide text-muted">{term}</dt>
-              <dd className="mt-0.5 font-mono text-xl font-semibold">{value}</dd>
-            </Card>
+            <div key={term} className="min-w-0 px-4 py-3">
+              <dt className="truncate text-xs font-medium text-muted">{term}</dt>
+              <dd className="mt-0.5 font-mono text-lg font-semibold">{value}</dd>
+            </div>
           ))}
         </dl>
       </section>
 
-      <section aria-labelledby="status-h">
-        <h2 id="status-h" className="mb-2 text-lg font-semibold">System status</h2>
-        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {services.map((s) => (
-            <li key={s.id}>
-              <Card className="flex items-center gap-4">
+      <section aria-labelledby="health-h">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 id="health-h" className="text-lg font-semibold">
+            Pipeline health
+          </h2>
+          <Link
+            to="/settings"
+            className="inline-flex min-h-[44px] items-center rounded-md px-2 text-sm font-medium text-accent hover:underline"
+          >
+            Settings
+          </Link>
+        </div>
+        {services.length === 0 ? (
+          <EmptyState title="No services reported" body="Service health appears once the server answers." compact />
+        ) : (
+          <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
+            {services.map((s) => (
+              <li key={s.id} className="flex items-center gap-3 px-4 py-3">
                 <Meter level={s.level} state={s.state} />
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-semibold">{s.label}</p>
+                    <p className="text-sm font-semibold">{s.label}</p>
                     <Chip tone={s.state}>{s.state}</Chip>
                   </div>
-                  <p className="mt-1 truncate text-sm text-muted">{s.detail}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted" title={s.detail}>
+                    {s.detail}
+                  </p>
                 </div>
-              </Card>
-            </li>
-          ))}
-        </ul>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section aria-labelledby="active-h">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 id="active-h" className="text-lg font-semibold">Active jobs</h2>
+          <h2 id="active-h" className="text-lg font-semibold">
+            Active jobs
+          </h2>
           <Link
             to="/jobs"
             className="inline-flex min-h-[44px] items-center rounded-md px-2 text-sm font-medium text-accent hover:underline"
@@ -79,65 +102,38 @@ export function Home() {
         {loading ? (
           <SkeletonList rows={2} />
         ) : activeJobs.length === 0 ? (
-          <EmptyState
-            title="No jobs running"
-            body="Everything is idle. Start a new sermon and it will show up here."
-            action={
-              <Link to="/new" className={buttonClass("primary")}>
-                Start new sermon
-              </Link>
-            }
-          />
+          <EmptyState title="No active jobs" body="Queued and running jobs appear here." compact />
         ) : (
-          <ol className="flex flex-col gap-2">
-            {activeJobs.map((j) => (
-              <li key={j.id}>
-                <Card className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                  <Chip tone={j.state === "running" ? "accent" : "neutral"}>{j.state}</Chip>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{j.kind}</p>
-                    <p className="truncate font-mono text-xs text-muted">{j.id} · {j.sermon} · since {j.created}</p>
-                  </div>
-                  <span className="font-mono text-xs text-muted">{j.duration}</span>
-                </Card>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
-
-      <section aria-labelledby="queue-h">
-        <h2 id="queue-h" className="mb-2 text-lg font-semibold">Up next</h2>
-        {upNext.length === 0 ? (
-          <EmptyState
-            title="Queue is clear"
-            body="Nothing is waiting. When jobs pile up, the next three appear here."
-            action={
-              <Link to="/jobs" className={buttonClass()}>
-                Open Jobs
-              </Link>
-            }
-          />
-        ) : (
-          <ol className="flex flex-col gap-2">
-            {upNext.map((j) => (
-              <li key={j.id}>
-                <Card className="flex flex-wrap items-center gap-x-4 gap-y-2">
-                  <Chip tone="neutral">{j.state}</Chip>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{j.kind}</p>
-                    <p className="truncate font-mono text-xs text-muted">{j.id} · {j.sermon} · since {j.created}</p>
-                  </div>
-                </Card>
-              </li>
-            ))}
+          <ol className="divide-y divide-line rounded-lg border border-line bg-surface">
+            {activeJobs.map((job) => {
+              const status = jobStatus(job);
+              return (
+                <li key={job.id}>
+                  <Link
+                    to="/jobs"
+                    className="flex min-h-[56px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-raised"
+                  >
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[status]}`} aria-hidden="true" />
+                    <span className={`w-16 shrink-0 font-mono text-[0.6875rem] font-semibold uppercase tracking-wide ${STATUS_TEXT[status]}`}>
+                      {status}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={jobRowTitle(job)}>
+                      {jobRowTitle(job)}
+                    </span>
+                    <span className="shrink-0 font-mono text-xs text-muted">{job.created}</span>
+                  </Link>
+                </li>
+              );
+            })}
           </ol>
         )}
       </section>
 
       <section aria-labelledby="recent-h">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <h2 id="recent-h" className="text-lg font-semibold">Recent sermons</h2>
+          <h2 id="recent-h" className="text-lg font-semibold">
+            Recent teachings
+          </h2>
           <Link
             to="/library"
             className="inline-flex min-h-[44px] items-center rounded-md px-2 text-sm font-medium text-accent hover:underline"
@@ -145,30 +141,34 @@ export function Home() {
             Open library
           </Link>
         </div>
-        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {loading ? (
-            <li className="col-span-full">
-              <SkeletonList rows={2} />
-            </li>
-          ) : (
-            recentSermons.map((s) => (
-            <li key={s.id}>
-              <Link
-                to={`/library/${s.id}`}
-                aria-label={`${s.title} by ${s.speaker}, status ${s.status}`}
-                className="block w-full rounded-lg border border-line bg-surface p-4 text-left transition-colors hover:border-muted"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <Chip tone={sermonTone[s.status]}>{s.status}</Chip>
-                  <span className="font-mono text-xs text-muted">{s.duration}</span>
-                </div>
-                <p className="mt-2 text-base font-semibold [overflow-wrap:anywhere]">{s.title}</p>
-                <p className="truncate text-sm text-muted">{s.speaker} · {s.updated}</p>
-              </Link>
-            </li>
-            ))
-          )}
-        </ul>
+        {loading ? (
+          <SkeletonList rows={2} />
+        ) : recentSermons.length === 0 ? (
+          <EmptyState title="No teachings yet" body="Processed teachings appear here." compact />
+        ) : (
+          <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
+            {recentSermons.map((s) => (
+              <li key={s.id}>
+                <Link
+                  to={`/library/${s.id}`}
+                  aria-label={`${s.title} by ${s.speaker}, ${sermonLabel[s.status]}`}
+                  className="flex min-h-[56px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-raised"
+                >
+                  <Chip tone={sermonTone[s.status]}>{sermonLabel[s.status]}</Chip>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold" title={s.title}>
+                      {s.title}
+                    </span>
+                    <span className="block truncate text-xs text-muted">
+                      {s.speaker} · {s.updated}
+                    </span>
+                  </span>
+                  <span className="hidden shrink-0 font-mono text-xs text-muted sm:inline">{s.duration}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );

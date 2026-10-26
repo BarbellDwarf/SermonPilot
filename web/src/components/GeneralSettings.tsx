@@ -160,7 +160,7 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
 
       <h3 className="mt-4 text-sm font-semibold">Output settings</h3>
       <div className="mt-2 grid grid-cols-1 gap-2">
-        <Field label="Output directory" htmlFor="gen-outdir" hint="Local directory or a cloud remote (remote:<name>:<folder>) for processed sermon files. This is your default for new sermons.">
+        <Field label="Output directory" htmlFor="gen-outdir" hint="Local directory or a cloud remote (remote:<name>:<folder>) for processed teaching files. This is your default for new teachings.">
           <div className="flex flex-wrap items-center gap-2">
             <input
               id="gen-outdir"

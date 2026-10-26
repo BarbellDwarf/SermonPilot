@@ -210,7 +210,7 @@ export function CloudBrowser({
         ) : (
           <>
             Pick a file, then choose <span className="font-semibold text-mist">Use this file</span> to
-            start a new sermon with it.
+            start a new teaching with it.
           </>
         )}
       </p>

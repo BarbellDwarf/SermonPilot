@@ -159,7 +159,7 @@ describe("NewSermon source options", () => {
     await fillMetadata(user);
 
     const file = new File(["audio-bytes"], "sample-sermon.mp3", { type: "audio/mpeg" });
-    await user.upload(screen.getByLabelText("Choose a sermon file"), file);
+    await user.upload(screen.getByLabelText("Choose a teaching file"), file);
     await waitFor(() => expect(submitButton().disabled).toBe(false));
     expect(screen.getByLabelText("Selection summary").textContent).toContain(
       "upload:sample-sermon.mp3",
@@ -272,7 +272,7 @@ describe("NewSermon source options", () => {
     expect(toggle.getAttribute("aria-checked")).toBe("false");
 
     const file = new File(["audio-bytes"], "sample-sermon.mp3", { type: "audio/mpeg" });
-    await user.upload(screen.getByLabelText("Choose a sermon file"), file);
+    await user.upload(screen.getByLabelText("Choose a teaching file"), file);
     await waitFor(() => expect(submitButton().disabled).toBe(false));
     await user.click(submitButton());
 

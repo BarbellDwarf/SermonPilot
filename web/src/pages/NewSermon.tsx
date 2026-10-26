@@ -479,12 +479,7 @@ export function NewSermon() {
   return (
     <div className="flex flex-col gap-4 pb-32">
       <PageHeader
-        title="New Sermon"
-        sub={
-          isLive
-            ? "Upload, describe, then queue the pipeline on the server."
-            : "Upload, describe, then queue the pipeline. Demo mode sends nothing."
-        }
+        title="New teaching"
         actions={
           <Button variant="ghost" onClick={() => setConfirmReset(true)}>
             Reset
@@ -537,7 +532,7 @@ export function NewSermon() {
               type="file"
               accept=".mkv,.mp4,.mov,.webm,.m4v,.mp3,.wav,.m4a,.flac,.ogg,.mpa"
               className="sr-only"
-              aria-label="Choose a sermon file"
+              aria-label="Choose a teaching file"
               onChange={(e) => {
                 const f = e.target.files?.[0] ?? null;
                 if (isLive) setFileObj(f);
@@ -549,8 +544,8 @@ export function NewSermon() {
               tabIndex={0}
               aria-label={
                 isLive
-                  ? "Drop a sermon file here, or press Enter to choose one"
-                  : "Drop a sermon file here, or press Enter to pick a mock file"
+                  ? "Drop a teaching file here, or press Enter to choose one"
+                  : "Drop a teaching file here, or press Enter to pick a mock file"
               }
               onDragOver={(e) => {
                 e.preventDefault();
@@ -886,7 +881,7 @@ export function NewSermon() {
           <Toggle
             checked={autoEdit}
             onChange={setAutoEdit}
-            label="Edit Sermon"
+            label="Edit teaching"
             hint="Auto-detect cut points, trim, and fade the video before upload. Video inputs only."
           />
         </div>

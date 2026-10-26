@@ -14,7 +14,7 @@ import { MediaPlayer, type PlayWindow } from "./MediaPlayer";
 import { Timeline, type TimelineClip, type TimelineRange } from "./Timeline";
 import { TranscriptViewer } from "./TranscriptViewer";
 import { sermonActionMatrix } from "./sermonActions";
-import { Button, Chip, ConfirmDialog } from "./ui";
+import { Button, Chip, ConfirmDialog, Menu, PageHeader } from "./ui";
 
 export const planStatusLabel: Record<PlanStatus, string> = {
   draft: "Draft",
@@ -41,9 +41,6 @@ const TRANSCRIPT_KINDS = ["transcript", "transcript_timestamps"] as const;
 const MOBILE_BREAKPOINT_PX = 1024;
 
 const MOBILE_APPROVAL_BAR_PX = 64;
-
-const menuItemClass =
-  "flex min-h-[44px] w-full items-center rounded-md px-3 text-left text-sm font-medium text-mist transition-colors hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45";
 
 function useIsNarrow(breakpoint = MOBILE_BREAKPOINT_PX): boolean {
   const query = `(max-width: ${breakpoint - 1}px)`;
@@ -332,8 +329,6 @@ export function SermonReview({
   const [allFilesOpen, setAllFilesOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const moreRef = useRef<HTMLDivElement | null>(null);
   const narrow = useIsNarrow();
   const [filesOpen, setFilesOpen] = useState(!narrow);
   const [adjustOpen, setAdjustOpen] = useState(!narrow);
@@ -395,24 +390,6 @@ export function SermonReview({
     setPlayhead(0);
     setPlayWindow(null);
   }, [sermon.id]);
-
-  useEffect(() => {
-    if (!moreOpen) return;
-    const onPointerDown = (event: PointerEvent) => {
-      if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
-        setMoreOpen(false);
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMoreOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [moreOpen]);
 
   const noteRows = useMemo(() => {
     const fromPlan = (planHistory ?? [])
@@ -879,28 +856,21 @@ export function SermonReview({
 
   return (
     <div data-testid="sermon-review" className="flex flex-col gap-4">
-      <header className="flex min-w-0 flex-col gap-2">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight [overflow-wrap:anywhere]">{form.title}</h1>
-            <p className="mt-0.5 max-w-prose text-sm text-muted">
-              {form.speaker} · {form.date}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        title={form.title}
+        sub={`${form.speaker} · ${form.date}`}
+        actions={
+          <>
             {onShowCompleted ? (
-              <Button
-                data-testid="show-completed-view"
-                onClick={onShowCompleted}
-              >
+              <Button data-testid="show-completed-view" onClick={onShowCompleted}>
                 Back to finished view
               </Button>
             ) : null}
             {statusChip}
             {headerActions}
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       {narrow ? (
         <section
@@ -934,104 +904,50 @@ export function SermonReview({
             >
               {applying ? "Queueing…" : applyVerb}
             </Button>
-            <div ref={moreRef} className="relative shrink-0">
-              <Button
-                onClick={() => setMoreOpen((v) => !v)}
-                aria-haspopup="menu"
-                aria-expanded={moreOpen}
-                aria-controls="more-actions"
-              >
-                More actions
-              </Button>
-              {moreOpen ? (
-                <div
-                  id="more-actions"
-                  data-testid="more-actions"
-                  role="menu"
-                  aria-label="More actions"
-                  className="absolute right-0 top-full z-40 mt-2 flex w-64 flex-col gap-1 rounded-lg border border-line bg-surface p-2 shadow-2xl"
-                >
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={menuItemClass}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      approve(true);
-                    }}
-                    disabled={errors.length > 0 || applying}
-                  >
-                    {applyVerb} · Render-only
-                  </button>
-                  {actions.canUploadExisting ? (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      data-testid="upload-existing-render"
-                      className={menuItemClass}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        uploadExisting(false);
-                      }}
-                      disabled={applying || uploading}
-                    >
-                      {uploading ? "Uploading…" : "Upload existing render"}
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={menuItemClass}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      setNotesOpen((v) => !v);
-                    }}
-                    aria-expanded={notesOpen}
-                    aria-controls="refine-notes"
-                  >
-                    Reject with notes
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={menuItemClass}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      reDetect();
-                    }}
-                    disabled={refining}
-                  >
-                    Re-detect
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className={menuItemClass}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      setHistoryOpen((v) => !v);
-                    }}
-                    aria-expanded={historyOpen}
-                    aria-controls="history"
-                  >
-                    History
-                  </button>
-                  {onUpload && actions.canPublishLegacy ? (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className={menuItemClass}
-                      onClick={() => {
-                        setMoreOpen(false);
-                        onUpload();
-                      }}
-                    >
-                      Upload
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
+            <Menu
+              label="More actions"
+              trigger="More actions"
+              triggerTestId="more-actions-trigger"
+              menuTestId="more-actions"
+              menuClassName="w-64"
+              items={[
+                {
+                  label: `${applyVerb} · Render-only`,
+                  onSelect: () => approve(true),
+                  disabled: errors.length > 0 || applying,
+                },
+                ...(actions.canUploadExisting
+                  ? [
+                      {
+                        label: uploading ? "Uploading…" : "Upload existing render",
+                        onSelect: () => uploadExisting(false),
+                        disabled: applying || uploading,
+                        testId: "upload-existing-render",
+                      },
+                    ]
+                  : []),
+                {
+                  label: "Reject with notes",
+                  onSelect: () => setNotesOpen((value) => !value),
+                  expanded: notesOpen,
+                  controls: "refine-notes",
+                },
+                {
+                  label: "Re-detect",
+                  onSelect: reDetect,
+                  disabled: refining,
+                },
+                {
+                  label: "History",
+                  onSelect: () => setHistoryOpen((value) => !value),
+                  expanded: historyOpen,
+                  controls: "history",
+                },
+                ...(onUpload && actions.canPublishLegacy
+                  ? [{ label: "Upload", onSelect: () => onUpload() }]
+                  : []),
+              ]}
+            />
           </>
         ) : (
           <>

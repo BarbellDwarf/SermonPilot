@@ -23,7 +23,7 @@ VITE_API_MODE=live VITE_API_BASE=http://127.0.0.1:8504 npm run build   # live bu
   TanStack Query hooks (`src/api/hooks.tsx`) poll live data. Mutating actions are
   live for cancel, start processing, and delete; a failed job's Retry explains the
   read-only bridge via toast because no retry endpoint exists. The header badge
-  reads `live` or `mock` accordingly.
+  reads `live` or `demo` accordingly.
 
 ## Validation
 
@@ -51,8 +51,9 @@ What was checked per page (`/`, `/library`, `/library/:id`, `/jobs`, `/new`,
   transcript/files all render directive copy with a next action.
 - Interactions: live search/sort filter, job tabs + failed Retry toast, review
   form parses `mm:ss.s` and seconds with live duration + blocking errors, mock
-  approve transitions plan state, toasts appear, confirms block, drawer opens at
-  390px, deep link `/library/:id` loads directly in live mode.
+  approve transitions plan state, toasts appear, confirms block, the mobile
+  bottom bar reaches every section at 390px, deep link `/library/:id` loads
+  directly in live mode.
 
 Full captures land in `web/validation/phase4b/` (gitignored); two
 representative shots are committed: live detail (applied_local plan) and
@@ -144,6 +145,7 @@ NOT started — design at the write-path/render phase.
 
 ## UI simplification (Oct 2026)
 Jobs page redesigned: compact scannable rows, expandable metadata, always-visible timestamps.
+Chrome, Home, and Library: one header with an account menu, a mobile bottom tab bar, row overflow actions, and compact page headers.
 
 ## P5f Files API scoping decision (Sep 17, operator-approved default)
 /api/me/files lists/downloads ONLY from the user's own configured output directory

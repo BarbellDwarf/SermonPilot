@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from "react";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 
@@ -45,6 +53,149 @@ export function Chip({ tone = "neutral", children }: { tone?: keyof typeof chipT
   );
 }
 
+const menuItemClass =
+  "flex min-h-[44px] w-full items-center rounded-md px-3 text-left text-sm font-medium text-mist transition-colors hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45";
+
+export interface MenuItem {
+  label: ReactNode;
+  onSelect: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  testId?: string;
+  expanded?: boolean;
+  controls?: string;
+}
+
+interface MenuProps {
+  items: MenuItem[];
+  trigger: ReactNode;
+  label: string;
+  header?: ReactNode;
+  align?: "left" | "right";
+  side?: "top" | "bottom";
+  triggerClassName?: string;
+  menuClassName?: string;
+  menuTestId?: string;
+  triggerTestId?: string;
+}
+
+export function Menu({
+  items,
+  trigger,
+  label,
+  header,
+  align = "right",
+  side = "bottom",
+  triggerClassName,
+  menuClassName = "",
+  menuTestId,
+  triggerTestId,
+}: MenuProps) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuId = `menu-${useId()}`;
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
+  }, [open]);
+
+  const onMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const entries = Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? [],
+    );
+    if (entries.length === 0) return;
+    const current = entries.indexOf(document.activeElement as HTMLElement);
+    let next: number | null = null;
+    if (event.key === "ArrowDown") next = (current + 1) % entries.length;
+    if (event.key === "ArrowUp") next = (current - 1 + entries.length) % entries.length;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = entries.length - 1;
+    if (next === null) return;
+    event.preventDefault();
+    entries[next]?.focus();
+  };
+
+  return (
+    <div ref={wrapRef} className="relative inline-flex">
+      <button
+        ref={triggerRef}
+        type="button"
+        id={`${menuId}-trigger`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        aria-label={label}
+        data-testid={triggerTestId}
+        onClick={() => setOpen((value) => !value)}
+        className={triggerClassName ?? buttonClass()}
+      >
+        {trigger}
+      </button>
+      {open ? (
+        <div
+          className={`absolute z-40 flex w-56 flex-col rounded-lg border border-line bg-surface p-2 shadow-2xl ${
+            align === "right" ? "right-0" : "left-0"
+          } ${side === "top" ? "bottom-full mb-2" : "top-full mt-2"} ${menuClassName}`}
+        >
+          {header ? <div className="border-b border-line px-3 pb-2 pt-1">{header}</div> : null}
+          <div
+            ref={menuRef}
+            id={menuId}
+            role="menu"
+            aria-label={label}
+            data-testid={menuTestId}
+            onKeyDown={onMenuKeyDown}
+            className="flex flex-col gap-1 pt-1"
+          >
+            {items.map((item, index) => (
+              <button
+                key={index}
+                type="button"
+                role="menuitem"
+                data-testid={item.testId}
+                disabled={item.disabled}
+                aria-expanded={item.expanded}
+                aria-controls={item.controls}
+                onClick={() => {
+                  setOpen(false);
+                  triggerRef.current?.focus();
+                  item.onSelect();
+                }}
+                className={`${menuItemClass} ${item.danger ? "text-danger" : ""}`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function EnvSourceBadge({ source }: { source: string | undefined }) {
   if (!source || source === "db" || source === "default") return null;
   return (
@@ -68,14 +219,14 @@ export function PageHeader({
   actions,
 }: {
   title: string;
-  sub: string;
+  sub?: string;
   actions?: ReactNode;
 }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
         <h1 className="text-2xl font-bold tracking-tight [overflow-wrap:anywhere]">{title}</h1>
-        <p className="mt-0.5 max-w-prose text-sm text-muted">{sub}</p>
+        {sub ? <p className="mt-0.5 max-w-prose text-sm text-muted">{sub}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
@@ -195,12 +346,26 @@ export function useBriefLoading(delayMs = 650): boolean {
   return loading;
 }
 
-export function EmptyState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
+export function EmptyState({
+  title,
+  body,
+  action,
+  compact = false,
+}: {
+  title: string;
+  body: string;
+  action?: ReactNode;
+  compact?: boolean;
+}) {
   return (
-    <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-line bg-surface p-6">
-      <p className="text-base font-semibold">{title}</p>
+    <div
+      className={`flex flex-col items-start gap-2 rounded-lg border border-dashed border-line bg-surface ${
+        compact ? "p-3" : "p-6"
+      }`}
+    >
+      <p className={`font-semibold ${compact ? "text-sm" : "text-base"}`}>{title}</p>
       <p className="max-w-prose text-sm text-muted">{body}</p>
-      {action ? <div className="mt-2">{action}</div> : null}
+      {action ? <div className="mt-1">{action}</div> : null}
     </div>
   );
 }
@@ -260,7 +425,7 @@ export function Toast({ message }: { message: string | null }) {
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-4 left-1/2 z-50 w-[min(26rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-line bg-raised px-4 py-3 text-sm font-medium text-mist shadow-lg"
+      className="fixed bottom-24 left-1/2 z-50 w-[min(26rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-line bg-raised px-4 py-3 text-sm font-medium text-mist shadow-lg md:bottom-4"
     >
       {message}
     </div>

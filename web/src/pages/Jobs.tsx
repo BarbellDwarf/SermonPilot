@@ -286,7 +286,7 @@ export function Jobs() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Jobs" sub={isLive ? "Every run of the pipeline, with per-job logs. Refreshes every 5 seconds." : "Every run of the pipeline, with per-job logs."} />
+      <PageHeader title="Jobs" sub={isLive ? "Refreshes every 5 seconds." : undefined} />
 
       <div role="tablist" aria-label="Job states" onKeyDown={onKeyDown} className="flex gap-1 overflow-x-auto rounded-lg border border-line bg-surface p-1">
         {tabs.map((t) => {

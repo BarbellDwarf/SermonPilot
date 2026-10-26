@@ -13,7 +13,7 @@ import {
   type DetailsPatch,
   type TranscriptState,
 } from "./SermonReview";
-import { Button } from "./ui";
+import { Button, PageHeader } from "./ui";
 
 const SA_LINK_BASE = "https://www.sermonaudio.com/sermoninfo.asp?SID=";
 
@@ -159,23 +159,19 @@ export function SermonCompleted({
 
   return (
     <div data-testid="sermon-completed" className="flex flex-col gap-4">
-      <header className="flex min-w-0 flex-col gap-2">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight [overflow-wrap:anywhere]">{form.title}</h1>
-            <p className="mt-0.5 max-w-prose text-sm text-muted">
-              {form.speaker} · {form.date}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        title={form.title}
+        sub={`${form.speaker} · ${form.date}`}
+        actions={
+          <>
             {statusChip}
             <Button variant="primary" data-testid="edit-sermon" onClick={onEdit}>
-              Edit this sermon
+              Edit teaching
             </Button>
             {headerActions}
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <section
         data-testid="completed-player"

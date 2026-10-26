@@ -74,7 +74,7 @@ export function LibraryDetail() {
   if (isLoading) {
     return (
       <div className="flex flex-col gap-4">
-        <PageHeader title="Teaching" sub="Loading…" />
+        <PageHeader title="Teaching" />
         <SkeletonList rows={3} />
       </div>
     );
