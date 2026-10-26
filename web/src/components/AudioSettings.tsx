@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { isLive } from "../api/client";
 import { fieldSource, useConfigForm } from "../api/useConfigSection";
-import { Button, EnvSourceBadge, Field, SectionCard, Toggle, inputCls } from "./ui";
+import { Advanced, EnvSourceBadge, Field, Fieldset, SaveBar, SectionCard, Toggle, inputCls } from "./ui";
 
 const METHODS = [
   { id: "deepfilternet", label: "DeepFilterNet (standard)", hint: "Standard speech enhancement." },
@@ -111,184 +111,173 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
           : "Enhancement method and processing options (mock)."
       }
     >
-      <Field
-        label="Audio enhancement method"
-        htmlFor="aud-method"
-        hint={METHODS.find((m) => m.id === cur.method)?.hint}
+      <Fieldset
+        legend="Enhancement"
+        help="Choose the denoiser and where it runs. Custom ONNX appears only when Custom is selected."
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            id="aud-method"
-            value={cur.method}
-            onChange={(e) => set("method", e.target.value)}
-            className={`${inputCls} min-w-0 flex-1`}
-          >
-            {METHODS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-          <EnvSourceBadge source={fieldSource(fields, PATHS.method)} />
-        </div>
-      </Field>
+        <Field
+          label="Audio enhancement method"
+          htmlFor="aud-method"
+          hint={METHODS.find((m) => m.id === cur.method)?.hint}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              id="aud-method"
+              value={cur.method}
+              onChange={(e) => set("method", e.target.value)}
+              className={`${inputCls} min-w-0 flex-1`}
+            >
+              {METHODS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <EnvSourceBadge source={fieldSource(fields, PATHS.method)} />
+          </div>
+        </Field>
 
-      <Field
-        label="Enhancement device"
-        htmlFor="aud-device"
-        hint={DEVICES.find((d) => d.id === cur.device)?.hint}
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            id="aud-device"
-            value={cur.device}
-            onChange={(e) => set("device", e.target.value)}
-            className={`${inputCls} min-w-0 flex-1`}
-          >
-            {DEVICES.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.label}
-              </option>
-            ))}
-          </select>
-          <EnvSourceBadge source={fieldSource(fields, PATHS.device)} />
-        </div>
-      </Field>
+        <Field
+          label="Enhancement device"
+          htmlFor="aud-device"
+          hint={DEVICES.find((d) => d.id === cur.device)?.hint}
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              id="aud-device"
+              value={cur.device}
+              onChange={(e) => set("device", e.target.value)}
+              className={`${inputCls} min-w-0 flex-1`}
+            >
+              {DEVICES.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+            <EnvSourceBadge source={fieldSource(fields, PATHS.device)} />
+          </div>
+        </Field>
 
-      {cur.method === "custom" ? (
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="HuggingFace repo" htmlFor="aud-repo" hint="e.g. sample-org/sample-model">
-            <input
-              id="aud-repo"
-              value={cur.customRepo}
-              onChange={(e) => set("customRepo", e.target.value)}
-              className={`${inputCls} font-mono`}
-              autoComplete="off"
-            />
-          </Field>
-          <Field label="ONNX filename" htmlFor="aud-file" hint="e.g. model.onnx">
-            <input
-              id="aud-file"
-              value={cur.customFile}
-              onChange={(e) => set("customFile", e.target.value)}
-              className={`${inputCls} font-mono`}
-              autoComplete="off"
-            />
-          </Field>
-        </div>
-      ) : null}
-      {cur.method === "custom" && !customOk ? (
-        <p className="mt-2 text-xs text-danger" role="alert">
-          Enter both a HuggingFace repo and an ONNX filename.
-        </p>
-      ) : null}
+        {cur.method === "custom" ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="HuggingFace repo" htmlFor="aud-repo" hint="e.g. sample-org/sample-model">
+              <input
+                id="aud-repo"
+                value={cur.customRepo}
+                onChange={(e) => set("customRepo", e.target.value)}
+                className={`${inputCls} font-mono`}
+                autoComplete="off"
+              />
+            </Field>
+            <Field label="ONNX filename" htmlFor="aud-file" hint="e.g. model.onnx">
+              <input
+                id="aud-file"
+                value={cur.customFile}
+                onChange={(e) => set("customFile", e.target.value)}
+                className={`${inputCls} font-mono`}
+                autoComplete="off"
+              />
+            </Field>
+          </div>
+        ) : null}
+        {cur.method === "custom" && !customOk ? (
+          <p className="text-xs text-danger" role="alert">
+            Enter both a HuggingFace repo and an ONNX filename.
+          </p>
+        ) : null}
+      </Fieldset>
 
-      <h3 className="mt-4 text-sm font-semibold">Processing options</h3>
-      <div className="mt-2 grid grid-cols-1 gap-2">
+      <Advanced label="Advanced: levels and processing options" open={Boolean(gainErr || levelErr)}>
         <Toggle
           checked={cur.noiseReduction}
           onChange={(v) => set("noiseReduction", v)}
           label="Noise Reduction"
           hint="Apply noise reduction during processing."
+          source={fieldSource(fields, PATHS.noiseReduction)}
         />
         <Toggle
           checked={cur.amplify}
           onChange={(v) => set("amplify", v)}
           label="Audio Amplification"
           hint="Apply audio amplification."
+          source={fieldSource(fields, PATHS.amplify)}
         />
         <Toggle
           checked={cur.normalize}
           onChange={(v) => set("normalize", v)}
           label="Audio Normalization"
           hint="Normalize audio levels."
+          source={fieldSource(fields, PATHS.normalize)}
         />
-      </div>
-      {fieldSource(fields, PATHS.noiseReduction) !== "db" &&
-      fieldSource(fields, PATHS.noiseReduction) !== "default" ? (
-        <p className="mt-1 text-xs text-muted" role="status">
-          Noise reduction is overridden by the environment:{" "}
-          <EnvSourceBadge source={fieldSource(fields, PATHS.noiseReduction)} />
-        </p>
-      ) : null}
 
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="min-w-0">
-          <label htmlFor="aud-gain" className="text-xs font-medium text-muted">
-            Gain (dB): <span className="font-mono text-mist">{cur.gainDb} dB</span>
-          </label>
-          <input
-            id="aud-gain"
-            type="range"
-            min={-10}
-            max={10}
-            step={0.1}
-            value={Number.isNaN(Number(cur.gainDb)) ? 0 : Number(cur.gainDb)}
-            onChange={(e) => set("gainDb", e.target.value)}
-            className="mt-1 min-h-[44px] w-full"
-          />
-          <input
-            value={cur.gainDb}
-            onChange={(e) => set("gainDb", e.target.value)}
-            inputMode="decimal"
-            aria-label="Gain in decibels, exact value"
-            className={`${inputCls} mt-1 font-mono`}
-            autoComplete="off"
-          />
-          <div className="mt-1">
-            <EnvSourceBadge source={fieldSource(fields, PATHS.gainDb)} />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="min-w-0">
+            <label htmlFor="aud-gain" className="text-xs font-medium text-muted">
+              Gain (dB): <span className="font-mono text-mist">{cur.gainDb} dB</span>
+            </label>
+            <input
+              id="aud-gain"
+              type="range"
+              min={-10}
+              max={10}
+              step={0.1}
+              value={Number.isNaN(Number(cur.gainDb)) ? 0 : Number(cur.gainDb)}
+              onChange={(e) => set("gainDb", e.target.value)}
+              className="mt-1 min-h-[44px] w-full"
+            />
+            <input
+              value={cur.gainDb}
+              onChange={(e) => set("gainDb", e.target.value)}
+              inputMode="decimal"
+              aria-label="Gain in decibels, exact value"
+              className={`${inputCls} mt-1 font-mono`}
+              autoComplete="off"
+            />
+            <div className="mt-1">
+              <EnvSourceBadge source={fieldSource(fields, PATHS.gainDb)} />
+            </div>
+            {gainErr ? (
+              <p className="mt-1 text-xs text-danger" role="alert">
+                {gainErr}
+              </p>
+            ) : null}
           </div>
-          {gainErr ? (
-            <p className="mt-1 text-xs text-danger" role="alert">
-              {gainErr}
-            </p>
-          ) : null}
-        </div>
-        <div className="min-w-0">
-          <label htmlFor="aud-level" className="text-xs font-medium text-muted">
-            Target level (dB): <span className="font-mono text-mist">{cur.targetLevelDb} dB</span>
-          </label>
-          <input
-            id="aud-level"
-            type="range"
-            min={-30}
-            max={-10}
-            step={1}
-            value={Number.isNaN(Number(cur.targetLevelDb)) ? -22 : Number(cur.targetLevelDb)}
-            onChange={(e) => set("targetLevelDb", e.target.value)}
-            className="mt-1 min-h-[44px] w-full"
-          />
-          <input
-            value={cur.targetLevelDb}
-            onChange={(e) => set("targetLevelDb", e.target.value)}
-            inputMode="decimal"
-            aria-label="Target level in decibels, exact value"
-            className={`${inputCls} mt-1 font-mono`}
-            autoComplete="off"
-          />
-          <div className="mt-1">
-            <EnvSourceBadge source={fieldSource(fields, PATHS.targetLevelDb)} />
+          <div className="min-w-0">
+            <label htmlFor="aud-level" className="text-xs font-medium text-muted">
+              Target level (dB): <span className="font-mono text-mist">{cur.targetLevelDb} dB</span>
+            </label>
+            <input
+              id="aud-level"
+              type="range"
+              min={-30}
+              max={-10}
+              step={1}
+              value={Number.isNaN(Number(cur.targetLevelDb)) ? -22 : Number(cur.targetLevelDb)}
+              onChange={(e) => set("targetLevelDb", e.target.value)}
+              className="mt-1 min-h-[44px] w-full"
+            />
+            <input
+              value={cur.targetLevelDb}
+              onChange={(e) => set("targetLevelDb", e.target.value)}
+              inputMode="decimal"
+              aria-label="Target level in decibels, exact value"
+              className={`${inputCls} mt-1 font-mono`}
+              autoComplete="off"
+            />
+            <div className="mt-1">
+              <EnvSourceBadge source={fieldSource(fields, PATHS.targetLevelDb)} />
+            </div>
+            {levelErr ? (
+              <p className="mt-1 text-xs text-danger" role="alert">
+                {levelErr}
+              </p>
+            ) : null}
           </div>
-          {levelErr ? (
-            <p className="mt-1 text-xs text-danger" role="alert">
-              {levelErr}
-            </p>
-          ) : null}
         </div>
-      </div>
+      </Advanced>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" disabled={!dirty || !valid || saving} onClick={onSave} aria-busy={saving}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
-        {!dirty ? (
-          <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>
-        ) : (
-          <span className="text-xs text-warn" role="status">
-            Unsaved changes.
-          </span>
-        )}
-      </div>
+      <SaveBar dirty={dirty && valid} saved={!dirty} busy={saving} onSave={onSave} />
     </SectionCard>
   );
 }

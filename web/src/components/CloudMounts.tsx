@@ -9,7 +9,7 @@ import {
   type ApiCloudProvider,
   type ApiCloudRemote,
 } from "../api/client";
-import { Button, Chip, ConfirmDialog, Field, SectionCard, inputCls } from "./ui";
+import { Advanced, Button, Chip, ConfirmDialog, Field, SectionCard, inputCls } from "./ui";
 import {
   CloudBrowser,
   MOCK_REMOTES,
@@ -720,24 +720,26 @@ export function CloudMountsSection({
                       spellCheck={false}
                     />
                   </Field>
-                  <Field label="Endpoint (optional)" htmlFor="cloud-keys-endpoint" hint="e.g. s3.example.com">
-                    <input
-                      id="cloud-keys-endpoint"
-                      value={keys.endpoint}
-                      onChange={(e) => setKeys((k) => ({ ...k, endpoint: e.target.value }))}
-                      className={`${inputCls} font-mono`}
-                      autoComplete="off"
-                    />
-                  </Field>
-                  <Field label="Region (optional)" htmlFor="cloud-keys-region" hint="e.g. us-east-1">
-                    <input
-                      id="cloud-keys-region"
-                      value={keys.region}
-                      onChange={(e) => setKeys((k) => ({ ...k, region: e.target.value }))}
-                      className={`${inputCls} font-mono`}
-                      autoComplete="off"
-                    />
-                  </Field>
+                  <Advanced label="Advanced: endpoint and region">
+                    <Field label="Endpoint (optional)" htmlFor="cloud-keys-endpoint" hint="e.g. s3.example.com">
+                      <input
+                        id="cloud-keys-endpoint"
+                        value={keys.endpoint}
+                        onChange={(e) => setKeys((k) => ({ ...k, endpoint: e.target.value }))}
+                        className={`${inputCls} font-mono`}
+                        autoComplete="off"
+                      />
+                    </Field>
+                    <Field label="Region (optional)" htmlFor="cloud-keys-region" hint="e.g. us-east-1">
+                      <input
+                        id="cloud-keys-region"
+                        value={keys.region}
+                        onChange={(e) => setKeys((k) => ({ ...k, region: e.target.value }))}
+                        className={`${inputCls} font-mono`}
+                        autoComplete="off"
+                      />
+                    </Field>
+                  </Advanced>
                 </>
               ) : (
                 <>

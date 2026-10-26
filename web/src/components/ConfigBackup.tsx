@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import { backupApi, isLive, type UserBackup } from "../api/client";
-import { Button, Chip, ConfirmDialog, Field, SectionCard, inputCls } from "./ui";
+import { Advanced, Button, Chip, ConfirmDialog, Field, Fieldset, SectionCard, inputCls } from "./ui";
 
 const MASKED_BACKUP = `{
   "app": "sermonpilot",
@@ -175,12 +175,10 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
       </details>
 
       <div className="mt-4">
-        <h3 className="text-sm font-semibold">Restore from backup</h3>
-        <p className="mt-0.5 text-xs text-muted">
-          Paste backup data from a download, or choose a backup file. Masked secrets ('***')
-          are rejected.
-        </p>
-        <div className="mt-2">
+        <Fieldset
+          legend="Restore from backup"
+          help="Paste backup data from a download, or choose a backup file. Masked secrets ('***') are rejected."
+        >
           <Field label="Backup data" htmlFor={`${uid}-restore`}>
             <textarea
               id={`${uid}-restore`}
@@ -194,7 +192,6 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
               placeholder={'{\n  "app": "sermonpilot",\n  "backup_kind": "full-data"\n}'}
             />
           </Field>
-        </div>
         <div className="mt-2">
           <label htmlFor={`${uid}-file`} className="text-xs font-medium text-muted">
             Or choose a backup file
@@ -232,11 +229,12 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
             Clear
           </Button>
         </div>
+        </Fieldset>
       </div>
 
       <div className="mt-4">
-        <h3 className="text-sm font-semibold">Backup history</h3>
-        <p className="mt-0.5 text-xs text-muted">
+        <Advanced label="Advanced: backup history">
+        <p className="text-xs text-muted">
           {isLive
             ? "Snapshot capture is not wired yet; this list is sample data and restore stays disabled."
             : "Mock snapshot list. Restoring adds a new entry."}
@@ -271,6 +269,7 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
             </li>
           ))}
         </ul>
+        </Advanced>
       </div>
 
       <div className="mt-4 rounded-md border border-danger p-3">

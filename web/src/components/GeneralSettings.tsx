@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { cloudApi, isLive, outputDirApi, type ApiCloudRemote, type ApiConfigField } from "../api/client";
+import { cloudApi, isLive, outputDirApi, type ApiCloudRemote } from "../api/client";
 import { fieldSource, useConfigForm } from "../api/useConfigSection";
-import { Button, Chip, EnvSourceBadge, Field, SectionCard, Toggle, inputCls } from "./ui";
+import { Button, Chip, Field, Fieldset, SaveBar, SectionCard, Toggle, inputCls } from "./ui";
 import { FileExplorerDialog } from "./FileExplorer";
 
 interface GeneralState {
@@ -27,19 +27,6 @@ const PATHS = {
   saveOriginal: "save_original_audio",
   saveTranscript: "save_transcript",
 } as const;
-
-function overrideList(fields: Record<string, ApiConfigField>): { label: string; source: string }[] {
-  const labels: Record<string, string> = {
-    dry_run: "Dry run",
-    debug: "Debug",
-    hashtag_verification: "Hashtag verification",
-    save_original_audio: "Save original audio",
-    save_transcript: "Save transcript",
-  };
-  return Object.entries(labels)
-    .map(([path, label]) => ({ label, source: fieldSource(fields, path) }))
-    .filter((item) => item.source !== "db" && item.source !== "default");
-}
 
 export function GeneralSettingsSection({ show }: { show: (m: string) => void }) {
   const { cur, fields, dirty, set, save } = useConfigForm<GeneralState>(
@@ -110,8 +97,6 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
       .finally(() => setSaving(false));
   };
 
-  const overrides = overrideList(fields);
-
   return (
     <SectionCard
       title="General"
@@ -121,120 +106,102 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
           : "Processing options and output settings (mock)."
       }
     >
-      <h3 className="text-sm font-semibold">Processing options</h3>
-      <div className="mt-2 grid grid-cols-1 gap-2">
-        <Toggle
-          checked={cur.dryRun}
-          onChange={(v) => set("dryRun", v)}
-          label="Dry Run Mode (default)"
-          hint="Preview changes without uploading by default."
-        />
-        <Toggle
-          checked={cur.debug}
-          onChange={(v) => set("debug", v)}
-          label="Debug Mode"
-          hint="Verbose debug output during processing."
-        />
-        <Toggle
-          checked={cur.hashtagVerification}
-          onChange={(v) => set("hashtagVerification", v)}
-          label="Hashtag Verification"
-          hint="Verify hashtags through a second LLM pass."
-        />
-      </div>
-
-      {overrides.length > 0 ? (
-        <div
-          className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-line bg-ink px-3 py-2 text-xs text-muted"
-          role="status"
+      <div className="flex flex-col gap-3">
+        <Fieldset
+          legend="Processing options"
+          help="Defaults for every new teaching run. A badge marks a value the environment currently wins."
         >
-          <span>Overridden by the environment:</span>
-          {overrides.map((item) => (
-            <span key={item.source} className="flex items-center gap-1">
-              <span>{item.label}</span>
-              <EnvSourceBadge source={item.source} />
-            </span>
-          ))}
-        </div>
-      ) : null}
+          <Toggle
+            checked={cur.dryRun}
+            onChange={(v) => set("dryRun", v)}
+            label="Dry Run Mode (default)"
+            hint="Preview changes without uploading by default."
+            source={fieldSource(fields, PATHS.dryRun)}
+          />
+          <Toggle
+            checked={cur.debug}
+            onChange={(v) => set("debug", v)}
+            label="Debug Mode"
+            hint="Verbose debug output during processing."
+            source={fieldSource(fields, PATHS.debug)}
+          />
+          <Toggle
+            checked={cur.hashtagVerification}
+            onChange={(v) => set("hashtagVerification", v)}
+            label="Hashtag Verification"
+            hint="Verify hashtags through a second LLM pass."
+            source={fieldSource(fields, PATHS.hashtagVerification)}
+          />
+        </Fieldset>
 
-      <h3 className="mt-4 text-sm font-semibold">Output settings</h3>
-      <div className="mt-2 grid grid-cols-1 gap-2">
-        <Field label="Output directory" htmlFor="gen-outdir" hint="Local directory or a cloud remote (remote:<name>:<folder>) for processed teaching files. This is your default for new teachings.">
+        <Fieldset legend="Output settings" help="Where processed teaching files land, and what is kept beside them.">
+          <Field
+            label="Output directory"
+            htmlFor="gen-outdir"
+            hint="Local directory or a cloud remote (remote:<name>:<folder>) for processed teaching files. This is your default for new teachings."
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                id="gen-outdir"
+                value={outputDir}
+                onChange={(e) => setOutputDir(e.target.value)}
+                className={`${inputCls} min-w-0 flex-1 font-mono`}
+                autoComplete="off"
+              />
+              <Button variant="secondary" onClick={() => setBrowseOpen(true)}>
+                Browse local…
+              </Button>
+            </div>
+          </Field>
           <div className="flex flex-wrap items-center gap-2">
-            <input
-              id="gen-outdir"
-              value={outputDir}
-              onChange={(e) => setOutputDir(e.target.value)}
-              className={`${inputCls} min-w-0 flex-1 font-mono`}
-              autoComplete="off"
-            />
-            <Button variant="secondary" onClick={() => setBrowseOpen(true)}>
-              Browse local…
+            <select
+              aria-label="Cloud remote"
+              value={cloudRemote}
+              onChange={(e) => chooseRemote(e.target.value)}
+              className={`${inputCls} min-w-0 flex-1`}
+            >
+              <option value="">Cloud remote…</option>
+              {remotes.map((r) => (
+                <option key={r.name} value={r.name}>
+                  {r.name} · {r.provider}
+                </option>
+              ))}
+            </select>
+            <Button variant="secondary" disabled={!cloudRemote} onClick={() => setCloudOpen(true)}>
+              Browse cloud…
             </Button>
           </div>
-        </Field>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
-          <select
-            aria-label="Cloud remote"
-            value={cloudRemote}
-            onChange={(e) => chooseRemote(e.target.value)}
-            className={`${inputCls} min-w-0 flex-1`}
-          >
-            <option value="">Cloud remote…</option>
-            {remotes.map((r) => (
-              <option key={r.name} value={r.name}>
-                {r.name} · {r.provider}
-              </option>
-            ))}
-          </select>
-          <Button
-            variant="secondary"
-            disabled={!cloudRemote}
-            onClick={() => setCloudOpen(true)}
-          >
-            Browse cloud…
-          </Button>
-        </div>
-        <div className="flex flex-wrap items-center gap-2" aria-live="polite" aria-label="Destination validation">
-          {remoteMatch ? (
-            <>
-              <Chip tone="ok">cloud remote</Chip>
-              <Chip tone="info">{remoteMatch[2] ? `folder: ${remoteMatch[2]}` : "remote root"}</Chip>
-            </>
-          ) : (
-            <>
-              <Chip tone="ok">local folder</Chip>
-              <Chip tone="info">{outputDir || "no path"}</Chip>
-            </>
-          )}
-        </div>
-        <Toggle
-          checked={cur.saveOriginal}
-          onChange={(v) => set("saveOriginal", v)}
-          label="Save Original Audio"
-          hint="Keep a copy of the original audio file."
-        />
-        <Toggle
-          checked={cur.saveTranscript}
-          onChange={(v) => set("saveTranscript", v)}
-          label="Save Transcript"
-          hint="Save the sermon transcript as a text file."
-        />
+          <div className="flex flex-wrap items-center gap-2" aria-live="polite" aria-label="Destination validation">
+            {remoteMatch ? (
+              <>
+                <Chip tone="ok">cloud remote</Chip>
+                <Chip tone="info">{remoteMatch[2] ? `folder: ${remoteMatch[2]}` : "remote root"}</Chip>
+              </>
+            ) : (
+              <>
+                <Chip tone="ok">local folder</Chip>
+                <Chip tone="info">{outputDir || "no path"}</Chip>
+              </>
+            )}
+          </div>
+          <Toggle
+            checked={cur.saveOriginal}
+            onChange={(v) => set("saveOriginal", v)}
+            label="Save Original Audio"
+            hint="Keep a copy of the original audio file."
+            source={fieldSource(fields, PATHS.saveOriginal)}
+          />
+          <Toggle
+            checked={cur.saveTranscript}
+            onChange={(v) => set("saveTranscript", v)}
+            label="Save Transcript"
+            hint="Save the sermon transcript as a text file."
+            source={fieldSource(fields, PATHS.saveTranscript)}
+          />
+        </Fieldset>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" disabled={!dirtyAll || saving} onClick={onSave} aria-busy={saving}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
-        {!dirtyAll ? (
-          <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>
-        ) : (
-          <span className="text-xs text-warn" role="status">
-            Unsaved changes.
-          </span>
-        )}
-      </div>
+      <SaveBar dirty={dirtyAll} saved={!dirtyAll} busy={saving} onSave={onSave} />
 
       <FileExplorerDialog
         open={browseOpen}

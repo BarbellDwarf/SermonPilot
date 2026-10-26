@@ -286,11 +286,13 @@ export function Toggle({
   onChange,
   label,
   hint,
+  source,
 }: {
   checked: boolean;
   onChange: (v: boolean) => void;
   label: string;
   hint?: string;
+  source?: string;
 }) {
   return (
     <label className="flex min-h-[44px] cursor-pointer items-start gap-3 rounded-md border border-line p-3">
@@ -310,10 +312,85 @@ export function Toggle({
         <span className="h-4 w-4 rounded-full bg-white" aria-hidden="true" />
       </button>
       <span className="min-w-0 text-sm">
-        <span className="font-semibold">{label}</span>
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="font-semibold">{label}</span>
+          <EnvSourceBadge source={source} />
+        </span>
         {hint ? <span className="block text-muted">{hint}</span> : null}
       </span>
     </label>
+  );
+}
+
+export function Fieldset({
+  legend,
+  help,
+  children,
+}: {
+  legend: string;
+  help?: string;
+  children: ReactNode;
+}) {
+  return (
+    <fieldset className="min-w-0 rounded-md border border-line p-3">
+      <legend className="px-1 text-sm font-semibold">{legend}</legend>
+      {help ? <p className="mt-0.5 text-xs text-muted">{help}</p> : null}
+      <div className="mt-2 flex flex-col gap-3">{children}</div>
+    </fieldset>
+  );
+}
+
+export function Advanced({
+  label = "Advanced",
+  children,
+  open = false,
+}: {
+  label?: string;
+  children: ReactNode;
+  open?: boolean;
+}) {
+  return (
+    <details open={open} className="min-w-0 rounded-md border border-line p-3">
+      <summary className="min-h-[44px] cursor-pointer text-xs font-semibold text-muted">
+        {label}
+      </summary>
+      <div className="mt-2 flex flex-col gap-3">{children}</div>
+    </details>
+  );
+}
+
+export function SaveBar({
+  dirty,
+  saved,
+  busy = false,
+  error = null,
+  onSave,
+  label = "Save",
+}: {
+  dirty: boolean;
+  saved: boolean;
+  busy?: boolean;
+  error?: string | null;
+  onSave: () => void;
+  label?: string;
+}) {
+  return (
+    <div className="sticky bottom-[4.25rem] z-10 -mx-4 -mb-4 mt-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur md:static md:mx-0 md:mb-0 md:border-0 md:bg-transparent md:p-0">
+      <Button variant="primary" onClick={onSave} disabled={!dirty || busy} aria-busy={busy}>
+        {busy ? "Saving…" : label}
+      </Button>
+      {error ? (
+        <span className="text-xs text-danger" role="alert">
+          {error}
+        </span>
+      ) : !dirty ? (
+        <span className="text-xs text-muted">{saved ? "Saved." : "No unsaved changes."}</span>
+      ) : (
+        <span className="text-xs text-warn" role="status">
+          Unsaved changes.
+        </span>
+      )}
+    </div>
   );
 }
 

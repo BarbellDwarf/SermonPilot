@@ -1,7 +1,7 @@
 import { useId, useMemo, useState } from "react";
 import { isLive } from "../api/client";
 import { useConfigForm } from "../api/useConfigSection";
-import { Button, Field, SectionCard, Toggle, inputCls } from "./ui";
+import { Advanced, Button, Field, Fieldset, SaveBar, SectionCard, Toggle, inputCls } from "./ui";
 
 interface ValidationState {
   enabled: boolean;
@@ -110,79 +110,81 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
           : "Description validation criteria and metadata processing thresholds (mock)."
       }
     >
-      <Toggle
-        checked={cur.enabled}
-        onChange={(v) => set("enabled", v)}
-        label="Enable Description Validation"
-        hint="Use AI to validate description quality."
-      />
+      <div className="flex flex-col gap-3">
+        <Fieldset
+          legend="Description validation"
+          help="A second LLM pass checks each draft against these criteria before publishing."
+        >
+          <Toggle
+            checked={cur.enabled}
+            onChange={(v) => set("enabled", v)}
+            label="Enable Description Validation"
+            hint="Use AI to validate description quality."
+          />
 
-      {cur.enabled ? (
-        <div className="mt-3">
-          <h3 className="text-sm font-semibold">Validation criteria</h3>
-          {cur.criteria.length === 0 ? (
-            <p className="mt-1 text-xs text-muted">No criteria yet. Add one below.</p>
-          ) : (
-            <ul className="mt-2 flex flex-col gap-2" aria-label="Validation criteria">
-              {cur.criteria.map((c, i) => (
-                <li
-                  key={i}
-                  className="flex flex-wrap items-center gap-2 rounded-md border border-line p-2"
-                >
-                  <input
-                    value={c}
-                    onChange={(e) =>
-                      set(
-                        "criteria",
-                        cur.criteria.map((x, j) => (j === i ? e.target.value : x)),
-                      )
-                    }
-                    aria-label={`Criterion ${i + 1}`}
-                    className={`${inputCls} min-w-0 flex-1`}
-                    autoComplete="off"
-                  />
-                  <Button
-                    variant="danger"
-                    onClick={() => removeCriterion(i)}
-                    aria-label={`Remove criterion ${i + 1}`}
-                  >
-                    Remove
-                  </Button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="mt-2 flex flex-wrap items-end gap-2">
-            <div className="min-w-0 flex-1">
-              <Field label="Add new criterion" htmlFor={`${uid}-new-crit`}>
-                <input
-                  id={`${uid}-new-crit`}
-                  value={newCriterion}
-                  onChange={(e) => setNewCriterion(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addCriterion();
-                    }
-                  }}
-                  className={inputCls}
-                  autoComplete="off"
-                  placeholder="e.g. Contains a scripture reference"
-                />
-              </Field>
+          {cur.enabled ? (
+            <div>
+              {cur.criteria.length === 0 ? (
+                <p className="text-xs text-muted">No criteria yet. Add one below.</p>
+              ) : (
+                <ul className="flex flex-col gap-2" aria-label="Validation criteria">
+                  {cur.criteria.map((c, i) => (
+                    <li
+                      key={i}
+                      className="flex flex-wrap items-center gap-2 rounded-md border border-line p-2"
+                    >
+                      <input
+                        value={c}
+                        onChange={(e) =>
+                          set(
+                            "criteria",
+                            cur.criteria.map((x, j) => (j === i ? e.target.value : x)),
+                          )
+                        }
+                        aria-label={`Criterion ${i + 1}`}
+                        className={`${inputCls} min-w-0 flex-1`}
+                        autoComplete="off"
+                      />
+                      <Button
+                        variant="danger"
+                        onClick={() => removeCriterion(i)}
+                        aria-label={`Remove criterion ${i + 1}`}
+                      >
+                        Remove
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="mt-2 flex flex-wrap items-end gap-2">
+                <div className="min-w-0 flex-1">
+                  <Field label="Add new criterion" htmlFor={`${uid}-new-crit`}>
+                    <input
+                      id={`${uid}-new-crit`}
+                      value={newCriterion}
+                      onChange={(e) => setNewCriterion(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addCriterion();
+                        }
+                      }}
+                      className={inputCls}
+                      autoComplete="off"
+                      placeholder="e.g. Contains a scripture reference"
+                    />
+                  </Field>
+                </div>
+                <Button onClick={addCriterion} disabled={!newCriterion.trim()} aria-label="Add criterion">
+                  Add
+                </Button>
+              </div>
             </div>
-            <Button onClick={addCriterion} disabled={!newCriterion.trim()} aria-label="Add criterion">
-              Add
-            </Button>
-          </div>
-        </div>
-      ) : null}
+          ) : null}
+        </Fieldset>
 
-      <h3 className="mt-4 text-sm font-semibold">Processing settings</h3>
-      <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="min-w-0 rounded-md border border-line p-3">
-          <h4 className="text-sm font-semibold">Description settings</h4>
-          <div className="mt-2 flex flex-col gap-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Fieldset legend="Description refresh" help="When the pipeline replaces an existing description.">
             <Toggle
               checked={cur.descMissing}
               onChange={(v) => set("descMissing", v)}
@@ -193,26 +195,28 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
               onChange={(v) => set("descMinimal", v)}
               label="Update if Minimal"
             />
-            <Field label="Min length threshold" htmlFor={`${uid}-desc-min`} hint="10 to 200.">
-              <input
-                id={`${uid}-desc-min`}
-                value={cur.descMinLength}
-                onChange={(e) => set("descMinLength", e.target.value)}
-                className={`${inputCls} font-mono`}
-                inputMode="numeric"
-                autoComplete="off"
-              />
-              {descErr ? (
-                <p className="mt-1 text-xs text-danger" role="alert">
-                  {descErr}
-                </p>
-              ) : null}
-            </Field>
-          </div>
-        </div>
-        <div className="min-w-0 rounded-md border border-line p-3">
-          <h4 className="text-sm font-semibold">Hashtag settings</h4>
-          <div className="mt-2 flex flex-col gap-2">
+            <Advanced label="Minimum length" open={Boolean(descErr)}>
+              <Field label="Min length threshold" htmlFor={`${uid}-desc-min`} hint="10 to 200 characters.">
+                <input
+                  id={`${uid}-desc-min`}
+                  type="number"
+                  min={10}
+                  max={200}
+                  step={1}
+                  value={cur.descMinLength}
+                  onChange={(e) => set("descMinLength", e.target.value)}
+                  className={`${inputCls} font-mono`}
+                  autoComplete="off"
+                />
+                {descErr ? (
+                  <p className="mt-1 text-xs text-danger" role="alert">
+                    {descErr}
+                  </p>
+                ) : null}
+              </Field>
+            </Advanced>
+          </Fieldset>
+          <Fieldset legend="Hashtag refresh" help="When the pipeline replaces existing hashtags.">
             <Toggle
               checked={cur.hashMissing}
               onChange={(v) => set("hashMissing", v)}
@@ -223,37 +227,31 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
               onChange={(v) => set("hashMinimal", v)}
               label="Update if Minimal"
             />
-            <Field label="Min length threshold" htmlFor={`${uid}-hash-min`} hint="5 to 50.">
-              <input
-                id={`${uid}-hash-min`}
-                value={cur.hashMinLength}
-                onChange={(e) => set("hashMinLength", e.target.value)}
-                className={`${inputCls} font-mono`}
-                inputMode="numeric"
-                autoComplete="off"
-              />
-              {hashErr ? (
-                <p className="mt-1 text-xs text-danger" role="alert">
-                  {hashErr}
-                </p>
-              ) : null}
-            </Field>
-          </div>
+            <Advanced label="Minimum length" open={Boolean(hashErr)}>
+              <Field label="Min length threshold" htmlFor={`${uid}-hash-min`} hint="5 to 50 characters.">
+                <input
+                  id={`${uid}-hash-min`}
+                  type="number"
+                  min={5}
+                  max={50}
+                  step={1}
+                  value={cur.hashMinLength}
+                  onChange={(e) => set("hashMinLength", e.target.value)}
+                  className={`${inputCls} font-mono`}
+                  autoComplete="off"
+                />
+                {hashErr ? (
+                  <p className="mt-1 text-xs text-danger" role="alert">
+                    {hashErr}
+                  </p>
+                ) : null}
+              </Field>
+            </Advanced>
+          </Fieldset>
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" disabled={!dirty || !valid || saving} onClick={onSave} aria-busy={saving}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
-        {!dirty ? (
-          <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>
-        ) : (
-          <span className="text-xs text-warn" role="status">
-            Unsaved changes.
-          </span>
-        )}
-      </div>
+      <SaveBar dirty={dirty && valid} saved={!dirty} busy={saving} onSave={onSave} />
     </SectionCard>
   );
 }

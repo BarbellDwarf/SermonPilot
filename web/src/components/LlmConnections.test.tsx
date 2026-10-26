@@ -88,15 +88,20 @@ afterEach(() => {
 });
 
 describe("LlmConnectionsSection", () => {
-  it("renders provider slots from the config API with the masked key", async () => {
+  it("renders every provider slot in the list and edits the selected one", async () => {
+    const user = userEvent.setup();
     stubApi();
     render(<LlmConnectionsSection show={() => {}} />);
 
     expect(await screen.findByDisplayValue("glm-5.3-flash:cloud")).toBeTruthy();
     expect(screen.getByDisplayValue("http://host.docker.internal:11434")).toBeTruthy();
-    expect(screen.getByDisplayValue("gpt-4o-mini")).toBeTruthy();
-    expect(screen.getByDisplayValue("gemma2:2b")).toBeTruthy();
+    expect(screen.getByText(/openai · gpt-4o-mini/)).toBeTruthy();
+    expect(screen.getByText(/ollama · gemma2:2b/)).toBeTruthy();
     expect(screen.getByText("********9f2a")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: /Fallback/ }));
+    expect(screen.getByDisplayValue("gpt-4o-mini")).toBeTruthy();
+    expect(screen.queryByDisplayValue("glm-5.3-flash:cloud")).toBeNull();
   });
 
   it("shows the measured latency and echoed model after a connection test", async () => {

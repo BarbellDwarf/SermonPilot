@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { isLive } from "../api/client";
 import { fieldSource, fieldValue, useConfigSection } from "../api/useConfigSection";
-import { Button, EnvSourceBadge, Field, SectionCard, inputCls } from "./ui";
+import { EnvSourceBadge, Field, Fieldset, SaveBar, SectionCard, inputCls } from "./ui";
 
 const FALLBACK: Record<string, unknown> = { api_key: "", broadcaster_id: "" };
 
@@ -62,6 +62,10 @@ export function SermonAudioCredentialsSection({ show }: { show: (m: string) => v
       title="Single-account fallback"
       sub="The credentials used when no per-broadcaster account is selected. The environment can supply them; the database keeps them once seeded, and an exported variable wins while it is set."
     >
+      <Fieldset
+        legend="Fallback credentials"
+        help="Used only when a teaching does not pick a per-broadcaster account."
+      >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field
           label="Broadcaster ID"
@@ -101,19 +105,15 @@ export function SermonAudioCredentialsSection({ show }: { show: (m: string) => v
           <SourceLine label="API key source" source={apiSource} />
         </Field>
       </div>
+      </Fieldset>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" disabled={!dirty || saving} onClick={onSave} aria-busy={saving}>
-          {saving ? "Saving…" : "Save fallback credentials"}
-        </Button>
-        {!dirty ? (
-          <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>
-        ) : (
-          <span className="text-xs text-warn" role="status">
-            Unsaved changes.
-          </span>
-        )}
-      </div>
+      <SaveBar
+        dirty={dirty}
+        saved={!dirty}
+        busy={saving}
+        onSave={onSave}
+        label="Save fallback credentials"
+      />
     </SectionCard>
   );
 }

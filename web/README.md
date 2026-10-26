@@ -146,6 +146,7 @@ NOT started — design at the write-path/render phase.
 ## UI simplification (Oct 2026)
 Jobs page redesigned: compact scannable rows, expandable metadata, always-visible timestamps.
 Chrome, Home, and Library: one header with an account menu, a mobile bottom tab bar, row overflow actions, and compact page headers.
+Settings: grouped section list (mobile select), inline environment-override notes, advanced disclosures, and master/detail editors for providers and prompts.
 
 ## P5f Files API scoping decision (Sep 17, operator-approved default)
 /api/me/files lists/downloads ONLY from the user's own configured output directory

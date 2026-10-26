@@ -5,7 +5,7 @@ import {
   type ApiPromptsConfig,
   type ApiPromptsUpdate,
 } from "../api/client";
-import { Button, ConfirmDialog, Field, SectionCard, Toggle, inputCls } from "./ui";
+import { Advanced, Button, ConfirmDialog, Field, SaveBar, SectionCard, Toggle, inputCls } from "./ui";
 
 interface TemplateDraft {
   enabled: boolean;
@@ -97,7 +97,10 @@ export function PromptTemplatesSection({ show }: { show: (m: string) => void }) 
   const [loaded, setLoaded] = useState(!isLive);
   const [busy, setBusy] = useState(false);
   const [pendingReset, setPendingReset] = useState<TaskKey | null>(null);
+  const [activeTask, setActiveTask] = useState<TaskKey>("title");
   const dirty = JSON.stringify(cur) !== JSON.stringify(saved);
+  const activeDef = TASKS.find((t) => t.key === activeTask) ?? TASKS[0];
+  const activeDraft = cur[activeTask];
 
   useEffect(() => {
     if (!isLive || loaded) return;
@@ -155,13 +158,22 @@ export function PromptTemplatesSection({ show }: { show: (m: string) => void }) 
           : "Per-task instructions sent to the LLM (mock). Use {variable} placeholders for dynamic content."
       }
     >
-      <div className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-2" aria-label="Prompt tasks">
         {TASKS.map((t) => {
           const d = cur[t.key];
+          const selected = activeTask === t.key;
           return (
-            <details key={t.key} className="rounded-md border border-line p-3">
-              <summary className="flex min-h-[44px] cursor-pointer flex-wrap items-center gap-2 text-sm font-semibold">
-                <span className="min-w-0 flex-1">{t.label}</span>
+            <li key={t.key}>
+              <button
+                type="button"
+                onClick={() => setActiveTask(t.key)}
+                aria-expanded={selected}
+                aria-controls="prompt-editor"
+                className={`flex min-h-[44px] w-full flex-wrap items-center gap-2 rounded-md border p-3 text-left transition-colors ${
+                  selected ? "border-accent bg-raised" : "border-line hover:border-muted"
+                }`}
+              >
+                <span className="min-w-0 flex-1 text-sm font-semibold">{t.label}</span>
                 <span
                   className={`rounded-full border px-2.5 py-0.5 font-mono text-xs uppercase tracking-wide ${
                     d.enabled ? "border-ok text-ok" : "border-line text-muted"
@@ -169,60 +181,61 @@ export function PromptTemplatesSection({ show }: { show: (m: string) => void }) 
                 >
                   {d.enabled ? "enabled" : "disabled"}
                 </span>
-              </summary>
-              <div className="mt-3 flex flex-col gap-3">
-                <Toggle
-                  checked={d.enabled}
-                  onChange={(v) => setTask(t.key, { enabled: v })}
-                  label={`Enable ${t.label}`}
-                />
-                <Field label="System prompt" htmlFor={`pt-${t.key}-sys`}>
-                  <textarea
-                    id={`pt-${t.key}-sys`}
-                    value={d.system}
-                    onChange={(e) => setTask(t.key, { system: e.target.value })}
-                    className={`${inputCls} min-h-[60px] py-2`}
-                    rows={2}
-                    placeholder="System-level instruction. Empty means omit."
-                  />
-                </Field>
-                <Field label="User prompt" htmlFor={`pt-${t.key}-user`}>
-                  <textarea
-                    id={`pt-${t.key}-user`}
-                    value={d.user}
-                    onChange={(e) => setTask(t.key, { user: e.target.value })}
-                    className={`${inputCls} min-h-[120px] py-2 font-mono`}
-                    rows={5}
-                  />
-                </Field>
-                <p className="text-xs text-muted">Available variables: {t.vars}</p>
-                <div>
-                  <Button
-                    variant="danger"
-                    onClick={() => setPendingReset(t.key)}
-                    aria-label={`Reset ${t.label} to default`}
-                  >
-                    Reset task
-                  </Button>
-                </div>
-              </div>
-            </details>
+              </button>
+            </li>
           );
         })}
+      </ul>
+
+      <div
+        id="prompt-editor"
+        role="region"
+        aria-label={`${activeDef.label} template`}
+        className="mt-3 flex flex-col gap-3 rounded-md border border-line bg-ink p-3"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="min-w-0 flex-1 text-sm font-semibold">{activeDef.label}</p>
+          <span className="font-mono text-xs text-muted">{activeTask}</span>
+        </div>
+        <Toggle
+          checked={activeDraft.enabled}
+          onChange={(v) => setTask(activeTask, { enabled: v })}
+          label={`Enable ${activeDef.label}`}
+        />
+        <Field label="User prompt" htmlFor={`pt-${activeTask}-user`}>
+          <textarea
+            id={`pt-${activeTask}-user`}
+            value={activeDraft.user}
+            onChange={(e) => setTask(activeTask, { user: e.target.value })}
+            className={`${inputCls} min-h-[120px] py-2 font-mono`}
+            rows={5}
+          />
+        </Field>
+        <p className="text-xs text-muted">Available variables: {activeDef.vars}</p>
+        <Advanced label="Advanced: system prompt">
+          <Field label="System prompt" htmlFor={`pt-${activeTask}-sys`}>
+            <textarea
+              id={`pt-${activeTask}-sys`}
+              value={activeDraft.system}
+              onChange={(e) => setTask(activeTask, { system: e.target.value })}
+              className={`${inputCls} min-h-[60px] py-2`}
+              rows={2}
+              placeholder="System-level instruction. Empty means omit."
+            />
+          </Field>
+        </Advanced>
+        <div>
+          <Button
+            variant="danger"
+            onClick={() => setPendingReset(activeTask)}
+            aria-label={`Reset ${activeDef.label} to default`}
+          >
+            Reset task
+          </Button>
+        </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" disabled={!dirty || busy} onClick={save} aria-busy={busy}>
-          {busy ? "Saving…" : "Save"}
-        </Button>
-        {!dirty ? (
-          <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>
-        ) : (
-          <span className="text-xs text-warn" role="status">
-            Unsaved changes.
-          </span>
-        )}
-      </div>
+      <SaveBar dirty={dirty} saved={!dirty} busy={busy} onSave={save} />
 
       <ConfirmDialog
         open={pendingReset !== null}

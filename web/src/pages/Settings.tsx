@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { adminApi, isLive, meApi, metaApi, type AdminUser } from "../api/client";
 import { useUserSettings } from "../api/useUserSettings";
@@ -13,31 +13,36 @@ import { SermonAudioCredentialsSection } from "../components/SermonAudioCredenti
 import { TranscriptionSettingsSection } from "../components/TranscriptionSettings";
 import { ValidationSettingsSection } from "../components/ValidationSettings";
 import {
+  Advanced,
   Button,
   Chip,
   Field,
   PageHeader,
+  SaveBar,
   SectionCard,
   Toast,
   inputCls,
 } from "../components/ui";
 
-const ENV_NOTE =
-  "Environment variables override saved settings for the variables they map to. A field shows the variable name when the environment is winning.";
-
-const TABS = [
-  { id: "general", label: "General" },
-  { id: "llm", label: "LLM Providers" },
-  { id: "sermonaudio", label: "SermonAudio Accounts" },
-  { id: "cloud", label: "Cloud Mounts" },
-  { id: "audio", label: "Audio" },
-  { id: "transcription", label: "Transcription" },
-  { id: "validation", label: "Validation" },
-  { id: "prompts", label: "Prompt Templates" },
-  { id: "backup", label: "Backup & Restore" },
+const SECTIONS = [
+  { id: "audio", label: "Audio", group: "Pipeline" },
+  { id: "transcription", label: "Transcription", group: "Pipeline" },
+  { id: "validation", label: "Validation", group: "Pipeline" },
+  { id: "llm", label: "LLM Providers", group: "Connections" },
+  { id: "sermonaudio", label: "SermonAudio Accounts", group: "Connections" },
+  { id: "cloud", label: "Cloud Mounts", group: "Connections" },
+  { id: "prompts", label: "Prompt Templates", group: "Prompts" },
+  { id: "general", label: "General", group: "System" },
+  { id: "backup", label: "Backup & Restore", group: "System" },
 ] as const;
 
-type TabId = (typeof TABS)[number]["id"];
+const GROUPS = ["Pipeline", "Connections", "Prompts", "System"] as const;
+
+type TabId = (typeof SECTIONS)[number]["id"];
+
+function isSection(value: string | null): value is TabId {
+  return SECTIONS.some((s) => s.id === value);
+}
 
 function useSectionToast() {
   const [toast, setToast] = useState<string | null>(null);
@@ -46,39 +51,6 @@ function useSectionToast() {
     window.setTimeout(() => setToast(null), 3000);
   };
   return { toast, show };
-}
-
-function SaveRow({
-  dirty,
-  saved,
-  onSave,
-  busy = false,
-  error = null,
-}: {
-  dirty: boolean;
-  saved: boolean;
-  onSave: () => void;
-  busy?: boolean;
-  error?: string | null;
-}) {
-  return (
-    <div className="mt-3 flex flex-wrap items-center gap-2">
-      <Button variant="primary" onClick={onSave} disabled={!dirty || busy} aria-busy={busy}>
-        {busy ? "Saving…" : "Save"}
-      </Button>
-      {error ? (
-        <span className="text-xs text-danger" role="alert">
-          {error}
-        </span>
-      ) : !dirty ? (
-        <span className="text-xs text-muted">{saved ? "Saved." : "No unsaved changes."}</span>
-      ) : (
-        <span className="text-xs text-warn" role="status">
-          Unsaved changes.
-        </span>
-      )}
-    </div>
-  );
 }
 
 function AppearanceSection({ show }: { show: (m: string) => void }) {
@@ -105,7 +77,7 @@ function AppearanceSection({ show }: { show: (m: string) => void }) {
           ))}
         </div>
       </fieldset>
-      <SaveRow
+      <SaveBar
         dirty={isDirty}
         saved={!isDirty}
         busy={saving}
@@ -160,7 +132,7 @@ function AccountSection({ show, user }: { show: (m: string) => void; user: { dis
           </p>
         </div>
       </div>
-      <SaveRow
+      <SaveBar
         dirty={dirty}
         saved={!dirty}
         busy={saving}
@@ -349,7 +321,7 @@ function ProcessingSection({ show }: { show: (m: string) => void }) {
         </Field>
       </div>
       {!offsetOk ? <p className="mt-2 text-xs text-danger" role="alert">Offset must be a number in seconds.</p> : null}
-      <SaveRow
+      <SaveBar
         dirty={isDirty && offsetOk}
         saved={!isDirty}
         busy={saving}
@@ -444,7 +416,7 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
           </select>
         </Field>
       </div>
-      <SaveRow
+      <SaveBar
         dirty={dirty}
         saved={!dirty}
         busy={saving}
@@ -464,121 +436,162 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
 
 export function Settings({ user }: { user: { display_name: string; role?: string } }) {
   const { toast, show } = useSectionToast();
-  const [searchParams] = useSearchParams();
-  const [active, setActive] = useState<TabId>(
-    searchParams.get("cloud") === "connected" ? "cloud" : "general",
-  );
-  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requested = searchParams.get("section");
+  const initial: TabId = isSection(requested)
+    ? requested
+    : searchParams.get("cloud") === "connected"
+      ? "cloud"
+      : "general";
+  const [active, setActive] = useState<TabId>(initial);
 
-  const focusTab = (id: TabId) => {
+  useEffect(() => {
+    const next = searchParams.get("section");
+    if (isSection(next)) setActive(next);
+  }, [searchParams]);
+
+  const choose = (id: TabId) => {
     setActive(id);
-    tabRefs.current[id]?.focus();
+    const next = new URLSearchParams(searchParams);
+    next.set("section", id);
+    setSearchParams(next, { replace: true });
   };
 
-  const onTabKeyDown = (e: React.KeyboardEvent, id: TabId) => {
-    const ids = TABS.map((t) => t.id);
-    const i = ids.indexOf(id);
-    if (e.key === "ArrowRight") {
-      e.preventDefault();
-      focusTab(ids[(i + 1) % ids.length] as TabId);
-    } else if (e.key === "ArrowLeft") {
-      e.preventDefault();
-      focusTab(ids[(i - 1 + ids.length) % ids.length] as TabId);
-    } else if (e.key === "Home") {
-      e.preventDefault();
-      focusTab(ids[0] as TabId);
-    } else if (e.key === "End") {
-      e.preventDefault();
-      focusTab(ids[ids.length - 1] as TabId);
+  const activeSection = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0];
+
+  const renderSection = () => {
+    switch (active) {
+      case "general":
+        return (
+          <>
+            <GeneralSettingsSection show={show} />
+            <AppearanceSection show={show} />
+            <AccountSection show={show} user={user} />
+            {user.role === "admin" ? <UsersSection show={show} /> : null}
+            <Advanced label="Advanced: processing defaults and system">
+              <ProcessingSection show={show} />
+              <SystemSection show={show} isAdmin={user.role === "admin"} />
+            </Advanced>
+          </>
+        );
+      case "llm":
+        return <LlmConnectionsSection show={show} />;
+      case "sermonaudio":
+        return (
+          <>
+            <SermonAudioAccountsSection show={show} />
+            <SermonAudioCredentialsSection show={show} />
+          </>
+        );
+      case "cloud":
+        return <CloudMountsSection show={show} isAdmin={user.role === "admin"} />;
+      case "audio":
+        return <AudioSettingsSection show={show} />;
+      case "transcription":
+        return <TranscriptionSettingsSection show={show} />;
+      case "validation":
+        return <ValidationSettingsSection show={show} />;
+      case "prompts":
+        return <PromptTemplatesSection show={show} />;
+      case "backup":
+        return <ConfigBackupSection show={show} />;
     }
   };
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Settings" />
-      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-xs text-muted">{ENV_NOTE}</p>
-      <div
-        role="tablist"
-        aria-label="Settings sections"
-        className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1"
-      >
-        {TABS.map((t) => {
-          const selected = active === t.id;
-          return (
-            <button
-              key={t.id}
-              ref={(el) => {
-                tabRefs.current[t.id] = el;
-              }}
-              role="tab"
-              id={`tab-${t.id}`}
-              aria-selected={selected}
-              aria-controls={`panel-${t.id}`}
-              tabIndex={selected ? 0 : -1}
-              onClick={() => setActive(t.id)}
-              onKeyDown={(e) => onTabKeyDown(e, t.id)}
-              className={`min-h-[44px] shrink-0 rounded-md border px-4 text-sm font-semibold transition-colors ${
-                selected
-                  ? "border-accent bg-raised text-mist"
-                  : "border-line bg-surface text-muted hover:border-muted hover:text-mist"
-              }`}
-            >
-              {t.label}
-            </button>
-          );
-        })}
+      <PageHeader
+        title="Settings"
+        actions={
+          <details className="w-fit max-w-[min(22rem,calc(100vw-2rem))] text-xs text-muted">
+            <summary className="min-h-[44px] cursor-pointer content-center rounded-md border border-line px-3">
+              Environment overrides
+            </summary>
+            <p className="mt-1 max-w-prose">
+              An environment variable wins over a saved value. Each affected field shows the
+              variable name on its own row.
+            </p>
+          </details>
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[15rem_minmax(0,1fr)]">
+        <div className="min-w-0 md:sticky md:top-24 md:self-start">
+          <div className="md:hidden">
+            <label htmlFor="settings-section" className="text-xs font-medium text-muted">
+              Section
+            </label>
+            <div className="relative mt-1">
+              <select
+                id="settings-section"
+                value={active}
+                onChange={(e) => choose(e.target.value as TabId)}
+                className={`${inputCls} appearance-none pr-10 font-semibold`}
+                data-testid="settings-section-select"
+              >
+                {GROUPS.map((group) => (
+                  <optgroup key={group} label={group}>
+                    {SECTIONS.filter((s) => s.group === group).map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                aria-hidden="true"
+                className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+              >
+                <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              {activeSection.group} · {SECTIONS.length} sections in {GROUPS.length} groups
+            </p>
+          </div>
+
+          <nav aria-label="Settings sections" className="hidden flex-col gap-3 md:flex">
+            {GROUPS.map((group) => (
+              <div key={group}>
+                <p className="px-3 font-mono text-xs uppercase tracking-wide text-muted">{group}</p>
+                <div className="mt-1 flex flex-col gap-1">
+                  {SECTIONS.filter((s) => s.group === group).map((s) => {
+                    const selected = active === s.id;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => choose(s.id)}
+                        aria-current={selected ? "page" : undefined}
+                        className={`flex min-h-[44px] w-full items-center rounded-md px-3 text-left text-sm font-medium transition-colors ${
+                          selected
+                            ? "bg-raised text-mist"
+                            : "text-muted hover:bg-raised hover:text-mist"
+                        }`}
+                      >
+                        {s.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </nav>
+        </div>
+
+        <div
+          role="region"
+          aria-label={`${activeSection.label} settings`}
+          className="flex min-w-0 flex-col gap-4"
+        >
+          {renderSection()}
+        </div>
       </div>
-      {active === "general" && (
-        <div role="tabpanel" id="panel-general" aria-labelledby="tab-general" className="flex flex-col gap-4">
-        <GeneralSettingsSection show={show} />
-        <ProcessingSection show={show} />
-        <AppearanceSection show={show} />
-        <AccountSection show={show} user={user} />
-        {user.role === "admin" ? <UsersSection show={show} /> : null}
-        <SystemSection show={show} isAdmin={user.role === "admin"} />
-        </div>
-      )}
-      {active === "llm" && (
-        <div role="tabpanel" id="panel-llm" aria-labelledby="tab-llm" className="flex flex-col gap-4">
-        <LlmConnectionsSection show={show} />
-        </div>
-      )}
-      {active === "sermonaudio" && (
-        <div role="tabpanel" id="panel-sermonaudio" aria-labelledby="tab-sermonaudio" className="flex flex-col gap-4">
-        <SermonAudioAccountsSection show={show} />
-        <SermonAudioCredentialsSection show={show} />
-        </div>
-      )}
-      {active === "cloud" && (
-        <div role="tabpanel" id="panel-cloud" aria-labelledby="tab-cloud" className="flex flex-col gap-4">
-        <CloudMountsSection show={show} isAdmin={user.role === "admin"} />
-        </div>
-      )}
-      {active === "audio" && (
-        <div role="tabpanel" id="panel-audio" aria-labelledby="tab-audio" className="flex flex-col gap-4">
-        <AudioSettingsSection show={show} />
-        </div>
-      )}
-      {active === "transcription" && (
-        <div role="tabpanel" id="panel-transcription" aria-labelledby="tab-transcription" className="flex flex-col gap-4">
-        <TranscriptionSettingsSection show={show} />
-        </div>
-      )}
-      {active === "validation" && (
-        <div role="tabpanel" id="panel-validation" aria-labelledby="tab-validation" className="flex flex-col gap-4">
-        <ValidationSettingsSection show={show} />
-        </div>
-      )}
-      {active === "prompts" && (
-        <div role="tabpanel" id="panel-prompts" aria-labelledby="tab-prompts" className="flex flex-col gap-4">
-        <PromptTemplatesSection show={show} />
-        </div>
-      )}
-      {active === "backup" && (
-        <div role="tabpanel" id="panel-backup" aria-labelledby="tab-backup" className="flex flex-col gap-4">
-        <ConfigBackupSection show={show} />
-        </div>
-      )}
       <Toast message={toast} />
     </div>
   );

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { connectionsApi, type ApiConnection, type ApiEffectiveConnection } from "../api/client";
 import { sourceCopy } from "./SermonAudioCredentials";
-import { Button, Chip, ConfirmDialog, EmptyState, Field, SectionCard, inputCls } from "./ui";
+import { Advanced, Button, Chip, ConfirmDialog, EmptyState, Field, Fieldset, SectionCard, inputCls } from "./ui";
 
 export interface SermonAudioAccount {
   id: string;
@@ -307,7 +307,8 @@ export function SermonAudioAccountsSection({ show }: { show: (m: string) => void
       {editorOpen ? (
         <div ref={editorRef} className="mt-4 rounded-md border border-line bg-ink p-4" role="form" aria-label="Account editor">
           <h3 className="text-sm font-semibold">{editingId ? "Edit account" : "New account"}</h3>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Fieldset legend="Account details" help="The display name and broadcaster ID identify where uploads go.">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Broadcaster display name" htmlFor={`${uid}-name`}>
               <input
                 id={`${uid}-name`}
@@ -358,6 +359,8 @@ export function SermonAudioAccountsSection({ show }: { show: (m: string) => void
               </div>
               {errors.apiKey ? <p className="mt-1 text-xs text-danger" role="alert">{errors.apiKey}</p> : null}
             </Field>
+          </div>
+          <Advanced label="Advanced: notes">
             <Field label="Notes (optional)" htmlFor={`${uid}-notes`}>
               <textarea
                 id={`${uid}-notes`}
@@ -369,7 +372,8 @@ export function SermonAudioAccountsSection({ show }: { show: (m: string) => void
                 rows={2}
               />
             </Field>
-          </div>
+          </Advanced>
+          </Fieldset>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button variant="primary" onClick={saveDraft} disabled={saving} aria-label={editingId ? "Save account" : "Add account to list"}>
               {editingId ? "Save" : "Add"}

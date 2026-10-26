@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { isLive, type ApiConfigField } from "../api/client";
 import { fieldSource, fieldValue, useConfigSection } from "../api/useConfigSection";
-import { Button, EnvSourceBadge, Field, SectionCard, inputCls } from "./ui";
+import { Advanced, EnvSourceBadge, Field, Fieldset, SaveBar, SectionCard, inputCls } from "./ui";
 
 const BACKENDS = [
   { id: "whisper_local", label: "Local Whisper (openai-whisper)" },
@@ -143,133 +143,133 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
           : "Backend and per-backend options (mock). API keys are placeholders only and never leave the browser."
       }
     >
-      <Field label="Transcription backend" htmlFor="tr-backend">
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            id="tr-backend"
-            value={cur.backend}
-            onChange={(e) => set("backend", e.target.value)}
-            className={`${inputCls} min-w-0 flex-1`}
-          >
-            {BACKENDS.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.label}
-              </option>
-            ))}
-          </select>
-          <EnvSourceBadge source={fieldSource(fields, "transcription.backend")} />
-        </div>
-      </Field>
+      <div className="flex flex-col gap-3">
+        <Fieldset legend="Backend" help="Pick where transcription runs. Options below follow the backend.">
+          <Field label="Transcription backend" htmlFor="tr-backend">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                id="tr-backend"
+                value={cur.backend}
+                onChange={(e) => set("backend", e.target.value)}
+                className={`${inputCls} min-w-0 flex-1`}
+              >
+                {BACKENDS.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.label}
+                  </option>
+                ))}
+              </select>
+              <EnvSourceBadge source={fieldSource(fields, "transcription.backend")} />
+            </div>
+          </Field>
+        </Fieldset>
 
-      {isLocal ? (
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Local model" htmlFor="tr-model" hint="Larger is more accurate but slower.">
-            <select
-              id="tr-model"
-              value={cur.localModel}
-              onChange={(e) => set("localModel", e.target.value)}
-              className={`${inputCls} font-mono`}
-            >
-              {LOCAL_MODELS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Device" htmlFor="tr-device" hint="Auto detects cuda when available, otherwise cpu.">
-            <select
-              id="tr-device"
-              value={cur.device}
-              onChange={(e) => set("device", e.target.value)}
-              className={`${inputCls} font-mono`}
-            >
-              {DEVICES.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field
-            label="Compute type"
-            htmlFor="tr-compute"
-            hint="auto: int8 on cpu, float16 on cuda. Pin one to override the fallback."
-          >
-            <select
-              id="tr-compute"
-              value={cur.computeType}
-              onChange={(e) => set("computeType", e.target.value)}
-              className={`${inputCls} font-mono`}
-            >
-              {COMPUTE_TYPES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Language" htmlFor="tr-lang" hint="Language code, e.g. en.">
-            <input
-              id="tr-lang"
-              value={cur.language}
-              onChange={(e) => set("language", e.target.value)}
-              className={`${inputCls} font-mono`}
-              autoComplete="off"
-            />
-          </Field>
-        </div>
-      ) : null}
+        {isLocal ? (
+          <Fieldset legend="Local model" help="Weights download inside the processing container on first use.">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="Local model" htmlFor="tr-model" hint="Larger is more accurate but slower.">
+                <select
+                  id="tr-model"
+                  value={cur.localModel}
+                  onChange={(e) => set("localModel", e.target.value)}
+                  className={`${inputCls} font-mono`}
+                >
+                  {LOCAL_MODELS.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Device" htmlFor="tr-device" hint="Auto detects cuda when available, otherwise cpu.">
+                <select
+                  id="tr-device"
+                  value={cur.device}
+                  onChange={(e) => set("device", e.target.value)}
+                  className={`${inputCls} font-mono`}
+                >
+                  {DEVICES.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Language" htmlFor="tr-lang" hint="Language code, e.g. en.">
+                <input
+                  id="tr-lang"
+                  value={cur.language}
+                  onChange={(e) => set("language", e.target.value)}
+                  className={`${inputCls} font-mono`}
+                  autoComplete="off"
+                />
+              </Field>
+            </div>
+            <Advanced label="Advanced: compute precision">
+              <Field
+                label="Compute type"
+                htmlFor="tr-compute"
+                hint="auto: int8 on cpu, float16 on cuda. Pin one to override the fallback."
+              >
+                <select
+                  id="tr-compute"
+                  value={cur.computeType}
+                  onChange={(e) => set("computeType", e.target.value)}
+                  className={`${inputCls} font-mono`}
+                >
+                  {COMPUTE_TYPES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </Advanced>
+          </Fieldset>
+        ) : null}
 
-      {cur.backend === "whisper_openai" ? (
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field
-            label="OpenAI API key"
-            htmlFor="tr-oai-key"
-            hint="Write-only. Only the last 4 characters ever display."
-          >
-            <input
-              id="tr-oai-key"
-              type="password"
-              value={openaiKey}
-              onChange={(e) => setOpenaiKey(e.target.value)}
-              className={`${inputCls} font-mono`}
-              autoComplete="new-password"
-              placeholder="••••••••"
-            />
-            <SecretStatus field={fields["transcription.whisper_openai.api_key"]} />
-          </Field>
-          <Field label="Base URL" htmlFor="tr-oai-url" hint="OpenAI-compatible endpoint.">
-            <input
-              id="tr-oai-url"
-              value={cur.openaiBaseUrl}
-              onChange={(e) => set("openaiBaseUrl", e.target.value)}
-              className={`${inputCls} font-mono`}
-              autoComplete="off"
-              inputMode="url"
-            />
-          </Field>
-          <Field label="Model" htmlFor="tr-oai-model" hint="API model name, e.g. whisper-1.">
-            <input
-              id="tr-oai-model"
-              value={cur.openaiModel}
-              onChange={(e) => set("openaiModel", e.target.value)}
-              className={`${inputCls} font-mono`}
-              autoComplete="off"
-            />
-          </Field>
-        </div>
-      ) : null}
-
-      {isLocal ? (
-        <div className="mt-3 rounded-md border border-line p-3">
-          <h3 className="text-sm font-semibold">Model downloads</h3>
-          <p className="mt-1 text-xs text-muted">
-            Whisper weights are fetched inside the processing container on first use. This console
-            does not trigger or track downloads yet.
-          </p>
-        </div>
-      ) : null}
+        {cur.backend === "whisper_openai" ? (
+          <Fieldset legend="Cloud transcription" help="Any OpenAI-compatible transcription endpoint.">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field
+                label="OpenAI API key"
+                htmlFor="tr-oai-key"
+                hint="Write-only. Only the last 4 characters ever display."
+              >
+                <input
+                  id="tr-oai-key"
+                  type="password"
+                  value={openaiKey}
+                  onChange={(e) => setOpenaiKey(e.target.value)}
+                  className={`${inputCls} font-mono`}
+                  autoComplete="new-password"
+                  placeholder="••••••••"
+                />
+                <SecretStatus field={fields["transcription.whisper_openai.api_key"]} />
+              </Field>
+              <Field label="Base URL" htmlFor="tr-oai-url" hint="OpenAI-compatible endpoint.">
+                <input
+                  id="tr-oai-url"
+                  value={cur.openaiBaseUrl}
+                  onChange={(e) => set("openaiBaseUrl", e.target.value)}
+                  className={`${inputCls} font-mono`}
+                  autoComplete="off"
+                  inputMode="url"
+                />
+              </Field>
+              <Field label="Model" htmlFor="tr-oai-model" hint="API model name, e.g. whisper-1.">
+                <input
+                  id="tr-oai-model"
+                  value={cur.openaiModel}
+                  onChange={(e) => set("openaiModel", e.target.value)}
+                  className={`${inputCls} font-mono`}
+                  autoComplete="off"
+                />
+              </Field>
+            </div>
+          </Fieldset>
+        ) : null}
+      </div>
 
       {!valid ? (
         <p className="mt-2 text-xs text-danger" role="alert">
@@ -277,18 +277,7 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
         </p>
       ) : null}
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" disabled={!dirty || !valid || saving} onClick={onSave} aria-busy={saving}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
-        {!dirty ? (
-          <span className="text-xs text-muted">{isLive ? "Saved." : "No unsaved changes."}</span>
-        ) : (
-          <span className="text-xs text-warn" role="status">
-            Unsaved changes.
-          </span>
-        )}
-      </div>
+      <SaveBar dirty={dirty && valid} saved={!dirty} busy={saving} onSave={onSave} />
     </SectionCard>
   );
 }

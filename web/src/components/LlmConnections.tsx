@@ -10,7 +10,7 @@ import {
   type LlmRole,
   type LlmRouteRole,
 } from "../api/client";
-import { Button, Chip, Field, SectionCard, Toggle, inputCls } from "./ui";
+import { Advanced, Button, Chip, Field, SectionCard, Toggle, inputCls } from "./ui";
 
 const SLOT_ORDER: LlmRole[] = ["primary", "fallback", "validator"];
 
@@ -136,7 +136,7 @@ function SlotCard({
   const label = SLOT_LABEL[role];
   const masked = slot.hasKey ? (keyHidden ? "••••••••" : slot.maskedKey) : "no key set";
   return (
-    <li className="rounded-md border border-line p-3">
+    <div className="rounded-md border border-line bg-ink p-3">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-semibold">{label}</p>
         <Chip tone={SLOT_TONE[role]}>{role}</Chip>
@@ -238,41 +238,48 @@ function SlotCard({
           </div>
         </Field>
 
-        <Field label="Context window (num_ctx)" htmlFor={`${uid}-${role}-ctx`} hint="Blank uses the provider default.">
-          <input
-            id={`${uid}-${role}-ctx`}
-            value={draft.numCtx}
-            onChange={(e) => onChange({ numCtx: e.target.value })}
-            className={`${inputCls} font-mono`}
-            inputMode="numeric"
-            autoComplete="off"
-            placeholder="e.g. 32768"
-          />
-        </Field>
+      </div>
 
-        <Field label="Max tokens" htmlFor={`${uid}-${role}-max`} hint="Blank uses the provider default.">
-          <input
-            id={`${uid}-${role}-max`}
-            value={draft.maxTokens}
-            onChange={(e) => onChange({ maxTokens: e.target.value })}
-            className={`${inputCls} font-mono`}
-            inputMode="numeric"
-            autoComplete="off"
-            placeholder="e.g. 16000"
-          />
-        </Field>
+      <div className="mt-3">
+        <Advanced label="Advanced: context, tokens, temperature">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Context window (num_ctx)" htmlFor={`${uid}-${role}-ctx`} hint="Blank uses the provider default.">
+              <input
+                id={`${uid}-${role}-ctx`}
+                value={draft.numCtx}
+                onChange={(e) => onChange({ numCtx: e.target.value })}
+                className={`${inputCls} font-mono`}
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="e.g. 32768"
+              />
+            </Field>
 
-        <Field label="Temperature" htmlFor={`${uid}-${role}-temp`} hint="0 to 2. Blank uses the provider default.">
-          <input
-            id={`${uid}-${role}-temp`}
-            value={draft.temperature}
-            onChange={(e) => onChange({ temperature: e.target.value })}
-            className={`${inputCls} font-mono`}
-            inputMode="decimal"
-            autoComplete="off"
-            placeholder="e.g. 0.7"
-          />
-        </Field>
+            <Field label="Max tokens" htmlFor={`${uid}-${role}-max`} hint="Blank uses the provider default.">
+              <input
+                id={`${uid}-${role}-max`}
+                value={draft.maxTokens}
+                onChange={(e) => onChange({ maxTokens: e.target.value })}
+                className={`${inputCls} font-mono`}
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="e.g. 16000"
+              />
+            </Field>
+
+            <Field label="Temperature" htmlFor={`${uid}-${role}-temp`} hint="0 to 2. Blank uses the provider default.">
+              <input
+                id={`${uid}-${role}-temp`}
+                value={draft.temperature}
+                onChange={(e) => onChange({ temperature: e.target.value })}
+                className={`${inputCls} font-mono`}
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder="e.g. 0.7"
+              />
+            </Field>
+          </div>
+        </Advanced>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -294,7 +301,7 @@ function SlotCard({
           )
         ) : null}
       </div>
-    </li>
+    </div>
   );
 }
 
@@ -309,6 +316,7 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
   const [testingRole, setTestingRole] = useState<LlmRole | null>(null);
   const [results, setResults] = useState<Partial<Record<LlmRole, ApiLlmTestResult>>>({});
   const [keyHidden, setKeyHidden] = useState<Partial<Record<LlmRole, boolean>>>({});
+  const [activeRole, setActiveRole] = useState<LlmRole>("primary");
   const uid = useId();
 
   const applyConfig = (next: ApiLlmConfig) => {
@@ -442,24 +450,51 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
       {!loading && !loadError && config && drafts && routing ? (
         <>
           <ul className="flex flex-col gap-2" aria-label="Provider slots">
-            {SLOT_ORDER.map((role) => (
-              <SlotCard
-                key={role}
-                role={role}
-                slot={config[role]}
-                draft={drafts[role]}
-                uid={uid}
-                saving={savingRole === role}
-                testing={testingRole === role}
-                result={results[role] ?? null}
-                keyHidden={keyHidden[role] ?? false}
-                onChange={(patch) => updateDraft(role, patch)}
-                onSave={() => saveSlot(role)}
-                onTest={() => testSlot(role)}
-                onToggleKey={() => setKeyHidden((k) => ({ ...k, [role]: !(k[role] ?? false) }))}
-              />
-            ))}
+            {SLOT_ORDER.map((role) => {
+              const selected = activeRole === role;
+              return (
+                <li key={role}>
+                  <button
+                    type="button"
+                    onClick={() => setActiveRole(role)}
+                    aria-expanded={selected}
+                    aria-controls="slot-editor"
+                    className={`flex min-h-[44px] w-full flex-wrap items-center gap-2 rounded-md border p-3 text-left transition-colors ${
+                      selected ? "border-accent bg-raised" : "border-line hover:border-muted"
+                    }`}
+                  >
+                    <span className="w-20 shrink-0 text-sm font-semibold">{SLOT_LABEL[role]}</span>
+                    <Chip tone={SLOT_TONE[role]}>{role}</Chip>
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted">
+                      {config[role].provider} · {config[role].model || "no model"}
+                    </span>
+                    <Chip tone={config[role].enabled ? "ok" : "neutral"}>
+                      {config[role].enabled ? "enabled" : "disabled"}
+                    </Chip>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
+
+          <div className="mt-3" id="slot-editor">
+            <SlotCard
+              role={activeRole}
+              slot={config[activeRole]}
+              draft={drafts[activeRole]}
+              uid={uid}
+              saving={savingRole === activeRole}
+              testing={testingRole === activeRole}
+              result={results[activeRole] ?? null}
+              keyHidden={keyHidden[activeRole] ?? false}
+              onChange={(patch) => updateDraft(activeRole, patch)}
+              onSave={() => saveSlot(activeRole)}
+              onTest={() => testSlot(activeRole)}
+              onToggleKey={() =>
+                setKeyHidden((k) => ({ ...k, [activeRole]: !(k[activeRole] ?? false) }))
+              }
+            />
+          </div>
 
           <div className="mt-4 rounded-md border border-line p-3" aria-label="Routing">
             <h3 className="text-sm font-semibold">Routing</h3>

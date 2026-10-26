@@ -55,9 +55,12 @@ describe("PromptTemplatesSection live wiring", () => {
   });
 
   it("loads the effective cut-detection template from the prompts API", async () => {
+    const user = userEvent.setup();
     stubApi();
     await renderSection();
+    await user.click(await screen.findByRole("button", { name: /Cut Detection/ }));
     expect(await screen.findByDisplayValue("detect {transcript}")).toBeTruthy();
+    await user.click(screen.getByText("Advanced: system prompt"));
     expect(screen.getByDisplayValue("custom system")).toBeTruthy();
   });
 
@@ -66,6 +69,7 @@ describe("PromptTemplatesSection live wiring", () => {
     const { calls } = stubApi();
     await renderSection();
 
+    await user.click(await screen.findByRole("button", { name: /Cut Detection/ }));
     const box = (await screen.findByDisplayValue("detect {transcript}")) as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: "next {transcript}" } });
     await user.click(screen.getByRole("button", { name: "Save" }));
