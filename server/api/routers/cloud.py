@@ -789,15 +789,23 @@ def ensure_remote_serve(user_id: str | None, name: str, path: str = "") -> str:
         return url
 
 
+def _unsafe_remote_segment(value: str) -> bool:
+    if "\x00" in value:
+        return True
+    parts = [part for part in value.replace("\\", "/").split("/") if part]
+    return any(part in (".", "..") for part in parts)
+
+
 def parse_remote_path(container_path: str) -> tuple[str, str] | None:
     if not container_path.startswith(REMOTE_PREFIX):
         return None
     rest = container_path[len(REMOTE_PREFIX):]
     name, _, sub = rest.partition(":")
     name = name.strip()
-    if not name:
+    sub = sub.strip("/")
+    if not name or _unsafe_remote_segment(name) or _unsafe_remote_segment(sub):
         return None
-    return name, sub.strip("/")
+    return name, sub
 
 
 def remote_file_listable(user_id: str | None, name: str, sub: str) -> bool:

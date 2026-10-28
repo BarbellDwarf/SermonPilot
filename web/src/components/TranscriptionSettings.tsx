@@ -47,9 +47,11 @@ const FALLBACK: Record<string, unknown> = {
   "transcription.compute_type": "auto",
   "transcription.whisper_local.model": "base",
   "transcription.whisper_local.device": "auto",
+  "transcription.whisper_local.compute_type": "auto",
   "transcription.whisper_local.language": "en",
   "transcription.faster_whisper_local.model": "base",
   "transcription.faster_whisper_local.device": "auto",
+  "transcription.faster_whisper_local.compute_type": "auto",
   "transcription.faster_whisper_local.language": "en",
   "transcription.whisper_openai.base_url": "https://api.openai.com/v1",
   "transcription.whisper_openai.model": "whisper-1",
@@ -62,12 +64,15 @@ function localPrefix(backend: string): string {
 function stateFromFields(fields: Record<string, ApiConfigField>): TranscriptionState {
   const backend = String(fieldValue(fields, "transcription.backend", "faster_whisper_local"));
   const prefix = localPrefix(backend);
+  const canonicalCompute = fieldValue<string | null>(fields, "transcription.compute_type", null);
   return {
     backend,
     localModel: String(fieldValue(fields, `transcription.${prefix}.model`, "base")),
     device: String(fieldValue(fields, `transcription.${prefix}.device`, "auto")),
     language: String(fieldValue(fields, `transcription.${prefix}.language`, "en")),
-    computeType: String(fieldValue(fields, "transcription.compute_type", "auto")),
+    computeType: String(
+      canonicalCompute ?? fieldValue(fields, `transcription.${prefix}.compute_type`, "auto"),
+    ),
     openaiBaseUrl: String(
       fieldValue(fields, "transcription.whisper_openai.base_url", "https://api.openai.com/v1"),
     ),
@@ -122,6 +127,7 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
     if (isLocal) {
       values[`${localKeyExpr}.model`] = cur.localModel;
       values[`${localKeyExpr}.device`] = cur.device;
+      values[`${localKeyExpr}.compute_type`] = cur.computeType;
       values[`${localKeyExpr}.language`] = cur.language;
     }
     if (openaiKey.trim()) values["transcription.whisper_openai.api_key"] = openaiKey;

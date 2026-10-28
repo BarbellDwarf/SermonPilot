@@ -12,6 +12,7 @@ overriding a saved setting.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,7 +23,16 @@ from server.api.scoping import is_admin
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
-_FILESYSTEM_ROOT_PATHS = {"input_directory", "output_directory"}
+_FILESYSTEM_ROOT_PATHS = {
+    "input_directory",
+    "output_directory",
+    "upload_dir",
+    "processing_temp_dir",
+    "review_media_directory",
+    "trash_directory",
+}
+
+_ADMIN_ONLY_SECTIONS = {"storage", "resources"}
 
 # Dotted path -> value kind. ``json`` accepts a whole sub-tree (prompt
 # templates); ``secret`` is write-only and never echoed.
@@ -45,7 +55,22 @@ SECTIONS: dict[str, dict[str, str]] = {
         "audio_normalize": "bool",
         "audio_gain_db": "float",
         "audio_target_level_db": "float",
+        "preprocess_noise_gate": "bool",
         "metadata_processing.process_audio": "bool",
+    },
+    "resources": {
+        "enhancement.min_gpu_vram_gb": "float",
+        "job_queue.min_free_ram_gb": "float",
+        "job_queue.min_free_vram_gb": "float",
+    },
+    "storage": {
+        "input_directory": "str",
+        "output_directory": "str",
+        "upload_dir": "str",
+        "processing_temp_dir": "str",
+        "review_media_directory": "str",
+        "trash_directory": "str",
+        "trash_retention_days": "float",
     },
     "transcription": {
         "transcription.backend": "str",
@@ -55,12 +80,14 @@ SECTIONS: dict[str, dict[str, str]] = {
         "transcription.whisper_local.language": "str",
         "transcription.faster_whisper_local.model": "str",
         "transcription.faster_whisper_local.device": "str",
+        "transcription.faster_whisper_local.compute_type": "str",
         "transcription.faster_whisper_local.language": "str",
         "transcription.whisper_openai.base_url": "str",
         "transcription.whisper_openai.model": "str",
         "transcription.whisper_openai.api_key": "secret",
     },
     "validation": {
+        "metadata_processing.enabled": "bool",
         "metadata_processing.description.validation.enabled": "bool",
         "metadata_processing.description.validation.criteria": "list",
         "metadata_processing.description.update_if_missing": "bool",
@@ -77,6 +104,61 @@ SECTIONS: dict[str, dict[str, str]] = {
         "api_key": "secret",
         "broadcaster_id": "str",
     },
+}
+
+# Keys the legacy settings surface carried but that no runtime path reads from
+# the resolved config. They stay listed here so a parity audit reports a
+# deliberate retirement instead of a silent loss.
+RETIRED_CONFIG_KEYS: dict[str, str] = {
+    "metadata_processing.description.force_update": (
+        "per-run batch option read from job parameters, not the resolved config"
+    ),
+    "metadata_processing.hashtags.force_update": (
+        "per-run batch option read from job parameters, not the resolved config"
+    ),
+    "verbose": "CLI per-run flag; console jobs report progress through job logs",
+}
+
+# Resolver leaves that stay operator-managed through the config template or an
+# environment variable. The console never wrote these, and each is either a
+# per-run choice on another page or deployment plumbing that needs a restart.
+TEMPLATE_ONLY_CONFIG_KEYS: dict[str, str] = {
+    "auto_edit.enabled": "per-run switch on the new-teaching form; template sets the default",
+    "auto_edit.mode": "per-run choice on the new-teaching form",
+    "auto_edit.auto_confidence_threshold": "auto-edit tuning; template-managed",
+    "auto_edit.qa_margin_seconds": "auto-edit tuning; template-managed",
+    "auto_edit.min_sermon_seconds": "auto-edit tuning; template-managed",
+    "auto_edit.require_review": "legacy companion to auto_edit.mode",
+    "auto_edit.logo_path": "per-run logo chosen on the new-teaching form",
+    "auto_edit.logo_hold": "auto-edit tuning; template-managed",
+    "auto_edit.fade_to_black": "per-run choice on the new-teaching form",
+    "auto_edit.fade_out_tail_seconds": "auto-edit tuning; template-managed",
+    "auto_edit.keeper.enabled": "keeper transcode policy; template-managed",
+    "auto_edit.keeper.crf": "keeper transcode tuning; template-managed",
+    "auto_edit.keeper.nvenc": "keeper encoder chain; template-managed",
+    "auto_edit.keeper.delete_original": (
+        "deletion policy; template-managed, deletion still routes through trash"
+    ),
+    "auto_edit.keeper.min_source_gb": "keeper transcode threshold; template-managed",
+    "ingest_watcher.enabled": (
+        "the watcher starts from INGEST_WATCHER_ENABLED at container start"
+    ),
+    "ingest_watcher.remote": "watcher plumbing; template-managed",
+    "ingest_watcher.watch_subpath": "watcher plumbing; template-managed",
+    "ingest_watcher.poll_interval_seconds": "watcher plumbing; template-managed",
+    "ingest_watcher.stability_window_seconds": "watcher plumbing; template-managed",
+    "ingest_watcher.size_floor_mb": "watcher plumbing; template-managed",
+    "ingest_watcher.extension_allowlist": "watcher plumbing; template-managed",
+    "ingest_watcher.state_file": "watcher plumbing; template-managed",
+    "ingest_watcher.user_id": "watcher plumbing; template-managed",
+    "ingest_watcher.signal.url": "Signal gateway comes from INGEST_SIGNAL_URL",
+    "ingest_watcher.signal.sender": "Signal sender comes from INGEST_SIGNAL_SENDER",
+    "ingest_watcher.signal.recipients": (
+        "Signal recipients come from INGEST_SIGNAL_RECIPIENTS"
+    ),
+    "transcription.whisper_local.compute_type": (
+        "torch whisper ignores compute_type; faster-whisper owns it"
+    ),
 }
 
 
@@ -145,13 +227,17 @@ def _coerce(kind: str, path: str, value: Any) -> Any:
     elif kind == "float":
         if isinstance(value, bool):
             value = None
-        if isinstance(value, (int, float)):
-            return float(value)
-        if isinstance(value, str):
+        elif isinstance(value, (int, float)):
+            value = float(value)
+        elif isinstance(value, str):
             try:
-                return float(value.strip())
+                value = float(value.strip())
             except ValueError:
                 value = None
+        if isinstance(value, float):
+            if math.isfinite(value):
+                return value
+            value = None
     elif kind == "str":
         if isinstance(value, str):
             return value
@@ -221,6 +307,11 @@ def update_config_section(
     section: str, body: ConfigSectionUpdate, user=Depends(require_user)
 ) -> dict[str, Any]:
     spec = _require_section(section)
+    if section in _ADMIN_ONLY_SECTIONS and not is_admin(user):
+        raise HTTPException(
+            status_code=403,
+            detail=f"admin role required for {section} settings",
+        )
     updates: dict[str, Any] = {}
     for path, value in body.values.items():
         kind = spec.get(path)

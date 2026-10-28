@@ -17,8 +17,10 @@ import os
 import re
 import shutil
 import sqlite3
+import threading
 import time
-from datetime import datetime, timedelta
+import uuid
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -35,6 +37,11 @@ logger = logging.getLogger(__name__)
 _ACTIVE_STATUSES = ("queued", "running")
 
 _ACTIVE_JOB_GRACE_SECONDS = 2.0
+
+# Serialises the "is there an active job?" check with the insert that follows
+# it. Without the lock two parallel requests both read "none" and each queue a
+# job. Enqueue is short, so one process-wide lock is cheaper than a new table.
+_ENQUEUE_LOCK = threading.Lock()
 
 _UPLOAD_EXTENSIONS = frozenset(
     {"mkv", "mp4", "mov", "webm", "m4v", "mp3", "wav", "m4a", "flac", "ogg", "mpa"}
@@ -261,6 +268,25 @@ def _sermon_owner(sermon_id: str) -> str | None:
     return row["user_id"] if row else None
 
 
+def _sermon_duration(sermon_id: str) -> float | None:
+    from server.api.db import ReadOnlySermonDatabase
+
+    try:
+        with ReadOnlySermonDatabase().get_connection() as conn:
+            row = conn.execute(
+                "SELECT duration FROM sermons WHERE id = ?", (sermon_id,)
+            ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    if row is None or row["duration"] is None:
+        return None
+    try:
+        duration = float(row["duration"])
+    except (TypeError, ValueError):
+        return None
+    return duration if duration > 0 else None
+
+
 def _queue():
     from ui.job_queue import get_submit_job_queue
 
@@ -278,9 +304,10 @@ def _sermon_label_fields(sermon_id: str) -> dict[str, Any]:
 def _active_job_for(sermon_id: str) -> dict[str, Any] | None:
     try:
         from server.api.db import ReadOnlySermonDatabase
+        from ui.database import utcnow
         from ui.job_queue import INTERRUPTED_BY_RESTART_MARKER
 
-        cutoff = (datetime.now() - timedelta(seconds=_ACTIVE_JOB_GRACE_SECONDS)).isoformat()
+        cutoff = (utcnow() - timedelta(seconds=_ACTIVE_JOB_GRACE_SECONDS)).isoformat()
         with ReadOnlySermonDatabase().get_connection() as conn:
             row = conn.execute(
                 "SELECT id, type, status FROM background_jobs"
@@ -302,6 +329,31 @@ def _active_job_for(sermon_id: str) -> dict[str, Any] | None:
         return dict(row) if row else None
     except sqlite3.OperationalError:
         return None
+
+
+def _active_job_error(active: dict[str, Any]) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "message": "an active job already exists for this sermon",
+            "job_id": active["id"],
+            "code": "job_active",
+        },
+    )
+
+
+def _enqueue_once(sermon_id: str, enqueue: Any) -> Any:
+    """Run ``enqueue`` only when this sermon has no active job.
+
+    The check and the insert share one critical section so two requests that
+    arrive together cannot both pass the check. ``enqueue`` writes through the
+    job queue synchronously, so the row exists before the lock is released.
+    """
+    with _ENQUEUE_LOCK:
+        active = _active_job_for(sermon_id)
+        if active:
+            raise _active_job_error(active)
+        return enqueue()
 
 
 class RemoveSegmentBody(BaseModel):
@@ -371,16 +423,6 @@ class RefineBody(BaseModel):
 def _enqueue_plan_refine(
     *, sermon_id: str, notes: str, re_detect: bool, user_id: str | None
 ) -> dict[str, str]:
-    active = _active_job_for(sermon_id)
-    if active:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "an active job already exists for this sermon",
-                "job_id": active["id"],
-                "code": "job_active",
-            },
-        )
     from ui.job_labels import build_job_labels
     from ui.job_queue import JobType
 
@@ -389,19 +431,23 @@ def _enqueue_plan_refine(
         variant="re_detect" if re_detect else "refine",
         **_sermon_label_fields(sermon_id),
     )
-    job_id = _queue().add_job(
-        JobType.AUTO_EDIT,
-        name,
-        description,
-        parameters={
-            "refine": True,
-            "re_detect": re_detect,
-            "sermon_id": sermon_id,
-            "notes": notes,
-            "config": _resolved_job_config(),
-        },
-        user_id=user_id,
-    )
+
+    def enqueue() -> str:
+        return _queue().add_job(
+            JobType.AUTO_EDIT,
+            name,
+            description,
+            parameters={
+                "refine": True,
+                "re_detect": re_detect,
+                "sermon_id": sermon_id,
+                "notes": notes,
+                "config": _resolved_job_config(),
+            },
+            user_id=user_id,
+        )
+
+    job_id = _enqueue_once(sermon_id, enqueue)
     return {"job_id": job_id, "status": "queued"}
 
 
@@ -450,18 +496,10 @@ def _enqueue_upload_existing(
     created.
     """
     from server.api.db import get_repository
+    from ui.job_labels import build_job_labels
+    from ui.job_queue import JobType
     from ui.upload_only import assess_upload_only
 
-    active = _active_job_for(sermon_id)
-    if active:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "an active job already exists for this sermon",
-                "job_id": active["id"],
-                "code": "job_active",
-            },
-        )
     _require_sermonaudio_connection(user.get("id"))
     assessment = assess_upload_only(
         get_repository(),
@@ -479,26 +517,27 @@ def _enqueue_upload_existing(
             status_code=_UPLOAD_ONLY_STATUS.get(assessment.code, 422),
             detail=detail,
         )
-    from ui.job_labels import build_job_labels
-    from ui.job_queue import JobType
-
     name, description = build_job_labels(
         JobType.SERMON_PUBLISH,
         variant="upload_only",
         **_sermon_label_fields(sermon_id),
     )
-    job_id = _queue().add_job(
-        JobType.SERMON_PUBLISH,
-        name,
-        description,
-        parameters={
-            "sermon_id": sermon_id,
-            "upload_only": True,
-            "confirm_missing_description": bool(confirm_missing_description),
-            "config": _resolved_job_config(),
-        },
-        user_id=user.get("id"),
-    )
+
+    def enqueue() -> str:
+        return _queue().add_job(
+            JobType.SERMON_PUBLISH,
+            name,
+            description,
+            parameters={
+                "sermon_id": sermon_id,
+                "upload_only": True,
+                "confirm_missing_description": bool(confirm_missing_description),
+                "config": _resolved_job_config(),
+            },
+            user_id=user.get("id"),
+        )
+
+    job_id = _enqueue_once(sermon_id, enqueue)
     return {
         "job_id": job_id,
         "status": "queued",
@@ -535,7 +574,11 @@ def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(r
             for item in body.remove_segments
         ],
     )
-    problems = validate_plan(candidate, min_sermon_seconds=0.0)
+    problems = validate_plan(
+        candidate,
+        duration=_sermon_duration(sermon_id),
+        min_sermon_seconds=0.0,
+    )
     if problems:
         raise HTTPException(
             status_code=422,
@@ -543,22 +586,9 @@ def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(r
         )
     normalized_remove_segments = candidate.remove_segments
 
-    active = _active_job_for(sermon_id)
-    if active:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "an active job already exists for this sermon",
-                "job_id": active["id"],
-                "code": "job_active",
-            },
-        )
     if not body.render_only:
         _require_sermonaudio_connection(user.get("id"))
 
-    plan_id, plan_revision = _record_apply_revision(
-        sermon_id, body, normalized_remove_segments
-    )
     from ui.job_labels import build_job_labels
     from ui.job_queue import JobType
 
@@ -567,26 +597,34 @@ def apply_plan(sermon_id: str, body: ApplyBody, request: Request, user=Depends(r
         variant="render_only" if body.render_only else "upload",
         **_sermon_label_fields(sermon_id),
     )
-    job_id = _queue().add_job(
-        JobType.AUTO_EDIT_APPLY,
-        name,
-        description,
-        parameters={
-            "sermon_id": sermon_id,
-            "start": body.start,
-            "end": body.end,
-            "audio_offset": body.audio_offset,
-            "remove_segments": normalized_remove_segments,
-            "render_only": body.render_only,
-            "re_detect": body.re_detect,
-            "plan_id": plan_id,
-            "plan_revision": plan_revision,
-            "enhance_audio": body.enhance_audio,
-            "generate_metadata": bool(body.generate_metadata),
-            "config": _resolved_job_config(),
-        },
-        user_id=user.get("id"),
-    )
+
+    def enqueue() -> tuple[str, int, int]:
+        plan_id, plan_revision = _record_apply_revision(
+            sermon_id, body, normalized_remove_segments
+        )
+        job_id = _queue().add_job(
+            JobType.AUTO_EDIT_APPLY,
+            name,
+            description,
+            parameters={
+                "sermon_id": sermon_id,
+                "start": body.start,
+                "end": body.end,
+                "audio_offset": body.audio_offset,
+                "remove_segments": normalized_remove_segments,
+                "render_only": body.render_only,
+                "re_detect": body.re_detect,
+                "plan_id": plan_id,
+                "plan_revision": plan_revision,
+                "enhance_audio": body.enhance_audio,
+                "generate_metadata": bool(body.generate_metadata),
+                "config": _resolved_job_config(),
+            },
+            user_id=user.get("id"),
+        )
+        return job_id, plan_id, plan_revision
+
+    job_id, plan_id, plan_revision = _enqueue_once(sermon_id, enqueue)
     return {
         "job_id": job_id,
         "status": "queued",
@@ -612,16 +650,6 @@ def upload_now(sermon_id: str, user=Depends(require_user)):
     owner = _sermon_owner(sermon_id)
     if owner is None or not visible(owner, user):
         raise HTTPException(status_code=404, detail="sermon not found")
-    active = _active_job_for(sermon_id)
-    if active:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "an active job already exists for this sermon",
-                "job_id": active["id"],
-                "code": "job_active",
-            },
-        )
     _require_sermonaudio_connection(user.get("id"))
     from ui.job_labels import build_job_labels
     from ui.job_queue import JobType
@@ -630,12 +658,15 @@ def upload_now(sermon_id: str, user=Depends(require_user)):
         JobType.SERMON_PUBLISH,
         **_sermon_label_fields(sermon_id),
     )
-    job_id = _queue().add_job(
-        JobType.SERMON_PUBLISH,
-        name,
-        description,
-        parameters={"sermon_id": sermon_id},
-        user_id=user.get("id"),
+    job_id = _enqueue_once(
+        sermon_id,
+        lambda: _queue().add_job(
+            JobType.SERMON_PUBLISH,
+            name,
+            description,
+            parameters={"sermon_id": sermon_id},
+            user_id=user.get("id"),
+        ),
     )
     return {"job_id": job_id, "status": "queued"}
 
@@ -646,16 +677,6 @@ def regenerate_description(sermon_id: str, user=Depends(require_user)):
     owner = _sermon_owner(sermon_id)
     if owner is None or not visible(owner, user):
         raise HTTPException(status_code=404, detail="sermon not found")
-    active = _active_job_for(sermon_id)
-    if active:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "an active job already exists for this sermon",
-                "job_id": active["id"],
-                "code": "job_active",
-            },
-        )
     _require_sermonaudio_connection(user.get("id"))
     from ui.job_labels import build_job_labels
     from ui.job_queue import JobType
@@ -664,17 +685,20 @@ def regenerate_description(sermon_id: str, user=Depends(require_user)):
         JobType.METADATA_UPDATE,
         **_sermon_label_fields(sermon_id),
     )
-    job_id = _queue().add_job(
-        JobType.METADATA_UPDATE,
-        name,
-        description,
-        parameters={
-            "sermon_ids": [sermon_id],
-            "actions": {"generate_description": True},
-            "config": _resolved_job_config(),
-            "user_id": user.get("id"),
-        },
-        user_id=user.get("id"),
+    job_id = _enqueue_once(
+        sermon_id,
+        lambda: _queue().add_job(
+            JobType.METADATA_UPDATE,
+            name,
+            description,
+            parameters={
+                "sermon_ids": [sermon_id],
+                "actions": {"generate_description": True},
+                "config": _resolved_job_config(),
+                "user_id": user.get("id"),
+            },
+            user_id=user.get("id"),
+        ),
     )
     return {"job_id": job_id, "status": "queued"}
 
@@ -834,15 +858,6 @@ def push_sermon_metadata(
     owner = _sermon_owner(sermon_id)
     if owner is None or not visible(owner, user):
         raise HTTPException(status_code=404, detail="sermon not found")
-    active = _active_job_for(sermon_id)
-    if active:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "an active job already exists for this sermon",
-                "job_id": active["id"],
-            },
-        )
     from ui.job_labels import build_job_labels
     from ui.job_queue import JobType
 
@@ -850,20 +865,23 @@ def push_sermon_metadata(
         JobType.METADATA_UPDATE,
         **_sermon_label_fields(sermon_id),
     )
-    job_id = _queue().add_job(
-        JobType.METADATA_UPDATE,
-        name,
-        description,
-        parameters={
-            "sermon_ids": [sermon_id],
-            "actions": {
-                "push_metadata": True,
-                "full_push": bool(body.full_push),
+    job_id = _enqueue_once(
+        sermon_id,
+        lambda: _queue().add_job(
+            JobType.METADATA_UPDATE,
+            name,
+            description,
+            parameters={
+                "sermon_ids": [sermon_id],
+                "actions": {
+                    "push_metadata": True,
+                    "full_push": bool(body.full_push),
+                },
+                "config": _resolved_job_config(),
+                "user_id": user.get("id"),
             },
-            "config": _resolved_job_config(),
-            "user_id": user.get("id"),
-        },
-        user_id=user.get("id"),
+            user_id=user.get("id"),
+        ),
     )
     return {"job_id": job_id, "status": "queued", "full_push": bool(body.full_push)}
 
@@ -980,7 +998,7 @@ async def upload_sermon(
     user_dir = _user_ingest_dir(user.get("id"))
     user_dir.mkdir(parents=True, exist_ok=True)
     safe = re.sub(r"[^A-Za-z0-9_.-]", "_", original) or "upload"
-    dest = user_dir / f"{int(time.time() * 1000)}_{safe}"
+    dest = user_dir / f"{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}_{safe}"
     cap = _upload_cap_bytes()
     written = 0
     try:
@@ -1005,6 +1023,12 @@ async def upload_sermon(
         raise
     finally:
         await file.close()
+    if written == 0:
+        try:
+            dest.unlink()
+        except OSError:
+            pass
+        raise HTTPException(status_code=422, detail="uploaded file is empty")
 
     from src.sermon_identity import derive_sermon_id, source_fingerprint
 
@@ -1037,27 +1061,37 @@ async def upload_sermon(
     resolved_bible = (bible_text or scripture).strip()
     if auto_edit_mode not in (None, "interactive", "auto"):
         raise HTTPException(status_code=422, detail="auto_edit_mode must be interactive or auto")
-    job_id = _enqueue_sermon_processing(
-        sermon_id=sermon_id,
-        source_path=str(dest),
-        original_name=original,
-        title=resolved_title,
-        speaker=speaker.strip(),
-        recorded_date=recorded_date.strip(),
-        event_type=event_type.strip() or "Sunday Service",
-        series_title=series_title.strip(),
-        bible_text=resolved_bible,
-        skip_audio=skip_audio,
-        skip_transcription=skip_transcription,
-        skip_ai_generation=skip_ai_generation,
-        dry_run=dry_run,
-        auto_edit_enabled=auto_edit_enabled,
-        auto_edit_mode=auto_edit_mode,
-        logo_path=resolved_logo,
-        fade_to_black=fade_to_black,
-        output_dir=_output_dir_for(user, output_dir),
-        user_id=user.get("id"),
-    )
+    try:
+        job_id = _enqueue_once(
+            sermon_id,
+            lambda: _enqueue_sermon_processing(
+                sermon_id=sermon_id,
+                source_path=str(dest),
+                original_name=original,
+                title=resolved_title,
+                speaker=speaker.strip(),
+                recorded_date=recorded_date.strip(),
+                event_type=event_type.strip() or "Sunday Service",
+                series_title=series_title.strip(),
+                bible_text=resolved_bible,
+                skip_audio=skip_audio,
+                skip_transcription=skip_transcription,
+                skip_ai_generation=skip_ai_generation,
+                dry_run=dry_run,
+                auto_edit_enabled=auto_edit_enabled,
+                auto_edit_mode=auto_edit_mode,
+                logo_path=resolved_logo,
+                fade_to_black=fade_to_black,
+                output_dir=_output_dir_for(user, output_dir),
+                user_id=user.get("id"),
+            ),
+        )
+    except HTTPException as exc:
+        if exc.status_code == 409:
+            from src.safe_delete import trash_local
+
+            trash_local(dest, reason="duplicate_upload", stage="upload")
+        raise
     return {
         "id": sermon_id,
         "job_id": job_id,
@@ -1150,6 +1184,8 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
             detail=f"unsupported file type: .{ext or '?'} "
             f"(allowed: {', '.join(sorted(_UPLOAD_EXTENSIONS))})",
         )
+    if info.get("size") == 0:
+        raise HTTPException(status_code=422, detail="source file is empty")
     if body.auto_edit_mode not in (None, "interactive", "auto"):
         raise HTTPException(status_code=422, detail="auto_edit_mode must be interactive or auto")
 
@@ -1176,26 +1212,29 @@ def create_sermon_from_server_path(body: ServerPathBody, user=Depends(require_us
     )
     resolved_logo = (body.logo_path or body.auto_edit_logo_path).strip()
     resolved_bible = (body.bible_text or body.scripture).strip()
-    job_id = _enqueue_sermon_processing(
-        sermon_id=sermon_id,
-        source_path=source_path,
-        original_name=original_name,
-        title=body.title,
-        speaker=body.speaker,
-        recorded_date=body.recorded_date,
-        event_type=body.event_type or "Sunday Service",
-        series_title=body.series_title,
-        bible_text=resolved_bible,
-        skip_audio=body.skip_audio,
-        skip_transcription=body.skip_transcription,
-        skip_ai_generation=body.skip_ai_generation,
-        dry_run=body.dry_run,
-        auto_edit_enabled=body.auto_edit_enabled,
-        auto_edit_mode=body.auto_edit_mode,
-        logo_path=resolved_logo,
-        fade_to_black=body.fade_to_black,
-        output_dir=_output_dir_for(user, body.output_dir),
-        user_id=user.get("id"),
+    job_id = _enqueue_once(
+        sermon_id,
+        lambda: _enqueue_sermon_processing(
+            sermon_id=sermon_id,
+            source_path=source_path,
+            original_name=original_name,
+            title=body.title,
+            speaker=body.speaker,
+            recorded_date=body.recorded_date,
+            event_type=body.event_type or "Sunday Service",
+            series_title=body.series_title,
+            bible_text=resolved_bible,
+            skip_audio=body.skip_audio,
+            skip_transcription=body.skip_transcription,
+            skip_ai_generation=body.skip_ai_generation,
+            dry_run=body.dry_run,
+            auto_edit_enabled=body.auto_edit_enabled,
+            auto_edit_mode=body.auto_edit_mode,
+            logo_path=resolved_logo,
+            fade_to_black=body.fade_to_black,
+            output_dir=_output_dir_for(user, body.output_dir),
+            user_id=user.get("id"),
+        ),
     )
     return {
         "id": sermon_id,

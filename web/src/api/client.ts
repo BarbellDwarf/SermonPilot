@@ -491,6 +491,7 @@ export interface ApiLlmSlot {
   numCtx: string;
   maxTokens: string;
   temperature: string;
+  think: boolean;
   hasKey: boolean;
   maskedKey: string;
 }
@@ -524,6 +525,7 @@ export interface ApiLlmSlotUpdate {
   numCtx?: string;
   maxTokens?: string;
   temperature?: string;
+  think?: boolean;
   apiKey?: string;
 }
 
@@ -545,6 +547,7 @@ function mockLlmSlot(role: LlmRole, enabled: boolean): ApiLlmSlot {
     numCtx: "8192",
     maxTokens: "2048",
     temperature: "0.7",
+    think: false,
     hasKey: false,
     maskedKey: "",
   };

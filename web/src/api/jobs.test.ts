@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toJob } from "./hooks";
+import { fmtStamp, toJob } from "./hooks";
 import type { ApiJob } from "./client";
 
 const base: ApiJob = {
@@ -30,5 +30,28 @@ describe("toJob", () => {
     const job = toJob({ ...base, title: "", description: null });
     expect(job.kind).toBe("sermon_processing");
     expect(job.sermon).toBe("sermon_processing");
+  });
+});
+
+describe("fmtStamp", () => {
+  it("treats a naive database timestamp as UTC and shows the browser zone", () => {
+    expect(fmtStamp("2026-10-27 23:30:00", "America/New_York")).toBe("Oct 27, 19:30");
+    expect(fmtStamp("2026-10-27 23:30:00", "Asia/Tokyo")).toBe("Oct 28, 08:30");
+  });
+
+  it("keeps an explicit offset as the instant it names", () => {
+    expect(fmtStamp("2026-10-27T23:30:00Z", "America/New_York")).toBe("Oct 27, 19:30");
+    expect(fmtStamp("2026-10-28T08:30:00+09:00", "America/New_York")).toBe("Oct 27, 19:30");
+  });
+
+  it("does not shift a date-only recorded date", () => {
+    expect(fmtStamp("2026-10-27", "America/New_York")).toBe("Oct 27");
+    expect(fmtStamp("2026-10-27", "Asia/Tokyo")).toBe("Oct 27");
+  });
+
+  it("crosses a DST boundary without showing the wrong day", () => {
+    expect(fmtStamp("2026-03-08 06:30:00", "America/New_York")).toBe("Mar 8, 01:30");
+    expect(fmtStamp("2026-03-08 07:30:00", "America/New_York")).toBe("Mar 8, 03:30");
+    expect(fmtStamp("2026-11-01 03:30:00", "America/New_York")).toBe("Oct 31, 23:30");
   });
 });

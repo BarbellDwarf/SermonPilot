@@ -25,7 +25,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -38,6 +38,15 @@ sys.path.insert(0, str(project_root / "src"))
 sys.path.insert(0, str(ui_dir))
 
 logger = logging.getLogger(__name__)
+
+
+def _now() -> datetime:
+    """Naive UTC, matching SQLite's CURRENT_TIMESTAMP defaults.
+
+    The console renders job and lease timestamps in the browser's zone, so a
+    naive value must mean UTC no matter what the host clock is set to.
+    """
+    return datetime.now(UTC).replace(tzinfo=None)
 
 _SECRET_KEY_SUFFIXES = ('_key', '_token', '_secret', '_password', '_passwd')
 _SECRET_KEY_NAMES = frozenset({'password', 'passwd', 'token', 'secret', 'auth', 'authorization'})
@@ -131,10 +140,15 @@ def _ensure_lease_table(conn) -> bool:
             " worker_id TEXT NOT NULL,"
             " acquired_at TEXT NOT NULL,"
             " heartbeat_at TEXT NOT NULL,"
-            " boot_id TEXT)"
+            " boot_id TEXT,"
+            " pid INTEGER)"
         )
         try:
             conn.execute(f"ALTER TABLE {_JOB_LEASE_TABLE} ADD COLUMN boot_id TEXT")
+        except Exception:
+            pass
+        try:
+            conn.execute(f"ALTER TABLE {_JOB_LEASE_TABLE} ADD COLUMN pid INTEGER")
         except Exception:
             pass
         return True
@@ -152,29 +166,52 @@ def _current_boot_id() -> str | None:
         return None
 
 
+def _pid_alive(pid: int | None) -> bool:
+    """True when the recorded worker process still exists on this host."""
+    if not pid or pid <= 0:
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except (PermissionError, OSError):
+        return True
+    return True
+
+
+def _lease_owner_alive(row) -> bool:
+    """A fresh lease is only live when its process still exists in this boot."""
+    try:
+        recorded_boot = row["boot_id"]
+        pid = row["pid"]
+    except (IndexError, KeyError):
+        return True
+    boot_id = _current_boot_id()
+    if boot_id is not None and recorded_boot is not None and recorded_boot != boot_id:
+        return False
+    if pid is not None and not _pid_alive(pid):
+        return False
+    return True
+
+
 def _read_live_lease_owner(conn) -> str | None:
     """Return the worker id holding a fresh lease, or None when there is none."""
     try:
         row = conn.execute(
-            f"SELECT worker_id, heartbeat_at, boot_id FROM {_JOB_LEASE_TABLE} WHERE id = 1"
+            f"SELECT worker_id, heartbeat_at, boot_id, pid FROM {_JOB_LEASE_TABLE} WHERE id = 1"
         ).fetchone()
     except Exception:
         return None
     if row is None:
         return None
-    boot_id = _current_boot_id()
-    try:
-        recorded_boot = row["boot_id"]
-    except (IndexError, KeyError):
-        recorded_boot = None
-    if boot_id is not None and recorded_boot is not None and recorded_boot != boot_id:
-        # The lease was written before this boot: its owner cannot be alive.
+    if not _lease_owner_alive(row):
+        # The recorded boot or process is gone: its owner cannot be alive.
         return None
     try:
         heartbeat = datetime.fromisoformat(row["heartbeat_at"])
     except (TypeError, ValueError):
         return None
-    if datetime.now() - heartbeat > timedelta(seconds=JOB_LEASE_TIMEOUT_SECONDS):
+    if _now() - heartbeat > timedelta(seconds=JOB_LEASE_TIMEOUT_SECONDS):
         return None
     return row["worker_id"]
 
@@ -304,7 +341,7 @@ def _mark_job_interrupted(job: Job) -> None:
     """Flip an in-memory in-flight job to its restart-terminal state."""
     was_cancelled = bool(job.cancelled)
     job.status = JobStatus.CANCELLED if was_cancelled else JobStatus.FAILED
-    job.completed_at = datetime.now()
+    job.completed_at = _now()
     job.add_log(_INTERRUPTED_LOG_LINE)
     job.result = _interruption_result(was_cancelled)
 
@@ -380,7 +417,7 @@ def reconcile_interrupted_jobs(db_path: str | None = None) -> int:
             guard = ""
             params: list[Any] = [
                 target,
-                datetime.now().isoformat(),
+                _now().isoformat(),
                 result_json,
                 logs_json,
                 row["id"],
@@ -706,7 +743,7 @@ class JobQueue:
         """Take the single worker lease when no live worker holds it."""
         if not self.db:
             return True
-        now = datetime.now()
+        now = _now()
         stale_before = now - timedelta(seconds=JOB_LEASE_TIMEOUT_SECONDS)
         boot_id = _current_boot_id()
         try:
@@ -715,7 +752,7 @@ class JobQueue:
                 conn.commit()
                 conn.execute("BEGIN IMMEDIATE")
                 row = conn.execute(
-                    f"SELECT worker_id, heartbeat_at, boot_id FROM {_JOB_LEASE_TABLE}"
+                    f"SELECT worker_id, heartbeat_at, boot_id, pid FROM {_JOB_LEASE_TABLE}"
                     " WHERE id = 1"
                 ).fetchone()
                 if row is not None and row["worker_id"] != self.worker_id:
@@ -723,20 +760,14 @@ class JobQueue:
                         heartbeat = datetime.fromisoformat(row["heartbeat_at"])
                     except (TypeError, ValueError):
                         heartbeat = stale_before
-                    recorded_boot = row["boot_id"]
-                    same_boot = not (
-                        boot_id is not None
-                        and recorded_boot is not None
-                        and recorded_boot != boot_id
-                    )
-                    if same_boot and heartbeat > stale_before:
+                    if _lease_owner_alive(row) and heartbeat > stale_before:
                         conn.rollback()
                         return False
                 conn.execute(
                     f"INSERT OR REPLACE INTO {_JOB_LEASE_TABLE}"
-                    " (id, worker_id, acquired_at, heartbeat_at, boot_id)"
-                    " VALUES (1, ?, ?, ?, ?)",
-                    (self.worker_id, now.isoformat(), now.isoformat(), boot_id),
+                    " (id, worker_id, acquired_at, heartbeat_at, boot_id, pid)"
+                    " VALUES (1, ?, ?, ?, ?, ?)",
+                    (self.worker_id, now.isoformat(), now.isoformat(), boot_id, os.getpid()),
                 )
                 conn.commit()
             self._last_heartbeat_at = time.monotonic()
@@ -749,7 +780,7 @@ class JobQueue:
         """Refresh this worker's lease heartbeat; False when the lease was lost."""
         if not self._owns_lease or not self.db:
             return True
-        now = datetime.now()
+        now = _now()
         try:
             with self.db.get_connection() as conn:
                 cursor = conn.execute(
@@ -843,7 +874,7 @@ class JobQueue:
         if not self.db:
             return 0
 
-        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        cutoff = (_now() - timedelta(days=days)).isoformat()
         status_values = [status.value for status in _TERMINAL_JOB_STATUSES]
         placeholders = ','.join(['?' for _ in status_values])
         removed = 0
@@ -913,7 +944,7 @@ class JobQueue:
             description=description,
             status=JobStatus.QUEUED,
             progress=0.0,
-            created_at=datetime.now(),
+            created_at=_now(),
             parameters=parameters or {},
             priority=priority,
             user_id=user_id,
@@ -970,7 +1001,7 @@ class JobQueue:
             if local:
                 job.cancelled = True
                 job.status = JobStatus.CANCELLED
-                job.completed_at = datetime.now()
+                job.completed_at = _now()
                 job.add_log("Job cancelled by user")
                 logger.info(f"Cancelled job {job_id}")
 
@@ -1176,7 +1207,7 @@ class JobQueue:
             if job.status in _TERMINAL_JOB_STATUSES:
                 return
             job.status = JobStatus.FAILED
-            job.completed_at = datetime.now()
+            job.completed_at = _now()
             if job.result is None:
                 job.result = JobResult(
                     success=False, message="Job execution failed", error=str(exc)
@@ -1265,7 +1296,7 @@ class JobQueue:
 
             # Mark as running
             next_job.status = JobStatus.RUNNING
-            next_job.started_at = datetime.now()
+            next_job.started_at = _now()
             next_job._owner_id = self.worker_id
             next_job.add_log("Job started")
 
@@ -1274,7 +1305,7 @@ class JobQueue:
 
     def _claim_next_job_from_db(self) -> Job | None:
         """Atomically claim the highest-priority queued row for this worker."""
-        now = datetime.now()
+        now = _now()
         try:
             with self.db.get_connection() as conn:
                 present = _ensure_job_columns(conn)
@@ -1333,7 +1364,7 @@ class JobQueue:
         """Mark a job as cancelled and record its completion time."""
         job.cancelled = True
         job.status = JobStatus.CANCELLED
-        job.completed_at = datetime.now()
+        job.completed_at = _now()
 
     def _stall_timeout_seconds(self) -> float:
         """No-progress bound for a running job; 0 disables the watchdog."""
@@ -1430,7 +1461,7 @@ class JobQueue:
                     job.add_log(f"Job failed: {result.error or result.message}")
 
                 job.result = result
-                job.completed_at = datetime.now()
+                job.completed_at = _now()
 
         except JobCancelledError:
             job._on_update = None
@@ -1444,7 +1475,7 @@ class JobQueue:
             with self._queue_lock:
                 if job.status not in _TERMINAL_JOB_STATUSES:
                     job.status = JobStatus.FAILED
-                    job.completed_at = datetime.now()
+                    job.completed_at = _now()
                     job.result = JobResult(
                         success=False,
                         message=f"Job stalled at stage: {e.stage}",
@@ -1470,7 +1501,7 @@ class JobQueue:
                         "raise job_queue.min_free_ram_gb or min_free_vram_gb if this repeats."
                     ),
                 )
-                job.completed_at = datetime.now()
+                job.completed_at = _now()
             job.add_log(f"Job ran out of memory: {e}")
             logger.error("Job %s ran out of memory", job.id)
 
@@ -1487,7 +1518,7 @@ class JobQueue:
                     message="Job execution failed",
                     error=str(e)
                 )
-                job.completed_at = datetime.now()
+                job.completed_at = _now()
             job.add_log(f"Job failed with exception: {e}")
             logger.error(f"Job {job.id} failed: {e}")
 
@@ -1538,7 +1569,7 @@ class JobQueue:
                         job.cancelled = True
                         if job.status == JobStatus.RUNNING:
                             job.status = JobStatus.CANCELLED
-                            job.completed_at = job.completed_at or datetime.now()
+                            job.completed_at = job.completed_at or _now()
                     fields = [
                         "id", "type", "title", "description", "status", "progress",
                         "parameters", "result", "logs", "created_at", "started_at",
@@ -1564,7 +1595,7 @@ class JobQueue:
                     if "heartbeat_at" in present:
                         fields.append("heartbeat_at")
                         values.append(
-                            datetime.now().isoformat() if owner_id else None
+                            _now().isoformat() if owner_id else None
                         )
                     if "cancelled" in present:
                         fields.append("cancelled")

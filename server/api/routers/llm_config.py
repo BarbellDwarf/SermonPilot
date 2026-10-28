@@ -64,6 +64,7 @@ class LlmSlotUpdate(BaseModel):
     numCtx: str | int | float | None = None
     maxTokens: str | int | float | None = None
     temperature: str | int | float | None = None
+    think: bool | None = None
     apiKey: str | None = None
 
 
@@ -208,6 +209,7 @@ def _slot_view(llm: dict[str, Any], role: str) -> dict[str, Any]:
         "numCtx": str(pconf.get("num_ctx") or ""),
         "maxTokens": str(pconf.get("max_tokens") or ""),
         "temperature": str(pconf.get("temperature") or ""),
+        "think": bool(pconf.get("think", False)),
         "hasKey": has_key,
         "maskedKey": masked,
     }
@@ -292,6 +294,9 @@ def _apply_slot(llm: dict[str, Any], role: str, update: LlmSlotUpdate) -> None:
             pconf.pop(key, None)
         else:
             pconf[key] = _coerce_number(value, field)
+
+    if update.think is not None:
+        pconf["think"] = bool(update.think)
 
     if update.apiKey is not None:
         key_value = update.apiKey

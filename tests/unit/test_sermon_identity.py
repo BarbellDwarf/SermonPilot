@@ -55,6 +55,20 @@ def _sermon_count(predicate: str, params: tuple = ()) -> int:
         conn.close()
 
 
+def _finish_active_jobs() -> None:
+    """Simulate the worker finishing the queued job so a re-submit is allowed."""
+    conn = sqlite3.connect(get_db_path())
+    try:
+        conn.execute(
+            "UPDATE background_jobs SET status = 'completed',"
+            " completed_at = datetime('now', '-1 hour')"
+            " WHERE status IN ('queued', 'running')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def test_same_server_source_updates_one_row(client, scoped_setup, tmp_path, monkeypatch):
     s = scoped_setup
     monkeypatch.setenv("SERMONPILOT_RAW_INGEST", str(tmp_path))
@@ -64,10 +78,17 @@ def test_same_server_source_updates_one_row(client, scoped_setup, tmp_path, monk
     body = _server_path_body(src)
 
     first = client.post("/api/sermons/server-path", json=body, headers=s["a"]["headers"])
-    second = client.post("/api/sermons/server-path", json=body, headers=s["a"]["headers"])
+    while_active = client.post(
+        "/api/sermons/server-path", json=body, headers=s["a"]["headers"]
+    )
     assert first.status_code == 201, first.text
-    assert second.status_code == 201, second.text
-    assert first.json()["id"] == second.json()["id"]
+    assert while_active.status_code == 409, while_active.text
+    assert _sermon_count("speaker = ? AND title = ?", ("Speaker A", "Server Talk")) == 1
+
+    _finish_active_jobs()
+    again = client.post("/api/sermons/server-path", json=body, headers=s["a"]["headers"])
+    assert again.status_code == 201, again.text
+    assert first.json()["id"] == again.json()["id"]
     assert _sermon_count("speaker = ? AND title = ?", ("Speaker A", "Server Talk")) == 1
 
 
@@ -89,10 +110,15 @@ def test_same_uploaded_bytes_updates_one_row(client, scoped_setup, tmp_path, mon
         )
 
     first = post("first.mp3")
-    second = post("second.mp3")
+    while_active = post("second.mp3")
     assert first.status_code == 201, first.text
-    assert second.status_code == 201, second.text
-    assert first.json()["id"] == second.json()["id"]
+    assert while_active.status_code == 409, while_active.text
+    assert _sermon_count("speaker = ? AND title = ?", ("Speaker A", "Uploaded Talk")) == 1
+
+    _finish_active_jobs()
+    again = post("third.mp3")
+    assert again.status_code == 201, again.text
+    assert first.json()["id"] == again.json()["id"]
     assert _sermon_count("speaker = ? AND title = ?", ("Speaker A", "Uploaded Talk")) == 1
 
 

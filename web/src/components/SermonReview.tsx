@@ -295,6 +295,8 @@ export function SermonReview({
   const [offsetText, setOffsetText] = useState(initial.offsetSec.toFixed(1));
   const [applying, setApplying] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const applyInFlight = useRef(false);
+  const uploadInFlight = useRef(false);
   const [confirmUploadNoDescription, setConfirmUploadNoDescription] = useState(false);
   const [enhance, setEnhance] = useState(enhanceDefault);
   const [refining, setRefining] = useState(false);
@@ -544,17 +546,20 @@ export function SermonReview({
   const applyVerb = actions.published ? "Re-render" : "Approve";
 
   const uploadExisting = (confirmMissingDescription: boolean) => {
-    if (uploading) return;
+    if (uploadInFlight.current) return;
+    uploadInFlight.current = true;
     if (live) {
       setUploading(true);
       void writeApi
         .uploadOnly(sermon.id, { confirm_missing_description: confirmMissingDescription })
         .then(() => {
+          uploadInFlight.current = false;
           setUploading(false);
           setConfirmUploadNoDescription(false);
           onToast("Upload of the existing render queued.");
         })
         .catch((e) => {
+          uploadInFlight.current = false;
           setUploading(false);
           const err = e as ApiError;
           if (err?.code === "missing_description" && !confirmMissingDescription) {
@@ -571,13 +576,15 @@ export function SermonReview({
     }
     setUploading(true);
     window.setTimeout(() => {
+      uploadInFlight.current = false;
       setUploading(false);
       onToast("Upload of the existing render queued (mock).");
     }, 900);
   };
 
   const approve = (renderOnly: boolean) => {
-    if (errors.length > 0 || applying) return;
+    if (errors.length > 0 || applyInFlight.current) return;
+    applyInFlight.current = true;
     if (live) {
       setApplying(true);
       void writeApi
@@ -594,10 +601,12 @@ export function SermonReview({
           generate_metadata: !renderOnly,
         })
         .then(() => {
+          applyInFlight.current = false;
           setApplying(false);
           onToast(renderOnly ? "Plan approved, render queued." : "Plan approved, render + upload queued.");
         })
         .catch((e) => {
+          applyInFlight.current = false;
           setApplying(false);
           const msg = (e as Error).message;
           onToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`);
@@ -606,6 +615,7 @@ export function SermonReview({
     }
     setApplying(true);
     window.setTimeout(() => {
+      applyInFlight.current = false;
       setApplying(false);
       setStatusLog((h) => [...h, `revision ${plan.revision} superseded`]);
       setPlan((p) => ({

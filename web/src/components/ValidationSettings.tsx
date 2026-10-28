@@ -1,10 +1,11 @@
 import { useId, useMemo, useState } from "react";
 import { isLive } from "../api/client";
-import { useConfigForm } from "../api/useConfigSection";
+import { fieldSource, useConfigForm } from "../api/useConfigSection";
 import { Advanced, Button, Field, Fieldset, SaveBar, SectionCard, Toggle, inputCls } from "./ui";
 
 interface ValidationState {
   enabled: boolean;
+  metadataEnabled: boolean;
   criteria: string[];
   descMissing: boolean;
   descMinimal: boolean;
@@ -16,6 +17,7 @@ interface ValidationState {
 
 const DEFAULTS: ValidationState = {
   enabled: true,
+  metadataEnabled: true,
   criteria: ["Contains a scripture reference", "Mentions the main sermon topic"],
   descMissing: true,
   descMinimal: true,
@@ -27,6 +29,7 @@ const DEFAULTS: ValidationState = {
 
 const PATHS = {
   enabled: "metadata_processing.description.validation.enabled",
+  metadataEnabled: "metadata_processing.enabled",
   criteria: "metadata_processing.description.validation.criteria",
   descMissing: "metadata_processing.description.update_if_missing",
   descMinimal: "metadata_processing.description.update_if_minimal",
@@ -53,7 +56,7 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
     }),
     [],
   );
-  const { cur, dirty, set, save } = useConfigForm<ValidationState>(
+  const { cur, fields, dirty, set, save } = useConfigForm<ValidationState>(
     "validation",
     DEFAULTS,
     PATHS,
@@ -88,6 +91,7 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
     setSaving(true);
     void save((c) => ({
       [PATHS.enabled]: c.enabled,
+      [PATHS.metadataEnabled]: c.metadataEnabled,
       [PATHS.criteria]: c.criteria,
       [PATHS.descMissing]: c.descMissing,
       [PATHS.descMinimal]: c.descMinimal,
@@ -111,6 +115,18 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
       }
     >
       <div className="flex flex-col gap-3">
+        <Fieldset
+          legend="Metadata generation"
+          help="Turn the title, description, and hashtag pass off for runs that should publish only what the operator entered."
+        >
+          <Toggle
+            checked={cur.metadataEnabled}
+            onChange={(v) => set("metadataEnabled", v)}
+            label="Generate metadata"
+            hint="When off, the pipeline keeps the metadata already on the record."
+            source={fieldSource(fields, PATHS.metadataEnabled)}
+          />
+        </Fieldset>
         <Fieldset
           legend="Description validation"
           help="A second LLM pass checks each draft against these criteria before publishing."

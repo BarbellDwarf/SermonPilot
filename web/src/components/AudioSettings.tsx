@@ -23,6 +23,7 @@ interface AudioState {
   customRepo: string;
   customFile: string;
   noiseReduction: boolean;
+  preprocessNoiseGate: boolean;
   amplify: boolean;
   normalize: boolean;
   gainDb: string;
@@ -35,6 +36,7 @@ const DEFAULTS: AudioState = {
   customRepo: "",
   customFile: "",
   noiseReduction: true,
+  preprocessNoiseGate: false,
   amplify: true,
   normalize: true,
   gainDb: "0.5",
@@ -47,6 +49,7 @@ const PATHS = {
   customRepo: "clear_custom_repo",
   customFile: "clear_custom_file",
   noiseReduction: "audio_noise_reduction",
+  preprocessNoiseGate: "preprocess_noise_gate",
   amplify: "audio_amplify",
   normalize: "audio_normalize",
   gainDb: "audio_gain_db",
@@ -92,6 +95,7 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
       [PATHS.customRepo]: c.customRepo,
       [PATHS.customFile]: c.customFile,
       [PATHS.noiseReduction]: c.noiseReduction,
+      [PATHS.preprocessNoiseGate]: c.preprocessNoiseGate,
       [PATHS.amplify]: c.amplify,
       [PATHS.normalize]: c.normalize,
       [PATHS.gainDb]: Number(c.gainDb),
@@ -195,6 +199,13 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
           label="Noise reduction"
           hint="Apply noise reduction during processing."
           source={fieldSource(fields, PATHS.noiseReduction)}
+        />
+        <Toggle
+          checked={cur.preprocessNoiseGate}
+          onChange={(v) => set("preprocessNoiseGate", v)}
+          label="Legacy noise gate (pre-enhancement)"
+          hint="Off is recommended. This gate runs before DeepFilterNet and removed sermon speech in past runs."
+          source={fieldSource(fields, PATHS.preprocessNoiseGate)}
         />
         <Toggle
           checked={cur.amplify}

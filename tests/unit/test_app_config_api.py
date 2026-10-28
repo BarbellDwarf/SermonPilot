@@ -93,6 +93,88 @@ def test_filesystem_root_config_is_admin_only(client, scoped_setup, clean_env, t
     assert allowed.status_code == 200, allowed.text
 
 
+def test_storage_roots_are_admin_only_and_round_trip(client, scoped_setup, clean_env, tmp_path):
+    user = scoped_setup["a"]["headers"]
+    admin = scoped_setup["admin_headers"]
+    for key in ("input_directory", "upload_dir", "processing_temp_dir", "trash_directory"):
+        denied = client.put(
+            "/api/config/sections/storage",
+            json={"values": {key: str(tmp_path / "denied")}},
+            headers=user,
+        )
+        assert denied.status_code == 403, (key, denied.text)
+
+    retention = client.put(
+        "/api/config/sections/storage",
+        json={"values": {"trash_retention_days": 0}},
+        headers=user,
+    )
+    assert retention.status_code == 403, retention.text
+
+    saved = client.put(
+        "/api/config/sections/storage",
+        json={
+            "values": {
+                "input_directory": str(tmp_path / "sources"),
+                "upload_dir": str(tmp_path / "uploads"),
+                "processing_temp_dir": str(tmp_path / "scratch"),
+                "trash_directory": str(tmp_path / "trash"),
+                "trash_retention_days": 14,
+            }
+        },
+        headers=admin,
+    )
+    assert saved.status_code == 200, saved.text
+    fields = saved.json()["fields"]
+    assert fields["trash_retention_days"]["value"] == 14.0
+    assert fields["input_directory"]["source"] == "db"
+
+    from ui.config_utils import resolve_config
+
+    config = resolve_config()
+    assert config["input_directory"] == str(tmp_path / "sources")
+    assert config["trash_retention_days"] == 14.0
+
+
+def test_resources_section_accepts_thresholds(client, scoped_setup, clean_env):
+    headers = scoped_setup["admin_headers"]
+    denied = client.put(
+        "/api/config/sections/resources",
+        json={"values": {"job_queue.min_free_ram_gb": 99}},
+        headers=scoped_setup["a"]["headers"],
+    )
+    assert denied.status_code == 403
+    saved = client.put(
+        "/api/config/sections/resources",
+        json={
+            "values": {
+                "job_queue.min_free_ram_gb": 4.5,
+                "job_queue.min_free_vram_gb": 2,
+                "enhancement.min_gpu_vram_gb": 16,
+            }
+        },
+        headers=headers,
+    )
+    assert saved.status_code == 200, saved.text
+    fields = saved.json()["fields"]
+    assert fields["job_queue.min_free_ram_gb"]["value"] == 4.5
+    assert fields["enhancement.min_gpu_vram_gb"]["value"] == 16.0
+
+    bad = client.put(
+        "/api/config/sections/resources",
+        json={"values": {"job_queue.min_free_ram_gb": "many"}},
+        headers=headers,
+    )
+    assert bad.status_code == 422
+
+    nan = client.put(
+        "/api/config/sections/resources",
+        json={"values": {"enhancement.min_gpu_vram_gb": "nan"}},
+        headers=headers,
+    )
+    assert nan.status_code == 422
+
+
 def test_default_source_is_reported(client, scoped_setup, clean_env):
     headers = scoped_setup["admin_headers"]
     view = client.get("/api/config/sections/audio", headers=headers).json()

@@ -62,6 +62,12 @@ vi.mock("../components/PromptTemplates", () => ({
 vi.mock("../components/ConfigBackup", () => ({
   ConfigBackupSection: () => <p>Backup panel</p>,
 }));
+vi.mock("../components/ResourceSettings", () => ({
+  ResourceSettingsSection: () => <p>Resources panel</p>,
+}));
+vi.mock("../components/StorageSettings", () => ({
+  StorageSettingsSection: () => <p>Storage panel</p>,
+}));
 
 import { Settings } from "./Settings";
 
@@ -106,6 +112,17 @@ describe("Settings shell", () => {
   it("opens the section named in the URL", () => {
     renderSettings("/settings?section=backup");
     expect(screen.getByText("Backup panel")).toBeTruthy();
+  });
+
+  it("exposes the resources and storage sections from the section list", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    await user.click(screen.getByRole("button", { name: "Resources" }));
+    expect(screen.getByText("Resources panel")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Storage" }));
+    expect(screen.getByText("Storage panel")).toBeTruthy();
   });
 
   it("asks with an in-app dialog before discarding a dirty section and stays when declined", async () => {

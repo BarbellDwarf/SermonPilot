@@ -8,8 +8,10 @@ import { ConfigBackupSection } from "../components/ConfigBackup";
 import { GeneralSettingsSection } from "../components/GeneralSettings";
 import { LlmConnectionsSection } from "../components/LlmConnections";
 import { PromptTemplatesSection } from "../components/PromptTemplates";
+import { ResourceSettingsSection } from "../components/ResourceSettings";
 import { SermonAudioAccountsSection } from "../components/SermonAudioAccounts";
 import { SermonAudioCredentialsSection } from "../components/SermonAudioCredentials";
+import { StorageSettingsSection } from "../components/StorageSettings";
 import { TranscriptionSettingsSection } from "../components/TranscriptionSettings";
 import { ValidationSettingsSection } from "../components/ValidationSettings";
 import {
@@ -31,11 +33,13 @@ const SECTIONS = [
   { id: "audio", label: "Audio", group: "Pipeline" },
   { id: "transcription", label: "Transcription", group: "Pipeline" },
   { id: "validation", label: "Validation", group: "Pipeline" },
+  { id: "resources", label: "Resources", group: "Pipeline" },
   { id: "llm", label: "LLM providers", group: "Connections" },
   { id: "sermonaudio", label: "SermonAudio accounts", group: "Connections" },
   { id: "cloud", label: "Cloud mounts", group: "Connections" },
   { id: "prompts", label: "Prompt templates", group: "Prompts" },
   { id: "general", label: "General", group: "System" },
+  { id: "storage", label: "Storage", group: "System" },
   { id: "backup", label: "Backup & restore", group: "System" },
 ] as const;
 
@@ -525,6 +529,10 @@ export function Settings({ user }: { user: { display_name: string; role?: string
         return <TranscriptionSettingsSection show={show} />;
       case "validation":
         return <ValidationSettingsSection show={show} />;
+      case "resources":
+        return <ResourceSettingsSection show={show} isAdmin={user.role === "admin"} />;
+      case "storage":
+        return <StorageSettingsSection show={show} isAdmin={user.role === "admin"} />;
       case "prompts":
         return <PromptTemplatesSection show={show} />;
       case "backup":

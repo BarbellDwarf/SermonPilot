@@ -21,7 +21,7 @@ enumeration of environment variables.
 | General | Dry Run Mode (`dry_run`) | General |
 | General | Debug Mode (`debug`) | General |
 | General | Hashtag Verification (`hashtag_verification`) | General |
-| General | Output Directory (`output_directory`) | General, per-user `settings.general.output_dir` |
+| General | Output Directory (`output_directory`) | General, per-user `settings.general.output_dir`; Storage holds the deployment root |
 | General | Save Original Audio (`save_original_audio`) | General |
 | General | Save Transcript (`save_transcript`) | General |
 | LLM | Primary Provider (`llm.primary.*`) | LLM Providers, Primary slot |
@@ -78,7 +78,8 @@ surface, not migrations.
 | Cloud Mounts | Remote upload targets |
 | Routing (inside LLM Providers) | Which provider slot handles metadata, validation, transcription assist, and fallback |
 | Processing defaults | Keeper audio and video bitrates, default audio offset |
-| Appearance | Theme |
+| Resources | Job queue RAM/VRAM floors and the enhancement GPU threshold. Admin only. |
+| Storage | Input, upload, temp, review-media, and trash roots plus trash retention. Admin only. || Appearance | Theme |
 | Account | Display name, password reset |
 | Users | Admin account management |
 | System | Front-door cutover state and log level |
@@ -162,3 +163,64 @@ until the variable is unset.
 
 - `docs/INSTALLATION_GUIDE.md` for the database-authoritative configuration model.
 - `src/core/config.py::ENV_CONFIG_MAP` for the environment variable enumeration.
+
+## Full resolved-leaf inventory (phase 10A)
+
+The legacy map above is not the whole resolver surface. `config/templates/*.yaml`
+and `src/core/config.py::ENV_CONFIG_MAP` carry more leaves than the Streamlit
+page ever exposed. `tests/unit/test_settings_parity.py` flattens every template,
+the canonical example config, and the environment map, then requires each non-LLM
+leaf to appear in one of three places: a console `SECTIONS` entry, the retired
+list, or the template-only list. A new key cannot arrive silently.
+
+### Editable in the console
+
+| Section | Key | Console home |
+|---|---|---|
+| general | `dry_run`, `debug`, `hashtag_verification`, `save_original_audio`, `save_transcript` | General |
+| general | `output_directory` | Storage (deployment root) and General (per-user default) |
+| audio | `audio_enhancement_method`, `enhancement.device`, `clear_custom_repo`, `clear_custom_file` | Audio |
+| audio | `audio_noise_reduction`, `audio_amplify`, `audio_normalize`, `audio_gain_db`, `audio_target_level_db` | Audio |
+| audio | `preprocess_noise_gate` | Audio, Advanced; off by default because it harmed speech |
+| audio | `metadata_processing.process_audio` | Audio, Advanced; legacy boolean, loses to an explicit enhancement method |
+| resources | `enhancement.min_gpu_vram_gb`, `job_queue.min_free_ram_gb`, `job_queue.min_free_vram_gb` | Resources, admin only |
+| storage | `input_directory`, `output_directory`, `upload_dir`, `processing_temp_dir`, `review_media_directory`, `trash_directory`, `trash_retention_days` | Storage, admin only |
+| transcription | `transcription.backend`, `transcription.compute_type` | Transcription |
+| transcription | `transcription.whisper_local.{model,device,language}` | Transcription, local backends |
+| transcription | `transcription.faster_whisper_local.{model,device,compute_type,language}` | Transcription, local backends |
+| transcription | `transcription.whisper_openai.{base_url,model,api_key}` | Transcription, OpenAI backend |
+| validation | `metadata_processing.enabled` | Validation, "Generate metadata" |
+| validation | `metadata_processing.description.validation.{enabled,criteria}` | Validation |
+| validation | `metadata_processing.description.{update_if_missing,update_if_minimal,min_length_threshold}` | Validation |
+| validation | `metadata_processing.hashtags.{update_if_missing,update_if_minimal,min_length_threshold}` | Validation |
+| prompts | `prompt_templates` | Prompt Templates |
+| sermonaudio | `api_key`, `broadcaster_id` | Single-account fallback |
+| llm | `llm.<slot>.<provider>.*` | LLM Providers, including the Ollama `think` toggle |
+
+### Retired keys
+
+| Key | Reason |
+|---|---|
+| `metadata_processing.description.force_update` | A per-run batch option read from job parameters, not the resolved config. |
+| `metadata_processing.hashtags.force_update` | Same per-run batch option. |
+| `verbose` | CLI per-run flag. Console jobs report progress through job logs. |
+
+### Template or environment only
+
+These leaves stay operator-managed through the variant template or an
+environment variable. They are either per-run choices made on another page or
+deployment plumbing that needs a restart.
+
+| Key | Reason |
+|---|---|
+| `auto_edit.enabled`, `auto_edit.mode`, `auto_edit.fade_to_black`, `auto_edit.logo_path` | Per-run switches on the new-teaching form; the template sets the default. |
+| `auto_edit.auto_confidence_threshold`, `auto_edit.qa_margin_seconds`, `auto_edit.min_sermon_seconds`, `auto_edit.require_review` | Auto-edit tuning, template-managed. |
+| `auto_edit.logo_hold`, `auto_edit.fade_out_tail_seconds` | Auto-edit tuning, template-managed. |
+| `auto_edit.keeper.*` | Keeper transcode policy and tuning. Deletion still routes through trash. |
+| `ingest_watcher.*` | The watcher starts from `INGEST_WATCHER_ENABLED`; Signal credentials come from `INGEST_SIGNAL_URL`, `INGEST_SIGNAL_SENDER`, `INGEST_SIGNAL_RECIPIENTS`. |
+| `transcription.whisper_local.compute_type` | Torch whisper ignores it; faster-whisper owns `compute_type`. |
+
+`web_console_ready` lives in the same settings database but is not a resolved
+pipeline leaf. `GET /api/meta/retirement` reports it, and the System card names
+the cutover steps. It stays out of the config sections so a routine settings
+save cannot flip the front door.

@@ -143,13 +143,34 @@ export function toJob(j: ApiJob, logs: string[] = []): Job {
   };
 }
 
-function fmtStamp(value: string | null): string {
+export function fmtStamp(value: string | null, timeZone?: string): string {
   if (!value || value === "—") return "—";
-  const parsed = new Date(value.replace(" ", "T"));
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const [year, month, day] = trimmed.split("-").map(Number);
+    return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+  }
+  // Database timestamps are naive UTC; a browser-local parse would shift them.
+  const iso = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
+  const zoned = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(iso) ? iso : `${iso}Z`;
+  const parsed = new Date(zoned);
   if (Number.isNaN(parsed.getTime())) return value;
-  const date = parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return date;
-  const time = parsed.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+  const options = timeZone ? { timeZone } : undefined;
+  const date = parsed.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...options,
+  });
+  const time = parsed.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    ...options,
+  });
   return `${date}, ${time}`;
 }
 

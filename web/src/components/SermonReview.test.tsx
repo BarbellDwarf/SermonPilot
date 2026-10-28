@@ -1083,6 +1083,28 @@ describe("SermonReview metadata generation", () => {
       generate_metadata: true,
     });
   });
+
+  it("queues once when the approve button is double-clicked", async () => {
+    const apply = vi
+      .spyOn(writeApi, "applyPlan")
+      .mockResolvedValue({ job_id: "j-once", status: "queued" });
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description="A description."
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: /Approve & upload/ });
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    await waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
+  });
 });
 
 describe("SermonReview refine controls", () => {

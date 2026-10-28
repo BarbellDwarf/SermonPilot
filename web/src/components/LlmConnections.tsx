@@ -70,6 +70,7 @@ interface SlotDraft {
   numCtx: string;
   maxTokens: string;
   temperature: string;
+  think: boolean;
   apiKey: string;
 }
 
@@ -82,6 +83,7 @@ function draftFromSlot(slot: ApiLlmSlot): SlotDraft {
     numCtx: slot.numCtx,
     maxTokens: slot.maxTokens,
     temperature: slot.temperature,
+    think: Boolean(slot.think),
     apiKey: "",
   };
 }
@@ -279,6 +281,17 @@ function SlotCard({
               />
             </Field>
           </div>
+          {draft.provider === "ollama" ? (
+            <div className="mt-3">
+              <Toggle
+                checked={draft.think}
+                onChange={(v) => onChange({ think: v })}
+                label="Reasoning tokens"
+                hint="Off gives direct answers and avoids token-budget cutoffs on non-reasoning tasks."
+                testId={`${role}-think`}
+              />
+            </div>
+          ) : null}
         </Advanced>
       </div>
 
@@ -374,6 +387,7 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
       maxTokens: d.maxTokens,
       temperature: d.temperature,
     };
+    if (d.provider === "ollama") update.think = d.think;
     if (d.apiKey.trim()) update.apiKey = d.apiKey;
     const body: ApiLlmConfigUpdate =
       role === "primary"

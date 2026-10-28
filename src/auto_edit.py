@@ -551,6 +551,17 @@ def validate_plan(
 ) -> list[str]:
     problems: list[str] = []
 
+    finite = (
+        ("start", plan.start),
+        ("end", plan.end),
+        ("audio offset", plan.audio_offset or 0.0),
+    )
+    for label, value in finite:
+        if not math.isfinite(float(value)):
+            problems.append(f"{label} must be a finite number")
+    if problems:
+        return problems
+
     if plan.start < 0:
         problems.append("start is negative")
 

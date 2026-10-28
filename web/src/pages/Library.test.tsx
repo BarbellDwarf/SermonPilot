@@ -95,12 +95,43 @@ describe("Library rows", () => {
     expect(screen.getByText("Speaker A · 2026-09-06")).toBeTruthy();
   });
 
+  it("renders only the loaded page, not every matching row, at scale", () => {
+    const page = Array.from({ length: 50 }, (_, i) => ({
+      ...rows[0],
+      id: `s-page-${i}`,
+      title: `Teaching ${i}`,
+    }));
+    mocks.sermons.mockReturnValue({
+      ...libraryData(page),
+      total: 10000,
+      hasMore: true,
+    });
+    const { container } = renderLibrary();
+
+    expect(screen.getAllByTestId(/^library-row-/)).toHaveLength(50);
+    expect(screen.getByText("50 of 50 loaded")).toBeTruthy();
+    expect(container.querySelectorAll("*").length).toBeLessThan(2000);
+  });
+
   it("opens the teaching from a row click", async () => {
     const user = userEvent.setup();
     renderLibrary();
 
     await user.click(screen.getByRole("link", { name: /^Open Sample Teaching 1/ }));
     expect(screen.getByText("teaching detail")).toBeTruthy();
+  });
+
+  it("renders markup in a title as text, never as DOM", () => {
+    const hostile = '<script>window.__pwned = 1</script><img src=x onerror="alert(1)">';
+    mocks.sermons.mockReturnValue(
+      libraryData([{ ...rows[0], id: "s-hostile", title: hostile }]),
+    );
+    const { container } = renderLibrary();
+
+    expect(screen.getByText(hostile)).toBeTruthy();
+    expect(container.querySelector("script")).toBeNull();
+    expect(container.querySelector("img")).toBeNull();
+    expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
   });
 
   it("keeps open and preview inside the row overflow menu", async () => {

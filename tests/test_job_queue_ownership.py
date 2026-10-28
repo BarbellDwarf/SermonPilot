@@ -230,6 +230,44 @@ def test_a_fresh_lease_from_a_previous_boot_is_not_live(db_path: Path) -> None:
     assert _read_status(db_path, "j-reboot") == "failed"
 
 
+def test_a_fresh_lease_with_a_dead_pid_is_not_live(db_path: Path) -> None:
+    _init_schema(db_path)
+    _insert_job(db_path, "j-killed", owner="killed-worker")
+    _insert_lease(db_path, "killed-worker", datetime.now())
+    conn = _connect(db_path)
+    try:
+        conn.execute(f"UPDATE {_JOB_LEASE_TABLE} SET pid = 999999 WHERE id = 1")
+        conn.commit()
+    finally:
+        conn.close()
+
+    reconciled = reconcile_interrupted_jobs(db_path=str(db_path))
+
+    assert reconciled == 1
+    assert _read_status(db_path, "j-killed") == "failed"
+
+
+def test_a_restarted_worker_takes_over_a_dead_pid_lease_immediately(db_path: Path) -> None:
+    _init_schema(db_path)
+    _insert_lease(db_path, "killed-worker", datetime.now())
+    conn = _connect(db_path)
+    try:
+        conn.execute(f"UPDATE {_JOB_LEASE_TABLE} SET pid = 999999 WHERE id = 1")
+        conn.commit()
+    finally:
+        conn.close()
+
+    db = SermonDatabase(db_path=str(db_path))
+    import ui.database as dm
+
+    dm._db = db
+    try:
+        replacement = JobQueue(worker_id="replacement")
+        assert replacement._acquire_worker_lease() is True
+    finally:
+        dm._db = None
+
+
 def test_submit_only_queue_runs_no_worker_and_takes_no_lease(db_path: Path) -> None:
     db = SermonDatabase(db_path=str(db_path))
     import ui.database as dm

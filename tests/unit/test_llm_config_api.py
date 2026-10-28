@@ -42,6 +42,7 @@ def test_config_round_trip_and_secret_masking(client, scoped_setup, clean_llm_en
             "endpoint": "http://host.docker.internal:11434",
             "numCtx": "32768",
             "maxTokens": "16000",
+            "think": True,
             "apiKey": secret,
         },
         "fallback": {"enabled": False},
@@ -63,6 +64,7 @@ def test_config_round_trip_and_secret_masking(client, scoped_setup, clean_llm_en
     assert data["primary"]["endpoint"] == "http://host.docker.internal:11434"
     assert data["primary"]["numCtx"] == "32768"
     assert data["primary"]["maxTokens"] == "16000"
+    assert data["primary"]["think"] is True
     assert data["primary"]["hasKey"] is True
     assert data["primary"]["maskedKey"].endswith("9f2a")
     assert data["routing"]["validation"] == "validator"
@@ -83,6 +85,7 @@ def test_saved_change_is_what_the_pipeline_resolves(client, scoped_setup, clean_
         endpoint="http://host.docker.internal:11434",
         numCtx="32768",
         maxTokens="16000",
+        think=True,
     )
 
     from ui.config_utils import resolve_config
@@ -90,6 +93,7 @@ def test_saved_change_is_what_the_pipeline_resolves(client, scoped_setup, clean_
     llm = resolve_config().get("llm", {})
     assert llm["primary"]["ollama"]["model"] == "glm-5.3-flash:cloud"
     assert llm["primary"]["ollama"]["host"] == "http://host.docker.internal:11434"
+    assert llm["primary"]["ollama"]["think"] is True
 
 
 def test_secrets_never_appear_in_any_response(client, scoped_setup, clean_llm_env):
