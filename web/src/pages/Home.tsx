@@ -1,7 +1,8 @@
 import { Link } from "react-router-dom";
 import { type SermonStatus } from "../mock/data";
-import { Chip, EmptyState, Meter, PageHeader, SkeletonList, buttonClass, staggerStyle } from "../components/ui";
+import { Chip, ClampText, EmptyState, Meter, PageHeader, SkeletonList, buttonClass, staggerStyle } from "../components/ui";
 import { QueryError, useHomeData } from "../api/hooks";
+import { formatDurationValue, formatRelativeTime } from "../utils/format";
 import { STATUS_DOT, STATUS_TEXT, jobRowTitle, jobStatus } from "./jobRow";
 
 const sermonTone: Record<SermonStatus, string> = {
@@ -138,7 +139,12 @@ export function Home() {
                     <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={jobRowTitle(job)}>
                       {jobRowTitle(job)}
                     </span>
-                    <span className="shrink-0 font-mono text-xs text-muted">{job.created}</span>
+                    <span
+                      className="shrink-0 font-mono text-xs text-muted"
+                      title={job.createdAt ? formatRelativeTime(job.createdAt) : undefined}
+                    >
+                      {job.created}
+                    </span>
                   </Link>
                 </li>
               );
@@ -183,14 +189,15 @@ export function Home() {
                 >
                   <Chip tone={sermonTone[s.status]}>{sermonLabel[s.status]}</Chip>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold" title={s.title}>
-                      {s.title}
-                    </span>
-                    <span className="block truncate text-xs text-muted">
-                      {s.speaker} · {s.updated}
-                    </span>
+                    <ClampText text={s.title} className="text-sm font-semibold" />
+                    <ClampText
+                      text={`${s.speaker} · ${s.updated}`}
+                      className="text-xs text-muted"
+                    />
                   </span>
-                  <span className="hidden shrink-0 font-mono text-xs text-muted sm:inline">{s.duration}</span>
+                  <span className="hidden shrink-0 font-mono text-xs text-muted sm:inline">
+                    {formatDurationValue(s.duration)}
+                  </span>
                 </Link>
               </li>
             ))}

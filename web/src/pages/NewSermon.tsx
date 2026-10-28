@@ -32,6 +32,7 @@ import { CloudBrowser, MOCK_REMOTES } from "../components/CloudBrowser";
 import { Combobox } from "../components/Combobox";
 import { FileExplorerDialog } from "../components/FileExplorer";
 import { useToast } from "../components/toast";
+import { formatBytes } from "../utils/format";
 
 type SourceKind = "browser" | "server" | "cloud";
 type AutoEditMode = "interactive" | "auto";
@@ -41,18 +42,6 @@ const sourceOptions: { id: SourceKind; label: string }[] = [
   { id: "server", label: "Server path" },
   { id: "cloud", label: "Cloud file" },
 ];
-
-function formatBytes(bytes: number | null | undefined): string {
-  if (bytes === null || bytes === undefined) return "";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let n = bytes;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i += 1;
-  }
-  return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
 
 const prefilledCloudMatch = (value: string) =>
   /^remote:([A-Za-z0-9._-]{1,64}):(.*)$/.exec(value.trim());
@@ -574,7 +563,7 @@ export function NewSermon() {
             >
               <Icon name="upload" className="h-8 w-8 text-muted" />
               <p className="text-sm font-semibold">
-                {isLive ? (fileObj ? `${fileObj.name} (${(fileObj.size / 1048576).toFixed(1)} MB)` : "Drag a file here or choose one") : (fileName ?? "Drag a file here or choose one")}
+                {isLive ? (fileObj ? `${fileObj.name} (${formatBytes(fileObj.size)})` : "Drag a file here or choose one") : (fileName ?? "Drag a file here or choose one")}
               </p>
               <p className="text-xs text-muted">
                 {isLive

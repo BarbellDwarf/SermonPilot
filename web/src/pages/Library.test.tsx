@@ -92,7 +92,7 @@ describe("Library rows", () => {
     expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
     expect(screen.getAllByRole("link", { name: /^Open Sample Teaching/ })).toHaveLength(3);
     expect(screen.getAllByRole("button", { name: /^Actions for Sample Teaching/ })).toHaveLength(3);
-    expect(screen.getByText("Speaker A · 2026-09-06")).toBeTruthy();
+    expect(screen.getByText("Speaker A · Sep 6, 2026")).toBeTruthy();
   });
 
   it("renders only the loaded page, not every matching row, at scale", () => {
@@ -185,5 +185,36 @@ describe("Library toolbar", () => {
     expect(click).toHaveBeenCalledTimes(1);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:sample");
     click.mockRestore();
+  });
+});
+
+describe("Library edge cases", () => {
+  it("keeps long or missing values inside one ellipsized row", () => {
+    const title =
+      "A long teaching title that keeps going well past a hundred characters so the row has to clamp it cleanly without growing";
+    const speaker = "A".repeat(40);
+    mocks.sermons.mockReturnValue(
+      libraryData([
+        {
+          ...rows[0],
+          id: "s-edge",
+          title,
+          speaker,
+          date: "",
+          series: "",
+          duration: "0:00",
+        },
+      ]),
+    );
+    const { container } = renderLibrary();
+    const row = screen.getByTestId("library-row-s-edge");
+
+    expect(screen.getByTitle(title)).toBeTruthy();
+    expect(within(row).getByText("No series")).toBeTruthy();
+    expect(within(row).getByText("0s")).toBeTruthy();
+    expect(within(row).getByText(/· —/)).toBeTruthy();
+    expect(row.querySelector(".truncate")).toBeTruthy();
+    expect(row.querySelector(".line-clamp-2")).toBeNull();
+    expect(container.querySelectorAll("p.truncate").length).toBe(0);
   });
 });

@@ -1,4 +1,5 @@
 import type { Job } from "../mock/data";
+import { formatDuration } from "../utils/format";
 
 const SEP = " · ";
 
@@ -192,15 +193,7 @@ export function elapsedSince(createdAt: string | null | undefined, now: number):
   const start = createdAt ? Date.parse(createdAt.replace(" ", "T")) : NaN;
   if (!Number.isFinite(start)) return "";
   const total = Math.max(0, Math.floor((now - start) / 1000));
-  if (total < 60) return `${total}s`;
-  const minutes = Math.floor(total / 60);
-  if (minutes < 60) {
-    const seconds = total % 60;
-    return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest ? `${hours}h ${rest}m` : `${hours}h`;
+  return formatDuration(total);
 }
 
 function clockValue(value: unknown): string | null {

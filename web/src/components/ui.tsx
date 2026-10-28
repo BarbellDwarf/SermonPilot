@@ -272,6 +272,25 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
   return <div className={`rounded-lg border border-line bg-surface p-4 ${className}`}>{children}</div>;
 }
 
+export function ClampText({
+  text,
+  className = "",
+  lines = 1,
+}: {
+  text: string;
+  className?: string;
+  lines?: 1 | 2;
+}) {
+  return (
+    <span
+      title={text}
+      className={`${lines === 1 ? "truncate" : "line-clamp-2"} block min-w-0 ${className}`}
+    >
+      {text}
+    </span>
+  );
+}
+
 export function PageHeader({
   title,
   sub,
@@ -284,7 +303,12 @@ export function PageHeader({
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="text-2xl font-bold leading-tight tracking-tight [overflow-wrap:anywhere]">{title}</h1>
+        <h1
+          title={title}
+          className="line-clamp-2 text-2xl font-bold leading-tight tracking-tight [overflow-wrap:anywhere]"
+        >
+          {title}
+        </h1>
         {sub ? <p className="mt-1 max-w-prose text-sm text-muted">{sub}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
@@ -379,6 +403,42 @@ export function Toggle({
           <EnvSourceBadge source={source} />
         </span>
         {hint ? <span className="block text-muted">{hint}</span> : null}
+      </span>
+    </button>
+  );
+}
+
+export function Switch({
+  checked,
+  onChange,
+  label,
+  testId,
+  disabled = false,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  testId?: string;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      data-testid={testId}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md disabled:cursor-not-allowed disabled:opacity-45"
+    >
+      <span
+        aria-hidden="true"
+        className={`flex h-6 w-11 shrink-0 items-center rounded-full border border-line p-0.5 transition-colors duration-150 ${
+          checked ? "justify-end border-accent bg-accent" : "justify-start bg-ink"
+        }`}
+      >
+        <span className="h-4 w-4 rounded-full bg-white shadow-sm" />
       </span>
     </button>
   );
@@ -493,7 +553,7 @@ export function SkeletonList({
     return (
       <div aria-hidden="true" aria-label="Loading" className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
         {Array.from({ length: rows }).map((_, i) => (
-          <div key={i} className="flex items-center gap-3 px-4 py-3" style={{ minHeight: rowHeight }}>
+          <div key={i} className="flex items-center gap-3 px-4 py-3" style={{ height: rowHeight }}>
             <div className="min-w-0 flex-1">
               <Skeleton className="h-4 w-2/5" />
               <Skeleton className="mt-2 h-3 w-1/4" />

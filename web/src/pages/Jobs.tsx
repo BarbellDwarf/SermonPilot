@@ -28,6 +28,7 @@ import {
   jobStatus,
   jobTypeLabel,
 } from "./jobRow";
+import { formatCount, formatDate, formatDurationValue, formatRelativeTime } from "../utils/format";
 
 type Tab = "active" | "completed" | "failed";
 
@@ -133,6 +134,7 @@ function JobRow({
         </span>
         <time
           dateTime={job.createdAt ? job.createdAt.replace(" ", "T") : undefined}
+          title={job.createdAt ? formatRelativeTime(job.createdAt) : undefined}
           className="[grid-area:time] shrink-0 font-mono text-xs text-muted"
         >
           {job.created}
@@ -193,11 +195,11 @@ function JobRow({
             {context.speaker ? (
               <span>
                 {context.speaker}
-                {context.date ? ` · ${context.date}` : ""}
+                {context.date ? ` · ${formatDate(context.date)}` : ""}
               </span>
             ) : null}
             <span className="font-mono">
-              {status === "RUNNING" && elapsed ? elapsed : job.duration}
+              {status === "RUNNING" && elapsed ? elapsed : formatDurationValue(job.duration)}
             </span>
             {job.finished ? <span>Finished {job.finished}</span> : null}
           </div>
@@ -369,11 +371,11 @@ export function Jobs() {
       <p className="text-xs text-muted" role="status" aria-live="polite">
         {successRate === null
           ? "No finished jobs yet."
-          : `${successRate}% success across ${finished} finished ${finished === 1 ? "job" : "jobs"}.`}
+          : `${successRate}% success across ${formatCount(finished, "finished job")}.`}
       </p>
 
       {loading ? (
-        <SkeletonList rows={5} variant="row" rowHeight={56} />
+        <SkeletonList rows={5} variant="row" rowHeight={64} />
       ) : error ? (
         <QueryError message={error} onRetry={retry} />
       ) : rows.length === 0 ? (

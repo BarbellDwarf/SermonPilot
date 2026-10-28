@@ -1,9 +1,13 @@
 # Visual regression baselines
 
 Playwright captures Home, Library, Jobs, Settings, New teaching, and Review at
-390x844 and 1440x900, in dark and light themes. Screenshots live in
+390x844, 768x1024, and 1440x900, in dark and light themes. Screenshots live in
 `__screenshots__/<project>/` and are committed, so a UI change shows up as a
 diff instead of silent drift.
+
+`responsive.spec.ts` also checks 390, 768, 1024, and 1440 for horizontal
+overflow and for exactly one section navigation (bottom bar below 768px, left
+rail from 768px).
 
 The suite runs against the built demo bundle (`npm run build` then
 `vite preview`), with a pinned clock so relative timestamps stay stable.

@@ -45,8 +45,8 @@ describe("fmtStamp", () => {
   });
 
   it("does not shift a date-only recorded date", () => {
-    expect(fmtStamp("2026-10-27", "America/New_York")).toBe("Oct 27");
-    expect(fmtStamp("2026-10-27", "Asia/Tokyo")).toBe("Oct 27");
+    expect(fmtStamp("2026-10-27", "America/New_York")).toBe("Oct 27, 2026");
+    expect(fmtStamp("2026-10-27", "Asia/Tokyo")).toBe("Oct 27, 2026");
   });
 
   it("crosses a DST boundary without showing the wrong day", () => {

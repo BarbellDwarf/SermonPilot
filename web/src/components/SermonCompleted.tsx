@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { mediaStreamUrl, type ApiMediaItem } from "../api/client";
 import type { SermonMediaData } from "../api/hooks";
 import type { EditPlan, LibrarySermon } from "../mock/data";
-import { formatBytes } from "../utils/files";
+import { formatBytes, formatDate } from "../utils/format";
 import { formatCut } from "../utils/time";
 import { MediaPlayer } from "./MediaPlayer";
 import { TranscriptViewer } from "./TranscriptViewer";
@@ -166,7 +166,7 @@ export function SermonCompleted({
     <div data-testid="sermon-completed" className="flex flex-col gap-4">
       <PageHeader
         title={form.title}
-        sub={`${form.speaker} · ${form.date}`}
+        sub={`${formatDate(form.date)} · Finished teaching`}
         actions={
           <>
             {statusChip}
@@ -373,7 +373,7 @@ export function SermonCompleted({
             </div>
             <div data-testid="detail-date" className="min-w-0">
               <dt className="text-xs font-medium text-muted">Date</dt>
-              <dd className="mt-0.5 text-sm text-mist [overflow-wrap:anywhere]">{form.date || "—"}</dd>
+              <dd className="mt-0.5 text-sm text-mist [overflow-wrap:anywhere]">{formatDate(form.date)}</dd>
             </div>
             <div data-testid="detail-description" className="min-w-0 sm:col-span-2">
               <dt className="text-xs font-medium text-muted">Description</dt>

@@ -18,6 +18,7 @@ import {
   type ServiceStatus,
 } from "../mock/data";
 import { Button, Card, useBriefLoading } from "../components/ui";
+import { formatDate, formatDateTime } from "../utils/format";
 import { api, filesApi, isLive, mediaApi, type ApiEditPlan, type ApiJob, type ApiMediaItem, type ApiSermonListItem } from "./client";
 
 export type LibrarySort = "date" | "title" | "duration";
@@ -147,31 +148,9 @@ export function fmtStamp(value: string | null, timeZone?: string): string {
   if (!value || value === "—") return "—";
   const trimmed = value.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    const [year, month, day] = trimmed.split("-").map(Number);
-    return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      timeZone: "UTC",
-    });
+    return formatDate(trimmed, { timeZone });
   }
-  // Database timestamps are naive UTC; a browser-local parse would shift them.
-  const iso = trimmed.includes(" ") ? trimmed.replace(" ", "T") : trimmed;
-  const zoned = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(iso) ? iso : `${iso}Z`;
-  const parsed = new Date(zoned);
-  if (Number.isNaN(parsed.getTime())) return value;
-  const options = timeZone ? { timeZone } : undefined;
-  const date = parsed.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    ...options,
-  });
-  const time = parsed.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    ...options,
-  });
-  return `${date}, ${time}`;
+  return formatDateTime(trimmed, { timeZone });
 }
 
 const LIBRARY_PAGE_SIZE = 50;

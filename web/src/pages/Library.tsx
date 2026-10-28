@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { type LibrarySermon, type LibrarySermonStatus } from "../mock/data";
-import { Button, Chip, EmptyState, Icon, Menu, PageHeader, SkeletonList, buttonClass, staggerStyle } from "../components/ui";
+import { Button, Chip, ClampText, EmptyState, Icon, Menu, PageHeader, SkeletonList, buttonClass, staggerStyle } from "../components/ui";
 import { MediaPlayer } from "../components/MediaPlayer";
 import { QueryError, useLibrarySermons, type LibrarySort } from "../api/hooks";
 import { isLive } from "../api/client";
+import { formatCount, formatDate, formatDurationValue } from "../utils/format";
 
 export const sermonStatusTone: Record<LibrarySermonStatus, string> = {
   draft: "neutral",
@@ -45,18 +46,15 @@ function SermonRow({ sermon, index }: { sermon: LibrarySermon; index: number }) 
         <div className="flex min-h-[64px] items-center gap-3 px-4 py-2.5 transition-colors duration-150 group-hover:bg-raised peer-focus-visible:bg-raised">
           <div aria-hidden="true" className="flex min-w-0 flex-1 items-center gap-3">
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold" title={sermon.title}>
-                {sermon.title}
-              </p>
-              <p className="mt-0.5 truncate text-xs text-muted">
-                {sermon.speaker} · {sermon.date}
-              </p>
+              <ClampText text={sermon.title} className="text-sm font-semibold" />
+              <ClampText
+                text={`${sermon.speaker || "Unknown speaker"} · ${formatDate(sermon.date)}`}
+                className="mt-0.5 text-xs text-muted"
+              />
             </div>
             <div className="hidden w-32 shrink-0 text-right sm:block">
-              <p className="font-mono text-xs text-muted">{sermon.duration}</p>
-              <p className="truncate text-xs text-muted" title={sermon.series}>
-                {sermon.series}
-              </p>
+              <p className="font-mono text-xs text-muted">{formatDurationValue(sermon.duration)}</p>
+              <ClampText text={sermon.series || "No series"} className="text-xs text-muted" />
             </div>
             <Chip tone={sermonStatusTone[sermon.status]}>{status}</Chip>
           </div>
@@ -206,7 +204,7 @@ export function Library() {
           <span className="font-mono text-xs text-muted" role="status" aria-live="polite">
             {hasMore
               ? `${visible.length} of ${isLive ? total : rows.length} loaded`
-              : `${visible.length} ${visible.length === 1 ? "teaching" : "teachings"}`}
+              : formatCount(visible.length, "teaching")}
           </span>
         </div>
       </div>

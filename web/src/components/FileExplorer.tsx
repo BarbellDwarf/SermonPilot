@@ -8,6 +8,7 @@ import {
 } from "../api/client";
 import { Button, Chip } from "./ui";
 import { CloudBrowser, formatModified, sortNewestFirst } from "./CloudBrowser";
+import { formatBytes } from "../utils/format";
 
 export type ExplorerMode = "local" | "cloud";
 export type PickMode = "file" | "folder";
@@ -68,15 +69,7 @@ function mockExplore(path: string): ApiExploreResult {
 }
 
 function formatSize(bytes: number | null): string {
-  if (bytes === null) return "—";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let n = bytes;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i += 1;
-  }
-  return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+  return bytes === null ? "—" : formatBytes(bytes);
 }
 
 function LocalExplorer({ path, onPath, onUseFile, onUseFolder, pick = "file" }: FileExplorerProps) {

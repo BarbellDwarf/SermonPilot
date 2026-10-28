@@ -11,6 +11,7 @@ import { QueryError, useSermonDetail, useSermonMedia, useSermonPlan, useSermonTr
 import { api, isLive, writeApi } from "../api/client";
 import type { ApiTrashRecord } from "../api/client";
 import { fieldValue, useConfigSection } from "../api/useConfigSection";
+import { formatDate, formatDurationValue } from "../utils/format";
 
 export function describeDeleteOutcome(records: ApiTrashRecord[]): string {
   const localMoved = records.filter((r) => r.mode === "local" && r.moved);
@@ -100,7 +101,11 @@ export function LibraryDetail() {
       <div className="flex flex-col gap-4">
         <EmptyState
           title="Teaching not found"
-          body="This demo library has only a handful of sample teachings. The link may be stale."
+          body={
+            isLive
+              ? "This teaching may have been applied or removed. Open the library to find the current entry."
+              : "This demo library has only a handful of sample teachings. The link may be stale."
+          }
           action={
             <Link to="/library" className={buttonClass("primary")}>
               Back to library
@@ -367,7 +372,7 @@ export function LibraryDetail() {
         <div className="flex flex-col gap-4">
           <PageHeader
             title={sermon.title}
-            sub={`${sermon.speaker} · ${sermon.date} · ${sermon.duration}`}
+            sub={`${sermon.speaker || "Unknown speaker"} · ${formatDate(sermon.date)} · ${formatDurationValue(sermon.duration)}`}
             actions={
               <>
                 <Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>

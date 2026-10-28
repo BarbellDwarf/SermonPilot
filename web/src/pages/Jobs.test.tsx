@@ -224,7 +224,7 @@ describe("Jobs rows", () => {
     expect(screen.getByTestId("job-row-job-1").getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText(/Processing "Sunday Teaching"/)).toBeTruthy();
     expect(screen.getByText("Sermon processing")).toBeTruthy();
-    expect(screen.getByText("Sample Speaker · 2026-10-25")).toBeTruthy();
+    expect(screen.getByText("Sample Speaker · Oct 25, 2026")).toBeTruthy();
     expect(screen.getByText("job-1")).toBeTruthy();
     expect(screen.getByText("Start: 0:40")).toBeTruthy();
     expect(screen.getByText("End: 49:18")).toBeTruthy();
@@ -288,5 +288,43 @@ describe("Jobs rows", () => {
 
     expect(screen.getByText(/Job ID selected; press Ctrl\/Cmd\+C/)).toBeTruthy();
     expect(window.getSelection()?.toString()).toContain("job-1");
+  });
+});
+
+describe("Jobs edge cases and failures", () => {
+  it("clamps a 120-character job title and keeps the full text on the tooltip", () => {
+    const sermon = "A very long teaching title ".repeat(5).trim();
+    mocks.jobsData.mockReturnValue(
+      jobsData([
+        job({
+          id: "job-long",
+          state: "running",
+          title: `Process sermon · ${sermon} · Sample Speaker`,
+          description: `Processing "${sermon}" (Sample Speaker, 2026-10-25).`,
+        }),
+      ]),
+    );
+    renderJobs();
+
+    const row = screen.getByTestId("job-row-job-long");
+    const title = within(row).getAllByTitle(new RegExp(sermon.slice(0, 20)))[0];
+    expect(title.className).toContain("truncate");
+    expect(title.getAttribute("title")?.length).toBeGreaterThan(120);
+  });
+
+  it("shows server error copy and a working Retry for a failed list", () => {
+    const retry = vi.fn();
+    mocks.jobsData.mockReturnValue({
+      data: { active: [], completed: [], failed: [] },
+      isLoading: false,
+      error: "Server error (500). Try again in a moment.",
+      retry,
+    });
+    renderJobs();
+
+    expect(screen.getByText("Server error (500). Try again in a moment.")).toBeTruthy();
+    expect(screen.queryByText(/API bridge/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(retry).toHaveBeenCalledTimes(1);
   });
 });

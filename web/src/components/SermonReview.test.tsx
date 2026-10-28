@@ -460,7 +460,7 @@ describe("SermonReview single player and plan", () => {
       remove_segments: [{ start_sec: startSec, end_sec: endSec }],
     });
 
-    await user.click(screen.getByRole("button", { name: /Undo removal 1/ }));
+    await user.click(screen.getByRole("button", { name: /Remove cut 1/ }));
     expect(screen.queryByTestId("timeline-removal-0")).toBeNull();
     expect(screen.getAllByText("0 cuts removed").length).toBeGreaterThan(0);
   });
@@ -689,7 +689,6 @@ describe("SermonReview mobile layout", () => {
     expect(
       start!.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(bar.className).toContain("order-2");
     expect(screen.queryByTestId("timeline-labels")).toBeNull();
     expect(document.getElementById("previews-body")?.hasAttribute("hidden")).toBe(true);
     expect(document.getElementById("history-body")?.hasAttribute("hidden")).toBe(true);
@@ -748,8 +747,8 @@ describe("SermonReview mobile layout", () => {
     );
 
     const summary = screen.getByTestId("approval-summary");
-    expect(summary.textContent).toContain("Plan: Pending review");
-    expect(summary.textContent).toContain("QA pass");
+    expect(summary.textContent).toContain("Cut plan: Pending review");
+    expect(summary.textContent).toContain("No problems found");
     expect(screen.getByTestId("plan-meta").textContent).toContain("87% confidence");
 
     const player = document.getElementById("player-plan");
@@ -812,11 +811,13 @@ describe("SermonReview mobile layout", () => {
 
     const content = screen.getByTestId("approval-content");
     expect(content.className).toContain("lg:grid-cols-[minmax(0,1fr)_20rem]");
-    expect(bar.className).toContain("lg:order-1");
 
     const player = document.getElementById("player-plan");
     const details = document.getElementById("details");
     const files = document.getElementById("files");
+    expect(
+      player!.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(
       player!.compareDocumentPosition(details!) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -927,7 +928,8 @@ describe("SermonReview metadata generation", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Generate title" }));
+    await user.click(screen.getByTestId("generate-title"));
+    await user.click(screen.getByRole("menuitem", { name: /Replace title with generated/ }));
 
     await waitFor(() => expect(generate).toHaveBeenCalledWith("s-1", "title"));
     await waitFor(() =>
@@ -983,7 +985,7 @@ describe("SermonReview metadata generation", () => {
         "A generated description.",
       ),
     );
-    expect(button.getAttribute("aria-busy")).toBe("false");
+    expect(screen.getByTestId("generate-description").textContent).toContain("Replace");
   });
 
   it("shows the backend error in place and retries cleanly", async () => {
@@ -1046,7 +1048,8 @@ describe("SermonReview metadata generation", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Generate title" }));
+    await user.click(screen.getByTestId("generate-title"));
+    await user.click(screen.getByRole("menuitem", { name: /Replace title with generated/ }));
     await waitFor(() => expect(screen.getByTestId("generated-title")).toBeTruthy());
 
     const title = screen.getByLabelText("Title");
@@ -1125,7 +1128,7 @@ describe("SermonReview refine controls", () => {
       />,
     );
 
-    expect(screen.getByText(/Detection ok/)).toBeTruthy();
+    expect(screen.getByText(/Cuts found automatically/)).toBeTruthy();
     await clickMore(user, "History");
     expect(screen.getByText(/Teaching starts after the welcome/)).toBeTruthy();
     expect(screen.getByText("revision 1")).toBeTruthy();
@@ -1227,7 +1230,7 @@ describe("SermonReview refine controls", () => {
     );
 
     expect(screen.getByRole("alert")).toBeTruthy();
-    expect(screen.getByText(/Detection unavailable/)).toBeTruthy();
+    expect(screen.getByText(/Cut detection unavailable/)).toBeTruthy();
     expect(screen.getByTestId("plan-meta").textContent).not.toContain("confidence");
     await clickMore(user, "Reject with notes");
     expect(screen.getByLabelText("Reject with notes")).toBeTruthy();
@@ -1430,7 +1433,7 @@ describe("SermonReview state-aware action row", () => {
       />,
     );
 
-    expect(screen.getByTestId("approval-summary").textContent).toContain("Plan: Pending review");
+    expect(screen.getByTestId("approval-summary").textContent).toContain("Cut plan: Pending review");
   });
 
   it("hides the legacy push in the mobile overflow for a published record", async () => {
@@ -1474,5 +1477,119 @@ describe("SermonReview state-aware action row", () => {
     const menu = screen.getByTestId("more-actions");
     expect(within(menu).getByRole("menuitem", { name: "Push to SermonAudio" })).toBeTruthy();
     expect(within(menu).getByRole("menuitem", { name: /Render only/ })).toBeTruthy();
+  });
+});
+
+describe("SermonReview cut plan table", () => {
+  const withCuts = () =>
+    plan({
+      removeSegments: [
+        { startSec: 100, endSec: 130 },
+        { startSec: 400, endSec: 440 },
+      ],
+    });
+
+  it("lists start, end, and interior cuts with a kept-duration summary", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={withCuts()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    expect(screen.getByTestId("cut-table")).toBeTruthy();
+    expect(screen.getByTestId("removal-edge-start")).toBeTruthy();
+    expect(screen.getByTestId("removal-edge-end")).toBeTruthy();
+    expect(screen.getByTestId("removal-item-0")).toBeTruthy();
+    expect(screen.getByTestId("removal-item-1")).toBeTruthy();
+    expect(screen.getByTestId("removal-duration-0").textContent).toBe("30s");
+    expect(screen.getByTestId("removal-duration-1").textContent).toBe("40s");
+    expect(screen.getByTestId("cut-kept-summary").textContent).toContain("Kept ");
+    expect(screen.getByTestId("removal-list").textContent).toContain("2 cuts");
+    expect(screen.getByTestId("cut-toggle-0").getAttribute("role")).toBe("switch");
+    expect(screen.getByTestId("cut-toggle-0").getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("sends only included cuts and restores them with undo and redo", async () => {
+    const user = userEvent.setup();
+    const apply = vi
+      .spyOn(writeApi, "applyPlan")
+      .mockResolvedValue({ job_id: "j-cuts", status: "queued" });
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={withCuts()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    await user.click(screen.getByTestId("cut-toggle-0"));
+    expect(screen.getByTestId("cut-toggle-0").getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByTestId("removal-list").textContent).toContain("1 cut");
+
+    await user.click(screen.getByTestId("cut-undo"));
+    expect(screen.getByTestId("cut-toggle-0").getAttribute("aria-checked")).toBe("true");
+    await user.click(screen.getByTestId("cut-redo"));
+    expect(screen.getByTestId("cut-toggle-0").getAttribute("aria-checked")).toBe("false");
+
+    await clickMore(user, "Render only");
+    await waitFor(() => expect(apply).toHaveBeenCalled());
+    expect(apply.mock.calls[0][1]).toMatchObject({
+      remove_segments: [{ start_sec: 400, end_sec: 440 }],
+    });
+  });
+
+  it("toggles the opening and closing trims from the table", async () => {
+    const user = userEvent.setup();
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    const startInput = screen.getByLabelText(/^Start \(/) as HTMLInputElement;
+    expect(screen.getByTestId("cut-toggle-start").getAttribute("aria-checked")).toBe("true");
+    await user.click(screen.getByTestId("cut-toggle-start"));
+    expect(startInput.value).toBe("00:00.0");
+    expect(screen.getByTestId("cut-toggle-start").getAttribute("aria-checked")).toBe("false");
+    await user.click(screen.getByTestId("cut-undo"));
+    expect(startInput.value).toBe("00:08.5");
+
+    const endInput = screen.getByLabelText(/^End \(/) as HTMLInputElement;
+    await user.click(screen.getByTestId("cut-toggle-end"));
+    expect(endInput.value).not.toBe("41:52.3");
+    expect(screen.getByTestId("cut-toggle-end").getAttribute("aria-checked")).toBe("false");
+    await user.click(screen.getByTestId("cut-redo"));
+    expect(screen.getByTestId("cut-toggle-end").getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("keeps the cut table above the approval action on mobile", () => {
+    setViewportWidth(390);
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={withCuts()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    const table = screen.getByTestId("cut-table");
+    const bar = screen.getByTestId("approval-bar");
+    expect(table.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

@@ -72,15 +72,15 @@ because they embedded instance-specific record counts.
 
 ## Design tokens
 
-`src/index.css` holds the source of truth as CSS custom properties; `tailwind.config.js` maps them (`ink`, `surface`, `raised`, `line`, `mist`, `muted`, `accent`, `ok`, `warn`, `danger`, `info`).
+The authoritative token list and control vocabulary live in `web/DESIGN.md`, generated from
+`src/index.css` and `tailwind.config.js`. Change the token there first, then the components.
 
 - Base: tinted ink neutrals, dark theme default, light theme via `.light` on `<html>`.
 - Accent: single violet (`--accent`), used for primary actions, focus rings, selected-tab dot.
 - Semantic: green ok, amber warn, red danger (failure + destructive only), sky info.
-- Type: system sans for UI, system mono for ids/durations/logs. Scale 12/14/16/18/24
-  (meta, body, brand, section title, page title).
-- Radius: 6/10/14/20. Controls use 10, cards and menus 14, chips 6. Signature motif:
-  level-meter bar on status cards.
+- Type: system sans for UI, system mono for ids, durations, and logs. Scale 12/13/15/17/22/30px.
+- Radius: 6/10/14/20. Controls use 10, cards and menus 14, chips 6.
+- Spacing: 4px base; control height 44px, row 56/64px, chip 24px.
 
 ## Phase plan
 

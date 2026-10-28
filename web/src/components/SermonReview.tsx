@@ -9,12 +9,12 @@ import {
 import type { SermonMediaData } from "../api/hooks";
 import type { EditPlan, LibrarySermon, PlanStatus, RemoveSegment } from "../mock/data";
 import { formatCut, parseCut } from "../utils/time";
-import { formatBytes } from "../utils/files";
+import { formatBytes, formatCount, formatDate, formatDuration } from "../utils/format";
 import { MediaPlayer, type PlayWindow } from "./MediaPlayer";
 import { Timeline, type TimelineClip, type TimelineRange } from "./Timeline";
 import { TranscriptViewer } from "./TranscriptViewer";
 import { sermonActionMatrix } from "./sermonActions";
-import { Button, Chip, ConfirmDialog, Menu, PageHeader, Skeleton, Toggle, buttonClass } from "./ui";
+import { Button, Chip, ConfirmDialog, Icon, Menu, PageHeader, Skeleton, Switch, Toggle, buttonClass } from "./ui";
 
 export const planStatusLabel: Record<PlanStatus, string> = {
   draft: "Draft",
@@ -113,6 +113,29 @@ const ARTIFACT_NOTES: Record<string, string> = {
 const MIN_CUT_SECONDS = 0.25;
 const JOIN_PREVIEW_SECONDS = 10;
 
+export interface UiCut extends RemoveSegment {
+  enabled: boolean;
+}
+
+interface CutSnapshot {
+  startText: string;
+  endText: string;
+  cuts: UiCut[];
+}
+
+function initialCuts(segments: RemoveSegment[] | undefined): UiCut[] {
+  return (segments ?? []).map((segment) => ({ ...segment, enabled: true }));
+}
+
+function qaCopy(qa: string): string {
+  const value = qa.trim().toLowerCase();
+  if (!value || value === "—") return "";
+  if (value === "pass") return "No problems found";
+  if (value === "review") return "Check the cut points";
+  if (value === "fail") return "Automated check flagged this plan";
+  return `Automated check: ${qa}`;
+}
+
 function normalizeUiRemoveSegments(
   segments: RemoveSegment[],
   startSec: number,
@@ -152,14 +175,6 @@ function normalizeUiRemoveSegments(
     }
   }
   return { segments: normalized, errors };
-}
-
-function sameRemoveSegments(left: RemoveSegment[], right: RemoveSegment[]): boolean {
-  if (left.length !== right.length) return false;
-  return left.every(
-    (segment, index) =>
-      segment.startSec === right[index]?.startSec && segment.endSec === right[index]?.endSec,
-  );
 }
 
 export interface DetailsPatch {
@@ -306,9 +321,13 @@ export function SermonReview({
   const [statusLog, setStatusLog] = useState<string[]>([]);
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [selected, setSelected] = useState<"start" | "end" | null>(null);
-  const [removeSegments, setRemoveSegments] = useState<RemoveSegment[]>(
-    () => [...(initial.removeSegments ?? [])],
+  const [removeSegments, setRemoveSegments] = useState<UiCut[]>(
+    () => initialCuts(initial.removeSegments),
   );
+  const [cutPast, setCutPast] = useState<CutSnapshot[]>([]);
+  const [cutFuture, setCutFuture] = useState<CutSnapshot[]>([]);
+  const startRestore = useRef(initial.startSec);
+  const endRestore = useRef(initial.endSec);
   const [selection, setSelection] = useState<TimelineRange | null>(null);
   const [removalError, setRemovalError] = useState<string | null>(null);
   const [playWindow, setPlayWindow] = useState<PlayWindow | null>(null);
@@ -334,6 +353,7 @@ export function SermonReview({
     hashtags: hashtags ?? "",
   });
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [savedForm, setSavedForm] = useState<typeof form | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [generated, setGenerated] = useState<Set<ApiMetadataField>>(() => new Set());
   const [generating, setGenerating] = useState<Set<ApiMetadataField>>(() => new Set());
@@ -351,7 +371,9 @@ export function SermonReview({
     setStartText(formatCut(initial.startSec));
     setEndText(formatCut(initial.endSec));
     setOffsetText(initial.offsetSec.toFixed(1));
-    setRemoveSegments([...(initial.removeSegments ?? [])]);
+    setRemoveSegments(initialCuts(initial.removeSegments));
+    setCutPast([]);
+    setCutFuture([]);
     setSelection(null);
     setRemovalError(null);
   }, [initial, planKey]);
@@ -379,6 +401,7 @@ export function SermonReview({
     setGenerateErrors({});
     setDescriptionReviewCleared(false);
     setSaveState("idle");
+    setSavedForm(null);
     setSeek(null);
     setPlayhead(0);
     setPlayWindow(null);
@@ -417,7 +440,12 @@ export function SermonReview({
   const timelineDuration = sourceDuration ?? knownDuration;
   const duration = start !== null && end !== null && end > start ? end - start : null;
   const removalValidation = useMemo(
-    () => normalizeUiRemoveSegments(removeSegments, safeStart, safeEnd),
+    () =>
+      normalizeUiRemoveSegments(
+        removeSegments.filter((segment) => segment.enabled),
+        safeStart,
+        safeEnd,
+      ),
     [removeSegments, safeStart, safeEnd],
   );
   const keptDuration =
@@ -432,6 +460,8 @@ export function SermonReview({
         )
       : null;
   const finalDuration = keptDuration ?? duration;
+  const removedDuration = duration !== null && keptDuration !== null ? duration - keptDuration : null;
+  const enabledRemoveSegments = removeSegments.filter((segment) => segment.enabled);
 
   const errors = useMemo(() => {
     const list: string[] = [];
@@ -508,7 +538,7 @@ export function SermonReview({
       return;
     }
     const next = normalizeUiRemoveSegments(
-      [...removeSegments, { startSec: selection.startSec, endSec: selection.endSec }],
+      [...enabledRemoveSegments, { startSec: selection.startSec, endSec: selection.endSec }],
       safeStart,
       safeEnd,
     );
@@ -517,20 +547,73 @@ export function SermonReview({
       return;
     }
     setRemovalError(null);
-    setRemoveSegments(next.segments);
+    commitCut({
+      cuts: [
+        ...removeSegments.filter((segment) => !segment.enabled),
+        ...next.segments.map((segment) => ({ ...segment, enabled: true })),
+      ],
+    });
     setSelection(null);
   };
 
   const undoRemoval = (index: number) => {
-    setRemoveSegments((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    commitCut({ cuts: removeSegments.filter((_, currentIndex) => currentIndex !== index) });
     setRemovalError(null);
+  };
+
+  const cutSnapshot = (): CutSnapshot => ({
+    startText,
+    endText,
+    cuts: removeSegments.map((segment) => ({ ...segment })),
+  });
+
+  const applyCutSnapshot = (snapshot: CutSnapshot) => {
+    setStartText(snapshot.startText);
+    setEndText(snapshot.endText);
+    setRemoveSegments(snapshot.cuts.map((segment) => ({ ...segment })));
+    setSelection(null);
+    setRemovalError(null);
+  };
+
+  const commitCut = (patch: Partial<CutSnapshot>) => {
+    setCutPast((past) => [...past.slice(-49), cutSnapshot()]);
+    setCutFuture([]);
+    if (patch.startText !== undefined) setStartText(patch.startText);
+    if (patch.endText !== undefined) setEndText(patch.endText);
+    if (patch.cuts !== undefined) setRemoveSegments(patch.cuts);
+  };
+
+  const undoCut = () => {
+    const previous = cutPast[cutPast.length - 1];
+    if (!previous) return;
+    setCutFuture((future) => [cutSnapshot(), ...future].slice(0, 50));
+    setCutPast((past) => past.slice(0, -1));
+    applyCutSnapshot(previous);
+  };
+
+  const redoCut = () => {
+    const next = cutFuture[0];
+    if (!next) return;
+    setCutPast((past) => [...past.slice(-49), cutSnapshot()]);
+    setCutFuture((future) => future.slice(1));
+    applyCutSnapshot(next);
+  };
+
+  const toggleCut = (index: number, enabled: boolean) => {
+    commitCut({
+      cuts: removeSegments.map((segment, currentIndex) =>
+        currentIndex === index ? { ...segment, enabled } : segment,
+      ),
+    });
   };
 
   const reset = () => {
     setStartText(formatCut(plan.startSec));
     setEndText(formatCut(plan.endSec));
     setOffsetText(plan.offsetSec.toFixed(1));
-    setRemoveSegments([...(plan.removeSegments ?? [])]);
+    setRemoveSegments(initialCuts(plan.removeSegments));
+    setCutPast([]);
+    setCutFuture([]);
     setSelection(null);
     setRemovalError(null);
   };
@@ -539,7 +622,13 @@ export function SermonReview({
     start !== plan.startSec ||
     end !== plan.endSec ||
     offset !== plan.offsetSec ||
-    !sameRemoveSegments(removeSegments, plan.removeSegments ?? []);
+    removeSegments.length !== (plan.removeSegments ?? []).length ||
+    removeSegments.some(
+      (segment, index) =>
+        !segment.enabled ||
+        segment.startSec !== plan.removeSegments?.[index]?.startSec ||
+        segment.endSec !== plan.removeSegments?.[index]?.endSec,
+    );
 
   const processedAvailable = !!media.byKind.processed?.available;
   const actions = sermonActionMatrix({ status: sermon.status, hasRender: processedAvailable });
@@ -761,7 +850,10 @@ export function SermonReview({
     };
     setSaveState("saving");
     Promise.resolve(onSaveDetails?.(patch))
-      .then(() => setSaveState("saved"))
+      .then(() => {
+        setSaveState("saved");
+        setSavedForm({ ...form });
+      })
       .catch(() => setSaveState("error"));
   };
 
@@ -771,13 +863,14 @@ export function SermonReview({
     Promise.resolve(onRegenerateDescription()).finally(() => setRegenerating(false));
   };
 
-  const detailsDirty =
-    form.title !== sermon.title ||
-    form.speaker !== sermon.speaker ||
-    form.series !== sermon.series ||
-    form.date !== sermon.date ||
-    form.description !== (description ?? "") ||
-    form.hashtags !== (hashtags ?? "");
+  const detailsDirty = savedForm
+    ? (Object.keys(form) as (keyof typeof form)[]).some((key) => form[key] !== savedForm[key])
+    : form.title !== sermon.title ||
+      form.speaker !== sermon.speaker ||
+      form.series !== sermon.series ||
+      form.date !== sermon.date ||
+      form.description !== (description ?? "") ||
+      form.hashtags !== (hashtags ?? "");
 
   useEffect(() => {
     if (detailsDirty) setSaveState("idle");
@@ -787,15 +880,100 @@ export function SermonReview({
     plan.confidence > 0 ? `${plan.confidence}% confidence` : null;
   const statusPills = (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <Chip tone={planStatusTone[plan.status]}>Plan: {planStatusLabel[plan.status]}</Chip>
+      <Chip tone={planStatusTone[plan.status]}>Cut plan: {planStatusLabel[plan.status]}</Chip>
+      {statusChip ? (
+        <span className="inline-flex items-center gap-1 text-xs text-muted">
+          Teaching status {statusChip}
+        </span>
+      ) : null}
       <span className="font-mono text-xs text-muted" data-testid="plan-meta">
         Revision {plan.revision} of {plan.revisionsTotal}
         {confidence ? ` · ${confidence}` : ""}
-        {plan.qa ? ` · QA ${plan.qa.toLowerCase()}` : ""}
-        {` · Detection ${detectionFailed ? "unavailable" : "ok"}`}
+        {qaCopy(plan.qa) ? ` · ${qaCopy(plan.qa)}` : ""}
+        {` · ${detectionFailed ? "Cut detection unavailable" : "Cuts found automatically"}`}
       </span>
     </div>
   );
+
+  const toggleStartCut = (enabled: boolean) => {
+    if (!enabled) {
+      if (safeStart > 0) startRestore.current = safeStart;
+      commitCut({ startText: formatCut(0) });
+      return;
+    }
+    const restore = startRestore.current > 0 ? startRestore.current : plan.startSec;
+    commitCut({ startText: formatCut(restore > 0 ? restore : 0.5) });
+  };
+
+  const toggleEndCut = (enabled: boolean) => {
+    if (!enabled) {
+      endRestore.current = safeEnd;
+      commitCut({ endText: formatCut(timelineDuration) });
+      return;
+    }
+    const restore = endRestore.current > 0 ? endRestore.current : plan.endSec;
+    commitCut({ endText: formatCut(restore > 0 ? restore : timelineDuration) });
+  };
+
+  const cutRows = [
+    {
+      id: "start",
+      testId: "removal-edge-start",
+      durationTestId: "removal-duration-start",
+      toggleTestId: "cut-toggle-start",
+      label: "Opening trim",
+      typeLabel: "Start",
+      startSec: 0,
+      endSec: safeStart,
+      enabled: safeStart > 0,
+      toggleLabel: "Include the opening trim",
+      onToggle: toggleStartCut,
+      removeLabel: "Remove the opening trim",
+      removeText: "Remove",
+      onRemove: () => toggleStartCut(false),
+      previewLabel: "",
+      previewText: "",
+      onPreview: null as (() => void) | null,
+    },
+    {
+      id: "end",
+      testId: "removal-edge-end",
+      durationTestId: "removal-duration-end",
+      toggleTestId: "cut-toggle-end",
+      label: "Closing trim",
+      typeLabel: "End",
+      startSec: safeEnd,
+      endSec: timelineDuration,
+      enabled: timelineDuration > safeEnd,
+      toggleLabel: "Include the closing trim",
+      onToggle: toggleEndCut,
+      removeLabel: "Remove the closing trim",
+      removeText: "Remove",
+      onRemove: () => toggleEndCut(false),
+      previewLabel: "",
+      previewText: "",
+      onPreview: null as (() => void) | null,
+    },
+    ...removeSegments.map((segment, index) => ({
+      id: `interior-${index}`,
+      testId: `removal-item-${index}`,
+      durationTestId: `removal-duration-${index}`,
+      toggleTestId: `cut-toggle-${index}`,
+      label: `Cut ${index + 1}`,
+      typeLabel: "Interior",
+      startSec: segment.startSec,
+      endSec: segment.endSec,
+      enabled: segment.enabled,
+      toggleLabel: `Include cut ${index + 1} in the plan`,
+      onToggle: (enabled: boolean) => toggleCut(index, enabled),
+      removeLabel: `Remove cut ${index + 1}`,
+      removeText: "Remove",
+      onRemove: () => undoRemoval(index),
+      previewLabel: `Preview join ${index + 1}`,
+      previewText: `Preview join ${index + 1}`,
+      onPreview: () => playJoin(segment),
+    })),
+  ];
 
   const enhanceControl = (
     <Toggle
@@ -850,20 +1028,65 @@ export function SermonReview({
     </div>
   ) : null;
 
+  const metadataFieldLabel: Record<ApiMetadataField, string> = {
+    title: "title",
+    description: "description",
+    hashtags: "hashtags",
+  };
+
+  const generateControl = (field: ApiMetadataField) => {
+    const busy = generating.has(field);
+    const label = metadataFieldLabel[field];
+    const run = () => generateField(field);
+    if (!form[field].trim()) {
+      return (
+        <Button
+          data-testid={`generate-${field}`}
+          aria-label={`Generate ${label}`}
+          aria-busy={busy}
+          onClick={run}
+          disabled={busy}
+          className="min-w-[7rem] px-3"
+        >
+          {busy ? "Generating…" : "Generate"}
+        </Button>
+      );
+    }
+    return (
+      <Menu
+        label={`${label} generation options`}
+        triggerTestId={`generate-${field}`}
+        triggerClassName={buttonClass("secondary", "min-w-[7rem] px-3")}
+        trigger={
+          <span className="inline-flex items-center gap-2">
+            Replace
+            <Icon name="chevron" className="h-4 w-4" />
+          </span>
+        }
+        items={[
+          {
+            label: `Replace ${label} with generated…`,
+            onSelect: run,
+            disabled: busy,
+            testId: `replace-${field}`,
+          },
+        ]}
+        menuClassName="w-64"
+      />
+    );
+  };
+
   return (
     <div data-testid="sermon-review" className="flex flex-col gap-4">
       <PageHeader
         title={form.title}
-        sub={`${form.speaker} · ${form.date}`}
+        sub={`${form.speaker || "Unknown speaker"} · ${formatDate(form.date)}`}
         actions={
-          <>
-            {onShowCompleted ? (
-              <Button data-testid="show-completed-view" onClick={onShowCompleted}>
-                Back to finished view
-              </Button>
-            ) : null}
-            {statusChip}
-          </>
+          onShowCompleted ? (
+            <Button data-testid="show-completed-view" onClick={onShowCompleted}>
+              Back to finished view
+            </Button>
+          ) : undefined
         }
       />
 
@@ -885,7 +1108,7 @@ export function SermonReview({
           <section
             id="player-plan"
             aria-labelledby="player-plan-h"
-            className="order-1 rounded-lg border border-line bg-surface lg:order-2"
+            className="rounded-lg border border-line bg-surface"
           >
             <div className="flex flex-wrap items-center justify-between gap-2 p-4">
               <h2 id="player-plan-h" className="text-lg font-semibold">
@@ -929,7 +1152,7 @@ export function SermonReview({
                 endingSec={safeEnd}
                 currentSec={playhead}
                 clips={clips}
-                removeSegments={removeSegments}
+                removeSegments={enabledRemoveSegments}
                 selection={selection}
                 onChangeSelection={(next) => {
                   setSelection(next);
@@ -957,7 +1180,7 @@ export function SermonReview({
                 onPlayRegion={(regionId, startSec, endSec) => {
                   if (regionId.startsWith("removal_join_")) {
                     const index = Number(regionId.replace("removal_join_", ""));
-                    const segment = removeSegments[index];
+                    const segment = enabledRemoveSegments[index];
                     if (segment) playJoin(segment);
                     return;
                   }
@@ -1006,68 +1229,131 @@ export function SermonReview({
                   ) : null}
                 </section>
               ) : null}
-              {removeSegments.length > 0 ? (
-                <section
-                  data-testid="removal-list"
-                  aria-labelledby="removal-list-heading"
-                  className="rounded-md border border-line bg-ink p-3"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <h3 id="removal-list-heading" className="text-sm font-semibold">
-                        Interior cuts
-                      </h3>
-                      <p className="mt-1 text-xs text-muted">
-                        Preview each join before approving the plan.
-                      </p>
-                    </div>
-                    <span className="font-mono text-xs text-muted" aria-live="polite">
-                      {removeSegments.length === 1
-                        ? "1 cut removed"
-                        : `${removeSegments.length} cuts removed`}
-                    </span>
+              <section
+                data-testid="removal-list"
+                aria-labelledby="cut-plan-heading"
+                className="rounded-md border border-line bg-ink p-3"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h3 id="cut-plan-heading" className="text-sm font-semibold">
+                      Cut plan
+                    </h3>
+                    <p className="mt-1 text-xs text-muted">
+                      Preview each join, switch a cut off to keep it, then approve the plan.
+                    </p>
                   </div>
-                  <ul className="mt-3 flex flex-col gap-2">
-                    {removeSegments.map((segment, index) => (
-                      <li
-                        key={`${segment.startSec}-${segment.endSec}-${index}`}
-                        data-testid={`removal-item-${index}`}
-                        className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium">Cut {index + 1}</p>
-                          <p
-                            data-testid={`removal-range-${index}`}
-                            className="font-mono text-xs text-muted"
-                          >
-                            {formatCut(segment.startSec)} to {formatCut(segment.endSec)} ·{" "}
-                            {formatCut(segment.endSec - segment.startSec)} removed
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            aria-label={`Preview join ${index + 1}`}
-                            title="Play 10 seconds before and after this join"
-                            onClick={() => playJoin(segment)}
-                            className={chipButtonClass}
-                          >
-                            Preview join {index + 1}
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`Undo removal ${index + 1}`}
-                            onClick={() => undoRemoval(index)}
-                            className="inline-flex min-h-[44px] items-center rounded-md border border-danger px-3 text-xs font-semibold text-danger transition-colors duration-150 hover:bg-danger hover:text-[var(--danger-ink)]"
-                          >
-                            Undo removal {index + 1}
-                          </button>
-                        </div>
-                      </li>
-                    ))}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      onClick={undoCut}
+                      disabled={cutPast.length === 0}
+                      aria-label="Undo cut edit"
+                      data-testid="cut-undo"
+                    >
+                      Undo
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={redoCut}
+                      disabled={cutFuture.length === 0}
+                      aria-label="Redo cut edit"
+                      data-testid="cut-redo"
+                    >
+                      Redo
+                    </Button>
+                  </div>
+                </div>
+                <div data-testid="cut-table" className="mt-3">
+                  <div
+                    aria-hidden="true"
+                    className="hidden grid-cols-[minmax(0,1.4fr)_5.5rem_5.5rem_5.5rem_4rem_auto] gap-2 border-b border-line pb-1 text-xs font-semibold uppercase tracking-wide text-muted lg:grid"
+                  >
+                    <span>Cut</span>
+                    <span>Start</span>
+                    <span>End</span>
+                    <span>Duration</span>
+                    <span>Included</span>
+                    <span className="text-right">Actions</span>
+                  </div>
+                  <ul className="flex flex-col">
+                    {cutRows.map((row) => {
+                      const durationSec = Math.max(0, row.endSec - row.startSec);
+                      const key = row.id;
+                      return (
+                        <li
+                          key={key}
+                          data-testid={row.testId}
+                          className="grid min-w-0 grid-cols-2 gap-x-3 gap-y-1 border-t border-line py-2 first:border-t-0 lg:grid-cols-[minmax(0,1.4fr)_5.5rem_5.5rem_5.5rem_4rem_auto] lg:items-center"
+                        >
+                          <div className="col-span-2 min-w-0 lg:col-span-1">
+                            <p className="text-sm font-medium">{row.label}</p>
+                            <p className="text-xs text-muted">
+                              {row.typeLabel} · {formatDuration(durationSec)}
+                            </p>
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-xs text-muted lg:hidden">Start </span>
+                            <span className="font-mono text-xs">{formatCut(row.startSec)}</span>
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-xs text-muted lg:hidden">End </span>
+                            <span className="font-mono text-xs">{formatCut(row.endSec)}</span>
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-xs text-muted lg:hidden">Duration </span>
+                            <span
+                              data-testid={row.durationTestId}
+                              className="font-mono text-xs"
+                            >
+                              {formatDuration(durationSec)}
+                            </span>
+                          </div>
+                          <div className="justify-self-start lg:justify-self-center">
+                            <Switch
+                              checked={row.enabled}
+                              onChange={row.onToggle}
+                              label={row.toggleLabel}
+                              testId={row.toggleTestId}
+                            />
+                          </div>
+                          <div className="col-span-2 flex flex-wrap justify-end gap-2 lg:col-span-1">
+                            {row.onPreview ? (
+                              <button
+                                type="button"
+                                aria-label={row.previewLabel}
+                                title="Play 10 seconds before and after this join"
+                                onClick={row.onPreview}
+                                className={chipButtonClass}
+                              >
+                                {row.previewText}
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              aria-label={row.removeLabel}
+                              onClick={row.onRemove}
+                              disabled={!row.enabled}
+                              className="inline-flex min-h-[44px] items-center rounded-md border border-danger px-3 text-xs font-semibold text-danger transition-colors duration-150 hover:bg-danger hover:text-[var(--danger-ink)] disabled:cursor-not-allowed disabled:opacity-45"
+                            >
+                              {row.removeText}
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
-                </section>
-              ) : null}
+                </div>
+                <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-line pt-3">
+                  <span data-testid="cut-kept-summary" className="text-sm font-semibold">
+                    Kept {formatDuration(finalDuration)}
+                  </span>
+                  <span className="text-xs text-muted">
+                    of {formatDuration(duration)} selected · {formatDuration(removedDuration)} removed ·{" "}
+                    {formatCount(removalValidation.segments.length, "cut")}
+                  </span>
+                </div>
+              </section>
               <div className="flex flex-wrap gap-2" aria-label="Clip previews">
                 {clips.map((clip) => (
                   <button
@@ -1123,7 +1409,7 @@ export function SermonReview({
                   </div>
                 </div>
                 <p className="mt-2 font-mono text-xs text-muted" aria-live="polite">
-                  Kept duration: {finalDuration !== null ? formatCut(finalDuration) : "—"}
+                  Kept duration: {formatDuration(finalDuration)}
                 </p>
                 {errors.length > 0 ? (
                   <ul className="mt-2 flex flex-col gap-1" role="alert">
@@ -1154,7 +1440,7 @@ export function SermonReview({
           <section
             aria-label="Approval"
             data-testid="approval-bar"
-            className="order-2 flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 shadow-lg lg:order-1"
+            className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 shadow-lg"
           >
             <div className="flex flex-wrap items-center gap-2">
               {refining ? (
@@ -1180,7 +1466,13 @@ export function SermonReview({
               </Button>
               <Menu
                 label="More actions"
-                trigger="More actions"
+                trigger={
+                  <span className="inline-flex items-center gap-2">
+                    More actions
+                    <Icon name="chevron" className="h-4 w-4" />
+                  </span>
+                }
+                side="top"
                 triggerTestId="more-actions-trigger"
                 menuTestId="more-actions"
                 menuClassName="w-64"
@@ -1237,7 +1529,7 @@ export function SermonReview({
             {notesPanel}
           </section>
 
-          <div className="order-3 flex flex-col gap-3">
+          <div className="flex flex-col gap-3">
             <CollapsibleSection id="files" title="Files" testId="files-panel">
               <ArtifactGroup id="files-media" title="Media">
                 {primaryArtifacts.length === 0 && extraMediaArtifacts.length === 0 ? (
@@ -1429,6 +1721,7 @@ export function SermonReview({
                 Close
               </Button>
             </div>
+            <p className="mt-1 text-xs text-muted">Changes stay local until you press Save details.</p>
             <form
               className="mt-3 flex flex-col gap-3"
               onSubmit={(e) => {
@@ -1436,60 +1729,57 @@ export function SermonReview({
                 saveDetails();
               }}
             >
-              <div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <label htmlFor="details-title" className="text-xs font-medium text-muted">
-                    Title
-                  </label>
-                  <div className="flex items-center gap-2">
-                    {generated.has("title") ? (
-                      <span data-testid="generated-title">
-                        <Chip tone="info">Generated</Chip>
-                      </span>
+              <details className="rounded-md border border-line p-3">
+                <summary className="min-h-[44px] cursor-pointer text-xs font-semibold text-muted">
+                  Edit title and speaker
+                </summary>
+                <div className="mt-2 flex flex-col gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label htmlFor="details-title" className="text-xs font-medium text-muted">
+                        Title
+                      </label>
+                      <div className="flex items-center gap-2">
+                        {generated.has("title") ? (
+                          <span data-testid="generated-title">
+                            <Chip tone="info">Generated</Chip>
+                          </span>
+                        ) : null}
+                        {generateControl("title")}
+                      </div>
+                    </div>
+                    <input
+                      id="details-title"
+                      value={form.title}
+                      onChange={(e) => setMetadataValue("title", e.target.value)}
+                      aria-invalid={generateErrors.title ? true : undefined}
+                      aria-describedby={generateErrors.title ? "generate-error-title" : undefined}
+                      className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 text-sm text-mist"
+                    />
+                    {generateErrors.title ? (
+                      <p
+                        id="generate-error-title"
+                        role="alert"
+                        data-testid="generate-error-title"
+                        className="mt-1 rounded-md border border-danger bg-ink px-2 py-1 text-xs text-danger"
+                      >
+                        {generateErrors.title}
+                      </p>
                     ) : null}
-                    <button
-                      type="button"
-                      data-testid="generate-title"
-                      aria-label="Generate title"
-                      aria-busy={generating.has("title")}
-                      onClick={() => generateField("title")}
-                      disabled={generating.has("title")}
-                      className={buttonClass("secondary", "min-w-[7rem] px-3 disabled:cursor-not-allowed disabled:opacity-45")}
-                    >
-                      {generating.has("title") ? "Generating…" : "Generate"}
-                    </button>
+                  </div>
+                  <div>
+                    <label htmlFor="details-speaker" className="text-xs font-medium text-muted">
+                      Speaker
+                    </label>
+                    <input
+                      id="details-speaker"
+                      value={form.speaker}
+                      onChange={(e) => setForm((f) => ({ ...f, speaker: e.target.value }))}
+                      className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 text-sm text-mist"
+                    />
                   </div>
                 </div>
-                <input
-                  id="details-title"
-                  value={form.title}
-                  onChange={(e) => setMetadataValue("title", e.target.value)}
-                  aria-invalid={generateErrors.title ? true : undefined}
-                  aria-describedby={generateErrors.title ? "generate-error-title" : undefined}
-                  className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 text-sm text-mist"
-                />
-                {generateErrors.title ? (
-                  <p
-                    id="generate-error-title"
-                    role="alert"
-                    data-testid="generate-error-title"
-                    className="mt-1 rounded-md border border-danger bg-ink px-2 py-1 text-xs text-danger"
-                  >
-                    {generateErrors.title}
-                  </p>
-                ) : null}
-              </div>
-              <div>
-                <label htmlFor="details-speaker" className="text-xs font-medium text-muted">
-                  Speaker
-                </label>
-                <input
-                  id="details-speaker"
-                  value={form.speaker}
-                  onChange={(e) => setForm((f) => ({ ...f, speaker: e.target.value }))}
-                  className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 text-sm text-mist"
-                />
-              </div>
+              </details>
               <div className="grid grid-cols-2 gap-3">
                 <div className="min-w-0">
                   <label htmlFor="details-series" className="text-xs font-medium text-muted">
@@ -1513,6 +1803,7 @@ export function SermonReview({
                     onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
                     className="mt-1 min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 text-sm text-mist"
                   />
+                  <p className="mt-1 text-xs text-muted">Recorded {formatDate(form.date)}</p>
                 </div>
               </div>
               <div>
@@ -1526,17 +1817,7 @@ export function SermonReview({
                         <Chip tone="info">Generated</Chip>
                       </span>
                     ) : null}
-                    <button
-                      type="button"
-                      data-testid="generate-description"
-                      aria-label="Generate description"
-                      aria-busy={generating.has("description")}
-                      onClick={() => generateField("description")}
-                      disabled={generating.has("description")}
-                      className={buttonClass("secondary", "min-w-[7rem] px-3 disabled:cursor-not-allowed disabled:opacity-45")}
-                    >
-                      {generating.has("description") ? "Generating…" : "Generate"}
-                    </button>
+                    {generateControl("description")}
                   </div>
                 </div>
                 <textarea
@@ -1590,17 +1871,7 @@ export function SermonReview({
                         <Chip tone="info">Generated</Chip>
                       </span>
                     ) : null}
-                    <button
-                      type="button"
-                      data-testid="generate-hashtags"
-                      aria-label="Generate hashtags"
-                      aria-busy={generating.has("hashtags")}
-                      onClick={() => generateField("hashtags")}
-                      disabled={generating.has("hashtags")}
-                      className={buttonClass("secondary", "min-w-[7rem] px-3 disabled:cursor-not-allowed disabled:opacity-45")}
-                    >
-                      {generating.has("hashtags") ? "Generating…" : "Generate"}
-                    </button>
+                    {generateControl("hashtags")}
                   </div>
                 </div>
                 <input
@@ -1632,7 +1903,15 @@ export function SermonReview({
                   {saveState === "saving" ? "Saving…" : "Save details"}
                 </Button>
                 <span data-testid="details-save-state" className="text-xs text-muted" aria-live="polite">
-                  {saveState === "saved" ? "Saved" : saveState === "error" ? "Save failed" : ""}
+                  {saveState === "saving"
+                    ? "Saving…"
+                    : saveState === "error"
+                      ? "Save failed. Try again."
+                      : saveState === "saved" && !detailsDirty
+                        ? "Saved."
+                        : detailsDirty
+                          ? "Unsaved changes"
+                          : "No unsaved changes"}
                 </span>
               </div>
             </form>

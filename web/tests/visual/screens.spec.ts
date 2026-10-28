@@ -12,7 +12,7 @@ const PAGES = [
 const THEMES = ["dark", "light"] as const;
 
 const SCREENSHOT_STYLE = `
-  header, nav[aria-label="Primary"], .sticky { position: static !important; }
+  header, nav[aria-label="Primary"], .sticky, [class*="sticky"] { position: static !important; }
 `;
 
 async function applyTheme(page: Page, theme: (typeof THEMES)[number]) {

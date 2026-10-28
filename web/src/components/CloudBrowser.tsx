@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { cloudApi, isLive, type ApiCloudFile, type ApiCloudRemote, type ApiSharedDrive } from "../api/client";
 import { Button, Chip } from "./ui";
+import { formatBytes, formatDateTime } from "../utils/format";
 
 export let MOCK_REMOTES: ApiCloudRemote[] = [
   { name: "sermons-drive", provider: "drive", status: "configured" },
@@ -80,13 +81,7 @@ const MOCK_DRIVE_TREE: Record<string, ApiCloudFile[]> = {
 };
 
 export function formatModified(value?: string | null): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(
-    date.getMinutes(),
-  )}`;
+  return formatDateTime(value ?? null);
 }
 
 export function sortNewestFirst<T extends { name: string; modified?: string | null }>(
@@ -105,15 +100,7 @@ export function sortNewestFirst<T extends { name: string; modified?: string | nu
 }
 
 function formatSize(bytes: number | null): string {
-  if (bytes === null) return "—";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let n = bytes;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i += 1;
-  }
-  return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+  return bytes === null ? "—" : formatBytes(bytes);
 }
 
 function joinPath(base: string, rel: string): string {
