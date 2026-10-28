@@ -248,4 +248,16 @@ describe("Jobs rows", () => {
 
     await waitFor(() => expect(mocks.cancelJob).toHaveBeenCalledWith("job-1"));
   });
+
+  it("selects the job id and explains the copy shortcut without a clipboard", () => {
+    mocks.jobsData.mockReturnValue(jobsData([job({ id: "job-1", state: "running" })]));
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
+
+    render(<Jobs />);
+    fireEvent.click(screen.getByTestId("job-row-job-1"));
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+
+    expect(screen.getByText(/Job ID selected; press Ctrl\/Cmd\+C/)).toBeTruthy();
+    expect(window.getSelection()?.toString()).toContain("job-1");
+  });
 });

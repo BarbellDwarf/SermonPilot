@@ -99,6 +99,31 @@ def test_default_source_is_reported(client, scoped_setup, clean_env):
     assert view["fields"]["audio_gain_db"]["source"] == "default"
 
 
+def test_sermonpilot_db_is_the_single_read_write_path(
+    client, scoped_setup, clean_env, monkeypatch
+):
+    """The console's SERMONPILOT_DB must be what both the PUT and the GET read."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    headers = scoped_setup["admin_headers"]
+
+    saved = client.put(
+        "/api/config/sections/general",
+        json={"values": {"dry_run": True}},
+        headers=headers,
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["fields"]["dry_run"]["value"] is True
+    assert saved.json()["fields"]["dry_run"]["source"] == "db"
+
+    view = client.get("/api/config/sections/general", headers=headers).json()
+    assert view["fields"]["dry_run"]["value"] is True
+    assert view["fields"]["dry_run"]["source"] == "db"
+
+    from ui.config_utils import resolve_config
+
+    assert resolve_config()["dry_run"] is True
+
+
 def test_secret_is_write_only_and_masked(client, scoped_setup, clean_env):
     headers = scoped_setup["a"]["headers"]
     secret = "sk-transcription-secret-77bb"

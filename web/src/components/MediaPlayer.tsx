@@ -28,6 +28,7 @@ interface MediaPlayerProps {
   playWindow?: PlayWindow | null;
   onTime?: (sec: number) => void;
   label?: string;
+  timeLabel?: string;
   className?: string;
 }
 
@@ -50,6 +51,7 @@ export function MediaPlayer({
   playWindow = null,
   onTime,
   label,
+  timeLabel = "Playback",
   className = "",
 }: MediaPlayerProps) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
@@ -196,7 +198,7 @@ export function MediaPlayer({
 
       <div className="mt-1 flex flex-wrap items-center justify-between gap-2 font-mono text-xs text-muted">
         <span>
-          {formatCut(current)} / {duration > 0 ? formatCut(duration) : "—"}
+          {timeLabel}: {formatCut(current)} / {duration > 0 ? formatCut(duration) : "—"}
         </span>
         {label ? <span>{label}</span> : null}
       </div>

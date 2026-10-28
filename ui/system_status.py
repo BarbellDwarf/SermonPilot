@@ -463,7 +463,7 @@ class SystemStatusManager:
                 message = 'Low disk space'
             else:
                 status = 'ok'
-                message = f'{local_count} local sermons'
+                message = f'{local_count} sermon folders on disk'
 
             return {
                 'status': status,

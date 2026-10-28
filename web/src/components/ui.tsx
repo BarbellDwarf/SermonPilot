@@ -1,4 +1,6 @@
 import {
+  createContext,
+  useContext,
   useEffect,
   useId,
   useRef,
@@ -362,6 +364,23 @@ export function Advanced({
   );
 }
 
+export interface DirtyRegistry {
+  set: (id: string, dirty: boolean) => void;
+  remove: (id: string) => void;
+}
+
+export const DirtyRegistryContext = createContext<DirtyRegistry | null>(null);
+
+function useDirtyRegistration(dirty: boolean) {
+  const registry = useContext(DirtyRegistryContext);
+  const id = useId();
+  useEffect(() => {
+    if (!registry) return;
+    registry.set(id, dirty);
+    return () => registry.remove(id);
+  }, [registry, id, dirty]);
+}
+
 export function SaveBar({
   dirty,
   saved,
@@ -377,6 +396,7 @@ export function SaveBar({
   onSave: () => void;
   label?: string;
 }) {
+  useDirtyRegistration(dirty);
   return (
     <div className="sticky bottom-[4.25rem] z-10 -mx-4 -mb-4 mt-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur md:static md:mx-0 md:mb-0 md:border-0 md:bg-transparent md:p-0">
       <Button variant="primary" onClick={onSave} disabled={!dirty || busy} aria-busy={busy}>

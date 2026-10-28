@@ -12,7 +12,6 @@ overriding a saved setting.
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -90,8 +89,7 @@ class ConfigSectionUpdate(BaseModel):
 def _database():
     from ui.database import SermonDatabase
 
-    db_path = os.environ.get("DATABASE_URL") or os.environ.get("SERMONPILOT_DB")
-    return SermonDatabase(db_path=db_path) if db_path else SermonDatabase()
+    return SermonDatabase()
 
 
 def _get_dotted(config: dict[str, Any], dotted: str) -> Any:

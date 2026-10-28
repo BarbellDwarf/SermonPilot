@@ -765,17 +765,17 @@ export function SermonReview({
     if (detailsDirty) setSaveState("idle");
   }, [detailsDirty]);
 
+  const confidence =
+    plan.confidence > 0 ? `confidence ${plan.confidence}%` : null;
   const statusPills = (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <Chip tone={planStatusTone[plan.status]}>Plan: {planStatusLabel[plan.status]}</Chip>
-      <span className="font-mono text-xs text-muted">
+      <span className="font-mono text-xs text-muted" data-testid="plan-meta">
         revision {plan.revision} of {plan.revisionsTotal}
+        {confidence ? ` · ${confidence}` : ""}
+        {` · QA: ${plan.qa}`}
+        {` · Detection: ${detectionFailed ? "unavailable" : "ok"}`}
       </span>
-      <span className="font-mono text-xs text-muted">confidence {plan.confidence}%</span>
-      <Chip tone={plan.qa === "Pass" ? "ok" : "warn"}>QA: {plan.qa}</Chip>
-      <Chip tone={detectionFailed ? "error" : "ok"}>
-        Detection: {detectionFailed ? "unavailable" : "ok"}
-      </Chip>
     </div>
   );
 

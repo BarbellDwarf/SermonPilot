@@ -20,9 +20,24 @@ vi.mock("../api/useUserSettings", () => ({
 vi.mock("../components/GeneralSettings", () => ({
   GeneralSettingsSection: () => <p>General panel</p>,
 }));
-vi.mock("../components/AudioSettings", () => ({
-  AudioSettingsSection: () => <p>Audio panel</p>,
-}));
+vi.mock("../components/AudioSettings", async () => {
+  const React = await import("react");
+  const { SaveBar } = await import("../components/ui");
+  return {
+    AudioSettingsSection: () => {
+      const [dirty, setDirty] = React.useState(false);
+      return (
+        <div>
+          <p>Audio panel</p>
+          <button type="button" onClick={() => setDirty(true)}>
+            Make audio dirty
+          </button>
+          <SaveBar dirty={dirty} saved={!dirty} onSave={() => setDirty(false)} />
+        </div>
+      );
+    },
+  };
+});
 vi.mock("../components/TranscriptionSettings", () => ({
   TranscriptionSettingsSection: () => <p>Transcription panel</p>,
 }));
@@ -93,5 +108,40 @@ describe("Settings shell", () => {
   it("opens the section named in the URL", () => {
     renderSettings("/settings?section=backup");
     expect(screen.getByText("Backup panel")).toBeTruthy();
+  });
+
+  it("confirms before discarding a dirty section and keeps it when declined", async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderSettings();
+
+    await user.click(screen.getByRole("button", { name: "Audio" }));
+    await user.click(screen.getByRole("button", { name: "Make audio dirty" }));
+    expect(screen.getByText("Unsaved changes.")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Prompt Templates" }));
+    expect(confirm).toHaveBeenCalled();
+    expect(screen.getByText("Audio panel")).toBeTruthy();
+    expect(screen.queryByText("Prompts panel")).toBeNull();
+    confirm.mockRestore();
+  });
+
+  it("leaves a dirty section once the user confirms, and clears dirty after save", async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderSettings();
+
+    await user.click(screen.getByRole("button", { name: "Audio" }));
+    await user.click(screen.getByRole("button", { name: "Make audio dirty" }));
+    await user.click(screen.getByRole("button", { name: "Prompt Templates" }));
+    expect(screen.getByText("Prompts panel")).toBeTruthy();
+    expect(confirm).toHaveBeenCalled();
+    confirm.mockRestore();
+
+    await user.click(screen.getByRole("button", { name: "Audio" }));
+    await user.click(screen.getByRole("button", { name: "Make audio dirty" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByText("Saved.")).toBeTruthy();
+    expect(screen.queryByText("Unsaved changes.")).toBeNull();
   });
 });

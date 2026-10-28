@@ -3,6 +3,38 @@ from __future__ import annotations
 from ui.system_status import SystemStatusManager
 
 
+def test_database_status_counts_the_configured_console_db(tmp_path, monkeypatch) -> None:
+    db_path = tmp_path / "console.db"
+    monkeypatch.setenv("SERMONPILOT_DB", str(db_path))
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr("ui.database._db", None)
+
+    from ui.database import SermonDatabase, SermonRepository
+
+    repo = SermonRepository(SermonDatabase(db_path=str(db_path)))
+    for index in range(3):
+        repo.save_sermon(
+            {
+                "id": f"s-{index}",
+                "title": f"Sample Teaching {index}",
+                "speaker": "Speaker A",
+                "recorded_date": "2026-09-05",
+                "status": "processed",
+            }
+        )
+
+    result = SystemStatusManager({}).check_database()
+
+    assert result["status"] == "ok"
+    assert result["message"] == "Database healthy (3 sermons)"
+
+
+def test_local_storage_count_is_labelled_as_folders_not_sermons(tmp_path) -> None:
+    result = SystemStatusManager({"output_directory": str(tmp_path)}).check_local_storage()
+
+    assert result["message"] == "0 sermon folders on disk"
+
+
 def test_disabled_fallback_is_not_an_error() -> None:
     config = {
         "llm": {

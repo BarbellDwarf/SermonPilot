@@ -750,6 +750,7 @@ describe("SermonReview mobile layout", () => {
     const summary = screen.getByTestId("approval-summary");
     expect(summary.textContent).toContain("Plan: Pending review");
     expect(summary.textContent).toContain("QA: Pass");
+    expect(screen.getByTestId("plan-meta").textContent).toContain("confidence 87%");
 
     const player = document.getElementById("player-plan");
     expect(player).toBeTruthy();
@@ -1204,7 +1205,8 @@ describe("SermonReview refine controls", () => {
     );
 
     expect(screen.getByRole("alert")).toBeTruthy();
-    expect(screen.getByText("Detection: unavailable")).toBeTruthy();
+    expect(screen.getByText(/Detection: unavailable/)).toBeTruthy();
+    expect(screen.getByTestId("plan-meta").textContent).not.toContain("confidence");
     await clickMore(user, "Reject with notes");
     expect(screen.getByLabelText("Reject with notes")).toBeTruthy();
     const menu = await openMore(user);

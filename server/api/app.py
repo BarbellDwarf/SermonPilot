@@ -147,12 +147,17 @@ def create_app() -> FastAPI:
     dist = (Path(__file__).resolve().parent.parent.parent / "web" / "dist").resolve()
     if dist.is_dir():
 
-        @app.get("/{path:path}", include_in_schema=False)
-        def spa(path: str):  # type: ignore[no-redef]
+        @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+        def spa(path: str) -> FileResponse:
             candidate = resolve_spa_file(dist, path)
-            if candidate is not None:
-                return FileResponse(str(candidate))
-            return FileResponse(str(dist / "index.html"))
+            target = candidate or (dist / "index.html")
+            asset = dist / "assets"
+            cache = (
+                "public, max-age=31536000, immutable"
+                if candidate is not None and candidate.is_relative_to(asset)
+                else "no-cache"
+            )
+            return FileResponse(str(target), headers={"Cache-Control": cache})
 
     return app
 

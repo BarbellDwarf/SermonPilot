@@ -57,6 +57,16 @@ def _resolve_database_url(db_path: str) -> str:
     return db_path
 
 
+def configured_db_path() -> str | None:
+    """Return the database path named by the environment, if any.
+
+    DATABASE_URL wins for the UI/engine; SERMONPILOT_DB is the console's
+    deployment variable. Both write and read paths call this so they cannot
+    resolve different files.
+    """
+    return os.environ.get("DATABASE_URL") or os.environ.get("SERMONPILOT_DB")
+
+
 def utcnow() -> datetime.datetime:
     """Naive UTC timestamp used for every explicit database write and comparison.
 
@@ -73,7 +83,7 @@ class SermonDatabase:
     def __init__(self, db_path: str | None = None):
         """Initialize database connection"""
         if db_path is None:
-            db_path = os.environ.get("DATABASE_URL", "sermon_processor.db")
+            db_path = configured_db_path() or "sermon_processor.db"
         self.db_path = Path(_resolve_database_url(db_path))
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.init_database()
@@ -863,7 +873,7 @@ def get_db() -> SermonDatabase:
     """Get global database instance"""
     global _db
     if _db is None:
-        if os.environ.get("DATABASE_URL"):
+        if configured_db_path():
             _db = SermonDatabase()
         else:
             # Store database in data directory if it exists, otherwise current directory

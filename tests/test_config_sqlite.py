@@ -64,6 +64,13 @@ def test_defaults_fill_missing_layers(fresh_db, clear_config_env):
     assert config["llm"]["primary"]["provider"] == "ollama"
 
 
+def test_sermonpilot_db_is_used_when_database_url_is_absent(tmp_path, monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("SERMONPILOT_DB", str(tmp_path / "console.db"))
+
+    assert SermonDatabase().db_path == tmp_path / "console.db"
+
+
 def test_config_like_env_seeds_db_once_and_is_idempotent(
     fresh_db, clear_config_env, monkeypatch
 ):

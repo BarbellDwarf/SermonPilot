@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { adminApi, isLive, meApi, metaApi, type AdminUser } from "../api/client";
 import { useUserSettings } from "../api/useUserSettings";
@@ -16,12 +16,14 @@ import {
   Advanced,
   Button,
   Chip,
+  DirtyRegistryContext,
   Field,
   PageHeader,
   SaveBar,
   SectionCard,
   Toast,
   inputCls,
+  type DirtyRegistry,
 } from "../components/ui";
 
 const SECTIONS = [
@@ -444,6 +446,27 @@ export function Settings({ user }: { user: { display_name: string; role?: string
       ? "cloud"
       : "general";
   const [active, setActive] = useState<TabId>(initial);
+  const [dirtySections, setDirtySections] = useState<Set<string>>(() => new Set());
+  const dirtyRegistry = useMemo<DirtyRegistry>(
+    () => ({
+      set: (id, dirty) =>
+        setDirtySections((prev) => {
+          if (prev.has(id) === dirty) return prev;
+          const next = new Set(prev);
+          if (dirty) next.add(id);
+          else next.delete(id);
+          return next;
+        }),
+      remove: (id) =>
+        setDirtySections((prev) => {
+          if (!prev.has(id)) return prev;
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        }),
+    }),
+    [],
+  );
 
   useEffect(() => {
     const next = searchParams.get("section");
@@ -451,6 +474,13 @@ export function Settings({ user }: { user: { display_name: string; role?: string
   }, [searchParams]);
 
   const choose = (id: TabId) => {
+    if (id === active) return;
+    if (
+      dirtySections.size > 0 &&
+      !window.confirm("This section has unsaved changes. Leave and discard them?")
+    ) {
+      return;
+    }
     setActive(id);
     const next = new URLSearchParams(searchParams);
     next.set("section", id);
@@ -499,7 +529,8 @@ export function Settings({ user }: { user: { display_name: string; role?: string
   };
 
   return (
-    <div className="flex flex-col gap-4">
+    <DirtyRegistryContext.Provider value={dirtyRegistry}>
+      <div className="flex flex-col gap-4">
       <PageHeader
         title="Settings"
         actions={
@@ -593,6 +624,7 @@ export function Settings({ user }: { user: { display_name: string; role?: string
         </div>
       </div>
       <Toast message={toast} />
-    </div>
+      </div>
+    </DirtyRegistryContext.Provider>
   );
 }

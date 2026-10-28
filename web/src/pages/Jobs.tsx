@@ -26,15 +26,26 @@ const tabs: { id: Tab; label: string }[] = [
 
 type PendingAction = { job: Job; action: "cancel" | "delete" };
 
-function copyJobId(id: string, notify: (msg: string) => void) {
+function copyJobId(
+  id: string,
+  notify: (msg: string) => void,
+  source: HTMLElement | null,
+) {
+  const selectAndTell = () => {
+    if (source) {
+      const range = document.createRange();
+      range.selectNodeContents(source);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+    notify("Copy failed: clipboard unavailable. Job ID selected; press Ctrl/Cmd+C.");
+  };
   if (!navigator.clipboard) {
-    notify("Copy failed: clipboard unavailable.");
+    selectAndTell();
     return;
   }
-  void navigator.clipboard
-    .writeText(id)
-    .then(() => notify("Job id copied."))
-    .catch(() => notify("Copy failed."));
+  void navigator.clipboard.writeText(id).then(() => notify("Job id copied.")).catch(selectAndTell);
 }
 
 function JobRow({
@@ -173,7 +184,13 @@ function JobRow({
             <code className="min-w-0 break-all font-mono text-xs text-mist">{job.id}</code>
             <button
               type="button"
-              onClick={() => copyJobId(job.id, onNotify)}
+              onClick={(event) =>
+                copyJobId(
+                  job.id,
+                  onNotify,
+                  event.currentTarget.parentElement?.querySelector("code") ?? null,
+                )
+              }
               className="inline-flex min-h-[44px] items-center rounded-md px-2 text-xs font-semibold text-accent hover:underline"
             >
               Copy

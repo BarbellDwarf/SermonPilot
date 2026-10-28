@@ -169,4 +169,21 @@ describe("MediaPlayer", () => {
     fireEvent.timeUpdate(element);
     expect(onTime).toHaveBeenCalledWith(7.5);
   });
+
+  it("labels the readout as playback time so it does not read as a second clock", () => {
+    render(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        contentType="video/mp4"
+        available
+      />,
+    );
+    expect(screen.getByText(/^Playback: 00:00\.0 \/ —$/)).toBeTruthy();
+
+    const element = document.querySelector("video") as HTMLVideoElement;
+    element.currentTime = 7.5;
+    fireEvent.timeUpdate(element);
+    expect(screen.getByText(/^Playback: 00:07\.5 \/ —$/)).toBeTruthy();
+  });
 });
