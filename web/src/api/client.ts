@@ -628,10 +628,21 @@ export interface UserBackup {
   settings: Record<string, unknown>;
 }
 
+export interface FullBackup {
+  app: string;
+  backup_kind: string;
+  tables: Record<string, number>;
+  data: Record<string, unknown[]>;
+  user_settings: Record<string, unknown>;
+}
+
 export const backupApi = {
   download: () => send<UserBackup>("/api/me/backup", "GET"),
   restore: (backup: { settings: Record<string, unknown> }) =>
     send<{ restored: number }>("/api/me/restore", "POST", backup),
+  downloadFull: () => send<FullBackup>("/api/admin/backup", "GET"),
+  restoreFull: (backup: FullBackup) =>
+    send<{ restored: Record<string, number> }>("/api/admin/restore", "POST", backup),
 };
 
 export const writeApi = {

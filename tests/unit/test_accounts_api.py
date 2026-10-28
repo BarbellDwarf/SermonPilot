@@ -243,3 +243,32 @@ def test_backfill_reassigns_null_to_admin(client, scoped_setup):
     assert client.get("/api/jobs/j-null", headers=s["a"]["headers"]).status_code == 404
     assert client.get("/api/jobs/j-null", headers=s["admin_headers"]).status_code == 200
     assert backfill.backfill() == {"sermons": 0, "background_jobs": 0}
+
+
+def test_new_user_starts_empty_and_logout_invalidates_session(client, scoped_setup):
+    s = scoped_setup
+    created = client.post(
+        "/api/admin/users",
+        json={
+            "username": "user-c",
+            "display_name": "Operator C",
+            "password": "pw-user-c",
+            "role": "user",
+        },
+        headers=s["admin_headers"],
+    )
+    assert created.status_code == 201, created.text
+    token = client.post(
+        "/api/auth/login", json={"username": "user-c", "password": "pw-user-c"}
+    ).json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.get("/api/sermons", headers=headers).json() == {"items": [], "total": 0}
+    assert client.get("/api/jobs", headers=headers).json() == {"items": [], "total": 0}
+    assert client.get("/api/cloud/remotes", headers=headers).json()["total"] == 0
+    assert client.get("/api/me/settings/audio", headers=headers).json()["value"] is None
+    assert client.get("/api/auth/me", headers=headers).status_code == 200
+
+    assert client.post("/api/auth/logout", headers=headers).status_code == 204
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+    assert client.get("/api/sermons", headers=headers).status_code == 401

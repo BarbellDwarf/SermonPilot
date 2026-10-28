@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { backupApi, isLive, type UserBackup } from "../api/client";
+import { backupApi, isLive, type FullBackup, type UserBackup } from "../api/client";
 import { Advanced, Button, Chip, ConfirmDialog, Field, Fieldset, SectionCard, inputCls } from "./ui";
 
 const MASKED_BACKUP = `{
@@ -31,8 +31,14 @@ const INITIAL_HISTORY: HistoryEntry[] = [
   { id: "bkp-1", when: "2026-09-10 11:05", note: "Initial sample data (demo)" },
 ];
 
-export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
-  const [backup, setBackup] = useState<UserBackup | null>(null);
+export function ConfigBackupSection({
+  show,
+  isAdmin = false,
+}: {
+  show: (m: string) => void;
+  isAdmin?: boolean;
+}) {
+  const [backup, setBackup] = useState<UserBackup | FullBackup | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>(INITIAL_HISTORY);
   const [restoreText, setRestoreText] = useState("");
   const [restoreError, setRestoreError] = useState<string | null>(null);
@@ -49,13 +55,17 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
     try {
       const parsed = JSON.parse(text) as { settings?: Record<string, unknown> };
       setApplying(true);
-      void backupApi
-        .restore({ settings: parsed.settings ?? {} })
-        .then((r) => {
-          setHistory((hs) => [
-            { id: `bkp-${Date.now() % 100000}`, when: "just now", note: `Restored ${r.restored} ${r.restored === 1 ? "setting group" : "setting groups"}` },
-            ...hs,
-          ]);
+      const request = isAdmin
+        ? backupApi.restoreFull(parsed as unknown as FullBackup).then((r) => {
+            const total = Object.values(r.restored).reduce((sum, n) => sum + n, 0);
+            return `Restored ${total} records across ${Object.keys(r.restored).length} tables`;
+          })
+        : backupApi
+            .restore({ settings: parsed.settings ?? {} })
+            .then((r) => `Restored ${r.restored} ${r.restored === 1 ? "setting group" : "setting groups"}`);
+      void request
+        .then((note) => {
+          setHistory((hs) => [{ id: `bkp-${Date.now() % 100000}`, when: "just now", note }, ...hs]);
           setRestoreText("");
           show("Backup applied.");
         })
@@ -101,8 +111,8 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
 
   const download = () => {
     if (isLive) {
-      void backupApi
-        .download()
+      const request = isAdmin ? backupApi.downloadFull() : backupApi.download();
+      void request
         .then((data) => {
           setBackup(data);
           const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -135,9 +145,9 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
     <SectionCard
       title="Backup & restore"
       sub={
-        isLive
-          ? "Everything lives in the app database. Download is a full data backup; upload restores it. Secrets stay masked and masked values can never be applied."
-          : "Everything lives in the app database. Download is a full data backup; upload restores it (demo). Secrets stay masked and masked values can never be applied."
+        isAdmin
+          ? "Download is a full database backup: sermons, plans, jobs, users, and settings. Upload restores it. Secrets stay masked and masked values can never be applied."
+          : "Download is a backup of your settings. Upload restores them. Secrets stay masked and masked values can never be applied."
       }
     >
       <details open className="rounded-md border border-line p-3">
@@ -148,7 +158,10 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
           {backup ? JSON.stringify(backup, null, 2) : MASKED_BACKUP}
         </pre>
         <div className="mt-2 flex flex-wrap gap-2">
-          <Button onClick={download} aria-label="Download full data backup">
+          <Button
+            onClick={download}
+            aria-label={isAdmin ? "Download full data backup" : "Download settings backup"}
+          >
             Download backup
           </Button>
           <Button

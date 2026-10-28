@@ -245,6 +245,11 @@ def test_cancel_releases_queue_and_starts_next_job_within_bound(
 
     row = _read_row(db_path, long_id)
     assert row is not None and row["status"] == "cancelled"
+    stored_result = json.loads(row["result"])
+    assert "cancelled" in stored_result["error"].lower()
+    job = queue.get_job(long_id)
+    assert job is not None and job.result is not None
+    assert "cancelled" in (job.result.error or "").lower()
 
 
 def test_cancel_stops_a_real_child_and_releases_the_queue(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 
 from server.api.accounts import set_setting, writable_conn
 
@@ -60,7 +61,97 @@ def test_admin_db_backup_masks_and_user_denied(client, scoped_setup):
     data = r.json()
     assert data["backup_kind"] == "full-database"
     assert data["tables"]["users"] >= 1
+    assert data["tables"]["sermons"] >= 1
+    assert data["data"]["sermons"]
     assert client.get("/api/admin/backup", headers=s["a"]["headers"]).status_code == 403
+
+
+def _counts(db_path: str) -> dict[str, int]:
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    try:
+        return {
+            table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            for table in ("sermons", "edit_plans", "background_jobs", "users")
+        }
+    finally:
+        conn.close()
+
+
+def test_admin_backup_restore_round_trip(client, scoped_setup):
+    s = scoped_setup
+    from server.api.accounts import get_db_path
+
+    with writable_conn() as conn:
+        conn.execute(
+            "INSERT INTO edit_plans (sermon_id, revision, proposed_start, proposed_end,"
+            " status, remove_segments) VALUES (?, 1, 2.0, 30.0, 'pending_review', ?)",
+            ("s-a", '[{"start_sec": 10.0, "end_sec": 12.0}]'),
+        )
+
+    backup = client.get("/api/admin/backup", headers=s["admin_headers"]).json()
+    before = _counts(get_db_path())
+    assert before["sermons"] >= 1 and before["edit_plans"] >= 1
+
+    with writable_conn() as conn:
+        conn.execute("DELETE FROM edit_plans WHERE sermon_id = ?", ("s-a",))
+        conn.execute("DELETE FROM sermons WHERE id = ?", ("s-a",))
+        conn.execute("DELETE FROM background_jobs WHERE id = ?", ("j-a",))
+        conn.execute("UPDATE users SET display_name = 'mutated' WHERE id = ?", (s["a"]["id"],))
+
+    assert _counts(get_db_path()) != before
+
+    r = client.post(
+        "/api/admin/restore",
+        json={
+            "backup_kind": backup["backup_kind"],
+            "data": backup["data"],
+            "user_settings": backup["user_settings"],
+        },
+        headers=s["admin_headers"],
+    )
+    assert r.status_code == 200, r.text
+    assert _counts(get_db_path()) == before
+    assert r.json()["restored"]["sermons"] == before["sermons"]
+
+    from ui.database import SermonDatabase, SermonRepository
+
+    repo = SermonRepository(SermonDatabase(db_path=get_db_path()))
+    assert repo.get_sermon("s-a")["title"] == "Owned A"
+    assert repo.get_current_edit_plan("s-a")["proposed_start"] == 2.0
+    assert client.get("/api/jobs/j-a", headers=s["admin_headers"]).json()["id"] == "j-a"
+    assert client.get("/api/auth/me", headers=s["admin_headers"]).json()["id"] == s["admin_id"]
+    assert client.post(
+        "/api/admin/restore",
+        json={"backup_kind": "full-database", "data": backup["data"]},
+        headers=s["a"]["headers"],
+    ).status_code == 403
+
+
+def test_admin_restore_rejects_masked_secrets(client, scoped_setup):
+    s = scoped_setup
+    _seed_key(s["a"]["id"], "sk-hidden-9z")
+    backup = client.get("/api/admin/backup", headers=s["admin_headers"]).json()
+    assert backup["user_settings"][s["a"]["id"]]["connections.llm"]["items"][0][
+        "masked_key"
+    ] == "********"
+
+    for mask in ("********", "***"):
+        masked = json.loads(json.dumps(backup))
+        masked["user_settings"][s["a"]["id"]]["connections.llm"]["items"][0][
+            "masked_key"
+        ] = mask
+        r = client.post(
+            "/api/admin/restore",
+            json={
+                "backup_kind": "full-database",
+                "data": masked["data"],
+                "user_settings": masked["user_settings"],
+            },
+            headers=s["admin_headers"],
+        )
+        assert r.status_code == 400
 
 
 def test_restore_applies_user_settings(client, scoped_setup):

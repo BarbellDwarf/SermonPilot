@@ -162,10 +162,15 @@ function JobRow({
               {progress}%{elapsed ? ` · ${elapsed}` : ""}
             </span>
           </span>
-        ) : errorLine && (status === "FAILED" || status === "INTERRUPTED") ? (
+        ) : errorLine &&
+          (status === "FAILED" || status === "INTERRUPTED" || status === "CANCELLED") ? (
           <span
             className={`[grid-area:extra] line-clamp-1 text-xs ${
-              status === "INTERRUPTED" ? "text-warn" : "text-danger"
+              status === "INTERRUPTED"
+                ? "text-warn"
+                : status === "CANCELLED"
+                  ? "text-muted"
+                  : "text-danger"
             }`}
           >
             {errorLine}

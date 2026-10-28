@@ -10,6 +10,7 @@ stored key; restores reject masked values.
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import re
@@ -246,12 +247,44 @@ def _mask_blob(value: object) -> object:
     return value
 
 
+_MASK_PATTERN = re.compile(r"^\*{3,}$")
+_SECRET_HINTS = ("key", "password", "token", "secret")
+
+
+def _is_mask_value(value: object) -> bool:
+    return isinstance(value, str) and bool(_MASK_PATTERN.match(value.strip()))
+
+
 def _blob_contains_mask(value: object) -> bool:
     if isinstance(value, dict):
         return any(_blob_contains_mask(v) for v in value.values())
     if isinstance(value, list):
         return any(_blob_contains_mask(v) for v in value)
-    return value == _MASK
+    return _is_mask_value(value)
+
+
+def _mask_secret_settings(value: object) -> object:
+    if isinstance(value, dict):
+        out: dict[str, object] = {}
+        for key, item in value.items():
+            if any(hint in str(key).lower() for hint in _SECRET_HINTS) and item:
+                out[key] = "***"
+            else:
+                out[key] = _mask_secret_settings(item)
+        return out
+    if isinstance(value, list):
+        return [_mask_secret_settings(item) for item in value]
+    return value
+
+
+def _mask_config_json(raw: object) -> object:
+    if not isinstance(raw, str):
+        return _mask_secret_settings(raw)
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return raw
+    return json.dumps(_mask_secret_settings(parsed))
 
 
 @me_router.get("/backup")
@@ -313,6 +346,20 @@ def update_profile(body: ProfileBody, user=Depends(require_user)):
 
 admin_backup_router = APIRouter(prefix="/api/admin", tags=["admin"])
 
+_RESTORE_SKIP_TABLES = frozenset({"sqlite_sequence", "sessions", "job_worker_lease"})
+_FTS_SHADOW_PREFIX = "sermon_search_"
+
+
+def _restorable_tables(conn: sqlite3.Connection) -> set[str]:
+    return {
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+            " AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        if r[0] not in _RESTORE_SKIP_TABLES and not r[0].startswith(_FTS_SHADOW_PREFIX)
+    }
+
 
 @admin_backup_router.get("/backup")
 def backup_full_db(user=Depends(require_user)):
@@ -329,13 +376,20 @@ def backup_full_db(user=Depends(require_user)):
             ).fetchall()
         )
         counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
+        restorable = _restorable_tables(conn)
+        data = {
+            table: [dict(row) for row in conn.execute(f'SELECT * FROM "{table}"').fetchall()]
+            for table in sorted(restorable)
+        }
+        for row in data.get("config_cache", []):
+            row["data"] = _mask_config_json(row.get("data"))
         settings = {}
         for r in conn.execute(
             "SELECT user_id, key, value FROM user_settings ORDER BY user_id, key"
         ).fetchall():
             bucket = settings.setdefault(r["user_id"], {})
             try:
-                bucket[r["key"]] = _mask_blob(__import__("json").loads(r["value"]))
+                bucket[r["key"]] = _mask_blob(json.loads(r["value"]))
             except Exception:
                 bucket[r["key"]] = _MASK
     finally:
@@ -344,8 +398,59 @@ def backup_full_db(user=Depends(require_user)):
         "app": "sermonpilot",
         "backup_kind": "full-database",
         "tables": counts,
+        "data": data,
         "user_settings": settings,
     }
+
+
+class AdminRestoreBody(BaseModel):
+    backup_kind: str | None = None
+    data: dict[str, list[dict[str, Any]]] = {}
+    user_settings: dict[str, dict[str, Any]] = {}
+
+
+@admin_backup_router.post("/restore")
+def restore_full_db(body: AdminRestoreBody, user=Depends(require_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="admin role required")
+    if body.backup_kind not in (None, "full-database"):
+        raise HTTPException(status_code=422, detail="not a full-database backup")
+    if not body.data:
+        raise HTTPException(status_code=422, detail="backup has no table data")
+    if _blob_contains_mask({"data": body.data, "user_settings": body.user_settings}):
+        raise HTTPException(status_code=400, detail="backup contains masked secrets")
+
+    restored: dict[str, int] = {}
+    with writable_conn() as conn:
+        allowed = _restorable_tables(conn)
+        unknown = sorted(set(body.data) - allowed)
+        if unknown:
+            raise HTTPException(
+                status_code=422, detail=f"unknown or un-restorable table: {unknown[0]}"
+            )
+        for table in allowed:
+            conn.execute(f'DELETE FROM "{table}"')
+        for table, rows in body.data.items():
+            if not isinstance(rows, list) or any(not isinstance(r, dict) for r in rows):
+                raise HTTPException(status_code=422, detail=f"invalid rows for {table}")
+            columns = {r[1] for r in conn.execute(f'PRAGMA table_info("{table}")')}
+            for row in rows:
+                keys = [key for key in row if key in columns]
+                if not keys:
+                    continue
+                quoted = ", ".join(f'"{key}"' for key in keys)
+                marks = ", ".join("?" for _ in keys)
+                conn.execute(
+                    f'INSERT INTO "{table}" ({quoted}) VALUES ({marks})',
+                    [row[key] for key in keys],
+                )
+            restored[table] = len(rows)
+        if body.user_settings:
+            conn.execute("DELETE FROM user_settings")
+            for user_id, settings in body.user_settings.items():
+                for key, value in settings.items():
+                    set_setting(conn, user_id, key, value)
+    return {"restored": restored}
 
 
 files_router = APIRouter(prefix="/api/me/files", tags=["files"])

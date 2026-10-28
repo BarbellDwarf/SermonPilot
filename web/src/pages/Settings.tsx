@@ -537,7 +537,7 @@ export function Settings({ user }: { user: { display_name: string; role?: string
       case "prompts":
         return <PromptTemplatesSection show={show} />;
       case "backup":
-        return <ConfigBackupSection show={show} />;
+        return <ConfigBackupSection show={show} isAdmin={user.role === "admin"} />;
     }
   };
 

@@ -5,6 +5,7 @@ import sqlite3
 from datetime import datetime, timedelta
 
 from server.api.accounts import get_db_path
+from ui.database import utcnow
 
 
 def test_create_draft_sermon_attributes_and_scopes(client, scoped_setup):
@@ -195,7 +196,7 @@ def test_apply_blocks_reapply_within_grace_window(client, scoped_setup, monkeypa
 
     monkeypatch.setattr(dbmod, "_db", None)
     monkeypatch.setenv("DATABASE_URL", get_db_path())
-    _insert_completed_apply("s-a", s["a"]["id"], datetime.now())
+    _insert_completed_apply("s-a", s["a"]["id"], utcnow())
 
     r = client.post(
         "/api/sermons/s-a/plan/apply",
@@ -212,7 +213,7 @@ def test_apply_allows_reapply_after_grace_window(client, scoped_setup, monkeypat
 
     monkeypatch.setattr(dbmod, "_db", None)
     monkeypatch.setenv("DATABASE_URL", get_db_path())
-    _insert_completed_apply("s-a", s["a"]["id"], datetime.now() - timedelta(seconds=30))
+    _insert_completed_apply("s-a", s["a"]["id"], utcnow() - timedelta(seconds=30))
 
     r = client.post(
         "/api/sermons/s-a/plan/apply",
@@ -238,11 +239,12 @@ def test_cancel_job_scoped(client, scoped_setup, monkeypatch):
     assert r.status_code == 200
     assert r.json()["cancelled"] is True
     conn = sqlite3.connect(get_db_path())
-    status = conn.execute(
-        "SELECT status FROM background_jobs WHERE id = ?", (jid,)
-    ).fetchone()[0]
+    status, result = conn.execute(
+        "SELECT status, result FROM background_jobs WHERE id = ?", (jid,)
+    ).fetchone()
     conn.close()
     assert status == "cancelled"
+    assert "cancelled" in (json.loads(result)["error"] or "").lower()
 
 
 def test_upload_now_queues_publish_job(client, scoped_setup, monkeypatch):
@@ -632,3 +634,23 @@ def test_plan_endpoint_carries_reasoning_and_notes(client, scoped_setup):
     plan = got.json()["plan"]
     assert plan["reasoning"] == "second class only"
     assert plan["notes"] == "Keep only the second"
+
+
+def test_plan_apply_and_upload_are_scoped(client, scoped_setup):
+    s = scoped_setup
+    apply_body = {
+        "start": 0.0,
+        "end": 10.0,
+        "audio_offset": 0.0,
+        "render_only": True,
+        "remove_segments": [],
+    }
+    assert client.post(
+        "/api/sermons/s-a/plan/apply", json=apply_body, headers=s["b"]["headers"]
+    ).status_code == 404
+    assert client.post(
+        "/api/sermons/s-a/upload", headers=s["b"]["headers"]
+    ).status_code == 404
+    assert client.patch(
+        "/api/sermons/s-a", json={"title": "Stolen"}, headers=s["b"]["headers"]
+    ).status_code == 404

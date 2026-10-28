@@ -324,6 +324,12 @@ def _interruption_result(cancelled: bool) -> JobResult:
     )
 
 
+def _cancelled_result() -> JobResult:
+    """Terminal outcome for a cancelled job, so the UI can show the reason."""
+    message = "Job cancelled by user"
+    return JobResult(success=False, message=message, error=message)
+
+
 def _append_log_line(existing_json: str | None, line: str) -> str:
     """Append a timestamped line to a persisted logs JSON array, never wiping it."""
     try:
@@ -1002,6 +1008,7 @@ class JobQueue:
                 job.cancelled = True
                 job.status = JobStatus.CANCELLED
                 job.completed_at = _now()
+                job.result = _cancelled_result()
                 job.add_log("Job cancelled by user")
                 logger.info(f"Cancelled job {job_id}")
 
@@ -1020,9 +1027,12 @@ class JobQueue:
                 _ensure_job_columns(conn)
                 cursor = conn.execute(
                     "UPDATE background_jobs SET cancelled = 1, status = 'cancelled',"
-                    " completed_at = datetime('now')"
+                    " completed_at = datetime('now'), result = ?"
                     " WHERE id = ? AND status IN ('queued', 'running') AND can_cancel = 1",
-                    (job_id,),
+                    (
+                        json.dumps(_result_for_persistence(_cancelled_result())),
+                        job_id,
+                    ),
                 )
                 conn.commit()
                 return cursor.rowcount > 0
@@ -1361,10 +1371,11 @@ class JobQueue:
         return job
 
     def _mark_cancelled(self, job: Job):
-        """Mark a job as cancelled and record its completion time."""
+        """Mark a job as cancelled and record its completion time and reason."""
         job.cancelled = True
         job.status = JobStatus.CANCELLED
         job.completed_at = _now()
+        job.result = _cancelled_result()
 
     def _stall_timeout_seconds(self) -> float:
         """No-progress bound for a running job; 0 disables the watchdog."""

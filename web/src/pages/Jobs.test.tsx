@@ -183,6 +183,19 @@ describe("Jobs rows", () => {
     expect(within(row).queryByText(/Second line detail/)).toBeNull();
   });
 
+  it("shows the reason on a cancelled row", () => {
+    mocks.jobsData.mockReturnValue(
+      jobsData([], [job({ id: "job-cancelled", state: "cancelled", error: "Job cancelled by user" })]),
+    );
+
+    renderJobs();
+    fireEvent.click(screen.getByRole("tab", { name: /Completed/ }));
+
+    const row = screen.getByTestId("job-row-job-cancelled");
+    expect(within(row).getByText("CANCELLED")).toBeTruthy();
+    expect(within(row).getByText("Job cancelled by user")).toBeTruthy();
+  });
+
   it("marks restart-interrupted jobs with the INTERRUPTED label", () => {
     mocks.jobsData.mockReturnValue(
       jobsData([], [], [
