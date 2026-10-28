@@ -3,10 +3,11 @@ name = "sermon-audio-updater"
 version = "1.8.0"
 description = "Automated sermon processing tool for SermonAudio"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 
 dependencies = [
+    "pillow>=13.0.0",
     # Core API and configuration
     "sermonaudio>=1.0.0",
     "requests>=2.34.2",
