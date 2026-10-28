@@ -87,7 +87,7 @@ describe("Settings shell", () => {
     expect(screen.getByText("Audio panel")).toBeTruthy();
     expect(screen.queryByText("General panel")).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Prompt Templates" }));
+    await user.click(screen.getByRole("button", { name: "Prompt templates" }));
     expect(screen.getByText("Prompts panel")).toBeTruthy();
   });
 
@@ -97,12 +97,10 @@ describe("Settings shell", () => {
 
     const select = screen.getByTestId("settings-section-select") as HTMLSelectElement;
     expect(select.value).toBe("general");
-    expect(screen.getByText(/System · 9 sections in 4 groups/)).toBeTruthy();
 
     await user.selectOptions(select, "transcription");
     expect(select.value).toBe("transcription");
     expect(screen.getByText("Transcription panel")).toBeTruthy();
-    expect(screen.getByText(/Pipeline · 9 sections/)).toBeTruthy();
   });
 
   it("opens the section named in the URL", () => {
@@ -119,7 +117,7 @@ describe("Settings shell", () => {
     await user.click(screen.getByRole("button", { name: "Make audio dirty" }));
     expect(screen.getByText("Unsaved changes.")).toBeTruthy();
 
-    await user.click(screen.getByRole("button", { name: "Prompt Templates" }));
+    await user.click(screen.getByRole("button", { name: "Prompt templates" }));
     expect(confirm).toHaveBeenCalled();
     expect(screen.getByText("Audio panel")).toBeTruthy();
     expect(screen.queryByText("Prompts panel")).toBeNull();
@@ -133,7 +131,7 @@ describe("Settings shell", () => {
 
     await user.click(screen.getByRole("button", { name: "Audio" }));
     await user.click(screen.getByRole("button", { name: "Make audio dirty" }));
-    await user.click(screen.getByRole("button", { name: "Prompt Templates" }));
+    await user.click(screen.getByRole("button", { name: "Prompt templates" }));
     expect(screen.getByText("Prompts panel")).toBeTruthy();
     expect(confirm).toHaveBeenCalled();
     confirm.mockRestore();

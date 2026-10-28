@@ -26,7 +26,8 @@ const sortOptions: { id: LibrarySort; label: string }[] = [
   { id: "duration", label: "Duration (longest)" },
 ];
 
-const selectCls = "min-h-[44px] min-w-0 rounded-md border border-line bg-surface px-3 text-sm text-mist";
+const selectCls =
+  "min-h-[44px] min-w-0 rounded-md border border-line bg-ink px-3 text-sm text-mist transition-colors duration-150 hover:border-muted focus-visible:border-accent";
 
 function SermonRow({ sermon }: { sermon: LibrarySermon }) {
   const navigate = useNavigate();
@@ -35,13 +36,13 @@ function SermonRow({ sermon }: { sermon: LibrarySermon }) {
 
   return (
     <li data-testid={`library-row-${sermon.id}`}>
-      <div className="relative">
+      <div className="group relative">
         <Link
           to={`/library/${sermon.id}`}
           aria-label={`Open ${sermon.title} by ${sermon.speaker}, ${status}`}
-          className="absolute inset-0 rounded-md"
+          className="peer absolute inset-0 rounded-md"
         />
-        <div className="flex min-h-[64px] items-center gap-3 px-4 py-2.5">
+        <div className="flex min-h-[64px] items-center gap-3 px-4 py-2.5 transition-colors duration-150 group-hover:bg-raised peer-focus-visible:bg-raised">
           <div aria-hidden="true" className="flex min-w-0 flex-1 items-center gap-3">
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold" title={sermon.title}>
@@ -137,7 +138,7 @@ export function Library() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search title, speaker, series…"
-            className="min-h-[44px] min-w-0 flex-1 rounded-md border border-line bg-surface px-3 text-sm text-mist placeholder:text-muted"
+            className="min-h-[44px] min-w-0 flex-1 rounded-md border border-line bg-ink px-3 text-sm text-mist transition-colors duration-150 placeholder:text-muted hover:border-muted focus-visible:border-accent"
           />
           <div className="flex min-w-0 items-center gap-2">
             <label htmlFor="library-status" className="sr-only">
@@ -204,7 +205,9 @@ export function Library() {
         </div>
         <div className="flex items-center justify-between gap-3">
           <span className="font-mono text-xs text-muted" role="status" aria-live="polite">
-            {visible.length} of {isLive ? total : rows.length} loaded
+            {hasMore
+              ? `${visible.length} of ${isLive ? total : rows.length} loaded`
+              : `${visible.length} ${visible.length === 1 ? "teaching" : "teachings"}`}
           </span>
         </div>
       </div>

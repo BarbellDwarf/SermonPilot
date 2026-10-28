@@ -30,12 +30,12 @@ const SECTIONS = [
   { id: "audio", label: "Audio", group: "Pipeline" },
   { id: "transcription", label: "Transcription", group: "Pipeline" },
   { id: "validation", label: "Validation", group: "Pipeline" },
-  { id: "llm", label: "LLM Providers", group: "Connections" },
-  { id: "sermonaudio", label: "SermonAudio Accounts", group: "Connections" },
-  { id: "cloud", label: "Cloud Mounts", group: "Connections" },
-  { id: "prompts", label: "Prompt Templates", group: "Prompts" },
+  { id: "llm", label: "LLM providers", group: "Connections" },
+  { id: "sermonaudio", label: "SermonAudio accounts", group: "Connections" },
+  { id: "cloud", label: "Cloud mounts", group: "Connections" },
+  { id: "prompts", label: "Prompt templates", group: "Prompts" },
   { id: "general", label: "General", group: "System" },
-  { id: "backup", label: "Backup & Restore", group: "System" },
+  { id: "backup", label: "Backup & restore", group: "System" },
 ] as const;
 
 const GROUPS = ["Pipeline", "Connections", "Prompts", "System"] as const;
@@ -581,9 +581,6 @@ export function Settings({ user }: { user: { display_name: string; role?: string
                 <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </div>
-            <p className="mt-1 text-xs text-muted">
-              {activeSection.group} · {SECTIONS.length} sections in {GROUPS.length} groups
-            </p>
           </div>
 
           <nav aria-label="Settings sections" className="hidden flex-col gap-3 md:flex">
@@ -599,9 +596,9 @@ export function Settings({ user }: { user: { display_name: string; role?: string
                         type="button"
                         onClick={() => choose(s.id)}
                         aria-current={selected ? "page" : undefined}
-                        className={`flex min-h-[44px] w-full items-center rounded-md px-3 text-left text-sm font-medium transition-colors ${
+                        className={`relative flex min-h-[44px] w-full items-center rounded-md px-3 text-left text-sm font-medium transition-colors duration-150 ${
                           selected
-                            ? "bg-raised text-mist"
+                            ? "bg-raised text-mist before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-accent"
                             : "text-muted hover:bg-raised hover:text-mist"
                         }`}
                       >

@@ -118,7 +118,7 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
           <Toggle
             checked={cur.enabled}
             onChange={(v) => set("enabled", v)}
-            label="Enable Description Validation"
+            label="Enable description validation"
             hint="Use AI to validate description quality."
           />
 
@@ -188,12 +188,12 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
             <Toggle
               checked={cur.descMissing}
               onChange={(v) => set("descMissing", v)}
-              label="Update if Missing"
+              label="Update if missing"
             />
             <Toggle
               checked={cur.descMinimal}
               onChange={(v) => set("descMinimal", v)}
-              label="Update if Minimal"
+              label="Update if minimal"
             />
             <Advanced label="Minimum length" open={Boolean(descErr)}>
               <Field label="Min length threshold" htmlFor={`${uid}-desc-min`} hint="10 to 200 characters.">
@@ -220,12 +220,12 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
             <Toggle
               checked={cur.hashMissing}
               onChange={(v) => set("hashMissing", v)}
-              label="Update if Missing"
+              label="Update if missing"
             />
             <Toggle
               checked={cur.hashMinimal}
               onChange={(v) => set("hashMinimal", v)}
-              label="Update if Minimal"
+              label="Update if minimal"
             />
             <Advanced label="Minimum length" open={Boolean(hashErr)}>
               <Field label="Min length threshold" htmlFor={`${uid}-hash-min`} hint="5 to 50 characters.">

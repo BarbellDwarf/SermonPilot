@@ -394,19 +394,82 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T>
   return (await res.json()) as T;
 }
 
+// A built demo bundle has no bridge to answer secrets-bearing sections, so it
+// shows sample rows instead of logging 404s.
+const demoData = !isLive && import.meta.env.PROD;
+
+const mockConnections: ApiConnection[] = [];
+let mockDefaultConnection: string | null = null;
+let mockConnectionSeq = 0;
+
+function mockConnection(body: Record<string, unknown>, existing?: ApiConnection): ApiConnection {
+  const key = typeof body.apiKey === "string" ? body.apiKey : "";
+  return {
+    ...existing,
+    id: existing?.id ?? `mock-connection-${++mockConnectionSeq}`,
+    name: String(body.name ?? existing?.name ?? "Sample account"),
+    broadcasterId: String(body.broadcasterId ?? existing?.broadcasterId ?? ""),
+    notes: String(body.notes ?? existing?.notes ?? ""),
+    has_key: Boolean(key) || Boolean(existing?.has_key),
+    masked_key: key ? `••••${key.slice(-4)}` : (existing?.masked_key ?? ""),
+  };
+}
+
 export const connectionsApi = {
-  list: (kind: "llm" | "sermonaudio") =>
-    send<ApiConnectionList>(`/api/me/connections/${kind}`, "GET"),
-  create: (kind: "llm" | "sermonaudio", body: Record<string, unknown>) =>
-    send<ApiConnection>(`/api/me/connections/${kind}`, "POST", body),
-  update: (kind: "llm" | "sermonaudio", id: string, body: Record<string, unknown>) =>
-    send<ApiConnection>(`/api/me/connections/${kind}/${encodeURIComponent(id)}`, "PUT", body),
-  remove: (kind: "llm" | "sermonaudio", id: string) =>
-    send<void>(`/api/me/connections/${kind}/${encodeURIComponent(id)}`, "DELETE"),
-  setDefault: (id: string | null) =>
-    send<{ default_id: string | null }>("/api/me/connections/sermonaudio/default", "PUT", { id }),
-  effective: () =>
-    send<ApiEffectiveConnection>("/api/me/sermonaudio-connection", "GET"),
+  list: (kind: "llm" | "sermonaudio") => {
+    if (!demoData) return send<ApiConnectionList>(`/api/me/connections/${kind}`, "GET");
+    return Promise.resolve({
+      items: kind === "sermonaudio" ? [...mockConnections] : [],
+      total: kind === "sermonaudio" ? mockConnections.length : 0,
+      default_id: mockDefaultConnection,
+    });
+  },
+  create: (kind: "llm" | "sermonaudio", body: Record<string, unknown>) => {
+    if (!demoData) return send<ApiConnection>(`/api/me/connections/${kind}`, "POST", body);
+    const created = mockConnection(body);
+    mockConnections.push(created);
+    if (!mockDefaultConnection) mockDefaultConnection = created.id;
+    return Promise.resolve(created);
+  },
+  update: (kind: "llm" | "sermonaudio", id: string, body: Record<string, unknown>) => {
+    if (!demoData) {
+      return send<ApiConnection>(`/api/me/connections/${kind}/${encodeURIComponent(id)}`, "PUT", body);
+    }
+    const index = mockConnections.findIndex((item) => item.id === id);
+    const updated = mockConnection(body, mockConnections[index]);
+    if (index >= 0) mockConnections[index] = updated;
+    return Promise.resolve(updated);
+  },
+  remove: (kind: "llm" | "sermonaudio", id: string) => {
+    if (!demoData) {
+      return send<void>(`/api/me/connections/${kind}/${encodeURIComponent(id)}`, "DELETE");
+    }
+    const index = mockConnections.findIndex((item) => item.id === id);
+    if (index >= 0) mockConnections.splice(index, 1);
+    if (mockDefaultConnection === id) mockDefaultConnection = mockConnections[0]?.id ?? null;
+    return Promise.resolve();
+  },
+  setDefault: (id: string | null) => {
+    if (!demoData) {
+      return send<{ default_id: string | null }>("/api/me/connections/sermonaudio/default", "PUT", { id });
+    }
+    mockDefaultConnection = id;
+    return Promise.resolve({ default_id: id });
+  },
+  effective: () => {
+    if (!demoData) return send<ApiEffectiveConnection>("/api/me/sermonaudio-connection", "GET");
+    const account =
+      mockConnections.find((item) => item.id === mockDefaultConnection) ?? mockConnections[0];
+    return Promise.resolve({
+      configured: Boolean(account),
+      source: account ? "user" : "env",
+      account_id: account?.id ?? null,
+      account_name: account?.name ?? null,
+      broadcaster_id: account?.broadcasterId ?? "",
+      masked_key: account?.masked_key ?? "",
+      message: account ? "" : "No SermonAudio account connected. Add one below.",
+    });
+  },
 };
 
 export const settingsApi = {
@@ -471,14 +534,63 @@ export interface ApiLlmConfigUpdate {
   routing?: Partial<Record<LlmRouteRole, LlmRole>>;
 }
 
+function mockLlmSlot(role: LlmRole, enabled: boolean): ApiLlmSlot {
+  return {
+    role,
+    enabled,
+    provider: "ollama",
+    preset: "balanced",
+    model: "llama3.1:8b",
+    endpoint: "http://localhost:11434",
+    numCtx: "8192",
+    maxTokens: "2048",
+    temperature: "0.7",
+    hasKey: false,
+    maskedKey: "",
+  };
+}
+
+let mockLlm: ApiLlmConfig = {
+  primary: mockLlmSlot("primary", true),
+  fallback: mockLlmSlot("fallback", false),
+  validator: mockLlmSlot("validator", true),
+  routing: {
+    metadata: "primary",
+    validation: "validator",
+    transcription_assist: "primary",
+    fallback: "fallback",
+  },
+};
+
 export const llmConfigApi = {
-  get: () => send<ApiLlmConfig>("/api/llm/config", "GET"),
-  put: (body: ApiLlmConfigUpdate) => send<ApiLlmConfig>("/api/llm/config", "PUT", body),
+  get: () =>
+    demoData ? Promise.resolve(mockLlm) : send<ApiLlmConfig>("/api/llm/config", "GET"),
+  put: (body: ApiLlmConfigUpdate) => {
+    if (!demoData) return send<ApiLlmConfig>("/api/llm/config", "PUT", body);
+    const merge = (role: LlmRole): ApiLlmSlot => {
+      const update = body[role];
+      return update ? { ...mockLlm[role], ...update, role } : mockLlm[role];
+    };
+    mockLlm = {
+      primary: merge("primary"),
+      fallback: merge("fallback"),
+      validator: merge("validator"),
+      routing: { ...mockLlm.routing, ...(body.routing ?? {}) },
+    };
+    return Promise.resolve(mockLlm);
+  },
   test: (role: LlmRole, timeoutSeconds?: number) =>
-    send<ApiLlmTestResult>("/api/llm/test-connection", "POST", {
-      role,
-      ...(timeoutSeconds === undefined ? {} : { timeout_seconds: timeoutSeconds }),
-    }),
+    demoData
+      ? Promise.resolve({
+          ok: false,
+          latency_ms: 0,
+          model_echo: null,
+          error: "Connection tests run against the live server.",
+        })
+      : send<ApiLlmTestResult>("/api/llm/test-connection", "POST", {
+          role,
+          ...(timeoutSeconds === undefined ? {} : { timeout_seconds: timeoutSeconds }),
+        }),
 };
 
 export interface ApiConfigField {

@@ -151,10 +151,10 @@ describe("LibraryDetail state-aware header actions", () => {
     await user.click(screen.getByTestId("edit-sermon"));
 
     expect(screen.queryByRole("menuitem", { name: "Push to SermonAudio" })).toBeNull();
-    expect(screen.getByRole("button", { name: /Re-render · Generate & Upload/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Re-render & upload/ })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "More actions" }));
     const menu = screen.getByTestId("more-actions");
-    expect(within(menu).getByRole("menuitem", { name: /Re-render · Render-only/ })).toBeTruthy();
+    expect(within(menu).getByRole("menuitem", { name: /Re-render only/ })).toBeTruthy();
     expect(within(menu).getByRole("menuitem", { name: "Delete" })).toBeTruthy();
   });
 

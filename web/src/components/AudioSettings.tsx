@@ -104,7 +104,7 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
 
   return (
     <SectionCard
-      title="Audio Processing"
+      title="Audio processing"
       sub={
         isLive
           ? "Enhancement method and processing options. Saved here is what the pipeline resolves."
@@ -192,21 +192,21 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
         <Toggle
           checked={cur.noiseReduction}
           onChange={(v) => set("noiseReduction", v)}
-          label="Noise Reduction"
+          label="Noise reduction"
           hint="Apply noise reduction during processing."
           source={fieldSource(fields, PATHS.noiseReduction)}
         />
         <Toggle
           checked={cur.amplify}
           onChange={(v) => set("amplify", v)}
-          label="Audio Amplification"
+          label="Audio amplification"
           hint="Apply audio amplification."
           source={fieldSource(fields, PATHS.amplify)}
         />
         <Toggle
           checked={cur.normalize}
           onChange={(v) => set("normalize", v)}
-          label="Audio Normalization"
+          label="Audio normalization"
           hint="Normalize audio levels."
           source={fieldSource(fields, PATHS.normalize)}
         />

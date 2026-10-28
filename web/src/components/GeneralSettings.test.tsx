@@ -56,12 +56,12 @@ describe("GeneralSettingsSection environment overrides", () => {
     const { GeneralSettingsSection } = await import("./GeneralSettings");
     render(<GeneralSettingsSection show={() => {}} />);
 
-    const toggle = await screen.findByRole("switch", { name: "Dry Run Mode (default)" });
+    const toggle = await screen.findByRole("switch", { name: "Dry run mode (default)" });
     const row = toggle;
     expect(row).toBeTruthy();
     expect(within(row as HTMLElement).getByText("SA_DRY_RUN")).toBeTruthy();
 
-    const keepRow = screen.getByRole("switch", { name: "Save Original Audio" });
+    const keepRow = screen.getByRole("switch", { name: "Save original audio" });
     expect(within(keepRow as HTMLElement).getByText("SA_KEEP_ORIGINAL")).toBeTruthy();
 
     expect(screen.queryByText(/Overridden by the environment:/)).toBeNull();
@@ -72,7 +72,7 @@ describe("GeneralSettingsSection environment overrides", () => {
     const { GeneralSettingsSection } = await import("./GeneralSettings");
     render(<GeneralSettingsSection show={() => {}} />);
 
-    const toggle = await screen.findByRole("switch", { name: "Dry Run Mode (default)" });
+    const toggle = await screen.findByRole("switch", { name: "Dry run mode (default)" });
     expect(toggle.getAttribute("aria-checked")).toBe("true");
     fireEvent.click(toggle);
     expect(screen.getByText("Unsaved changes.")).toBeTruthy();

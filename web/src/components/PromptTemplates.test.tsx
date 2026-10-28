@@ -48,17 +48,17 @@ afterEach(() => {
 });
 
 describe("PromptTemplatesSection live wiring", () => {
-  it("lists the Cut Detection task", async () => {
+  it("lists the Cut detection task", async () => {
     stubApi();
     await renderSection();
-    expect(await screen.findByText("Cut Detection")).toBeTruthy();
+    expect(await screen.findByText("Cut detection")).toBeTruthy();
   });
 
   it("loads the effective cut-detection template from the prompts API", async () => {
     const user = userEvent.setup();
     stubApi();
     await renderSection();
-    await user.click(await screen.findByRole("button", { name: /Cut Detection/ }));
+    await user.click(await screen.findByRole("button", { name: /Cut detection/ }));
     expect(await screen.findByDisplayValue("detect {transcript}")).toBeTruthy();
     await user.click(screen.getByText("Advanced: system prompt"));
     expect(screen.getByDisplayValue("custom system")).toBeTruthy();
@@ -69,7 +69,7 @@ describe("PromptTemplatesSection live wiring", () => {
     const { calls } = stubApi();
     await renderSection();
 
-    await user.click(await screen.findByRole("button", { name: /Cut Detection/ }));
+    await user.click(await screen.findByRole("button", { name: /Cut detection/ }));
     const box = (await screen.findByDisplayValue("detect {transcript}")) as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: "next {transcript}" } });
     await user.click(screen.getByRole("button", { name: "Save" }));

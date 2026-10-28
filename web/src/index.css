@@ -81,7 +81,14 @@ body {
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .skeleton-shimmer::after {
+    animation: none;
+    opacity: 0;
   }
 }
 
@@ -114,6 +121,66 @@ body {
   inset: 0;
   background: linear-gradient(100deg, transparent 20%, var(--border) 50%, transparent 80%);
   animation: skeleton-shimmer 1.1s linear infinite;
+}
+
+.menu-panel {
+  animation: menu-in 140ms ease-out;
+}
+
+details[open] > :not(summary) {
+  animation: reveal 150ms ease-out;
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sheet-panel {
+  animation: sheet-up 160ms ease-out;
+}
+
+@keyframes sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.menu-panel[data-side="top"] {
+  animation-name: menu-in-up;
+}
+
+@keyframes menu-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @keyframes skeleton-shimmer {

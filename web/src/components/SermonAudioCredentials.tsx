@@ -93,7 +93,7 @@ export function SermonAudioCredentialsSection({ show }: { show: (m: string) => v
             onChange={(e) => setApiKey(e.target.value)}
             className={`${inputCls} font-mono`}
             autoComplete="new-password"
-            placeholder="••••••••"
+            placeholder="Leave blank to keep the current key"
           />
           {apiField?.has_value ? (
             <p className="mt-1 text-xs text-muted">

@@ -14,12 +14,12 @@ import { MediaPlayer, type PlayWindow } from "./MediaPlayer";
 import { Timeline, type TimelineClip, type TimelineRange } from "./Timeline";
 import { TranscriptViewer } from "./TranscriptViewer";
 import { sermonActionMatrix } from "./sermonActions";
-import { Button, Chip, ConfirmDialog, Menu, PageHeader, Toggle } from "./ui";
+import { Button, Chip, ConfirmDialog, Menu, PageHeader, Skeleton, Toggle, buttonClass } from "./ui";
 
 export const planStatusLabel: Record<PlanStatus, string> = {
   draft: "Draft",
   pending_review: "Pending review",
-  applied_local: "Applied — local",
+  applied_local: "Applied locally",
   processed: "Processed",
   superseded: "Superseded",
 };
@@ -39,7 +39,7 @@ const PREVIEW_KINDS = ["snippet_start", "snippet_end", "snippet_ending"] as cons
 const TRANSCRIPT_KINDS = ["transcript", "transcript_timestamps"] as const;
 
 const chipButtonClass =
-  "inline-flex min-h-[44px] items-center rounded-full border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted";
+  "inline-flex min-h-[44px] items-center rounded-md border border-line bg-raised px-3 text-xs font-semibold text-mist transition-[background-color,border-color,color,filter] duration-150 hover:border-muted hover:brightness-110 active:brightness-95";
 
 function ArtifactGroup({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
@@ -242,7 +242,7 @@ export function CollapsibleSection({
       aria-labelledby={`${id}-h`}
       className={`rounded-lg border border-line bg-surface ${className}`}
     >
-      <div className="flex items-center justify-between gap-2 p-3">
+      <div className="flex items-center justify-between gap-2 p-4">
         <div className="min-w-0">
           <h2 id={`${id}-h`} className="text-lg font-semibold">
             {title}
@@ -260,7 +260,7 @@ export function CollapsibleSection({
           {isOpen ? "Hide" : "Show"}
         </button>
       </div>
-      <div id={`${id}-body`} hidden={!isOpen} className="border-t border-line p-3">
+      <div id={`${id}-body`} hidden={!isOpen} className="border-t border-line p-4">
         {children}
       </div>
     </section>
@@ -315,6 +315,14 @@ export function SermonReview({
   const [playerKind, setPlayerKind] = useState<string>(() => preferredKind(media));
   const [historyOpen, setHistoryOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  useEffect(() => {
+    if (!detailsOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDetailsOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [detailsOpen]);
   const [form, setForm] = useState({
     title: sermon.title,
     speaker: sermon.speaker,
@@ -766,15 +774,15 @@ export function SermonReview({
   }, [detailsDirty]);
 
   const confidence =
-    plan.confidence > 0 ? `confidence ${plan.confidence}%` : null;
+    plan.confidence > 0 ? `${plan.confidence}% confidence` : null;
   const statusPills = (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <Chip tone={planStatusTone[plan.status]}>Plan: {planStatusLabel[plan.status]}</Chip>
       <span className="font-mono text-xs text-muted" data-testid="plan-meta">
-        revision {plan.revision} of {plan.revisionsTotal}
+        Revision {plan.revision} of {plan.revisionsTotal}
         {confidence ? ` · ${confidence}` : ""}
-        {` · QA: ${plan.qa}`}
-        {` · Detection: ${detectionFailed ? "unavailable" : "ok"}`}
+        {plan.qa ? ` · QA ${plan.qa.toLowerCase()}` : ""}
+        {` · Detection ${detectionFailed ? "unavailable" : "ok"}`}
       </span>
     </div>
   );
@@ -852,7 +860,7 @@ export function SermonReview({
       <section
         data-testid="approval-summary"
         aria-label="Plan status"
-        className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-3"
+        className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4"
       >
         {statusPills}
         {enhanceControl}
@@ -869,12 +877,12 @@ export function SermonReview({
             aria-labelledby="player-plan-h"
             className="order-1 rounded-lg border border-line bg-surface lg:order-2"
           >
-            <div className="flex flex-wrap items-center justify-between gap-2 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 p-4">
               <h2 id="player-plan-h" className="text-lg font-semibold">
                 Player &amp; plan
               </h2>
             </div>
-            <div className="flex min-w-0 flex-col gap-3 border-t border-line p-3">
+            <div className="flex min-w-0 flex-col gap-3 border-t border-line p-4">
               {live && media.error ? (
                 <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md border border-danger bg-ink p-3 text-sm text-danger">
                   <span className="min-w-0 flex-1">{media.error}</span>
@@ -1040,7 +1048,7 @@ export function SermonReview({
                             type="button"
                             aria-label={`Undo removal ${index + 1}`}
                             onClick={() => undoRemoval(index)}
-                            className="inline-flex min-h-[44px] items-center rounded-full border border-danger px-3 text-xs font-medium text-danger transition-colors hover:bg-danger hover:text-[var(--danger-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
+                            className="inline-flex min-h-[44px] items-center rounded-md border border-danger px-3 text-xs font-semibold text-danger transition-colors duration-150 hover:bg-danger hover:text-[var(--danger-ink)]"
                           >
                             Undo removal {index + 1}
                           </button>
@@ -1136,7 +1144,7 @@ export function SermonReview({
           <section
             aria-label="Approval"
             data-testid="approval-bar"
-            className="order-2 flex flex-col gap-3 rounded-lg border border-line bg-surface p-3 shadow-lg lg:order-1"
+            className="order-2 flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 shadow-lg lg:order-1"
           >
             <div className="flex flex-wrap items-center gap-2">
               <Button
@@ -1148,7 +1156,7 @@ export function SermonReview({
                 aria-busy={applying}
                 title="Generates any empty title, description, or hashtags, then renders and uploads."
               >
-                {applying ? "Queueing…" : `${applyVerb} · Generate & Upload`}
+                {applying ? "Queueing…" : `${applyVerb} & upload`}
               </Button>
               <Menu
                 label="More actions"
@@ -1158,7 +1166,7 @@ export function SermonReview({
                 menuClassName="w-64"
                 items={[
                   {
-                    label: `${applyVerb} · Render-only`,
+                    label: actions.published ? "Re-render only" : "Render only",
                     onSelect: () => approve(true),
                     disabled: errors.length > 0 || applying,
                     testId: "render-only-action",
@@ -1267,7 +1275,7 @@ export function SermonReview({
                       {!live ? (
                         <p className="text-sm text-muted">Transcripts are available in the live bridge.</p>
                       ) : transcript.loading ? (
-                        <p className="font-mono text-xs text-muted">Loading transcript…</p>
+                        <div className="flex flex-col gap-2"><Skeleton className="h-3 w-4/5" /><Skeleton className="h-3 w-3/5" /><Skeleton className="h-3 w-2/3" /></div>
                       ) : transcript.error ? (
                         <p className="font-mono text-xs text-danger">{transcript.error}</p>
                       ) : transcript.plainText || transcript.timestampsAvailable ? (
@@ -1323,7 +1331,11 @@ export function SermonReview({
               open={historyOpen}
               onToggle={setHistoryOpen}
               testId="history-panel"
-              summary={`${noteRows.length} note(s)`}
+              summary={
+                noteRows.length === 0
+                  ? "No notes yet"
+                  : `${noteRows.length} ${noteRows.length === 1 ? "note" : "notes"}`
+              }
             >
               {noteRows.length > 0 ? (
                 <ul className="flex flex-col gap-1">
@@ -1385,13 +1397,18 @@ export function SermonReview({
             data-testid="details-panel"
             className={`${
               detailsOpen
-                ? "fixed inset-x-0 bottom-0 z-40 max-h-[80vh] overflow-y-auto rounded-t-2xl border-t border-line bg-surface p-4 shadow-2xl"
+                ? "sheet-panel fixed inset-x-0 bottom-0 z-40 max-h-[80vh] overflow-y-auto rounded-t-2xl border-t border-line bg-surface p-4 shadow-2xl"
                 : "hidden"
             } lg:static lg:z-auto lg:block lg:max-h-none lg:overflow-visible lg:rounded-lg lg:border lg:border-line lg:bg-surface lg:p-4 lg:shadow-none`}
           >
-            <h2 id="details-h" className="text-lg font-semibold">
-              Details
-            </h2>
+            <div className="flex items-center justify-between gap-2">
+              <h2 id="details-h" className="text-lg font-semibold">
+                Details
+              </h2>
+              <Button className="lg:hidden" onClick={() => setDetailsOpen(false)} aria-label="Close details">
+                Close
+              </Button>
+            </div>
             <form
               className="mt-3 flex flex-col gap-3"
               onSubmit={(e) => {
@@ -1417,7 +1434,7 @@ export function SermonReview({
                       aria-busy={generating.has("title")}
                       onClick={() => generateField("title")}
                       disabled={generating.has("title")}
-                      className="inline-flex min-h-[44px] min-w-[7rem] items-center justify-center rounded-full border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
+                      className={buttonClass("secondary", "min-w-[7rem] px-3 disabled:cursor-not-allowed disabled:opacity-45")}
                     >
                       {generating.has("title") ? "Generating…" : "Generate"}
                     </button>
@@ -1496,7 +1513,7 @@ export function SermonReview({
                       aria-busy={generating.has("description")}
                       onClick={() => generateField("description")}
                       disabled={generating.has("description")}
-                      className="inline-flex min-h-[44px] min-w-[7rem] items-center justify-center rounded-full border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
+                      className={buttonClass("secondary", "min-w-[7rem] px-3 disabled:cursor-not-allowed disabled:opacity-45")}
                     >
                       {generating.has("description") ? "Generating…" : "Generate"}
                     </button>
@@ -1560,7 +1577,7 @@ export function SermonReview({
                       aria-busy={generating.has("hashtags")}
                       onClick={() => generateField("hashtags")}
                       disabled={generating.has("hashtags")}
-                      className="inline-flex min-h-[44px] min-w-[7rem] items-center justify-center rounded-full border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45"
+                      className={buttonClass("secondary", "min-w-[7rem] px-3 disabled:cursor-not-allowed disabled:opacity-45")}
                     >
                       {generating.has("hashtags") ? "Generating…" : "Generate"}
                     </button>

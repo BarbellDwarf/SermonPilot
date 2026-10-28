@@ -17,14 +17,17 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-[var(--accent-ink)] hover:brightness-110 border border-transparent",
-  secondary: "bg-raised text-mist border border-line hover:border-muted",
-  danger: "bg-transparent text-danger border border-danger hover:bg-danger hover:text-[var(--danger-ink)]",
-  ghost: "bg-transparent text-muted border border-transparent hover:text-mist hover:bg-raised",
+  primary:
+    "bg-accent text-[var(--accent-ink)] hover:brightness-110 active:brightness-95 border border-transparent",
+  secondary:
+    "bg-raised text-mist border border-line hover:border-muted hover:brightness-110 active:brightness-95",
+  danger:
+    "bg-transparent text-danger border border-danger hover:bg-danger hover:text-[var(--danger-ink)] active:brightness-95",
+  ghost: "bg-transparent text-muted border border-transparent hover:text-mist hover:bg-raised active:bg-ink",
 };
 
 export function buttonClass(variant: ButtonVariant = "secondary", extra = ""): string {
-  return `inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-colors ${variants[variant]} ${extra}`;
+  return `inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-[background-color,border-color,color,filter] duration-150 ${variants[variant]} ${extra}`;
 }
 
 export function Button({ variant = "secondary", className = "", type = "button", ...rest }: ButtonProps) {
@@ -49,7 +52,9 @@ const chipTones: Record<string, string> = {
 export function Chip({ tone = "neutral", children }: { tone?: keyof typeof chipTones | string; children: ReactNode }) {
   const toneClass = chipTones[tone] ?? chipTones.neutral;
   return (
-    <span className={`inline-flex min-h-[28px] items-center rounded-full border px-2.5 font-mono text-xs uppercase tracking-wide ${toneClass}`}>
+    <span
+      className={`inline-flex min-h-[24px] max-w-full items-center gap-1 rounded-sm border px-2 py-0.5 font-mono text-xs uppercase leading-4 tracking-wide ${toneClass}`}
+    >
       {children}
     </span>
   );
@@ -158,9 +163,10 @@ export function Menu({
       </button>
       {open ? (
         <div
-          className={`absolute z-40 flex w-56 flex-col rounded-lg border border-line bg-surface p-2 shadow-2xl ${
+          data-side={side}
+          className={`menu-panel absolute z-40 flex w-56 flex-col rounded-lg border border-line bg-surface p-2 shadow-2xl ${
             align === "right" ? "right-0" : "left-0"
-          } ${side === "top" ? "bottom-full mb-2" : "top-full mt-2"} ${menuClassName}`}
+          } ${side === "top" ? "bottom-full mb-2 origin-bottom" : "top-full mt-2 origin-top"} ${menuClassName}`}
         >
           {header ? <div className="border-b border-line px-3 pb-2 pt-1">{header}</div> : null}
           <div
@@ -202,7 +208,7 @@ export function EnvSourceBadge({ source }: { source: string | undefined }) {
   if (!source || source === "db" || source === "default") return null;
   return (
     <span
-      className="inline-flex min-h-[28px] max-w-full items-center gap-1 rounded-full border border-info px-2.5 font-mono text-xs text-info"
+      className="inline-flex min-h-[24px] max-w-full items-center gap-1 rounded-sm border border-info px-2 py-0.5 font-mono text-xs text-info"
       title={`This value is supplied by the ${source} environment variable and overrides the saved setting while it is set.`}
     >
       <span aria-hidden="true">env</span>
@@ -227,8 +233,8 @@ export function PageHeader({
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="text-2xl font-bold tracking-tight [overflow-wrap:anywhere]">{title}</h1>
-        {sub ? <p className="mt-0.5 max-w-prose text-sm text-muted">{sub}</p> : null}
+        <h1 className="text-2xl font-bold leading-tight tracking-tight [overflow-wrap:anywhere]">{title}</h1>
+        {sub ? <p className="mt-1 max-w-prose text-sm text-muted">{sub}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
@@ -258,8 +264,8 @@ export function SectionCard({
           </span>
         ) : null}
         <div className="min-w-0">
-          <h2 className="text-lg font-semibold">{title}</h2>
-          {sub ? <p className="mt-0.5 max-w-prose text-sm text-muted">{sub}</p> : null}
+          <h2 className="text-lg font-semibold leading-snug">{title}</h2>
+          {sub ? <p className="mt-1 max-w-prose text-sm text-muted">{sub}</p> : null}
         </div>
       </div>
       <div className="mt-4">{children}</div>
@@ -268,7 +274,7 @@ export function SectionCard({
 }
 
 export const inputCls =
-  "min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 text-sm text-mist placeholder:text-muted";
+  "min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 text-sm text-mist transition-colors duration-150 placeholder:text-muted hover:border-muted focus-visible:border-accent";
 export const labelCls = "text-xs font-medium text-muted";
 
 export function Field({ label, htmlFor, children, hint }: { label: string; htmlFor: string; children: ReactNode; hint?: string }) {
@@ -306,15 +312,15 @@ export function Toggle({
       aria-label={label}
       data-testid={testId}
       onClick={() => onChange(!checked)}
-      className="flex min-h-[44px] w-full items-start gap-3 rounded-md border border-line p-3 text-left"
+      className="flex min-h-[44px] w-full items-start gap-3 rounded-md border border-line p-3 text-left transition-colors duration-150 hover:border-muted"
     >
       <span
         aria-hidden="true"
-        className={`mt-0.5 flex h-6 w-11 shrink-0 items-center rounded-full border border-line p-0.5 transition-colors ${
-          checked ? "justify-end bg-accent" : "justify-start bg-ink"
+        className={`mt-0.5 flex h-6 w-11 shrink-0 items-center rounded-full border border-line p-0.5 transition-colors duration-150 ${
+          checked ? "justify-end border-accent bg-accent" : "justify-start bg-ink"
         }`}
       >
-        <span className="h-4 w-4 rounded-full bg-white" />
+        <span className="h-4 w-4 rounded-full bg-white shadow-sm" />
       </span>
       <span className="min-w-0 text-sm">
         <span className="flex flex-wrap items-center gap-2">
@@ -398,7 +404,7 @@ export function SaveBar({
 }) {
   useDirtyRegistration(dirty);
   return (
-    <div className="sticky bottom-[4.25rem] z-10 -mx-4 -mb-4 mt-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur md:static md:mx-0 md:mb-0 md:border-0 md:bg-transparent md:p-0">
+    <div className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)] z-10 -mx-4 -mb-4 mt-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface/95 px-4 py-3 shadow-[0_-8px_24px_-16px_rgba(0,0,0,0.8)] backdrop-blur md:static md:mx-0 md:mb-0 md:border-0 md:bg-transparent md:p-0 md:shadow-none">
       <Button variant="primary" onClick={onSave} disabled={!dirty || busy} aria-busy={busy}>
         {busy ? "Saving…" : label}
       </Button>
@@ -535,7 +541,7 @@ export function Toast({ message }: { message: string | null }) {
 export function Meter({ level, state }: { level: number; state: "ok" | "warn" | "error" }) {
   return (
     <div
-      className="meter-track h-16 w-2 shrink-0 overflow-hidden rounded-sm"
+      className="meter-track h-16 w-1.5 shrink-0 overflow-hidden rounded-full"
       role="img"
       aria-label={`level ${level} percent, ${state}`}
     >

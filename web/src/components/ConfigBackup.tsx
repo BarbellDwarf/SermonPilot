@@ -53,7 +53,7 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
         .restore({ settings: parsed.settings ?? {} })
         .then((r) => {
           setHistory((hs) => [
-            { id: `bkp-${Date.now() % 100000}`, when: "just now", note: `Restored ${r.restored} setting group(s)` },
+            { id: `bkp-${Date.now() % 100000}`, when: "just now", note: `Restored ${r.restored} ${r.restored === 1 ? "setting group" : "setting groups"}` },
             ...hs,
           ]);
           setRestoreText("");
@@ -133,7 +133,7 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
 
   return (
     <SectionCard
-      title="Backup & Restore"
+      title="Backup & restore"
       sub={
         isLive
           ? "Everything lives in the app database. Download is a full data backup; upload restores it. Secrets stay masked and masked values can never be applied."

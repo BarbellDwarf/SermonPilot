@@ -78,7 +78,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-raised font-mono text-xs font-bold uppercase" aria-hidden="true">
                       {initials(user.display_name)}
                     </span>
-                    <span className="max-w-24 truncate text-sm font-medium">{user.display_name}</span>
+                    <span className="hidden max-w-24 truncate text-sm font-medium sm:inline">{user.display_name}</span>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4 shrink-0 text-muted" aria-hidden="true">
                       <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
@@ -98,7 +98,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-shell items-stretch gap-6 px-4 pb-24 pt-6 md:pb-6 lg:px-8">
+      <div className="mx-auto flex max-w-shell items-stretch gap-6 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-6 md:pb-6 lg:px-8">
         <nav aria-label="Sections" className="sticky top-24 hidden h-fit w-52 shrink-0 flex-col gap-1 md:flex">
           {items.map((item) => (
             <NavLink
@@ -106,8 +106,10 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `flex min-h-[44px] w-full items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors ${
-                  isActive ? "bg-raised text-mist" : "text-muted hover:bg-raised hover:text-mist"
+                `relative flex min-h-[44px] w-full items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors duration-150 ${
+                  isActive
+                    ? "bg-raised text-mist before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-accent"
+                    : "text-muted hover:bg-raised hover:text-mist"
                 }`
               }
             >
@@ -116,7 +118,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
             </NavLink>
           ))}
         </nav>
-        <main id="main" className="min-w-0 flex-1">
+        <main id="main" className="min-w-0 max-w-[78rem] flex-1">
           {children}
         </main>
       </div>
@@ -132,8 +134,10 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
               to={item.to}
               end={item.end}
               className={({ isActive }) =>
-                `flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 px-1 text-[0.6875rem] font-semibold transition-colors ${
-                  isActive ? "text-accent" : "text-muted hover:text-mist"
+                `relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 px-1 text-xs font-semibold transition-colors duration-150 ${
+                  isActive
+                    ? "text-accent after:absolute after:inset-x-0 after:top-0 after:mx-auto after:h-0.5 after:w-10 after:rounded-full after:bg-accent"
+                    : "text-muted hover:text-mist"
                 }`
               }
             >

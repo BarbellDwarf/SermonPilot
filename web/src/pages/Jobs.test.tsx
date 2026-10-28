@@ -99,7 +99,7 @@ describe("Jobs rows", () => {
     expect(within(row).getByText("RUNNING")).toBeTruthy();
     expect(within(row).queryByText(/Sample Speaker/)).toBeNull();
     expect(within(row).queryByText(/2026-10-25/)).toBeNull();
-    expect(row.className).toContain("min-h-[44px]");
+    expect(row.className).toContain("min-h-[56px]");
     expect(within(row).getByText("Oct 25, 21:07").className).not.toContain("hidden");
   });
 

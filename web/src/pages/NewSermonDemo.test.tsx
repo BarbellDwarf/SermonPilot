@@ -45,7 +45,7 @@ describe("NewSermon demo mode", () => {
       target: { value: "2026-09-22" },
     });
 
-    const submit = screen.getByRole("button", { name: "Start Processing" }) as HTMLButtonElement;
+    const submit = screen.getByRole("button", { name: "Start processing" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(false);
     await user.click(submit);
 

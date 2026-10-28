@@ -101,7 +101,7 @@ export function LibraryDetail() {
           body="This mock library has only a handful of sample teachings. The link may be stale."
           action={
             <Link to="/library" className={buttonClass("primary")}>
-              Back to Library
+              Back to library
             </Link>
           }
         />
@@ -121,7 +121,7 @@ export function LibraryDetail() {
           }
           action={
             <Link to="/library" className={buttonClass("primary")}>
-              Back to Library
+              Back to library
             </Link>
           }
         />

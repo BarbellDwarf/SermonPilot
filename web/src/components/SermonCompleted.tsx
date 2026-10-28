@@ -14,7 +14,7 @@ import {
   type DetailsPatch,
   type TranscriptState,
 } from "./SermonReview";
-import { Button, Menu, PageHeader } from "./ui";
+import { Button, Menu, PageHeader, Skeleton } from "./ui";
 
 const SA_LINK_BASE = "https://www.sermonaudio.com/sermoninfo.asp?SID=";
 
@@ -210,7 +210,7 @@ export function SermonCompleted({
       <section
         data-testid="completed-player"
         aria-label="Playback"
-        className="rounded-lg border border-line bg-surface p-3"
+        className="rounded-lg border border-line bg-surface p-4"
       >
         {isLive && media.error ? (
           <div role="alert" className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-danger bg-ink p-3 text-sm text-danger">
@@ -238,7 +238,7 @@ export function SermonCompleted({
       <section
         data-testid="completed-details"
         aria-labelledby="completed-details-h"
-        className="rounded-lg border border-line bg-surface p-3"
+        className="rounded-lg border border-line bg-surface p-4"
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 id="completed-details-h" className="text-lg font-semibold">
@@ -402,7 +402,7 @@ export function SermonCompleted({
       <section
         data-testid="completed-publication"
         aria-labelledby="completed-publication-h"
-        className="rounded-lg border border-line bg-surface p-3"
+        className="rounded-lg border border-line bg-surface p-4"
       >
         <h2 id="completed-publication-h" className="text-lg font-semibold">
           Publication
@@ -465,7 +465,7 @@ export function SermonCompleted({
                 {!isLive ? (
                   <p className="text-sm text-muted">Transcripts are available in the live bridge.</p>
                 ) : transcript.loading ? (
-                  <p className="font-mono text-xs text-muted">Loading transcript…</p>
+                  <div className="flex flex-col gap-2"><Skeleton className="h-3 w-4/5" /><Skeleton className="h-3 w-3/5" /><Skeleton className="h-3 w-2/3" /></div>
                 ) : transcript.error ? (
                   <p className="font-mono text-xs text-danger">{transcript.error}</p>
                 ) : transcript.plainText || transcript.timestampsAvailable ? (
@@ -498,7 +498,11 @@ export function SermonCompleted({
         id="completed-files"
         title="Files & previews"
         testId="completed-files"
-        summary={`${files.length} artifact(s)`}
+        summary={
+          files.length === 0
+            ? "No files yet"
+            : `${files.length} ${files.length === 1 ? "file" : "files"}`
+        }
       >
         {files.length > 0 ? (
           <ul className="flex flex-col gap-2">
@@ -533,7 +537,11 @@ export function SermonCompleted({
         id="completed-history"
         title="Edit history"
         testId="completed-history"
-        summary={history && history.length > 0 ? `${history.length} revision(s)` : "No revisions"}
+        summary={
+          history && history.length > 0
+            ? `${history.length} ${history.length === 1 ? "revision" : "revisions"}`
+            : "No revisions"
+        }
       >
         {history && history.length > 0 ? (
           <ol className="flex flex-col gap-2">

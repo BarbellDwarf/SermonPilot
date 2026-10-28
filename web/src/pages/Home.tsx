@@ -114,7 +114,7 @@ export function Home() {
                     className="flex min-h-[56px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-raised"
                   >
                     <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[status]}`} aria-hidden="true" />
-                    <span className={`w-16 shrink-0 font-mono text-[0.6875rem] font-semibold uppercase tracking-wide ${STATUS_TEXT[status]}`}>
+                    <span className={`w-[4.5rem] shrink-0 font-mono text-xs font-semibold uppercase tracking-wide ${STATUS_TEXT[status]}`}>
                       {status}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={jobRowTitle(job)}>

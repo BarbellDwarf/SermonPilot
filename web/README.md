@@ -67,8 +67,10 @@ because they embedded instance-specific record counts.
 - Base: tinted ink neutrals, dark theme default, light theme via `.light` on `<html>`.
 - Accent: single violet (`--accent`), used for primary actions, focus rings, selected-tab dot.
 - Semantic: green ok, amber warn, red danger (failure + destructive only), sky info.
-- Type: system sans for UI, system mono for ids/durations/logs. Scale 12/13/15/17/22/30.
-- Radius: 6/10/14/20. Signature motif: level-meter bar on status cards.
+- Type: system sans for UI, system mono for ids/durations/logs. Scale 12/14/16/18/24
+  (meta, body, brand, section title, page title).
+- Radius: 6/10/14/20. Controls use 10, cards and menus 14, chips 6. Signature motif:
+  level-meter bar on status cards.
 
 ## Phase plan
 

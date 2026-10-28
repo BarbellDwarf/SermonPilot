@@ -481,7 +481,7 @@ export function CloudMountsSection({
 
   return (
     <SectionCard
-      title="Cloud Mounts"
+      title="Cloud mounts"
       sub="Connect Google Drive, Dropbox, OneDrive, S3 or B2 and pick files straight from your cloud storage. Credentials stay in your own server-side config."
     >
       {rcloneMissing ? (

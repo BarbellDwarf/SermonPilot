@@ -14,27 +14,27 @@ interface TemplateDraft {
 }
 
 const TASKS = [
-  { key: "title", label: "Title Generation", vars: "{context}, {transcript}" },
-  { key: "short_title", label: "Short Title Generation", vars: "{full_title}" },
+  { key: "title", label: "Title generation", vars: "{context}, {transcript}" },
+  { key: "short_title", label: "Short title generation", vars: "{full_title}" },
   {
     key: "description",
-    label: "Description Generation",
+    label: "Description generation",
     vars: "{role_desc}, {body_desc}, {transcript}, {speaker_instruction}",
   },
-  { key: "hashtags", label: "Hashtag Generation", vars: "{text}" },
+  { key: "hashtags", label: "Hashtag generation", vars: "{text}" },
   {
     key: "hashtag_verification",
-    label: "Hashtag Verification",
+    label: "Hashtag verification",
     vars: "{initial_hashtags}, {original_text}",
   },
   {
     key: "description_validation",
-    label: "Description Validation",
+    label: "Description validation",
     vars: "{context_info}, {criteria_text}, {description}",
   },
   {
     key: "cut_detection",
-    label: "Cut Detection",
+    label: "Cut detection",
     vars: "{transcript}, {elision_note}, {refinement}, {qa_margin_seconds}",
   },
 ] as const;
@@ -151,7 +151,7 @@ export function PromptTemplatesSection({ show }: { show: (m: string) => void }) 
 
   return (
     <SectionCard
-      title="Prompt Templates"
+      title="Prompt templates"
       sub={
         isLive
           ? "Per-task instructions sent to the LLM. Saved to the settings database; what is saved here is what the pipeline resolves on the next run. Use {variable} placeholders for dynamic content."
@@ -175,7 +175,7 @@ export function PromptTemplatesSection({ show }: { show: (m: string) => void }) 
               >
                 <span className="min-w-0 flex-1 text-sm font-semibold">{t.label}</span>
                 <span
-                  className={`rounded-full border px-2.5 py-0.5 font-mono text-xs uppercase tracking-wide ${
+                  className={`rounded-sm border px-2 py-0.5 font-mono text-xs uppercase leading-4 tracking-wide ${
                     d.enabled ? "border-ok text-ok" : "border-line text-muted"
                   }`}
                 >

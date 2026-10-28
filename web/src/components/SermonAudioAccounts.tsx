@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { connectionsApi, type ApiConnection, type ApiEffectiveConnection } from "../api/client";
 import { sourceCopy } from "./SermonAudioCredentials";
-import { Advanced, Button, Chip, ConfirmDialog, EmptyState, Field, Fieldset, SectionCard, inputCls } from "./ui";
+import { Advanced, Button, Chip, ConfirmDialog, EmptyState, Field, Fieldset, SectionCard, SkeletonList, inputCls } from "./ui";
 
 export interface SermonAudioAccount {
   id: string;
@@ -14,7 +14,7 @@ export interface SermonAudioAccount {
 
 /** Human-readable description of where this user's uploads will go. */
 export function routingCopy(view: ApiEffectiveConnection | null): string {
-  if (!view) return "Checking which SermonAudio account uploads will use...";
+  if (!view) return "Checking which SermonAudio account uploads will use…";
   if (!view.configured) {
     return view.message || "Connect your SermonAudio account in Settings before publishing.";
   }
@@ -89,7 +89,7 @@ function AccountCard({
             onClick={onSetDefault}
             aria-pressed={false}
             aria-label={`Set ${account.name} as default account`}
-            className="inline-flex min-h-[44px] items-center rounded-full border border-line px-2.5 font-mono text-xs uppercase tracking-wide text-muted hover:border-muted hover:text-mist"
+            className="inline-flex min-h-[44px] items-center rounded-md border border-line bg-raised px-2.5 font-mono text-xs uppercase tracking-wide text-muted transition-colors duration-150 hover:border-muted hover:text-mist"
           >
             ☆ set default
           </button>
@@ -253,20 +253,22 @@ export function SermonAudioAccountsSection({ show }: { show: (m: string) => void
 
   return (
     <SectionCard
-      title="SermonAudio Accounts"
+      title="SermonAudio accounts"
       sub="Per-broadcaster upload accounts stored on the server. Each account pairs an API key with a broadcaster ID; the ★ default is used when a sermon does not pick one. Only the last four characters of a stored key ever display."
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted">
-          {accounts.length} account{accounts.length === 1 ? "" : "s"} configured.
-          {defaultAccount ? ` Default: ${defaultAccount.name}.` : " No default set."}
-        </p>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {accounts.length > 0 ? (
+          <p className="mr-auto text-xs text-muted">
+            {accounts.length} account{accounts.length === 1 ? "" : "s"} configured.
+            {defaultAccount ? ` Default: ${defaultAccount.name}.` : " No default set."}
+          </p>
+        ) : null}
         <Button variant="primary" onClick={() => openEditor({ ...EMPTY_DRAFT }, null)} aria-label="Add SermonAudio account">
           Add account
         </Button>
       </div>
 
-      {loading ? <p className="mt-3 text-sm text-muted">Loading accounts...</p> : null}
+      {loading ? <div className="mt-3"><SkeletonList rows={2} /></div> : null}
 
       {!loading && loadError ? (
         <div className="mt-3 rounded-md border border-danger p-3">
@@ -351,7 +353,7 @@ export function SermonAudioAccountsSection({ show }: { show: (m: string) => void
                   onBlur={() => setErrors(validateDraft(draft, editingId === null))}
                   className={`${inputCls} font-mono`}
                   autoComplete="new-password"
-                  placeholder={editingId && editingAccount?.hasKey ? "stored key unchanged" : "••••••••"}
+                  placeholder={editingId && editingAccount?.hasKey ? "stored key unchanged" : "Paste the API key"}
                 />
                 <Button onClick={() => setShowSecret((s) => !s)} aria-pressed={showSecret} aria-label={showSecret ? "Hide API key" : "Show API key"}>
                   {showSecret ? "Hide" : "Show"}

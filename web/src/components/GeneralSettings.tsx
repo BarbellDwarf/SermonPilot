@@ -114,21 +114,21 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
           <Toggle
             checked={cur.dryRun}
             onChange={(v) => set("dryRun", v)}
-            label="Dry Run Mode (default)"
+            label="Dry run mode (default)"
             hint="Preview changes without uploading by default."
             source={fieldSource(fields, PATHS.dryRun)}
           />
           <Toggle
             checked={cur.debug}
             onChange={(v) => set("debug", v)}
-            label="Debug Mode"
+            label="Debug mode"
             hint="Verbose debug output during processing."
             source={fieldSource(fields, PATHS.debug)}
           />
           <Toggle
             checked={cur.hashtagVerification}
             onChange={(v) => set("hashtagVerification", v)}
-            label="Hashtag Verification"
+            label="Hashtag verification"
             hint="Verify hashtags through a second LLM pass."
             source={fieldSource(fields, PATHS.hashtagVerification)}
           />
@@ -187,14 +187,14 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
           <Toggle
             checked={cur.saveOriginal}
             onChange={(v) => set("saveOriginal", v)}
-            label="Save Original Audio"
+            label="Save original audio"
             hint="Keep a copy of the original audio file."
             source={fieldSource(fields, PATHS.saveOriginal)}
           />
           <Toggle
             checked={cur.saveTranscript}
             onChange={(v) => set("saveTranscript", v)}
-            label="Save Transcript"
+            label="Save transcript"
             hint="Save the sermon transcript as a text file."
             source={fieldSource(fields, PATHS.saveTranscript)}
           />

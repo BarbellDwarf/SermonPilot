@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { type Job } from "../mock/data";
-import { Button, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast } from "../components/ui";
+import { Button, Chip, ConfirmDialog, EmptyState, PageHeader, Skeleton, SkeletonList, Toast } from "../components/ui";
 import { QueryError, useJobDetail, useJobsData } from "../api/hooks";
 import { isLive, writeApi } from "../api/client";
 import {
@@ -97,7 +97,7 @@ function JobRow({
         aria-controls={`job-detail-${job.id}`}
         data-testid={`job-row-${job.id}`}
         data-job-id={job.id}
-        className="grid min-h-[44px] w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 px-3 py-3 text-left transition-colors hover:bg-raised sm:grid-cols-[9rem_minmax(0,1fr)_auto_1rem] sm:[grid-template-areas:'status_title_time_chev'_'extra_extra_extra_extra'] [grid-template-areas:'status_status_time_chev'_'title_title_title_title'_'extra_extra_extra_extra']"
+        className="grid min-h-[56px] w-full grid-cols-[auto_minmax(0,1fr)_auto_1rem] items-center gap-x-3 gap-y-1 px-4 py-3 text-left transition-colors duration-150 hover:bg-raised sm:grid-cols-[8rem_minmax(0,1fr)_auto_1rem] sm:[grid-template-areas:'status_title_time_chev'_'extra_extra_extra_extra'] [grid-template-areas:'status_status_time_chev'_'title_title_title_title'_'extra_extra_extra_extra']"
       >
         <span className="[grid-area:status] inline-flex min-w-0 items-center gap-2 justify-self-start">
           <span
@@ -105,7 +105,7 @@ function JobRow({
             className={`h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[status]}`}
           />
           <span
-            className={`font-mono text-[0.6875rem] font-semibold uppercase tracking-wide ${STATUS_TEXT[status]}`}
+            className={`font-mono text-xs font-semibold uppercase tracking-wide ${STATUS_TEXT[status]}`}
           >
             {status}
           </span>
@@ -122,9 +122,18 @@ function JobRow({
         >
           {job.created}
         </time>
-        <span aria-hidden="true" className="[grid-area:chev] text-xs text-muted">
-          {open ? "▲" : "▼"}
-        </span>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          aria-hidden="true"
+          className={`[grid-area:chev] h-4 w-4 text-muted transition-transform duration-150 ${
+            open ? "rotate-180" : ""
+          }`}
+        >
+          <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
         {status === "RUNNING" ? (
           <span className="[grid-area:extra] flex min-w-0 items-center gap-2">
             <span
@@ -140,7 +149,7 @@ function JobRow({
                 style={{ width: `${progress}%` }}
               />
             </span>
-            <span className="shrink-0 font-mono text-[0.6875rem] text-muted">
+            <span className="shrink-0 font-mono text-xs text-muted">
               {progress}%{elapsed ? ` · ${elapsed}` : ""}
             </span>
           </span>
@@ -159,7 +168,7 @@ function JobRow({
         <div
           id={`job-detail-${job.id}`}
           data-testid={`job-detail-${job.id}`}
-          className="border-t border-line bg-ink/40 px-3 pb-4 pt-3 sm:px-4"
+          className="border-t border-line bg-ink/40 px-4 pb-4 pt-3"
         >
           {job.description ? (
             <p className="max-w-prose text-sm text-muted">{job.description}</p>
@@ -216,7 +225,11 @@ function JobRow({
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Log</h3>
             <div className="mt-1 max-h-64 overflow-auto rounded-md border border-line bg-surface p-3">
               {readOnly && detail.isLoading ? (
-                <p className="font-mono text-xs text-muted">Loading log…</p>
+                <div className="flex flex-col gap-2">
+                  <Skeleton className="h-3 w-3/4" />
+                  <Skeleton className="h-3 w-1/2" />
+                  <Skeleton className="h-3 w-2/3" />
+                </div>
               ) : readOnly && detail.error ? (
                 <p className="font-mono text-xs text-danger">{detail.error}</p>
               ) : lines.length === 0 ? (
@@ -322,7 +335,7 @@ export function Jobs() {
             >
               {t.label}
               <span
-                className={`rounded-full border px-2 py-0.5 font-mono text-xs ${
+                className={`rounded-sm border px-1.5 py-0.5 font-mono text-xs tabular-nums ${
                   t.id === "failed" ? "border-danger text-danger" : "border-line text-muted"
                 }`}
                 aria-label={`${count} ${t.label.toLowerCase()} jobs`}
@@ -335,8 +348,9 @@ export function Jobs() {
       </div>
 
       <p className="text-xs text-muted" role="status" aria-live="polite">
-        {data.active.length} active · {data.completed.length} completed · {data.failed.length} failed
-        {successRate !== null ? ` · ${successRate}% success` : ""}
+        {successRate === null
+          ? "No finished jobs yet."
+          : `${successRate}% success across ${finished} finished ${finished === 1 ? "job" : "jobs"}.`}
       </p>
 
       {loading ? (

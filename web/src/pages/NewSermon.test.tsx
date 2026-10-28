@@ -68,7 +68,7 @@ async function fillMetadata(user: ReturnType<typeof userEvent.setup>) {
 }
 
 const submitButton = () =>
-  screen.getByRole("button", { name: "Start Processing" }) as HTMLButtonElement;
+  screen.getByRole("button", { name: "Start processing" }) as HTMLButtonElement;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -174,7 +174,7 @@ describe("NewSermon source options", () => {
     renderPage();
     const footer = screen.getByLabelText("Selection summary");
     expect(within(footer).getAllByRole("button").map((b) => b.textContent?.trim())).toEqual([
-      "Start Processing",
+      "Start processing",
     ]);
     expect(within(footer).getByRole("status").textContent).toContain("Missing:");
   });

@@ -207,7 +207,7 @@ describe("LibraryDetail completed sermons", () => {
     expect(document.querySelector("#cut-start")).toBeTruthy();
     expect(document.querySelector("#cut-end")).toBeTruthy();
     expect(document.querySelector("#cut-offset")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Approve · Generate & Upload/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Approve & upload/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Reject with notes" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Re-detect" })).toBeNull();
 
@@ -232,7 +232,7 @@ describe("LibraryDetail completed sermons", () => {
     await user.click(screen.getByTestId("edit-sermon"));
     expect(screen.getByTestId("sermon-review")).toBeTruthy();
     expect(screen.getByTestId("timeline-region-keep")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Re-render · Generate & Upload/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Re-render & upload/ })).toBeTruthy();
     expect(screen.getByTestId("show-completed-view")).toBeTruthy();
 
     await user.click(screen.getByTestId("show-completed-view"));

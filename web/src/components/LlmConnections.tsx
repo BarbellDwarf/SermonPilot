@@ -284,7 +284,7 @@ function SlotCard({
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <Button variant="primary" onClick={onSave} disabled={saving} aria-label={`Save ${label} provider`}>
-          {saving ? "Saving..." : "Save"}
+          {saving ? "Saving…" : "Save"}
         </Button>
         <Button onClick={onTest} disabled={testing} aria-label={`Test ${label} connection`}>
           {testing ? "Testing..." : "Test connection"}
@@ -432,7 +432,7 @@ export function LlmConnectionsSection({ show }: { show: (m: string) => void }) {
 
   return (
     <SectionCard
-      title="LLM Providers"
+      title="LLM providers"
       sub="These are the provider slots the processing pipeline resolves. Saving here changes what the next job uses. API keys stay on the server and only the last four characters ever display."
     >
       {loading ? <p className="text-sm text-muted">Loading providers...</p> : null}

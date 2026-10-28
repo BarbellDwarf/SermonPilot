@@ -243,7 +243,7 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
                   onChange={(e) => setOpenaiKey(e.target.value)}
                   className={`${inputCls} font-mono`}
                   autoComplete="new-password"
-                  placeholder="••••••••"
+                  placeholder="Leave blank to keep the current key"
                 />
                 <SecretStatus field={fields["transcription.whisper_openai.api_key"]} />
               </Field>

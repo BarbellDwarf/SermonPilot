@@ -454,7 +454,7 @@ describe("SermonReview single player and plan", () => {
     fireEvent.timeUpdate(video);
     expect(video.currentTime).toBeCloseTo(endSec, 1);
 
-    await clickMore(user, /Render-only/);
+    await clickMore(user, "Render only");
     await waitFor(() => expect(apply).toHaveBeenCalled());
     expect(apply.mock.calls[0][1]).toMatchObject({
       remove_segments: [{ start_sec: startSec, end_sec: endSec }],
@@ -713,7 +713,7 @@ describe("SermonReview mobile layout", () => {
 
     const bar = screen.getByTestId("approval-bar");
     expect(within(bar).getAllByRole("button").length).toBe(2);
-    expect(within(bar).getByRole("button", { name: /Approve · Generate & Upload/ })).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: /Approve & upload/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Reject with notes" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Re-detect" })).toBeNull();
     expect(screen.queryByRole("button", { name: "History" })).toBeNull();
@@ -721,7 +721,7 @@ describe("SermonReview mobile layout", () => {
     await user.click(within(bar).getByRole("button", { name: "More actions" }));
     const menu = screen.getByTestId("more-actions");
     for (const name of [
-      /Approve · Render-only/,
+      /Render only/,
       "Upload existing render",
       "Reject with notes",
       "Re-detect",
@@ -749,8 +749,8 @@ describe("SermonReview mobile layout", () => {
 
     const summary = screen.getByTestId("approval-summary");
     expect(summary.textContent).toContain("Plan: Pending review");
-    expect(summary.textContent).toContain("QA: Pass");
-    expect(screen.getByTestId("plan-meta").textContent).toContain("confidence 87%");
+    expect(summary.textContent).toContain("QA pass");
+    expect(screen.getByTestId("plan-meta").textContent).toContain("87% confidence");
 
     const player = document.getElementById("player-plan");
     expect(player).toBeTruthy();
@@ -796,13 +796,13 @@ describe("SermonReview mobile layout", () => {
 
     const bar = screen.getByTestId("approval-bar");
     expect(within(bar).getAllByRole("button").length).toBe(2);
-    expect(within(bar).getByRole("button", { name: /Approve · Generate & Upload/ })).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: /Approve & upload/ })).toBeTruthy();
     expect(screen.getByTestId("approval-summary")).toBeTruthy();
 
     await user.click(within(bar).getByRole("button", { name: "More actions" }));
     const menu = screen.getByTestId("more-actions");
     for (const name of [
-      /Approve · Render-only/,
+      /Render only/,
       "Reject with notes",
       "Re-detect",
       "History",
@@ -847,7 +847,7 @@ describe("SermonReview enhancement choice", () => {
     const toggle = screen.getByTestId("apply-enhance-audio");
     expect(toggle.getAttribute("aria-checked")).toBe("false");
 
-    await clickMore(user, /Render-only/);
+    await clickMore(user, "Render only");
     await waitFor(() => expect(apply).toHaveBeenCalled());
     expect(apply.mock.calls[0][1]).toMatchObject({ enhance_audio: false });
   });
@@ -872,7 +872,7 @@ describe("SermonReview enhancement choice", () => {
     const toggle = screen.getByTestId("apply-enhance-audio");
     expect(toggle.getAttribute("aria-checked")).toBe("true");
 
-    await clickMore(user, /Render-only/);
+    await clickMore(user, "Render only");
     await waitFor(() => expect(apply).toHaveBeenCalled());
     expect(apply.mock.calls[0][1]).toMatchObject({ enhance_audio: true });
   });
@@ -1074,7 +1074,7 @@ describe("SermonReview metadata generation", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: /Approve · Generate & Upload/ }),
+      screen.getByRole("button", { name: /Approve & upload/ }),
     );
 
     await waitFor(() => expect(apply).toHaveBeenCalled());
@@ -1103,7 +1103,7 @@ describe("SermonReview refine controls", () => {
       />,
     );
 
-    expect(screen.getByText(/Detection: ok/)).toBeTruthy();
+    expect(screen.getByText(/Detection ok/)).toBeTruthy();
     await clickMore(user, "History");
     expect(screen.getByText(/Teaching starts after the welcome/)).toBeTruthy();
     expect(screen.getByText("revision 1")).toBeTruthy();
@@ -1155,7 +1155,7 @@ describe("SermonReview refine controls", () => {
 
     await waitFor(
       () => {
-        expect(screen.getByText(/revision 3 of 3/)).toBeTruthy();
+        expect(screen.getByText(/Revision 3 of 3/)).toBeTruthy();
       },
       { timeout: 3000 },
     );
@@ -1182,7 +1182,7 @@ describe("SermonReview refine controls", () => {
 
     await waitFor(
       () => {
-        expect(screen.getByText(/revision 3 of 3/)).toBeTruthy();
+        expect(screen.getByText(/Revision 3 of 3/)).toBeTruthy();
       },
       { timeout: 3000 },
     );
@@ -1205,7 +1205,7 @@ describe("SermonReview refine controls", () => {
     );
 
     expect(screen.getByRole("alert")).toBeTruthy();
-    expect(screen.getByText(/Detection: unavailable/)).toBeTruthy();
+    expect(screen.getByText(/Detection unavailable/)).toBeTruthy();
     expect(screen.getByTestId("plan-meta").textContent).not.toContain("confidence");
     await clickMore(user, "Reject with notes");
     expect(screen.getByLabelText("Reject with notes")).toBeTruthy();
@@ -1391,8 +1391,8 @@ describe("SermonReview state-aware action row", () => {
     const bar = screen.getByTestId("approval-bar");
     const menu = await openMore(user);
     expect(within(menu).queryByTestId("upload-existing-render")).toBeNull();
-    expect(within(menu).getByRole("menuitem", { name: /Re-render · Render-only/ })).toBeTruthy();
-    expect(within(bar).getByRole("button", { name: /Re-render · Generate & Upload/ })).toBeTruthy();
+    expect(within(menu).getByRole("menuitem", { name: /Re-render only/ })).toBeTruthy();
+    expect(within(bar).getByRole("button", { name: /Re-render & upload/ })).toBeTruthy();
     expect(within(bar).queryByRole("button", { name: /Approve/ })).toBeNull();
   });
 
@@ -1430,7 +1430,7 @@ describe("SermonReview state-aware action row", () => {
     const menu = screen.getByTestId("more-actions");
     expect(within(menu).queryByRole("menuitem", { name: "Push to SermonAudio" })).toBeNull();
     expect(within(menu).queryByTestId("upload-existing-render")).toBeNull();
-    expect(within(menu).getByRole("menuitem", { name: /Re-render · Render-only/ })).toBeTruthy();
+    expect(within(menu).getByRole("menuitem", { name: /Re-render only/ })).toBeTruthy();
   });
 
   it("keeps the legacy push in the mobile overflow for a record that is not published", async () => {
@@ -1451,6 +1451,6 @@ describe("SermonReview state-aware action row", () => {
     await user.click(screen.getByRole("button", { name: "More actions" }));
     const menu = screen.getByTestId("more-actions");
     expect(within(menu).getByRole("menuitem", { name: "Push to SermonAudio" })).toBeTruthy();
-    expect(within(menu).getByRole("menuitem", { name: /Approve · Render-only/ })).toBeTruthy();
+    expect(within(menu).getByRole("menuitem", { name: /Render only/ })).toBeTruthy();
   });
 });

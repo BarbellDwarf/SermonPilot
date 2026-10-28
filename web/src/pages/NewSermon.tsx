@@ -12,6 +12,7 @@ import {
   SectionCard,
   Toast,
   Toggle,
+  buttonClass,
   inputCls,
 } from "../components/ui";
 import {
@@ -479,7 +480,7 @@ export function NewSermon() {
             label="More actions"
             trigger="More actions"
             triggerTestId="new-teaching-more"
-            triggerClassName="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-line bg-raised px-4 text-sm font-semibold text-mist transition-colors hover:border-muted"
+            triggerClassName={buttonClass("secondary")}
             items={[
               {
                 label: "Reset form",
@@ -991,14 +992,18 @@ export function NewSermon() {
 
       <div
         aria-label="Selection summary"
-        className="sticky bottom-[4.5rem] z-20 -mx-4 border-t border-line bg-ink/95 px-4 py-3 backdrop-blur md:bottom-0"
+        className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)] z-20 -mx-4 border-t border-line bg-ink/95 px-4 py-3 shadow-[0_-8px_24px_-16px_rgba(0,0,0,0.8)] backdrop-blur md:bottom-0 md:shadow-none"
       >
         <div className="mx-auto flex max-w-shell flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <p className="truncate font-mono text-xs text-muted" aria-live="polite" title={summaryBits.join(" · ")}>
+            <p
+              className="hidden truncate font-mono text-xs text-muted sm:block"
+              aria-live="polite"
+              title={summaryBits.join(" · ")}
+            >
               {summaryBits.join(" · ")}
             </p>
-            <p className="text-xs text-muted" role="status" aria-live="polite">
+            <p className="truncate text-xs text-muted" role="status" aria-live="polite">
               {helper}
             </p>
           </div>
@@ -1009,7 +1014,7 @@ export function NewSermon() {
             aria-busy={starting}
             className="w-full shrink-0 sm:w-auto"
           >
-            {starting ? "Queueing…" : "Start Processing"}
+            {starting ? "Queueing…" : "Start processing"}
           </Button>
         </div>
       </div>
