@@ -96,7 +96,7 @@ RUN mkdir -p /app/processed_sermons \
              /app/api_cache \
              /app/logs \
              /app/config_backups && \
-    chown -R sermonapp:sermonapp /app && \
+    chown -R sermonapp:sermonapp /app/processed_sermons /app/api_cache /app/logs /app/config_backups && \
     chmod +x /app/docker/start_production.sh
 
 USER sermonapp
