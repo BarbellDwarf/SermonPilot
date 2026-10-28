@@ -24,6 +24,7 @@ from server.api.accounts import (
     get_user_by_username,
     hash_password,
     list_users,
+    prune_expired_sessions,
     set_setting,
     verify_password,
     writable_conn,
@@ -129,6 +130,7 @@ def login(body: LoginBody):
         row = get_user_by_username(conn, body.username)
         if row is None or not row["is_active"] or not verify_password(body.password, row["password_hash"]):  # noqa: E501
             raise HTTPException(status_code=401, detail="invalid credentials")
+        prune_expired_sessions(conn)
         token = create_session(conn, row["id"])
     return {"token": token, "user": _public_user(row)}
 

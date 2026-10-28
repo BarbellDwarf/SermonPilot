@@ -52,3 +52,26 @@ def test_spa_answers_head_requests_without_a_body():
         hashed = client.head(f"/assets/{asset.name}")
         assert hashed.status_code == 200
         assert hashed.content == b""
+
+
+def test_unmatched_api_path_is_json_404_not_the_spa(client, scoped_setup):
+    headers = scoped_setup["admin_headers"]
+    for path in (
+        "/api/definitely-not-a-route",
+        "/api/llm/providers",
+        "/api/config",
+        "/api/me/connections",
+    ):
+        response = client.get(path, headers=headers)
+        assert response.status_code == 404, path
+        assert response.headers["content-type"].startswith("application/json")
+        assert response.json() == {"detail": "not found"}
+
+    head = client.head("/api/definitely-not-a-route", headers=headers)
+    assert head.status_code == 404
+    assert head.content == b""
+    assert head.headers["content-type"].startswith("application/json")
+
+    shell = client.get("/settings", headers=headers)
+    assert shell.status_code == 200
+    assert shell.headers["content-type"].startswith("text/html")

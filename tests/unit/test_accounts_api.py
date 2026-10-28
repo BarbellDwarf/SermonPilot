@@ -27,6 +27,36 @@ def test_first_boot_and_auth_boundary(client):
     assert response.json()["detail"]["needs_bootstrap"] is False
 
 
+def test_login_prunes_expired_sessions_and_keeps_live_ones(client, scoped_setup):
+    from server.api.accounts import get_db_path
+
+    user_id = scoped_setup["a"]["id"]
+    conn = sqlite3.connect(get_db_path())
+    conn.execute(
+        "INSERT INTO sessions (token, user_id, expires_at)"
+        " VALUES ('expired-session', ?, datetime('now', '-1 day'))",
+        (user_id,),
+    )
+    conn.execute(
+        "INSERT INTO sessions (token, user_id, expires_at)"
+        " VALUES ('live-session', ?, datetime('now', '+1 day'))",
+        (user_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    response = client.post(
+        "/api/auth/login", json={"username": "user-a", "password": "pw-user-a"}
+    )
+    assert response.status_code == 200
+
+    conn = sqlite3.connect(get_db_path())
+    tokens = {row[0] for row in conn.execute("SELECT token FROM sessions")}
+    conn.close()
+    assert "expired-session" not in tokens
+    assert "live-session" in tokens
+
+
 def _ids(body: dict) -> list[str]:
     return sorted(item["id"] for item in body["items"])
 

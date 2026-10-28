@@ -94,9 +94,35 @@ def test_filesystem_root_config_is_admin_only(client, scoped_setup, clean_env, t
 
 
 def test_default_source_is_reported(client, scoped_setup, clean_env):
-    headers = scoped_setup["a"]["headers"]
+    headers = scoped_setup["admin_headers"]
     view = client.get("/api/config/sections/audio", headers=headers).json()
     assert view["fields"]["audio_gain_db"]["source"] == "default"
+
+
+def test_source_enumeration_is_admin_only(client, scoped_setup, clean_env):
+    denied = client.get("/api/config/sources", headers=scoped_setup["a"]["headers"])
+    assert denied.status_code == 403
+
+    allowed = client.get("/api/config/sources", headers=scoped_setup["admin_headers"])
+    assert allowed.status_code == 200
+    assert "sources" in allowed.json()
+
+
+def test_section_reads_hide_environment_names_from_non_admins(
+    client, scoped_setup, clean_env, monkeypatch
+):
+    monkeypatch.setenv("OUTPUT_DIRECTORY", "env_out")
+    view = client.get(
+        "/api/config/sections/general", headers=scoped_setup["a"]["headers"]
+    ).json()
+    field = view["fields"]["output_directory"]
+    assert field["value"] == "env_out"
+    assert "source" not in field
+
+    admin = client.get(
+        "/api/config/sections/general", headers=scoped_setup["admin_headers"]
+    ).json()
+    assert admin["fields"]["output_directory"]["source"] == "OUTPUT_DIRECTORY"
 
 
 def test_sermonpilot_db_is_the_single_read_write_path(
@@ -195,7 +221,7 @@ def test_unknown_paths_are_ignored(client, scoped_setup, clean_env):
 
 
 def test_sources_endpoint_reports_no_values(client, scoped_setup, clean_env):
-    headers = scoped_setup["a"]["headers"]
+    headers = scoped_setup["admin_headers"]
     response = client.get("/api/config/sources", headers=headers)
     assert response.status_code == 200
     sources = response.json()["sources"]
@@ -238,7 +264,7 @@ def test_sermonaudio_section_reports_env_source_without_the_secret(
     env_key = "placeholder-sermonaudio-secret"
     monkeypatch.setenv("SERMONAUDIO_API_KEY", env_key)
     monkeypatch.setenv("SERMONAUDIO_BROADCASTER_ID", "env-broadcaster")
-    headers = scoped_setup["a"]["headers"]
+    headers = scoped_setup["admin_headers"]
 
     response = client.get("/api/config/sections/sermonaudio", headers=headers)
 
@@ -255,7 +281,7 @@ def test_sermonaudio_section_reports_env_source_without_the_secret(
 def test_sermonaudio_section_saves_to_db_and_reports_db_source(
     client, scoped_setup, clean_env
 ):
-    headers = scoped_setup["a"]["headers"]
+    headers = scoped_setup["admin_headers"]
     stored_key = "placeholder-db-secret"
 
     saved = client.put(

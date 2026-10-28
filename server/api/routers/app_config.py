@@ -17,7 +17,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict
 
-from server.api.routers.auth import require_user
+from server.api.routers.auth import admin_only, require_user
 from server.api.scoping import is_admin
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -180,22 +180,19 @@ def _effective() -> tuple[dict[str, Any], dict[str, str]]:
         return {}, {}
 
 
-def _section_view(section: str) -> dict[str, Any]:
+def _section_view(section: str, user: dict[str, Any] | None = None) -> dict[str, Any]:
     config, sources = _effective()
     fields: dict[str, dict[str, Any]] = {}
     for path, kind in SECTIONS[section].items():
         value = _get_dotted(config, path)
-        source = sources.get(path, "default")
         if kind == "secret":
             has_value, masked = _mask_secret(value)
-            fields[path] = {
-                "source": source,
-                "secret": True,
-                "has_value": has_value,
-                "masked": masked,
-            }
+            field = {"secret": True, "has_value": has_value, "masked": masked}
         else:
-            fields[path] = {"value": value, "source": source, "secret": False}
+            field = {"value": value, "secret": False}
+        if is_admin(user):
+            field["source"] = sources.get(path, "default")
+        fields[path] = field
     return {"section": section, "fields": fields}
 
 
@@ -206,8 +203,8 @@ def _require_section(section: str) -> dict[str, str]:
     return spec
 
 
-@router.get("/sources")
-def get_config_sources(user=Depends(require_user)) -> dict[str, Any]:
+@router.get("/sources", dependencies=[Depends(admin_only)])
+def get_config_sources() -> dict[str, Any]:
     """Return the winning source for every resolved leaf path, no values."""
     _, sources = _effective()
     return {"sources": sources}
@@ -216,7 +213,7 @@ def get_config_sources(user=Depends(require_user)) -> dict[str, Any]:
 @router.get("/sections/{section}")
 def get_config_section(section: str, user=Depends(require_user)) -> dict[str, Any]:
     _require_section(section)
-    return _section_view(section)
+    return _section_view(section, user)
 
 
 @router.put("/sections/{section}")
@@ -249,4 +246,4 @@ def update_config_section(
         for path, value in updates.items():
             _set_dotted(full, path, value)
         db.save_config(full)
-    return _section_view(section)
+    return _section_view(section, user)

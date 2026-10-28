@@ -481,11 +481,20 @@ interface ConfirmDialogProps {
   title: string;
   body: string;
   confirmLabel: string;
+  cancelLabel?: string;
   onConfirm: () => void;
   onClose: () => void;
 }
 
-export function ConfirmDialog({ open, title, body, confirmLabel, onConfirm, onClose }: ConfirmDialogProps) {
+export function ConfirmDialog({
+  open,
+  title,
+  body,
+  confirmLabel,
+  cancelLabel = "Cancel",
+  onConfirm,
+  onClose,
+}: ConfirmDialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -493,7 +502,18 @@ export function ConfirmDialog({ open, title, body, confirmLabel, onConfirm, onCl
     if (!el) return;
     if (open && !el.open) el.showModal();
     if (!open && el.open) el.close();
-  }, [open ]);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
 
   return (
     <dialog
@@ -510,7 +530,7 @@ export function ConfirmDialog({ open, title, body, confirmLabel, onConfirm, onCl
       </h2>
       <p className="mt-2 text-sm text-muted">{body}</p>
       <div className="mt-5 flex justify-end gap-2">
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose}>{cancelLabel}</Button>
         <Button
           variant="danger"
           onClick={() => {

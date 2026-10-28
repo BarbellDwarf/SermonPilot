@@ -82,6 +82,7 @@ def migrate() -> None:
         for ddl in ALL_DDL:
             conn.execute(ddl)
         _ensure_columns(conn)
+        prune_expired_sessions(conn)
 
 
 def hash_password(password: str, salt: bytes | None = None) -> str:
@@ -147,6 +148,11 @@ def create_session(conn: sqlite3.Connection, user_id: str, ttl_days: int = 7) ->
 
 def delete_session(conn: sqlite3.Connection, token: str) -> None:
     conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+
+
+def prune_expired_sessions(conn: sqlite3.Connection) -> int:
+    """Delete rows whose expiry has passed; a live session is never touched."""
+    return conn.execute("DELETE FROM sessions WHERE expires_at <= datetime('now')").rowcount
 
 
 def get_session_user(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:

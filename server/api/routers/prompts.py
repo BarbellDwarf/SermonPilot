@@ -7,6 +7,11 @@ built-in defaults, so the console can show the default prompt for a task the
 operator has never edited. A PUT deep-merges the submitted task fields over the
 stored block: a field left out keeps its stored value, and a field set to an
 empty string clears it.
+
+The templates are deliberately a shared surface: they hold no credentials or
+environment names, and every signed-in operator who runs or reviews a job sees
+and edits the same deployment-wide prompts. Only config endpoints that name
+environment variables are admin-restricted.
 """
 
 from __future__ import annotations

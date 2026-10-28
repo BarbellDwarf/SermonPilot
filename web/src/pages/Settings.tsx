@@ -16,6 +16,7 @@ import {
   Advanced,
   Button,
   Chip,
+  ConfirmDialog,
   DirtyRegistryContext,
   Field,
   PageHeader,
@@ -446,6 +447,7 @@ export function Settings({ user }: { user: { display_name: string; role?: string
       ? "cloud"
       : "general";
   const [active, setActive] = useState<TabId>(initial);
+  const [pendingSection, setPendingSection] = useState<TabId | null>(null);
   const [dirtySections, setDirtySections] = useState<Set<string>>(() => new Set());
   const dirtyRegistry = useMemo<DirtyRegistry>(
     () => ({
@@ -473,18 +475,20 @@ export function Settings({ user }: { user: { display_name: string; role?: string
     if (isSection(next)) setActive(next);
   }, [searchParams]);
 
-  const choose = (id: TabId) => {
-    if (id === active) return;
-    if (
-      dirtySections.size > 0 &&
-      !window.confirm("This section has unsaved changes. Leave and discard them?")
-    ) {
-      return;
-    }
+  const go = (id: TabId) => {
     setActive(id);
     const next = new URLSearchParams(searchParams);
     next.set("section", id);
     setSearchParams(next, { replace: true });
+  };
+
+  const choose = (id: TabId) => {
+    if (id === active) return;
+    if (dirtySections.size > 0) {
+      setPendingSection(id);
+      return;
+    }
+    go(id);
   };
 
   const activeSection = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0];
@@ -620,6 +624,17 @@ export function Settings({ user }: { user: { display_name: string; role?: string
           {renderSection()}
         </div>
       </div>
+      <ConfirmDialog
+        open={pendingSection !== null}
+        title="Unsaved changes"
+        body="This section has unsaved changes. Leave and discard them?"
+        confirmLabel="Discard"
+        cancelLabel="Stay"
+        onConfirm={() => {
+          if (pendingSection) go(pendingSection);
+        }}
+        onClose={() => setPendingSection(null)}
+      />
       <Toast message={toast} />
       </div>
     </DirtyRegistryContext.Provider>

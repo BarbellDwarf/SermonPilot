@@ -108,9 +108,8 @@ describe("Settings shell", () => {
     expect(screen.getByText("Backup panel")).toBeTruthy();
   });
 
-  it("confirms before discarding a dirty section and keeps it when declined", async () => {
+  it("asks with an in-app dialog before discarding a dirty section and stays when declined", async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderSettings();
 
     await user.click(screen.getByRole("button", { name: "Audio" }));
@@ -118,23 +117,43 @@ describe("Settings shell", () => {
     expect(screen.getByText("Unsaved changes.")).toBeTruthy();
 
     await user.click(screen.getByRole("button", { name: "Prompt templates" }));
-    expect(confirm).toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(
+      screen.getByText("This section has unsaved changes. Leave and discard them?"),
+    ).toBeTruthy();
     expect(screen.getByText("Audio panel")).toBeTruthy();
     expect(screen.queryByText("Prompts panel")).toBeNull();
-    confirm.mockRestore();
+
+    await user.click(screen.getByRole("button", { name: "Stay" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText("Audio panel")).toBeTruthy();
   });
 
-  it("leaves a dirty section once the user confirms, and clears dirty after save", async () => {
+  it("treats Escape as Stay", async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderSettings();
 
     await user.click(screen.getByRole("button", { name: "Audio" }));
     await user.click(screen.getByRole("button", { name: "Make audio dirty" }));
     await user.click(screen.getByRole("button", { name: "Prompt templates" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText("Audio panel")).toBeTruthy();
+    expect(screen.queryByText("Prompts panel")).toBeNull();
+  });
+
+  it("leaves a dirty section after Discard, and clears dirty after save", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+
+    await user.click(screen.getByRole("button", { name: "Audio" }));
+    await user.click(screen.getByRole("button", { name: "Make audio dirty" }));
+    await user.click(screen.getByRole("button", { name: "Prompt templates" }));
+    await user.click(screen.getByRole("button", { name: "Discard" }));
     expect(screen.getByText("Prompts panel")).toBeTruthy();
-    expect(confirm).toHaveBeenCalled();
-    confirm.mockRestore();
+    expect(screen.queryByRole("dialog")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Audio" }));
     await user.click(screen.getByRole("button", { name: "Make audio dirty" }));

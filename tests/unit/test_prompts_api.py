@@ -19,6 +19,19 @@ def test_prompts_require_auth(client):
     assert client.get("/api/prompts/config").status_code == 401
 
 
+def test_prompt_templates_are_shared_with_signed_in_users(client, scoped_setup):
+    """Prompt templates carry no credentials and are shared by design."""
+    headers = scoped_setup["a"]["headers"]
+    assert client.get("/api/prompts/config", headers=headers).status_code == 200
+    saved = client.put(
+        "/api/prompts/config",
+        json={"templates": {"cut_detection": {"user": "shared prompt"}}},
+        headers=headers,
+    )
+    assert saved.status_code == 200
+    assert saved.json()["templates"]["cut_detection"]["user"] == "shared prompt"
+
+
 def test_unset_cut_detection_resolves_to_builtin_default(client, scoped_setup):
     headers = scoped_setup["a"]["headers"]
     got = client.get("/api/prompts/config", headers=headers)

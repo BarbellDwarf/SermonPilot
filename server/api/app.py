@@ -14,7 +14,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from server.api.accounts import migrate
 from server.api.routers.app_config import router as app_config_router
@@ -143,6 +143,10 @@ def create_app() -> FastAPI:
     app.include_router(explore_router)
     app.include_router(cloud_router)
     app.include_router(cloud_proxy_router)
+
+    @app.api_route("/api/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
+    def api_not_found(path: str) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": "not found"})
 
     dist = (Path(__file__).resolve().parent.parent.parent / "web" / "dist").resolve()
     if dist.is_dir():
