@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "visual": "VITE_API_MODE=mock npm run build && playwright test",
+    "visual:update": "VITE_API_MODE=mock npm run build && playwright test --update-snapshots"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.102.8",
@@ -16,6 +18,7 @@
     "react-router-dom": "^6.30.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",

@@ -50,14 +50,14 @@ describe("Shell chrome", () => {
     expect(screen.getByText("admin")).toBeTruthy();
     expect(within(menu).getByRole("menuitem", { name: "Settings" })).toBeTruthy();
     expect(within(menu).getByRole("menuitem", { name: "Switch to light theme" })).toBeTruthy();
-    expect(within(menu).getByRole("menuitem", { name: "Log out" })).toBeTruthy();
+    expect(within(menu).getByRole("menuitem", { name: "Sign out" })).toBeTruthy();
 
     await userEvents.click(within(menu).getByRole("menuitem", { name: "Switch to light theme" }));
     expect(onToggleTheme).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("menu")).toBeNull();
 
     await userEvents.click(screen.getByTestId("account-menu-trigger"));
-    await userEvents.click(screen.getByRole("menuitem", { name: "Log out" }));
+    await userEvents.click(screen.getByRole("menuitem", { name: "Sign out" }));
     expect(onLogout).toHaveBeenCalledTimes(1);
   });
 

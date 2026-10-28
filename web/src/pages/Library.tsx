@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { type LibrarySermon, type LibrarySermonStatus } from "../mock/data";
-import { Button, Chip, EmptyState, Menu, PageHeader, SkeletonList, buttonClass } from "../components/ui";
+import { Button, Chip, EmptyState, Icon, Menu, PageHeader, SkeletonList, buttonClass, staggerStyle } from "../components/ui";
 import { MediaPlayer } from "../components/MediaPlayer";
 import { QueryError, useLibrarySermons, type LibrarySort } from "../api/hooks";
 import { isLive } from "../api/client";
@@ -29,13 +29,13 @@ const sortOptions: { id: LibrarySort; label: string }[] = [
 const selectCls =
   "min-h-[44px] min-w-0 rounded-md border border-line bg-ink px-3 text-sm text-mist transition-colors duration-150 hover:border-muted focus-visible:border-accent";
 
-function SermonRow({ sermon }: { sermon: LibrarySermon }) {
+function SermonRow({ sermon, index }: { sermon: LibrarySermon; index: number }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const status = sermonStatusLabel[sermon.status];
 
   return (
-    <li data-testid={`library-row-${sermon.id}`}>
+    <li data-testid={`library-row-${sermon.id}`} className="stagger-item" style={staggerStyle(index)}>
       <div className="group relative">
         <Link
           to={`/library/${sermon.id}`}
@@ -66,11 +66,7 @@ function SermonRow({ sermon }: { sermon: LibrarySermon }) {
               triggerTestId={`library-actions-${sermon.id}`}
               triggerClassName="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-muted transition-colors hover:bg-raised hover:text-mist"
               trigger={
-                <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5" aria-hidden="true">
-                  <circle cx="5" cy="12" r="1.6" />
-                  <circle cx="12" cy="12" r="1.6" />
-                  <circle cx="19" cy="12" r="1.6" />
-                </svg>
+                <Icon name="more" />
               }
               items={[
                 { label: "Open teaching", onSelect: () => navigate(`/library/${sermon.id}`) },
@@ -125,7 +121,14 @@ export function Library() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Library" />
+      <PageHeader
+        title="Library"
+        actions={
+          <Link to="/new" className={buttonClass("primary")}>
+            New teaching
+          </Link>
+        }
+      />
 
       <div className="flex flex-col gap-2">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -177,11 +180,7 @@ export function Library() {
               triggerTestId="library-toolbar-menu"
               triggerClassName={buttonClass("secondary", "w-11 !px-0")}
               trigger={
-                <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5" aria-hidden="true">
-                  <circle cx="5" cy="12" r="1.6" />
-                  <circle cx="12" cy="12" r="1.6" />
-                  <circle cx="19" cy="12" r="1.6" />
-                </svg>
+                <Icon name="more" />
               }
               items={[
                 {
@@ -213,20 +212,39 @@ export function Library() {
       </div>
 
       {loading ? (
-        <SkeletonList rows={5} />
+        <SkeletonList rows={6} variant="row" />
       ) : error ? (
         <QueryError message={error} onRetry={retry} />
       ) : visible.length === 0 ? (
         <EmptyState
-          title="No teachings match"
-          body="Try a different search term, or clear the filters to see everything."
-          compact
+          title={filtersActive ? "No teachings match" : "No teachings yet"}
+          body={
+            filtersActive
+              ? "Try a different search term, or clear the filters to see everything."
+              : "Teachings appear here after a run finishes, with speaker, date, duration, and series."
+          }
+          action={
+            filtersActive ? (
+              <Button
+                onClick={() => {
+                  setQuery("");
+                  setStatus("all");
+                }}
+              >
+                Clear filters
+              </Button>
+            ) : (
+              <Link to="/new" className={buttonClass("primary")}>
+                Add the first teaching
+              </Link>
+            )
+          }
         />
       ) : (
         <>
           <ol className="divide-y divide-line rounded-lg border border-line bg-surface">
-            {visible.map((s) => (
-              <SermonRow key={s.id} sermon={s} />
+            {visible.map((s, index) => (
+              <SermonRow key={s.id} sermon={s} index={index} />
             ))}
           </ol>
           {hasMore ? (

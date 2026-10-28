@@ -1,6 +1,19 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { type Job } from "../mock/data";
-import { Button, Chip, ConfirmDialog, EmptyState, PageHeader, Skeleton, SkeletonList, Toast } from "../components/ui";
+import {
+  Button,
+  Chip,
+  ConfirmDialog,
+  EmptyState,
+  Icon,
+  PageHeader,
+  Skeleton,
+  SkeletonList,
+  staggerStyle,
+  buttonClass,
+} from "../components/ui";
+import { useToast } from "../components/toast";
 import { QueryError, useJobDetail, useJobsData } from "../api/hooks";
 import { isLive, writeApi } from "../api/client";
 import {
@@ -45,11 +58,12 @@ function copyJobId(
     selectAndTell();
     return;
   }
-  void navigator.clipboard.writeText(id).then(() => notify("Job id copied.")).catch(selectAndTell);
+  void navigator.clipboard.writeText(id).then(() => notify("Job ID copied.")).catch(selectAndTell);
 }
 
 function JobRow({
   job,
+  index,
   open,
   now,
   readOnly,
@@ -58,6 +72,7 @@ function JobRow({
   onNotify,
 }: {
   job: Job;
+  index: number;
   open: boolean;
   now: number;
   readOnly: boolean;
@@ -89,7 +104,7 @@ function JobRow({
     );
 
   return (
-    <li className="min-w-0">
+    <li className="stagger-item min-w-0" style={staggerStyle(index)}>
       <button
         type="button"
         onClick={() => onToggle(job.id)}
@@ -122,18 +137,12 @@ function JobRow({
         >
           {job.created}
         </time>
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={2}
-          aria-hidden="true"
+        <Icon
+          name="chevron"
           className={`[grid-area:chev] h-4 w-4 text-muted transition-transform duration-150 ${
             open ? "rotate-180" : ""
           }`}
-        >
-          <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        />
         {status === "RUNNING" ? (
           <span className="[grid-area:extra] flex min-w-0 items-center gap-2">
             <span
@@ -273,7 +282,7 @@ export function Jobs() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [removed, setRemoved] = useState<string[]>([]);
-  const [toast, setToast] = useState<string | null>(null);
+  const notify = useToast();
   const [now, setNow] = useState(() => Date.now());
   const { data, isLoading: loading, error, retry } = useJobsData();
 
@@ -290,10 +299,7 @@ export function Jobs() {
     return () => window.clearInterval(timer);
   }, [hasRunning]);
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    window.setTimeout(() => setToast(null), 3000);
-  };
+  const showToast = (msg: string) => notify.info(msg);
 
   const toggle = (id: string) => {
     setExpanded((current) => {
@@ -316,7 +322,15 @@ export function Jobs() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Jobs" sub={isLive ? "Refreshes every 5 seconds." : undefined} />
+      <PageHeader
+        title="Jobs"
+        sub={isLive ? "Refreshes every 5 seconds." : undefined}
+        actions={
+          <Link to="/new" className={buttonClass("primary")}>
+            New teaching
+          </Link>
+        }
+      />
 
       <div role="tablist" aria-label="Job states" onKeyDown={onKeyDown} className="flex gap-1 overflow-x-auto rounded-lg border border-line bg-surface p-1">
         {tabs.map((t) => {
@@ -354,7 +368,7 @@ export function Jobs() {
       </p>
 
       {loading ? (
-        <SkeletonList rows={3} />
+        <SkeletonList rows={5} variant="row" rowHeight={56} />
       ) : error ? (
         <QueryError message={error} onRetry={retry} />
       ) : rows.length === 0 ? (
@@ -362,18 +376,28 @@ export function Jobs() {
           title={tab === "failed" ? "No failed jobs" : tab === "active" ? "No active jobs" : "Nothing completed yet"}
           body={
             tab === "failed"
-              ? "Failures land here with a Retry button next to each one."
+              ? "Failures land here with the first error line and a Retry action."
               : tab === "active"
-                ? "Start a run and it will appear here with live status."
-                : "Finished runs appear here with their durations and logs."
+                ? "A run appears here as soon as it is queued, with live progress and elapsed time."
+                : "Finished runs appear here with their duration and full log."
+          }
+          action={
+            tab === "active" ? (
+              <Link to="/new" className={buttonClass("primary")}>
+                Start a teaching
+              </Link>
+            ) : (
+              <Button onClick={() => setTab("active")}>View active jobs</Button>
+            )
           }
         />
       ) : (
         <ol className="flex flex-col divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
-          {rows.map((j) => (
+          {rows.map((j, index) => (
             <JobRow
               key={j.id}
               job={j}
+              index={index}
               open={expanded.has(j.id)}
               now={now}
               readOnly={isLive}
@@ -392,7 +416,7 @@ export function Jobs() {
           pending
             ? pending.action === "cancel"
               ? `${jobRowTitle(pending.job)} (${pending.job.id}) will be stopped. This cannot be undone.`
-              : `${jobRowTitle(pending.job)} (${pending.job.id}) will be removed from this mock list. This cannot be undone.`
+              : `${jobRowTitle(pending.job)} (${pending.job.id}) will be removed from this demo list. This cannot be undone.`
             : ""
         }
         confirmLabel={pending?.action === "cancel" ? "Cancel job" : "Delete"}
@@ -405,18 +429,22 @@ export function Jobs() {
               void writeApi
                 .cancelJob(id)
                 .then((res) => {
-                  showToast(res.cancelled ? `Job ${id} cancelled.` : `Job ${id} could not be cancelled.`);
+                  if (res.cancelled) notify.success(`Job ${id} cancelled.`);
+                  else notify.error(`Job ${id} could not be cancelled.`);
                   retry();
                 })
-                .catch((e) => showToast(`Could not cancel: ${(e as Error).message}`));
+                .catch((e) => notify.error(`Could not cancel: ${(e as Error).message}`));
             } else {
-              setRemoved((d) => [...d, pending.job.id]);
-              showToast(pending.action === "cancel" ? `Job ${pending.job.id} cancelled (mock).` : `Job ${pending.job.id} deleted (mock).`);
+              const job = pending.job;
+              setRemoved((d) => [...d, job.id]);
+              notify.undo(
+                pending.action === "cancel" ? `Job ${job.id} cancelled.` : `Job ${job.id} deleted.`,
+                () => setRemoved((d) => d.filter((id) => id !== job.id)),
+              );
             }
           }
         }}
       />
-      <Toast message={toast} />
     </div>
   );
 }

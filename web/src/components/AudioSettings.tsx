@@ -57,9 +57,9 @@ const PATHS = {
 } as const;
 
 function numError(v: string, min: number, max: number): string | null {
-  if (!/^-?\d+(\.\d+)?$/.test(v.trim())) return "Must be a number.";
+  if (!/^-?\d+(\.\d+)?$/.test(v.trim())) return "Enter a number.";
   const n = Number(v);
-  if (n < min || n > max) return `Must be between ${min} and ${max}.`;
+  if (n < min || n > max) return `Enter a value between ${min} and ${max}.`;
   return null;
 }
 
@@ -101,7 +101,7 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
       [PATHS.gainDb]: Number(c.gainDb),
       [PATHS.targetLevelDb]: Number(c.targetLevelDb),
     }))
-      .then(() => show(isLive ? "Audio settings saved." : "Audio settings saved (mock)."))
+      .then(() => show(isLive ? "Audio settings saved." : "Audio settings saved (demo)."))
       .catch((e) => show(`Could not save: ${(e as Error).message}`))
       .finally(() => setSaving(false));
   };
@@ -112,7 +112,7 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
       sub={
         isLive
           ? "Enhancement method and processing options. Saved here is what the pipeline resolves."
-          : "Enhancement method and processing options (mock)."
+          : "Enhancement method and processing options (demo)."
       }
     >
       <Fieldset

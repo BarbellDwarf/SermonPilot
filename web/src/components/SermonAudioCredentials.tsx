@@ -51,7 +51,7 @@ export function SermonAudioCredentialsSection({ show }: { show: (m: string) => v
     void save(values)
       .then(() => {
         setApiKey("");
-        show(isLive ? "SermonAudio credentials saved." : "SermonAudio credentials saved (mock).");
+        show(isLive ? "SermonAudio credentials saved." : "SermonAudio credentials saved (demo).");
       })
       .catch((e) => show(`Could not save: ${(e as Error).message}`))
       .finally(() => setSaving(false));

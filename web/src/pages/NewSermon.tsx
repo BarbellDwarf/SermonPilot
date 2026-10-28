@@ -7,10 +7,10 @@ import {
   Chip,
   ConfirmDialog,
   Field,
+  Icon,
   Menu,
   PageHeader,
   SectionCard,
-  Toast,
   Toggle,
   buttonClass,
   inputCls,
@@ -31,6 +31,7 @@ import {
 import { CloudBrowser, MOCK_REMOTES } from "../components/CloudBrowser";
 import { Combobox } from "../components/Combobox";
 import { FileExplorerDialog } from "../components/FileExplorer";
+import { useToast } from "../components/toast";
 
 type SourceKind = "browser" | "server" | "cloud";
 type AutoEditMode = "interactive" | "auto";
@@ -93,6 +94,7 @@ const supportedFormats = ["MP3", "WAV", "M4A", "MP4", "MOV"];
 const initialMeta = { title: "", speaker: "", date: "", series: "", eventType: "", scripture: "" };
 
 export function NewSermon() {
+  const notify = useToast();
   const [searchParams] = useSearchParams();
   const prefilledPath = searchParams.get("server_path") ?? "";
   const prefilledCloud = prefilledCloudMatch(prefilledPath);
@@ -117,7 +119,6 @@ export function NewSermon() {
   const [fadeBlack, setFadeBlack] = useState(true);
   const [confirmReset, setConfirmReset] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
   const [fileObj, setFileObj] = useState<File | null>(null);
   const [queuedJob, setQueuedJob] = useState<string | null>(null);
   const [cloudRemotes, setCloudRemotes] = useState<ApiCloudRemote[]>([]);
@@ -227,7 +228,7 @@ export function NewSermon() {
     setOutputDir(next);
     setOutputSource("user");
     if (!isLive) {
-      showToast("Output location updated (mock).");
+      showToast("Output location updated (demo).");
       return;
     }
     void outputDirApi
@@ -236,7 +237,7 @@ export function NewSermon() {
         setOutputDir(r.output_dir);
         showToast("Output location saved as your default.");
       })
-      .catch((e) => showToast(`Could not save output location: ${(e as Error).message}`));
+      .catch((e) => showToast(`Could not save output location: ${(e as Error).message}`, "error"));
   };
 
   const pickOutputDir = (path: string) => {
@@ -297,10 +298,10 @@ export function NewSermon() {
 
   const pickMockFile = () => setFileName("sample-sermon-upload.mp3");
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    window.setTimeout(() => setToast(null), 4000);
-  };
+  const showToast = (
+    msg: string,
+    variant: "success" | "error" | "info" = "success",
+  ) => notify[variant](msg);
 
   const resetAll = () => {
     setFileName(null);
@@ -362,7 +363,7 @@ export function NewSermon() {
   const start = () => {
     if (!valid || starting) return;
     if (!isLive) {
-      showToast("Demo mode: nothing was sent.");
+      showToast("Demo mode: nothing was sent.", "info");
       return;
     }
     setStarting(true);
@@ -383,7 +384,7 @@ export function NewSermon() {
         })
         .catch((e) => {
           setStarting(false);
-          showToast(`Could not queue: ${(e as Error).message}`);
+          showToast(`Could not queue: ${(e as Error).message}`, "error");
         });
       return;
     }
@@ -397,7 +398,7 @@ export function NewSermon() {
       })
       .catch((e) => {
         setStarting(false);
-        showToast(`Could not queue: ${(e as Error).message}`);
+        showToast(`Could not queue: ${(e as Error).message}`, "error");
       });
   };
 
@@ -416,7 +417,7 @@ export function NewSermon() {
       })
       .catch((e) => {
         setUploadingCard(false);
-        showToast(`Could not save card: ${(e as Error).message}`);
+        showToast(`Could not save card: ${(e as Error).message}`, "error");
       });
   };
 
@@ -538,7 +539,7 @@ export function NewSermon() {
               aria-label={
                 isLive
                   ? "Drop a teaching file here, or press Enter to choose one"
-                  : "Drop a teaching file here, or press Enter to pick a mock file"
+                  : "Drop a teaching file here, or press Enter to pick a sample file"
               }
               onDragOver={(e) => {
                 e.preventDefault();
@@ -571,16 +572,14 @@ export function NewSermon() {
                 dragOver ? "border-accent bg-raised" : "border-line bg-ink"
               }`}
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="h-8 w-8 text-muted" aria-hidden="true">
-                <path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <Icon name="upload" className="h-8 w-8 text-muted" />
               <p className="text-sm font-semibold">
                 {isLive ? (fileObj ? `${fileObj.name} (${(fileObj.size / 1048576).toFixed(1)} MB)` : "Drag a file here or choose one") : (fileName ?? "Drag a file here or choose one")}
               </p>
               <p className="text-xs text-muted">
                 {isLive
                   ? "Streams to the server ingest area, then queues the real pipeline."
-                  : "Files stay local in this mock. Nothing is uploaded."}
+                  : "Files stay local in this demo. Nothing is uploaded."}
               </p>
               <Button
                 variant="primary"
@@ -956,7 +955,7 @@ export function NewSermon() {
                 })}
                 <button
                   type="button"
-                  onClick={() => (isLive ? cardInput.current?.click() : showToast("Card upload is live-only."))}
+                  onClick={() => (isLive ? cardInput.current?.click() : showToast("Card upload is live-only.", "info"))}
                   disabled={uploadingCard}
                   className="flex min-h-[5.5rem] flex-col items-center justify-center gap-1 rounded-md border border-dashed border-line p-3 text-sm text-muted transition-colors hover:border-muted hover:text-mist"
                 >
@@ -1053,7 +1052,6 @@ export function NewSermon() {
         onClose={() => setConfirmReset(false)}
         onConfirm={resetAll}
       />
-      <Toast message={toast} />
     </div>
   );
 }

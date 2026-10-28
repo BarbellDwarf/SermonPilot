@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NewSermon } from "./NewSermon";
+import { ToastHost } from "../components/toast";
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -14,6 +15,7 @@ function renderPage() {
         future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <NewSermon />
+        <ToastHost />
       </MemoryRouter>
     </QueryClientProvider>,
   );

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { SermonReview, type DetailsPatch, type TranscriptState } from "../components/SermonReview";
 import { SermonCompleted } from "../components/SermonCompleted";
 import { sermonActionMatrix, sermonViewMode } from "../components/sermonActions";
 import { sermonStatusLabel, sermonStatusTone } from "./Library";
-import { Button, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, Toast, buttonClass } from "../components/ui";
+import { Button, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, buttonClass } from "../components/ui";
+import { useToast, dismissToast } from "../components/toast";
 import { QueryError, useSermonDetail, useSermonMedia, useSermonPlan, useSermonTranscript } from "../api/hooks";
 import { api, isLive, writeApi } from "../api/client";
 import type { ApiTrashRecord } from "../api/client";
@@ -36,10 +38,11 @@ export function describeDeleteOutcome(records: ApiTrashRecord[]): string {
 
 export function LibraryDetail() {
   const { id } = useParams();
-  const [toast, setToast] = useState<string | null>(null);
+  const notify = useToast();
+  const queryClient = useQueryClient();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleted, setDeleted] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(false);
   const [trash, setTrash] = useState<ApiTrashRecord[]>([]);
   const [pushing, setPushing] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
@@ -50,7 +53,7 @@ export function LibraryDetail() {
     setEditingOverride(false);
     setDeleted(false);
     setConfirmDelete(false);
-    setDeleting(false);
+    setPendingDelete(false);
     setTrash([]);
     setTranscriptOpen(false);
     setCopied(false);
@@ -66,9 +69,8 @@ export function LibraryDetail() {
     fieldValue<boolean>(audioConfig.fields, "metadata_processing.process_audio", true) !== false &&
     fieldValue<string>(audioConfig.fields, "audio_enhancement_method", "deepfilternet") !== "none";
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    window.setTimeout(() => setToast(null), 3000);
+  const showToast = (msg: string, variant: "success" | "error" | "info" = "success") => {
+    notify[variant](msg);
   };
 
   if (isLoading) {
@@ -98,7 +100,7 @@ export function LibraryDetail() {
       <div className="flex flex-col gap-4">
         <EmptyState
           title="Teaching not found"
-          body="This mock library has only a handful of sample teachings. The link may be stale."
+          body="This demo library has only a handful of sample teachings. The link may be stale."
           action={
             <Link to="/library" className={buttonClass("primary")}>
               Back to library
@@ -116,8 +118,10 @@ export function LibraryDetail() {
           title="Teaching deleted"
           body={
             isLive
-              ? `“${sermon.title}” was removed from the database. ${describeDeleteOutcome(trash)}`
-              : `“${sermon.title}” was removed from this mock list. Nothing was uploaded or lost.`
+              ? pendingDelete
+                ? `“${sermon.title}” is being removed. Local media moves to trash and cloud media stays recoverable.`
+                : `“${sermon.title}” was removed from the database. ${describeDeleteOutcome(trash)}`
+              : `“${sermon.title}” was removed from this demo list. Nothing was uploaded or lost.`
           }
           action={
             <Link to="/library" className={buttonClass("primary")}>
@@ -131,24 +135,46 @@ export function LibraryDetail() {
 
   const remove = () => {
     if (!id) return;
+    setConfirmDelete(false);
+    setDeleted(true);
+    setPendingDelete(true);
+    setTrash([]);
     if (!isLive) {
-      setDeleted(true);
+      setPendingDelete(false);
+      notify.undo(`“${sermon.title}” removed from this demo list.`, () => {
+        setDeleted(false);
+        notify.info("Delete undone.");
+      });
       return;
     }
-    setDeleting(true);
-    void api
-      .deleteSermon(id)
-      .then((result) => {
-        setDeleting(false);
-        setConfirmDelete(false);
-        setTrash(result?.trash ?? []);
-        setDeleted(true);
-      })
-      .catch((e) => {
-        setDeleting(false);
-        setConfirmDelete(false);
-        showToast(`Could not delete: ${(e as Error).message}`);
-      });
+    const targetId = id;
+    let undone = false;
+    let undoToast = 0;
+    const timer = window.setTimeout(() => {
+      if (undone) return;
+      dismissToast(undoToast);
+      void api
+        .deleteSermon(targetId)
+        .then((result) => {
+          setPendingDelete(false);
+          setTrash(result?.trash ?? []);
+          void queryClient.invalidateQueries({ queryKey: ["sermons"] });
+          queryClient.removeQueries({ queryKey: ["sermon", targetId] });
+          notify.success(`“${sermon.title}” deleted.`);
+        })
+        .catch((e) => {
+          setPendingDelete(false);
+          setDeleted(false);
+          notify.error(`Could not delete: ${(e as Error).message}`);
+        });
+    }, 8000);
+    undoToast = notify.undo(`“${sermon.title}” deleted.`, () => {
+      undone = true;
+      window.clearTimeout(timer);
+      setPendingDelete(false);
+      setDeleted(false);
+      notify.info("Delete undone.");
+    });
   };
 
   const push = () => {
@@ -164,14 +190,14 @@ export function LibraryDetail() {
         .catch((e) => {
           setPushing(false);
           const msg = (e as Error).message;
-          showToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`);
+          showToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`, /409/.test(msg) ? "info" : "error");
         });
       return;
     }
     setPushing(true);
     window.setTimeout(() => {
       setPushing(false);
-      showToast("Push to SermonAudio queued (mock).");
+      showToast("Push to SermonAudio queued (demo).");
     }, 1200);
   };
 
@@ -189,10 +215,11 @@ export function LibraryDetail() {
             /409/.test(msg)
               ? "A job is already running for this teaching."
               : `Could not queue: ${msg}`,
+            /409/.test(msg) ? "info" : "error",
           );
         });
     }
-    showToast("Description regeneration queued (mock).");
+    showToast("Description regeneration queued (demo).");
     return Promise.resolve();
   };
 
@@ -210,10 +237,11 @@ export function LibraryDetail() {
             /409/.test(msg)
               ? "A job is already running for this teaching."
               : `Could not queue: ${msg}`,
+            /409/.test(msg) ? "info" : "error",
           );
         });
     }
-    showToast("Metadata push queued (mock).");
+    showToast("Metadata push queued (demo).");
     return Promise.resolve();
   };
 
@@ -227,11 +255,11 @@ export function LibraryDetail() {
           showToast("Details saved.");
         })
         .catch((e) => {
-          showToast(`Could not save details: ${(e as Error).message}`);
+          showToast(`Could not save details: ${(e as Error).message}`, "error");
           throw e;
         });
     }
-    showToast("Details saved (mock).");
+    showToast("Details saved (demo).");
     return Promise.resolve();
   };
 
@@ -247,7 +275,7 @@ export function LibraryDetail() {
     copied,
     onCopy: () => {
       if (!navigator.clipboard) {
-        showToast("Copy failed: clipboard unavailable.");
+        showToast("Copy failed: clipboard unavailable.", "error");
         return;
       }
       void navigator.clipboard
@@ -256,7 +284,7 @@ export function LibraryDetail() {
           setCopied(true);
           window.setTimeout(() => setCopied(false), 2000);
         })
-        .catch(() => showToast("Copy failed."));
+        .catch(() => showToast("Copy failed.", "error"));
     },
   };
 
@@ -275,8 +303,8 @@ export function LibraryDetail() {
           {pushing ? "Pushing…" : "Push to SermonAudio"}
         </Button>
       ) : null}
-      <Button variant="danger" onClick={() => setConfirmDelete(true)} disabled={deleting} aria-busy={deleting}>
-        {deleting ? "Deleting…" : "Delete"}
+      <Button variant="danger" onClick={() => setConfirmDelete(true)}>
+        Delete
       </Button>
     </>
   );
@@ -296,7 +324,7 @@ export function LibraryDetail() {
           isLive={isLive}
           statusChip={<Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>}
           onDelete={() => setConfirmDelete(true)}
-          deleting={deleting}
+          deleting={false}
           transcript={transcriptState}
           history={planHistory}
           sermonaudioId={detail?.sermonaudioId ?? null}
@@ -325,7 +353,7 @@ export function LibraryDetail() {
           isLive={isLive}
           statusChip={<Chip tone={sermonStatusTone[sermon.status]}>{sermonStatusLabel[sermon.status]}</Chip>}
           onDelete={() => setConfirmDelete(true)}
-          deleting={deleting}
+          deleting={false}
           transcript={transcriptState}
           onSaveDetails={saveDetails}
           onRegenerateDescription={regenerateDescription}
@@ -349,7 +377,8 @@ export function LibraryDetail() {
           />
           <EmptyState
             title="No auto-edit plan"
-            body="This teaching has no proposed cuts to review. Plans appear here after analysis runs."
+            body="This teaching has no proposed cuts to review yet. A plan appears here after detection runs."
+            action={<Button onClick={retryPlan}>Check for a plan</Button>}
           />
         </div>
       )}
@@ -359,14 +388,13 @@ export function LibraryDetail() {
         title={`Delete “${sermon.title}”?`}
         body={
           isLive
-            ? `“${sermon.title}” by ${sermon.speaker} will be removed from the database. Local media moves to trash and cloud media stays recoverable.`
-            : `“${sermon.title}” by ${sermon.speaker} will be removed from this mock list. This cannot be undone.`
+            ? `“${sermon.title}” by ${sermon.speaker} will be removed from the database. Local media moves to trash and cloud media stays recoverable. You can undo for 8 seconds.`
+            : `“${sermon.title}” by ${sermon.speaker} will be removed from this demo list. You can undo from the notification.`
         }
         confirmLabel="Delete"
         onClose={() => setConfirmDelete(false)}
         onConfirm={remove}
       />
-      <Toast message={toast} />
     </div>
   );
 }

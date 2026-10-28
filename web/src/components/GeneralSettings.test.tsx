@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.stubEnv("VITE_API_MODE", "live");
@@ -59,10 +59,10 @@ describe("GeneralSettingsSection environment overrides", () => {
     const toggle = await screen.findByRole("switch", { name: "Dry run mode (default)" });
     const row = toggle;
     expect(row).toBeTruthy();
-    expect(within(row as HTMLElement).getByText("SA_DRY_RUN")).toBeTruthy();
+    expect(await within(row as HTMLElement).findByText("SA_DRY_RUN")).toBeTruthy();
 
     const keepRow = screen.getByRole("switch", { name: "Save original audio" });
-    expect(within(keepRow as HTMLElement).getByText("SA_KEEP_ORIGINAL")).toBeTruthy();
+    expect(await within(keepRow as HTMLElement).findByText("SA_KEEP_ORIGINAL")).toBeTruthy();
 
     expect(screen.queryByText(/Overridden by the environment:/)).toBeNull();
   });
@@ -73,7 +73,7 @@ describe("GeneralSettingsSection environment overrides", () => {
     render(<GeneralSettingsSection show={() => {}} />);
 
     const toggle = await screen.findByRole("switch", { name: "Dry run mode (default)" });
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
     fireEvent.click(toggle);
     expect(screen.getByText("Unsaved changes.")).toBeTruthy();
 
@@ -81,6 +81,6 @@ describe("GeneralSettingsSection environment overrides", () => {
 
     expect(await screen.findByText("Saved.")).toBeTruthy();
     expect(screen.queryByText("Unsaved changes.")).toBeNull();
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
   });
 });

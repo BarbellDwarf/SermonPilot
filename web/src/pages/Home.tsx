@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { type SermonStatus } from "../mock/data";
-import { Chip, EmptyState, Meter, PageHeader, SkeletonList, buttonClass } from "../components/ui";
+import { Chip, EmptyState, Meter, PageHeader, SkeletonList, buttonClass, staggerStyle } from "../components/ui";
 import { QueryError, useHomeData } from "../api/hooks";
 import { STATUS_DOT, STATUS_TEXT, jobRowTitle, jobStatus } from "./jobRow";
 
@@ -66,11 +66,20 @@ export function Home() {
           </Link>
         </div>
         {services.length === 0 ? (
-          <EmptyState title="No services reported" body="Service health appears once the server answers." compact />
+          <EmptyState
+            title="No services reported"
+            body="Service health appears once the API bridge answers. Check the bridge address in Settings."
+            action={
+              <Link to="/settings" className={buttonClass("secondary")}>
+                Open settings
+              </Link>
+            }
+            compact
+          />
         ) : (
           <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
-            {services.map((s) => (
-              <li key={s.id} className="flex items-center gap-3 px-4 py-3">
+            {services.map((s, index) => (
+              <li key={s.id} className="stagger-item flex items-center gap-3 px-4 py-3" style={staggerStyle(index)}>
                 <Meter level={s.level} state={s.state} />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -100,15 +109,24 @@ export function Home() {
           </Link>
         </div>
         {loading ? (
-          <SkeletonList rows={2} />
+          <SkeletonList rows={2} variant="row" rowHeight={56} />
         ) : activeJobs.length === 0 ? (
-          <EmptyState title="No active jobs" body="Queued and running jobs appear here." compact />
+          <EmptyState
+            title="No active jobs"
+            body="Queued and running jobs appear here with live progress. Start one from New teaching."
+            action={
+              <Link to="/new" className={buttonClass("primary")}>
+                Start a teaching
+              </Link>
+            }
+            compact
+          />
         ) : (
           <ol className="divide-y divide-line rounded-lg border border-line bg-surface">
-            {activeJobs.map((job) => {
+            {activeJobs.map((job, index) => {
               const status = jobStatus(job);
               return (
-                <li key={job.id}>
+                <li key={job.id} className="stagger-item" style={staggerStyle(index)}>
                   <Link
                     to="/jobs"
                     className="flex min-h-[56px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-raised"
@@ -142,13 +160,22 @@ export function Home() {
           </Link>
         </div>
         {loading ? (
-          <SkeletonList rows={2} />
+          <SkeletonList rows={2} variant="row" rowHeight={56} />
         ) : recentSermons.length === 0 ? (
-          <EmptyState title="No teachings yet" body="Processed teachings appear here." compact />
+          <EmptyState
+            title="No teachings yet"
+            body="Processed teachings appear here with their speaker and duration. Add the first one to get started."
+            action={
+              <Link to="/new" className={buttonClass("primary")}>
+                Add the first teaching
+              </Link>
+            }
+            compact
+          />
         ) : (
           <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
-            {recentSermons.map((s) => (
-              <li key={s.id}>
+            {recentSermons.map((s, index) => (
+              <li key={s.id} className="stagger-item" style={staggerStyle(index)}>
                 <Link
                   to={`/library/${s.id}`}
                   aria-label={`${s.title} by ${s.speaker}, ${sermonLabel[s.status]}`}

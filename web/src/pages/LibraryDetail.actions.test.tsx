@@ -2,6 +2,8 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { ToastHost } from "../components/toast";
+import { api } from "../api/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiMediaItem } from "../api/client";
 import type { EditPlan, LibrarySermon } from "../mock/data";
@@ -131,6 +133,7 @@ function renderDetail() {
         <Routes>
           <Route path="/library/:id" element={<LibraryDetail />} />
         </Routes>
+        <ToastHost />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -177,5 +180,24 @@ describe("LibraryDetail state-aware header actions", () => {
     renderDetail();
 
     expect(screen.getByTestId("timeline-track").getAttribute("data-span-sec")).toBe("3600");
+  });
+
+  it("defers a delete so Undo can cancel it before the server call", async () => {
+    const user = userEvent.setup();
+    setSermon("rendered", false);
+    renderDetail();
+
+    await user.click(screen.getByRole("button", { name: "More actions" }));
+    await user.click(within(screen.getByTestId("more-actions")).getByRole("menuitem", { name: "Delete" }));
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(screen.getByText("Teaching deleted")).toBeTruthy();
+    expect(api.deleteSermon).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    expect(screen.queryByText("Teaching deleted")).toBeNull();
+    expect(api.deleteSermon).not.toHaveBeenCalled();
   });
 });

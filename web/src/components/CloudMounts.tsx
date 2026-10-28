@@ -9,7 +9,7 @@ import {
   type ApiCloudProvider,
   type ApiCloudRemote,
 } from "../api/client";
-import { Advanced, Button, Chip, ConfirmDialog, Field, SectionCard, inputCls } from "./ui";
+import { Advanced, Button, Chip, ConfirmDialog, Field, Icon, SectionCard, inputCls } from "./ui";
 import {
   CloudBrowser,
   MOCK_REMOTES,
@@ -36,25 +36,6 @@ const MOCK_OAUTH_APPS: Record<string, { has_credentials: boolean }> = {
   dropbox: { has_credentials: true },
   onedrive: { has_credentials: true },
 };
-
-function FolderIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.8}
-      className="h-4 w-4"
-      aria-hidden="true"
-    >
-      <path
-        d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function RemoteRow({
   remote,
@@ -116,7 +97,7 @@ function RemoteRow({
         aria-pressed={active}
         aria-label={`Browse ${remote.name}`}
       >
-        <FolderIcon />
+        <Icon name="folder" className="h-4 w-4" />
         Browse
       </Button>
       <Button variant="danger" onClick={onDelete} aria-label={`Delete ${remote.name}`}>

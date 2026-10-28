@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type ButtonHTMLAttributes,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
@@ -62,6 +63,55 @@ export function Chip({ tone = "neutral", children }: { tone?: keyof typeof chipT
 
 const menuItemClass =
   "flex min-h-[44px] w-full items-center rounded-md px-3 text-left text-sm font-medium text-mist transition-colors hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45";
+
+const iconPaths = {
+  home: "M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z",
+  plus: "M12 5v14M5 12h14",
+  library: "M4 5h7v14H4zM13 5h7v14h-7z",
+  jobs: "M4 6h16M4 12h16M4 18h16",
+  settings: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 12h2M18 12h2M12 4v2M12 18v2",
+  chevron: "M6 9l6 6 6-6",
+  more: "M5 12h.01M12 12h.01M19 12h.01",
+  upload: "M12 16V4m0 0l-4 4m4-4l4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3",
+  folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z",
+} as const;
+
+export type IconName = keyof typeof iconPaths;
+
+export function Icon({
+  name,
+  className = "h-5 w-5",
+  strokeWidth = 1.8,
+}: {
+  name: IconName;
+  className?: string;
+  strokeWidth?: number;
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      className={`${className} shrink-0`}
+      aria-hidden="true"
+    >
+      {name === "more" ? (
+        <>
+          <circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none" />
+          <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+          <circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none" />
+        </>
+      ) : (
+        <path d={iconPaths[name]} strokeLinecap="round" strokeLinejoin="round" />
+      )}
+    </svg>
+  );
+}
+
+export function staggerStyle(index: number): CSSProperties {
+  return { "--stagger": Math.min(index, 8) } as CSSProperties;
+}
 
 export interface MenuItem {
   label: ReactNode;
@@ -155,6 +205,7 @@ export function Menu({
         aria-expanded={open}
         aria-controls={menuId}
         aria-label={label}
+        title={label}
         data-testid={triggerTestId}
         onClick={() => setOpen((value) => !value)}
         className={triggerClassName ?? buttonClass()}
@@ -284,7 +335,7 @@ export function Field({ label, htmlFor, children, hint }: { label: string; htmlF
         {label}
       </label>
       <div className="mt-1">{children}</div>
-      {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
+      {hint ? <p className="mt-1 max-w-prose text-xs text-muted">{hint}</p> : null}
     </div>
   );
 }
@@ -429,7 +480,31 @@ export function Skeleton({ className = "" }: { className?: string }) {
   );
 }
 
-export function SkeletonList({ rows = 3 }: { rows?: number }) {
+export function SkeletonList({
+  rows = 3,
+  variant = "card",
+  rowHeight = 64,
+}: {
+  rows?: number;
+  variant?: "card" | "row";
+  rowHeight?: number;
+}) {
+  if (variant === "row") {
+    return (
+      <div aria-hidden="true" aria-label="Loading" className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+        {Array.from({ length: rows }).map((_, i) => (
+          <div key={i} className="flex items-center gap-3 px-4 py-3" style={{ minHeight: rowHeight }}>
+            <div className="min-w-0 flex-1">
+              <Skeleton className="h-4 w-2/5" />
+              <Skeleton className="mt-2 h-3 w-1/4" />
+            </div>
+            <Skeleton className="h-4 w-16 shrink-0" />
+            <Skeleton className="h-6 w-20 shrink-0" />
+          </div>
+        ))}
+      </div>
+    );
+  }
   return (
     <div aria-hidden="true" aria-label="Loading" className="flex flex-col gap-3">
       {Array.from({ length: rows }).map((_, i) => (
@@ -542,19 +617,6 @@ export function ConfirmDialog({
         </Button>
       </div>
     </dialog>
-  );
-}
-
-export function Toast({ message }: { message: string | null }) {
-  if (!message) return null;
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="fixed bottom-24 left-1/2 z-50 w-[min(26rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-line bg-raised px-4 py-3 text-sm font-medium text-mist shadow-lg md:bottom-4"
-    >
-      {message}
-    </div>
   );
 }
 

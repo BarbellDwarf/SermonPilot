@@ -40,9 +40,9 @@ const PATHS = {
 } as const;
 
 function intError(v: string, min: number, max: number): string | null {
-  if (!/^\d+$/.test(v.trim())) return "Must be a whole number.";
+  if (!/^\d+$/.test(v.trim())) return "Enter a whole number.";
   const n = Number(v);
-  if (n < min || n > max) return `Must be between ${min} and ${max}.`;
+  if (n < min || n > max) return `Enter a value between ${min} and ${max}.`;
   return null;
 }
 
@@ -100,7 +100,7 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
       [PATHS.hashMinimal]: c.hashMinimal,
       [PATHS.hashMinLength]: Number(c.hashMinLength),
     }))
-      .then(() => show(isLive ? "Validation settings saved." : "Validation settings saved (mock)."))
+      .then(() => show(isLive ? "Validation settings saved." : "Validation settings saved (demo)."))
       .catch((e) => show(`Could not save: ${(e as Error).message}`))
       .finally(() => setSaving(false));
   };
@@ -111,7 +111,7 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
       sub={
         isLive
           ? "Description validation criteria and metadata processing thresholds."
-          : "Description validation criteria and metadata processing thresholds (mock)."
+          : "Description validation criteria and metadata processing thresholds (demo)."
       }
     >
       <div className="flex flex-col gap-3">

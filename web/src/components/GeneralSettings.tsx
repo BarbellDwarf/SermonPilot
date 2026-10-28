@@ -92,7 +92,7 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
           [PATHS.saveTranscript]: c.saveTranscript,
         })),
       )
-      .then(() => show(isLive ? "General settings saved." : "General settings saved (mock)."))
+      .then(() => show(isLive ? "General settings saved." : "General settings saved (demo)."))
       .catch((e) => show(`Could not save: ${(e as Error).message}`))
       .finally(() => setSaving(false));
   };
@@ -103,7 +103,7 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
       sub={
         isLive
           ? "Processing options and output settings. Saved here is what the pipeline resolves."
-          : "Processing options and output settings (mock)."
+          : "Processing options and output settings (demo)."
       }
     >
       <div className="flex flex-col gap-3">

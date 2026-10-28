@@ -287,6 +287,11 @@ export function SermonAudioAccountsSection({ show }: { show: (m: string) => void
               <EmptyState
                 title="No SermonAudio accounts configured"
                 body="Add an account with its API key and broadcaster ID. Until one is picked, uploads fall back to the single-account credentials below."
+                action={
+                  <Button variant="primary" onClick={() => openEditor({ ...EMPTY_DRAFT }, null)}>
+                    Add account
+                  </Button>
+                }
               />
             </div>
           ) : null}

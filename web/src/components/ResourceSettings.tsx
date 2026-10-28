@@ -22,8 +22,8 @@ const PATHS = {
 } as const;
 
 function numberError(v: string, min: number): string | null {
-  if (!/^\d+(\.\d+)?$/.test(v.trim())) return "Must be a number.";
-  if (Number(v) < min) return `Must be at least ${min}.`;
+  if (!/^\d+(\.\d+)?$/.test(v.trim())) return "Enter a number.";
+  if (Number(v) < min) return `Enter a value of at least ${min}.`;
   return null;
 }
 
@@ -137,7 +137,7 @@ export function ResourceSettingsSection({
             [PATHS.minFreeVramGb]: Number(c.minFreeVramGb),
             [PATHS.minGpuVramGb]: Number(c.minGpuVramGb),
           }))
-            .then(() => show(isLive ? "Resource settings saved." : "Resource settings saved (mock)."))
+            .then(() => show(isLive ? "Resource settings saved." : "Resource settings saved (demo)."))
             .catch((e) => show(`Could not save: ${(e as Error).message}`))
             .finally(() => setSaving(false));
         }}

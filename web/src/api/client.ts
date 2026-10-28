@@ -234,8 +234,8 @@ export async function authFetch(path: string, init?: RequestInit): Promise<Respo
   return res;
 }
 
-async function responseError(res: Response, method: string, path: string): Promise<ApiError> {
-  let message = `${method} ${path} failed with ${res.status}`;
+async function responseError(res: Response, _method: string, _path: string): Promise<ApiError> {
+  let message = `The server could not complete that request (${res.status}). Try again.`;
   let detail: unknown;
   try {
     const parsed = (await res.json()) as { detail?: unknown };

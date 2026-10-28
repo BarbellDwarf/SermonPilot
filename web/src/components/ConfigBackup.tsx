@@ -26,9 +26,9 @@ interface HistoryEntry {
 }
 
 const INITIAL_HISTORY: HistoryEntry[] = [
-  { id: "bkp-3", when: "2026-09-14 09:12", note: "Audio method -> deepfilternet (mock)" },
-  { id: "bkp-2", when: "2026-09-12 18:40", note: "Transcription backend -> local (mock)" },
-  { id: "bkp-1", when: "2026-09-10 11:05", note: "Initial sample data (mock)" },
+  { id: "bkp-3", when: "2026-09-14 09:12", note: "Audio method -> deepfilternet (demo)" },
+  { id: "bkp-2", when: "2026-09-12 18:40", note: "Transcription backend -> local (demo)" },
+  { id: "bkp-1", when: "2026-09-10 11:05", note: "Initial sample data (demo)" },
 ];
 
 export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
@@ -93,7 +93,7 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
     void f.text().then((t) => {
       setRestoreText(t);
       setRestoreError(null);
-      show(`Backup file loaded${isLive ? "" : " (mock)"}: ${f.name}.`);
+      show(`Backup file loaded${isLive ? "" : " (demo)"}: ${f.name}.`);
     }).catch(() => {
       setRestoreError("Could not read that file in this browser.");
     });
@@ -128,7 +128,7 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    show("Backup downloaded (mock): secrets masked as ***.");
+    show("Backup downloaded (demo): secrets masked as ***.");
   };
 
   return (
@@ -137,7 +137,7 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
       sub={
         isLive
           ? "Everything lives in the app database. Download is a full data backup; upload restores it. Secrets stay masked and masked values can never be applied."
-          : "Everything lives in the app database. Download is a full data backup; upload restores it (mock). Secrets stay masked and masked values can never be applied."
+          : "Everything lives in the app database. Download is a full data backup; upload restores it (demo). Secrets stay masked and masked values can never be applied."
       }
     >
       <details open className="rounded-md border border-line p-3">
@@ -163,7 +163,7 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
                 .then(() => {
                   setCopied(true);
                   window.setTimeout(() => setCopied(false), 2000);
-                  show(`Backup copied${isLive ? "" : " (mock)"}.`);
+                  show(`Backup copied${isLive ? "" : " (demo)"}.`);
                 })
                 .catch(() => show("Copy failed."));
             }}
@@ -255,10 +255,10 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
               <Button
                 onClick={() => {
                   setHistory((hs) => [
-                    { id: `bkp-${Date.now() % 100000}`, when: "just now", note: `Restored ${h.id} (mock)` },
+                    { id: `bkp-${Date.now() % 100000}`, when: "just now", note: `Restored ${h.id} (demo)` },
                     ...hs,
                   ]);
-                  show(`Backup restored (mock): ${h.id}.`);
+                  show(`Backup restored (demo): ${h.id}.`);
                 }}
                 disabled={isLive}
                 title={isLive ? "Snapshot restore is not available in the console yet." : undefined}
@@ -277,7 +277,7 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
         <p className="mt-0.5 text-xs text-muted">
           {isLive
             ? "Reset to defaults is not wired in the console yet. Use the backup restore above instead."
-            : "Resets every settings tab to sample defaults (mock). Stored data is replaced. This cannot be undone."}
+            : "Resets every settings tab to sample defaults (demo). Stored data is replaced. This cannot be undone."}
         </p>
         <div className="mt-2">
           <Button
@@ -303,11 +303,11 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
             return;
           }
           setHistory((hs) => [
-            { id: `bkp-${Date.now() % 100000}`, when: "just now", note: "Pasted backup applied (mock)" },
+            { id: `bkp-${Date.now() % 100000}`, when: "just now", note: "Pasted backup applied (demo)" },
             ...hs,
           ]);
           setRestoreText("");
-          show("Backup applied (mock).");
+          show("Backup applied (demo).");
           setPendingApply(false);
         }}
         onClose={() => setPendingApply(false)}
@@ -315,14 +315,14 @@ export function ConfigBackupSection({ show }: { show: (m: string) => void }) {
       <ConfirmDialog
         open={pendingReset}
         title="Reset all settings?"
-        body="Reset every settings tab to sample defaults (mock)? This cannot be undone."
+        body="Reset every settings tab to sample defaults (demo)? This cannot be undone."
         confirmLabel="Reset"
         onConfirm={() => {
           setHistory((hs) => [
-            { id: `bkp-${Date.now() % 100000}`, when: "just now", note: "Reset to defaults (mock)" },
+            { id: `bkp-${Date.now() % 100000}`, when: "just now", note: "Reset to defaults (demo)" },
             ...hs,
           ]);
-          show("Settings reset to defaults (mock).");
+          show("Settings reset to defaults (demo).");
           setPendingReset(false);
         }}
         onClose={() => setPendingReset(false)}

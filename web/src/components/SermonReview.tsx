@@ -133,7 +133,7 @@ function normalizeUiRemoveSegments(
       continue;
     }
     if (segment.endSec - segment.startSec < MIN_CUT_SECONDS) {
-      errors.push(`Cut ${segment.index + 1} must be at least 0.25 seconds.`);
+      errors.push(`Cut ${segment.index + 1} needs at least 0.25 seconds.`);
       continue;
     }
     if (segment.startSec <= startSec || segment.endSec >= endSec) {
@@ -201,7 +201,7 @@ export interface SermonReviewProps {
   onSaveDetails?: (patch: DetailsPatch) => Promise<void> | void;
   onRegenerateDescription?: () => Promise<void> | void;
   onRefresh?: () => void;
-  onToast: (msg: string) => void;
+  onToast: (msg: string, variant?: "success" | "error" | "info") => void;
   onUpload?: () => void;
   enhanceDefault?: boolean;
   onShowCompleted?: () => void;
@@ -438,8 +438,8 @@ export function SermonReview({
     if (start === null) list.push("Start is not a valid time (mm:ss.s or seconds).");
     if (end === null) list.push("End is not a valid time (mm:ss.s or seconds).");
     if (offset === null) list.push("Offset is not a valid number (seconds, ±5).");
-    if (start !== null && end !== null && end <= start) list.push("End must be after start.");
-    if (offset !== null && (offset < -5 || offset > 5)) list.push("Offset must be within ±5 seconds.");
+    if (start !== null && end !== null && end <= start) list.push("End time must be after the start time.");
+    if (offset !== null && (offset < -5 || offset > 5)) list.push("Keep the offset within ±5 seconds.");
     list.push(...removalValidation.errors);
     if (removalError) list.push(removalError);
     return list;
@@ -567,10 +567,10 @@ export function SermonReview({
             return;
           }
           if (err?.code === "job_active") {
-            onToast("A job is already running for this teaching.");
+            onToast("A job is already running for this teaching.", "info");
             return;
           }
-          onToast(err?.message || "Could not queue the upload.");
+          onToast(err?.message || "Could not queue the upload.", "error");
         });
       return;
     }
@@ -578,7 +578,7 @@ export function SermonReview({
     window.setTimeout(() => {
       uploadInFlight.current = false;
       setUploading(false);
-      onToast("Upload of the existing render queued (mock).");
+      onToast("Upload of the existing render queued (demo).");
     }, 900);
   };
 
@@ -609,7 +609,7 @@ export function SermonReview({
           applyInFlight.current = false;
           setApplying(false);
           const msg = (e as Error).message;
-          onToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`);
+          onToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`, /409/.test(msg) ? "info" : "error");
         });
       return;
     }
@@ -630,8 +630,8 @@ export function SermonReview({
       }));
       onToast(
         renderOnly
-          ? "Plan approved, render queued (mock). Previous revision superseded."
-          : "Plan approved, render + upload queued (mock). Previous revision superseded.",
+          ? "Plan approved, render queued (demo). Previous revision superseded."
+          : "Plan approved, render + upload queued (demo). Previous revision superseded.",
       );
     }, 1200);
   };
@@ -652,7 +652,7 @@ export function SermonReview({
         .catch((e) => {
           setRefining(false);
           const msg = (e as Error).message;
-          onToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`);
+          onToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`, /409/.test(msg) ? "info" : "error");
         });
       return;
     }
@@ -670,7 +670,7 @@ export function SermonReview({
         revisionsTotal: Math.max(p.revisionsTotal, nextRevision),
         reasoning: `Re-ran detection against your note: "${note}".`,
       }));
-      onToast("New cut proposal ready (mock). Previous revision superseded.");
+      onToast("New cut proposal ready (demo). Previous revision superseded.");
     }, 900);
   };
 
@@ -688,7 +688,7 @@ export function SermonReview({
         .catch((e) => {
           setRefining(false);
           const msg = (e as Error).message;
-          onToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`);
+          onToast(/409/.test(msg) ? "A job is already running for this teaching." : `Could not queue: ${msg}`, /409/.test(msg) ? "info" : "error");
         });
       return;
     }
@@ -705,7 +705,7 @@ export function SermonReview({
         detectionStatus: "ok",
         reasoning: "Detection re-run from scratch without prior notes.",
       }));
-      onToast("Detection re-run from scratch (mock). Earlier revisions kept in history.");
+      onToast("Detection re-run from scratch (demo). Earlier revisions kept in history.");
     }, 900);
   };
 
@@ -722,7 +722,7 @@ export function SermonReview({
   const generateField = (field: ApiMetadataField) => {
     if (generating.has(field)) return;
     if (!live) {
-      onToast("Metadata generation is available in the live console.");
+      onToast("Metadata generation is available in the live console.", "info");
       return;
     }
     setGenerating((current) => new Set(current).add(field));
@@ -1157,6 +1157,16 @@ export function SermonReview({
             className="order-2 flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 shadow-lg lg:order-1"
           >
             <div className="flex flex-wrap items-center gap-2">
+              {refining ? (
+                <p role="status" className="basis-full text-xs text-muted">
+                  Re-running cut detection. The proposal updates when the new revision is ready.
+                </p>
+              ) : null}
+              {uploading ? (
+                <p role="status" className="basis-full text-xs text-muted">
+                  Uploading the existing render.
+                </p>
+              ) : null}
               <Button
                 variant="primary"
                 data-testid="approve-primary"
@@ -1639,7 +1649,7 @@ export function SermonReview({
         onConfirm={() => {
           setPlan((p) => ({ ...p, status: "draft", revision: 1 }));
           setStatusLog([]);
-          onToast("Original restored (mock). Plan reset to draft.");
+          onToast("Original restored (demo). Plan reset to draft.");
         }}
       />
 

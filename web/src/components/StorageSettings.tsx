@@ -57,7 +57,7 @@ export function StorageSettingsSection({
   const retentionError =
     !/^\d+(\.\d+)?$/.test(cur.trashRetentionDays.trim()) ||
     Number(cur.trashRetentionDays) < 0
-      ? "Must be zero or more days."
+      ? "Enter zero or more days."
       : null;
 
   const field = (
@@ -151,7 +151,7 @@ export function StorageSettingsSection({
             [PATHS.trashDirectory]: c.trashDirectory,
             [PATHS.trashRetentionDays]: Number(c.trashRetentionDays),
           }))
-            .then(() => show(isLive ? "Storage settings saved." : "Storage settings saved (mock)."))
+            .then(() => show(isLive ? "Storage settings saved." : "Storage settings saved (demo)."))
             .catch((e) => show(`Could not save: ${(e as Error).message}`))
             .finally(() => setSaving(false));
         }}

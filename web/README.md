@@ -27,6 +27,16 @@ VITE_API_MODE=live VITE_API_BASE=http://127.0.0.1:8504 npm run build   # live bu
 
 ## Validation
 
+### Visual regression baselines
+
+Playwright screenshots of Home, Library, Jobs, Settings, New teaching, and Review at
+390x844 and 1440x900, dark and light. See `tests/visual/README.md`.
+
+```bash
+npm run visual          # compare against committed baselines
+npm run visual:update   # rewrite baselines after an intentional UI change
+```
+
 Phase 4b harness (headless Chrome over CDP, viewports 1680x1050 and 390x844):
 
 ```bash

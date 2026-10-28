@@ -7,6 +7,7 @@ import type { ApiMediaItem } from "../api/client";
 import type { EditPlan, LibrarySermon, PlanStatus } from "../mock/data";
 import { api, writeApi } from "../api/client";
 import { LibraryDetail } from "./LibraryDetail";
+import { ToastHost } from "../components/toast";
 
 const mocks = vi.hoisted(() => ({
   detail: vi.fn(),
@@ -141,6 +142,7 @@ function renderDetail() {
         <Routes>
           <Route path="/library/:id" element={<LibraryDetail />} />
         </Routes>
+        <ToastHost />
       </MemoryRouter>
     </QueryClientProvider>,
   );

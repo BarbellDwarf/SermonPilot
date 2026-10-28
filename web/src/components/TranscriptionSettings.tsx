@@ -134,7 +134,7 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
     void save(values)
       .then(() => {
         setOpenaiKey("");
-        show(isLive ? "Transcription settings saved." : "Transcription settings saved (mock).");
+        show(isLive ? "Transcription settings saved." : "Transcription settings saved (demo).");
       })
       .catch((e) => show(`Could not save: ${(e as Error).message}`))
       .finally(() => setSaving(false));
@@ -146,7 +146,7 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
       sub={
         isLive
           ? "Backend and per-backend options. Saved here is what the pipeline resolves. API keys are write-only."
-          : "Backend and per-backend options (mock). API keys are placeholders only and never leave the browser."
+          : "Backend and per-backend options (demo). API keys are placeholders only and never leave the browser."
       }
     >
       <div className="flex flex-col gap-3">

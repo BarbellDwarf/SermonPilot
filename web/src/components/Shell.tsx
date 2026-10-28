@@ -1,23 +1,15 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { isLive, type AuthUser } from "../api/client";
-import { Chip, Menu } from "./ui";
+import { Chip, Icon, Menu, type IconName } from "./ui";
 
-const items: { to: string; end?: boolean; label: string; short: string; path: string }[] = [
-  { to: "/", end: true, label: "Home", short: "Home", path: "M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z" },
-  { to: "/new", label: "New teaching", short: "New", path: "M12 5v14M5 12h14" },
-  { to: "/library", label: "Library", short: "Library", path: "M4 5h7v14H4zM13 5h7v14h-7z" },
-  { to: "/jobs", label: "Jobs", short: "Jobs", path: "M4 6h16M4 12h16M4 18h16" },
-  { to: "/settings", label: "Settings", short: "Settings", path: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 12h2M18 12h2M12 4v2M12 18v2" },
+const items: { to: string; end?: boolean; label: string; short: string; icon: IconName }[] = [
+  { to: "/", end: true, label: "Home", short: "Home", icon: "home" },
+  { to: "/new", label: "New teaching", short: "New", icon: "plus" },
+  { to: "/library", label: "Library", short: "Library", icon: "library" },
+  { to: "/jobs", label: "Jobs", short: "Jobs", icon: "jobs" },
+  { to: "/settings", label: "Settings", short: "Settings", icon: "settings" },
 ];
-
-function Icon({ path, className = "h-5 w-5" }: { path: string; className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className={`${className} shrink-0`} aria-hidden="true">
-      <path d={path} strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 
 function initials(name: string): string {
   return name
@@ -79,9 +71,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
                       {initials(user.display_name)}
                     </span>
                     <span className="hidden max-w-24 truncate text-sm font-medium sm:inline">{user.display_name}</span>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-4 w-4 shrink-0 text-muted" aria-hidden="true">
-                      <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
+                    <Icon name="chevron" className="h-4 w-4 text-muted" />
                   </>
                 }
                 items={[
@@ -90,7 +80,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
                     label: dark ? "Switch to light theme" : "Switch to dark theme",
                     onSelect: onToggleTheme,
                   },
-                  { label: "Log out", onSelect: () => onLogout?.(), danger: true },
+                  { label: "Sign out", onSelect: () => onLogout?.(), danger: true },
                 ]}
               />
             ) : null}
@@ -113,7 +103,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
                 }`
               }
             >
-              <Icon path={item.path} />
+              <Icon name={item.icon} />
               {item.label}
             </NavLink>
           ))}
@@ -141,7 +131,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
                 }`
               }
             >
-              <Icon path={item.path} />
+              <Icon name={item.icon} />
               {item.short}
             </NavLink>
           ))}

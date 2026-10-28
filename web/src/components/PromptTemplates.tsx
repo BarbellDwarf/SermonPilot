@@ -129,7 +129,7 @@ export function PromptTemplatesSection({ show }: { show: (m: string) => void }) 
   const save = () => {
     setSaved(cur);
     if (!isLive) {
-      show("Prompt templates saved (mock).");
+      show("Prompt templates saved (demo).");
       return;
     }
     setBusy(true);
@@ -155,7 +155,7 @@ export function PromptTemplatesSection({ show }: { show: (m: string) => void }) 
       sub={
         isLive
           ? "Per-task instructions sent to the LLM. Saved to the settings database; what is saved here is what the pipeline resolves on the next run. Use {variable} placeholders for dynamic content."
-          : "Per-task instructions sent to the LLM (mock). Use {variable} placeholders for dynamic content."
+          : "Per-task instructions sent to the LLM (demo). Use {variable} placeholders for dynamic content."
       }
     >
       <ul className="flex flex-col gap-2" aria-label="Prompt tasks">

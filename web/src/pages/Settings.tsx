@@ -21,13 +21,16 @@ import {
   ConfirmDialog,
   DirtyRegistryContext,
   Field,
+  Icon,
   PageHeader,
   SaveBar,
   SectionCard,
-  Toast,
   inputCls,
   type DirtyRegistry,
 } from "../components/ui";
+import { useToast } from "../components/toast";
+
+type ShowMessage = (message: string, variant?: "success" | "error") => void;
 
 const SECTIONS = [
   { id: "audio", label: "Audio", group: "Pipeline" },
@@ -52,15 +55,13 @@ function isSection(value: string | null): value is TabId {
 }
 
 function useSectionToast() {
-  const [toast, setToast] = useState<string | null>(null);
-  const show = (msg: string) => {
-    setToast(msg);
-    window.setTimeout(() => setToast(null), 3000);
+  const notify = useToast();
+  return {
+    show: ((message, variant) => notify[variant ?? "success"](message)) as ShowMessage,
   };
-  return { toast, show };
 }
 
-function AppearanceSection({ show }: { show: (m: string) => void }) {
+function AppearanceSection({ show }: { show: ShowMessage }) {
   const [savedTheme, setSavedTheme] = useUserSettings<string>("settings.theme", "dark");
   const [theme, setTheme] = useState(savedTheme);
   const [saving, setSaving] = useState(false);
@@ -95,7 +96,7 @@ function AppearanceSection({ show }: { show: (m: string) => void }) {
           void setSavedTheme(theme)
             .then(() => {
               setTheme(theme);
-              show(`Appearance saved: theme ${theme}${isLive ? "" : " (mock)"}.`);
+              show(`Appearance saved: theme ${theme}${isLive ? "" : " (demo)"}.`);
             })
             .catch((e) => setSaveError(`Could not save: ${(e as Error).message}`))
             .finally(() => setSaving(false));
@@ -105,7 +106,7 @@ function AppearanceSection({ show }: { show: (m: string) => void }) {
   );
 }
 
-function AccountSection({ show, user }: { show: (m: string) => void; user: { display_name: string } }) {
+function AccountSection({ show, user }: { show: ShowMessage; user: { display_name: string } }) {
   const [savedName, setSavedName] = useState(user.display_name);
   const [name, setName] = useState(user.display_name);
   const [sent, setSent] = useState(false);
@@ -124,7 +125,7 @@ function AccountSection({ show, user }: { show: (m: string) => void; user: { dis
             <Button
               onClick={() => {
                 setSent(true);
-                show("Password reset link sent (mock).");
+                show("Password reset link sent (demo).");
               }}
               disabled={isLive}
               title={isLive ? "Password reset is not available in this console." : undefined}
@@ -159,7 +160,7 @@ function AccountSection({ show, user }: { show: (m: string) => void; user: { dis
             return;
           }
           setSavedName(name);
-          show("Account saved (mock).");
+          show("Account saved (demo).");
         }}
       />
     </SectionCard>
@@ -171,7 +172,7 @@ const mockUsers = [
   { id: "mock-user", name: "User", role: "user" },
 ];
 
-function UsersSection({ show }: { show: (m: string) => void }) {
+function UsersSection({ show }: { show: ShowMessage }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loaded, setLoaded] = useState(!isLive);
   const [error, setError] = useState<string | null>(null);
@@ -212,7 +213,7 @@ function UsersSection({ show }: { show: (m: string) => void }) {
         show("User created.");
         load();
       })
-      .catch((e) => show(`Could not create user: ${(e as Error).message}`))
+      .catch((e) => show(`Could not create user: ${(e as Error).message}`, "error"))
       .finally(() => setCreating(false));
   };
 
@@ -225,12 +226,12 @@ function UsersSection({ show }: { show: (m: string) => void }) {
         show(body.new_password ? "Password reset." : body.is_active === false ? "User deactivated." : "User enabled.");
         load();
       })
-      .catch((e) => show(`Could not update user: ${(e as Error).message}`))
+      .catch((e) => show(`Could not update user: ${(e as Error).message}`, "error"))
       .finally(() => setBusyId(null));
   };
 
   return (
-    <SectionCard title="Users" sub={isLive ? "Admins manage access. Deactivating blocks sign-in without deleting history." : "Admins manage access. Disabling a row blocks sign-in without deleting history. (mock)"}>
+    <SectionCard title="Users" sub={isLive ? "Admins manage access. Deactivating blocks sign-in without deleting history." : "Admins manage access. Disabling a row blocks sign-in without deleting history. (demo)"}>
       {error ? (
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <p className="text-xs text-danger" role="alert">{error}</p>
@@ -298,7 +299,7 @@ function UsersSection({ show }: { show: (m: string) => void }) {
   );
 }
 
-function ProcessingSection({ show }: { show: (m: string) => void }) {
+function ProcessingSection({ show }: { show: ShowMessage }) {
   const [saved, setSaved] = useUserSettings<{ a: string; v: string; o: string }>("settings.processing", { a: "128k", v: "2500k", o: "0.0" });
   const [audioBitrate, setAudioBitrate] = useState(saved.a);
   const [videoBitrate, setVideoBitrate] = useState(saved.v);
@@ -337,7 +338,7 @@ function ProcessingSection({ show }: { show: (m: string) => void }) {
           setSaving(true);
           setSaveError(null);
           void setSaved(cur)
-            .then(() => show(`Processing defaults saved${isLive ? "" : " (mock)"}.`))
+            .then(() => show(`Processing defaults saved${isLive ? "" : " (demo)"}.`))
             .catch((e) => setSaveError(`Could not save: ${(e as Error).message}`))
             .finally(() => setSaving(false));
         }}
@@ -346,7 +347,7 @@ function ProcessingSection({ show }: { show: (m: string) => void }) {
   );
 }
 
-function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: boolean }) {
+function SystemSection({ show, isAdmin }: { show: ShowMessage; isAdmin: boolean }) {
   const [savedLevel, setSavedLevel] = useUserSettings<string>("settings.logLevel", "info");
   const [logLevel, setLogLevel] = useState(savedLevel);
   const [retired, setRetired] = useState<boolean | null>(isLive ? null : false);
@@ -410,7 +411,7 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
             </div>
           </div>
         ))}
-        <p className="font-mono text-xs text-muted">61 GB free of 120 GB (mock)</p>
+        <p className="font-mono text-xs text-muted">61 GB free of 120 GB (demo)</p>
       </div>
       <div className="mt-3 max-w-xs">
         <Field label="Log level" htmlFor="set-loglevel">
@@ -432,7 +433,7 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
           setSaving(true);
           setSaveError(null);
           void setSavedLevel(logLevel)
-            .then(() => show(`System saved: log level ${logLevel}${isLive ? "" : " (mock)"}.`))
+            .then(() => show(`System saved: log level ${logLevel}${isLive ? "" : " (demo)"}.`))
             .catch((e) => setSaveError(`Could not save: ${(e as Error).message}`))
             .finally(() => setSaving(false));
         }}
@@ -442,7 +443,7 @@ function SystemSection({ show, isAdmin }: { show: (m: string) => void; isAdmin: 
 }
 
 export function Settings({ user }: { user: { display_name: string; role?: string } }) {
-  const { toast, show } = useSectionToast();
+  const { show } = useSectionToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const requested = searchParams.get("section");
   const initial: TabId = isSection(requested)
@@ -582,16 +583,10 @@ export function Settings({ user }: { user: { display_name: string; role?: string
                   </optgroup>
                 ))}
               </select>
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                aria-hidden="true"
+              <Icon
+                name="chevron"
                 className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
-              >
-                <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              />
             </div>
           </div>
 
@@ -643,7 +638,6 @@ export function Settings({ user }: { user: { display_name: string; role?: string
         }}
         onClose={() => setPendingSection(null)}
       />
-      <Toast message={toast} />
       </div>
     </DirtyRegistryContext.Provider>
   );
