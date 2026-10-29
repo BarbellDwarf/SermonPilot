@@ -133,7 +133,7 @@ export function MediaPlayer({
   const src = mediaStreamUrl(sermonId, kind);
   const video = isVideoContent(contentType, kind);
   const position = (sec: number) =>
-    duration > 0 ? Math.min(100, Math.max(0, (sec / duration) * 100)) : 0;
+    Number.isFinite(duration) && duration > 0 ? Math.min(100, Math.max(0, (sec / duration) * 100)) : 0;
   const seek = (sec: number) => {
     const element = mediaRef.current;
     if (element) element.currentTime = Math.max(0, sec);
@@ -154,7 +154,7 @@ export function MediaPlayer({
             className="w-full rounded-md bg-ink"
             onError={() => setFailed(true)}
             onLoadedMetadata={(event) => {
-              setDuration(event.currentTarget.duration || 0);
+              setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0);
               applySeek(event.currentTarget);
             }}
             onTimeUpdate={(event) => {
@@ -173,7 +173,7 @@ export function MediaPlayer({
             className="w-full"
             onError={() => setFailed(true)}
             onLoadedMetadata={(event) => {
-              setDuration(event.currentTarget.duration || 0);
+              setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0);
               applySeek(event.currentTarget);
             }}
             onTimeUpdate={(event) => {
@@ -198,7 +198,7 @@ export function MediaPlayer({
 
       <div className="mt-1 flex flex-wrap items-center justify-between gap-2 font-mono text-xs text-muted">
         <span>
-          {timeLabel}: {formatCut(current)} / {duration > 0 ? formatCut(duration) : "—"}
+          {timeLabel}: {Number.isFinite(current) ? formatCut(current) : "00:00.0"} / {Number.isFinite(duration) && duration > 0 ? formatCut(duration) : "—"}
         </span>
         {label ? <span>{label}</span> : null}
       </div>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { formatCut } from "../utils/time";
 
 export interface TimelineClip {
   id: string;
@@ -238,19 +239,31 @@ export function Timeline({
         ref={trackRef}
         data-testid="timeline-track"
         data-span-sec={span}
-        className="relative h-14 w-full touch-pan-y select-none overflow-visible rounded-md border border-line bg-ink"
+        className="relative h-12 w-full touch-pan-y select-none overflow-visible rounded-md border border-line bg-surface shadow-inner"
         onPointerDown={seekFromTrack}
         onPointerMove={moveDrag}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
       >
         <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 z-0 h-3"
+        >
+          {Array.from({ length: 11 }).map((_, index) => (
+            <span
+              key={index}
+              className="absolute top-0 h-3 w-px bg-line/60"
+              style={{ left: `${index * 10}%` }}
+            />
+          ))}
+        </div>
+        <div
           data-testid="timeline-region-cut-before"
           data-region="cut-before"
           data-start-sec={0}
           data-end-sec={startSec}
           style={{ left: "0%", width: `${keepLeft}%` }}
-          className="absolute inset-y-0 bg-raised/70"
+          className="absolute inset-y-0 bg-raised/20"
         />
         <div
           data-testid="timeline-region-cut-after"
@@ -258,7 +271,7 @@ export function Timeline({
           data-start-sec={endSec}
           data-end-sec={span}
           style={{ left: `${keepRight}%`, width: `${Math.max(100 - keepRight, 0)}%` }}
-          className="absolute inset-y-0 bg-raised/70"
+          className="absolute inset-y-0 bg-raised/20"
         />
         {clips.map((clip) => {
           const left = pct(clip.startSec);
@@ -282,7 +295,7 @@ export function Timeline({
             >
               <span
                 aria-hidden="true"
-                className="absolute inset-x-0 bottom-0 h-2 rounded-t border border-accent/60 bg-accent/40"
+                className="absolute inset-x-0 bottom-0 h-2 rounded-sm bg-accent/60"
               />
             </button>
           );
@@ -300,8 +313,7 @@ export function Timeline({
             onPlayRegion?.("keep", startSec, endSec);
           }}
           style={{ left: `${keepLeft}%`, width: `${keepWidth}%`, touchAction: "none" }}
-          className="absolute inset-y-0 z-10 border-x border-accent bg-accent/25 transition-colors hover:bg-accent/35"
-        />
+          className="absolute inset-y-0 z-10 rounded-[3px] border-x border-accent/70 bg-accent/25 transition-colors hover:bg-accent/35"        />
         <div
           data-testid="timeline-selection-surface"
           onPointerDown={beginSelection}
@@ -334,7 +346,7 @@ export function Timeline({
             >
               <span
                 aria-hidden="true"
-                className="absolute inset-x-0 bottom-0 h-3 border-y border-danger bg-danger/70"
+                className="absolute inset-x-0 bottom-0 h-1 border-y border-danger/60 bg-danger/60"
               />
             </button>
           );
@@ -349,7 +361,7 @@ export function Timeline({
                 left: `${pct(selection.startSec)}%`,
                 width: `${Math.max(pct(selection.endSec) - pct(selection.startSec), 0.6)}%`,
               }}
-              className="pointer-events-none absolute inset-y-0 z-40 border-y-2 border-warn bg-warn/20"
+              className="pointer-events-none absolute inset-y-2 z-40 rounded-sm border border-warn bg-warn/12"
             />
             <button
               ref={selectionStartRef}
@@ -366,7 +378,8 @@ export function Timeline({
               onKeyDown={nudgeSelection("start")}
               className="absolute inset-y-0 z-50 w-11 -translate-x-1/2 cursor-ew-resize bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-warn"
             >
-              <span aria-hidden="true" className="absolute inset-y-0 left-1/2 w-1 -translate-x-1/2 bg-warn" />
+              <span aria-hidden="true" className="absolute inset-y-2 left-1/2 w-0.5 -translate-x-1/2 bg-warn" />
+              <span aria-hidden="true" className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-warn" />
             </button>
             <button
               type="button"
@@ -382,7 +395,8 @@ export function Timeline({
               onKeyDown={nudgeSelection("end")}
               className="absolute inset-y-0 z-50 w-11 -translate-x-1/2 cursor-ew-resize bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-warn"
             >
-              <span aria-hidden="true" className="absolute inset-y-0 left-1/2 w-1 -translate-x-1/2 bg-warn" />
+              <span aria-hidden="true" className="absolute inset-y-2 left-1/2 w-0.5 -translate-x-1/2 bg-warn" />
+              <span aria-hidden="true" className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-warn" />
             </button>
           </>
         ) : null}
@@ -400,8 +414,13 @@ export function Timeline({
           data-current-sec={currentSec}
           aria-hidden="true"
           style={{ left: `${pct(currentSec)}%` }}
-          className="absolute inset-y-0 z-30 w-0.5 -translate-x-1/2 bg-mist"
-        />
+          className="absolute inset-y-0 z-30 w-0.5 -translate-x-1/2 rounded-full bg-mist shadow-[0_0_8px_rgba(233,237,239,0.4)]"
+        >
+          <span
+            aria-hidden="true"
+            className="absolute left-1/2 top-0 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-mist shadow"
+          />
+        </div>
         <button
           type="button"
           role="slider"
@@ -419,11 +438,11 @@ export function Timeline({
         >
           <span
             aria-hidden="true"
-            className={`absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 border border-accent bg-surface ${
+            className={`absolute left-1/2 top-1/2 h-5 w-6 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-accent/70 bg-surface shadow-sm ${
               selected === "start" ? "ring-2 ring-accent" : ""
             }`}
           />
-          <span aria-hidden="true" className="absolute left-1/2 top-1/2 h-4 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-accent" />
+          <span aria-hidden="true" className="absolute left-1/2 top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-accent" />
         </button>
         <button
           type="button"
@@ -442,12 +461,32 @@ export function Timeline({
         >
           <span
             aria-hidden="true"
-            className={`absolute inset-y-0 left-1/2 w-4 -translate-x-1/2 border border-accent bg-surface ${
+            className={`absolute left-1/2 top-1/2 h-5 w-6 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-accent/70 bg-surface shadow-sm ${
               selected === "end" ? "ring-2 ring-accent" : ""
             }`}
           />
-          <span aria-hidden="true" className="absolute left-1/2 top-1/2 h-4 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-accent" />
+          <span aria-hidden="true" className="absolute left-1/2 top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-accent" />
         </button>
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-6"
+        >
+          {[10, 33, 67, 100].map((pctValue) => {
+            const sec = clamp((pctValue / 100) * span, 0, span);
+            return (
+              <span
+                key={pctValue}
+                className="absolute bottom-0 flex flex-col items-center"
+                style={{ left: `${pctValue}%`, transform: "translateX(-50%)" }}
+              >
+                <span className="mb-0.5 h-2 w-px bg-line" />
+                <span className="font-mono text-[9px] text-muted">
+                  {formatCut(sec).replace(/\.0$/, "")}
+                </span>
+              </span>
+            );
+          })}
+        </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <button
@@ -455,7 +494,7 @@ export function Timeline({
           data-testid="timeline-select-removal"
           aria-pressed={selecting}
           onClick={toggleSelecting}
-          className="inline-flex min-h-[44px] items-center rounded-md border border-line px-3 text-xs font-medium text-mist transition-colors hover:border-warn focus-visible:outline focus-visible:outline-2 focus-visible:outline-warn"
+          className="inline-flex min-h-[44px] items-center rounded-md border border-line bg-raised px-3 text-xs font-semibold text-mist transition-colors hover:border-warn focus-visible:outline focus-visible:outline-2 focus-visible:outline-warn"
         >
           {selecting ? "Finish selecting range" : "Select a range to cut"}
         </button>

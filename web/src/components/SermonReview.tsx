@@ -1108,12 +1108,15 @@ export function SermonReview({
           <section
             id="player-plan"
             aria-labelledby="player-plan-h"
-            className="rounded-lg border border-line bg-surface"
+            className="rounded-lg border border-line bg-surface shadow-sm"
           >
             <div className="flex flex-wrap items-center justify-between gap-2 p-4">
-              <h2 id="player-plan-h" className="text-lg font-semibold">
-                Player &amp; plan
-              </h2>
+              <div className="min-w-0">
+                <h2 id="player-plan-h" className="text-lg font-semibold">
+                  Player &amp; plan
+                </h2>
+                <p className="text-xs text-muted">drag / timeline / cut plan</p>
+              </div>
             </div>
             <div className="flex min-w-0 flex-col gap-3 border-t border-line p-4">
               {live && media.error ? (
@@ -1191,7 +1194,7 @@ export function SermonReview({
                 <section
                   data-testid="removal-selection-panel"
                   aria-labelledby="removal-selection-heading"
-                  className="rounded-md border border-warn bg-ink p-3"
+                  className="rounded-md border border-warn bg-ink p-3 shadow-sm"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
@@ -1232,7 +1235,7 @@ export function SermonReview({
               <section
                 data-testid="removal-list"
                 aria-labelledby="cut-plan-heading"
-                className="rounded-md border border-line bg-ink p-3"
+                className="rounded-md border border-line bg-ink p-3 shadow-sm"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
