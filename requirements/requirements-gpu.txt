@@ -8,7 +8,7 @@
 -r requirements.txt
 
 # Per-index overrides for the torch family (single pin, same floor as pyproject)
-torch==2.14.0+cu126
+torch==2.15.0+cpu
 # torchaudio's final upstream release is 2.11.0 and it declares no torch
 # dependency; the pair is verified against torch 2.14 (GPU resample + DF enhance)
 torchaudio==2.11.0+cu126
