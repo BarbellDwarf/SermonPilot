@@ -1140,6 +1140,7 @@ export function SermonReview({
                   seekToSec={seek?.sec ?? null}
                   seekNonce={seek?.n}
                   playWindow={playWindow}
+                  offsetSec={offset ?? plan.offsetSec}
                   onTime={setPlayhead}
                 />
               ) : live ? null : (

@@ -30,6 +30,7 @@ interface MediaPlayerProps {
   label?: string;
   timeLabel?: string;
   className?: string;
+  offsetSec?: number;
 }
 
 export function isVideoContent(contentType?: string | null, kind = ""): boolean {
@@ -53,16 +54,24 @@ export function MediaPlayer({
   label,
   timeLabel = "Playback",
   className = "",
+  offsetSec = 0,
 }: MediaPlayerProps) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [failed, setFailed] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
 
+  const offset = Number.isFinite(offsetSec) ? (offsetSec as number) : 0;
   const applySeek = (element: HTMLMediaElement | null) => {
     if (seekToSec == null || !element) return;
     try {
       element.currentTime = Math.max(0, seekToSec);
+      const audio = audioRef.current;
+      if (audio && offset !== 0) {
+        const desired = Math.max(0, seekToSec + offset);
+        if (Number.isFinite(desired)) audio.currentTime = desired;
+      }
     } catch {
       // metadata not loaded yet; onLoadedMetadata re-applies the request
     }
@@ -151,6 +160,7 @@ export function MediaPlayer({
             src={src}
             data-media-kind={kind}
             data-media-element="video"
+            muted={offset !== 0}
             className="w-full rounded-md bg-ink"
             onError={() => setFailed(true)}
             onLoadedMetadata={(event) => {
@@ -160,6 +170,15 @@ export function MediaPlayer({
             onTimeUpdate={(event) => {
               setCurrent(event.currentTarget.currentTime);
               onTime?.(event.currentTarget.currentTime);
+              if (offset !== 0) {
+                const audio = audioRef.current;
+                if (audio) {
+                  const target = Math.max(0, event.currentTarget.currentTime + offset);
+                  if (Number.isFinite(target) && Math.abs(audio.currentTime - target) > 0.1) {
+                    try { audio.currentTime = target; } catch { }
+                  }
+                }
+              }
             }}
           />
         ) : (
@@ -182,7 +201,16 @@ export function MediaPlayer({
             }}
           />
         )}
-        {video
+        {video && offset !== 0 ? (
+        <audio
+          ref={audioRef}
+          preload="metadata"
+          src={src}
+          aria-hidden="true"
+          className="sr-only"
+        />
+      ) : null}
+      {video
           ? markers.map((marker) => (
               <span
                 key={`${marker.label}-${marker.atSec}`}

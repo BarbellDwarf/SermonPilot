@@ -219,7 +219,7 @@ describe("SermonReview single player and plan", () => {
     );
 
     expect(document.querySelectorAll("video").length).toBe(1);
-    expect(document.querySelectorAll("video, audio").length).toBe(1);
+    expect(document.querySelectorAll("video, audio").length).toBe(2);
     expect(document.querySelector("video[data-media-kind='keeper']")).toBeTruthy();
   });
 
