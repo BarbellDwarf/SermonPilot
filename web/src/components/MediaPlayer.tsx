@@ -86,6 +86,21 @@ export function MediaPlayer({
   }, [seekToSec, seekNonce]);
 
   useEffect(() => {
+    const audio = audioRef.current;
+    const video = mediaRef.current;
+    if (offset === 0) {
+      try { audio?.pause(); } catch { }
+      return;
+    }
+    if (!audio) return;
+    const desired = Math.max(0, (video?.currentTime || 0) + offset);
+    if (Number.isFinite(desired)) audio.currentTime = desired;
+    if (video && !video.paused) {
+      void audio.play().catch(() => { });
+    }
+  }, [offset]);
+
+  useEffect(() => {
     const element = mediaRef.current;
     if (!playWindow || !element) return;
     try {
@@ -178,6 +193,28 @@ export function MediaPlayer({
                     try { audio.currentTime = target; } catch { }
                   }
                 }
+              }
+            }}
+            onPlay={() => {
+              const audio = audioRef.current;
+              const video = mediaRef.current;
+              if (audio && video && offset !== 0) {
+                const desired = Math.max(0, (video.currentTime || 0) + offset);
+                if (Number.isFinite(desired)) audio.currentTime = desired;
+                void audio.play().catch(() => { });
+              }
+            }}
+            onPause={() => {
+              const audio = audioRef.current;
+              if (audio && offset !== 0) {
+                try { audio.pause(); } catch { }
+              }
+            }}
+            onSeeked={(event) => {
+              const audio = audioRef.current;
+              if (audio && offset !== 0) {
+                const desired = Math.max(0, event.currentTarget.currentTime + offset);
+                if (Number.isFinite(desired)) audio.currentTime = desired;
               }
             }}
           />

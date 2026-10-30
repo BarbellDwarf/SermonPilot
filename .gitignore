@@ -146,3 +146,12 @@ prod-requirements.txt
 
 # Local test artifacts
 tests/fixtures/
+
+# Graphify + local caches/data
+graphify-out/
+analytics_cache/
+.venv.old/
+node_modules/
+
+# Graphify generated output (Ponytail appended)
+*.pyc
