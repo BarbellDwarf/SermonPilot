@@ -155,3 +155,4 @@ node_modules/
 
 # Graphify generated output (Ponytail appended)
 *.pyc
+.opencode/
