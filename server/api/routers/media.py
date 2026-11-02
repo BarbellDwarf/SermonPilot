@@ -45,6 +45,7 @@ _CONTENT_TYPES = {
 
 _MEDIA_KINDS = (
     "source",
+    "preview",
     "processed",
     "enhanced",
     "keeper",
@@ -66,6 +67,7 @@ _ALIASES = {
 
 _LABELS = {
     "source": "Source media",
+    "preview": "Browser preview",
     "processed": "Rendered audio",
     "enhanced": "Enhanced audio",
     "keeper": "Keeper video",
@@ -214,6 +216,7 @@ def _media_dirs(files: dict[str, str], metadata: dict[str, Any]) -> list[Path]:
         "enhanced_audio",
         "original_audio",
         "original_video",
+        "preview",
         "metadata",
         "transcript",
         "transcript_timestamps",
@@ -229,6 +232,11 @@ def artifact_candidates(
     raw: list[Any] = []
     if kind == "source":
         raw = [metadata.get("original_file")]
+    elif kind == "preview":
+        raw = [files.get("preview"), metadata.get("preview_file")]
+        raw.extend(
+            str(path) for directory in dirs for path in sorted(directory.glob("*- Preview.mp4"))
+        )
     elif kind == "processed":
         raw = [
             metadata.get("processed_file"),
@@ -363,7 +371,15 @@ def list_sermon_media(request: Request, sermon_id: str) -> dict[str, Any]:
     def available(kind: str) -> bool:
         return any(item["kind"] == kind and item["available"] for item in items)
 
-    primary = "processed" if available("processed") else "source" if available("source") else None
+    primary = (
+        "preview"
+        if available("preview")
+        else "processed"
+        if available("processed")
+        else "source"
+        if available("source")
+        else None
+    )
     audio: str | None = None
     for kind in ("keeper", "enhanced", "processed", "source"):
         if available(kind):

@@ -517,7 +517,11 @@ export function SermonReview({
   };
 
   const playJoin = (segment: RemoveSegment) => {
-    const sourceKind = media.byKind.source?.available ? "source" : preferredKind(media);
+    const sourceKind = media.byKind.preview?.available
+      ? "preview"
+      : media.byKind.source?.available
+        ? "source"
+        : preferredKind(media);
     if (media.byKind[sourceKind]?.available) setPlayerKind(sourceKind);
     const startSec = Math.max(safeStart, segment.startSec - JOIN_PREVIEW_SECONDS);
     const endSec = Math.min(safeEnd, segment.endSec + JOIN_PREVIEW_SECONDS);

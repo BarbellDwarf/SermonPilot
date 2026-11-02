@@ -11,6 +11,7 @@ Layout (per review):
         review_media.json                 marker: this dir is review media
         <...> - Original.<ext>            full-length source, re-edit input
         <...> - Processed.<ext>           enhanced/muxed render
+        <...> - Preview.mp4               browser-playable copy of the original
         <...> - Keeper.mp4                optional compact video
         transcript.txt
         transcript_timestamps.json
@@ -40,6 +41,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
+import subprocess
 import tempfile
 import time
 from pathlib import Path
@@ -55,6 +58,8 @@ logger = logging.getLogger(__name__)
 SNIPPET_MAX_SECONDS = 30.0
 SNIPPET_FILES = ("snippet_start.mp4", "snippet_end.mp4", "snippet_ending.mp4")
 MARKER_FILENAME = "review_media.json"
+BROWSER_PLAYABLE_SUFFIXES = {".mp4", ".m4v", ".webm"}
+BROWSER_PREVIEW_TIMEOUT_SECONDS = 1800
 
 _APP_ROOT = Path(__file__).resolve().parents[1]
 
@@ -222,6 +227,57 @@ def render_bounded_snippets(
             continue
         kept.append(path)
     return kept
+
+
+def render_browser_preview(source: Path | str, dest: Path | str) -> Path | None:
+    """Remux a review source into an MP4 that browsers can actually play.
+
+    Capture tools hand us Matroska, which Safari and mobile Chrome refuse to
+    decode. The video stream is copied so this stays fast; audio is re-encoded
+    because MP4 players do not take PCM. Returns ``None`` when the source is
+    already browser-playable or ffmpeg cannot produce the file.
+    """
+    source = Path(source)
+    dest = Path(dest)
+    if source.suffix.lower() in BROWSER_PLAYABLE_SUFFIXES:
+        return None
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        logger.warning("browser preview skipped: ffmpeg not found")
+        return None
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        ffmpeg,
+        "-y",
+        "-loglevel",
+        "error",
+        "-i",
+        str(source),
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a:0?",
+        "-c:v",
+        "copy",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "160k",
+        "-movflags",
+        "+faststart",
+        str(dest),
+    ]
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            timeout=BROWSER_PREVIEW_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("browser preview failed for %s: %s", source, exc)
+        return None
+    return dest if dest.is_file() else None
 
 
 def write_review_marker(review_dir: Path | str, sermon_id: str) -> Path:

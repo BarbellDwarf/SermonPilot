@@ -1197,6 +1197,13 @@ def _render_media_player(sermon: dict[str, Any]) -> None:
             value = file_paths.get(key)
             if value:
                 candidates.append(Path(value))
+        previews: list[Path] = []
+        for parent in {candidate.parent for candidate in candidates}:
+            try:
+                previews.extend(sorted(parent.glob("*- Preview.mp4")))
+            except OSError:
+                continue
+        candidates = previews + candidates
         for candidate in candidates:
             try:
                 if not candidate.is_file():
@@ -2313,10 +2320,16 @@ def display_sermon_details(sermon):
                     if api_response and isinstance(api_response, dict):
                         api_sermon_data = api_response.get('sermon', api_response)
                     if not api_response:
-                        st.info(
-                            "Sermon not found on SermonAudio (may have been deleted). "
-                            "Use the Push button to recreate it."
-                        )
+                        if sermon.get('status') == 'draft':
+                            st.info(
+                                "This teaching is still a draft and has not been published "
+                                "to SermonAudio yet. Use Push to create it."
+                            )
+                        else:
+                            st.info(
+                                "Sermon not found on SermonAudio (may have been deleted). "
+                                "Use the Push button to recreate it."
+                            )
         except Exception as e:
             st.warning(f"Could not load enhanced sermon data: {e}")
 

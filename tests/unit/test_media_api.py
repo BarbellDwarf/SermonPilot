@@ -86,6 +86,23 @@ def test_media_listing_reports_available_artifacts(client, scoped_setup, tmp_pat
     assert body["primary"] == "processed"
 
 
+def test_media_preview_wins_primary_and_streams(client, scoped_setup, tmp_path):
+    s = scoped_setup
+    outdir = tmp_path / "a-out"
+    _seed_media(s["a"]["id"], "s-a", outdir)
+    preview = outdir / "sermon - Preview.mp4"
+    preview.write_bytes(b"PREVIEW-BYTES" * 10)
+
+    body = client.get("/api/media/sermons/s-a", headers=_auth(s)).json()
+    kinds = {item["kind"]: item for item in body["items"]}
+    assert kinds["preview"]["available"] is True
+    assert body["primary"] == "preview"
+
+    r = client.get("/api/media/sermons/s-a/preview", headers=_auth(s))
+    assert r.status_code == 200
+    assert r.content == preview.read_bytes()
+
+
 def test_stream_200_sets_accept_ranges_and_content_type(client, scoped_setup, tmp_path):
     s = scoped_setup
     outdir = tmp_path / "a-out"
