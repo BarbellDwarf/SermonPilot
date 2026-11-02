@@ -120,7 +120,7 @@ def _same_length(original: Path, preview: Path) -> bool:
         second = _ffprobe_duration(preview)
     except Exception:
         return True
-    if first is None or second is None:
+    if not first or not second:
         return True
     return abs(float(first) - float(second)) <= 3.0
 

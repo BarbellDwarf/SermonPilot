@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.restore_original import restore_original
+from src.restore_original import _same_length, restore_original
 from ui.database import SermonDatabase, SermonRepository
 
 
@@ -84,6 +84,29 @@ def test_restore_uses_original_and_existing_preview(tmp_path: Path) -> None:
     assert plan["final_end"] == 100.0
     assert plan["source_path"] == str(original)
     assert repo.get_sermon_edit_status(sermon_id) == "draft"
+
+
+def test_same_length_treats_unreadable_duration_as_unknown(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import sermon_updater
+
+    original = tmp_path / "sermon - Original.mkv"
+    original.write_bytes(b"ORIGINAL")
+    preview = tmp_path / "sermon - Preview.mp4"
+    preview.write_bytes(b"PREVIEW")
+
+    durations = iter([0.0, 1159.967])
+    monkeypatch.setattr(sermon_updater, "_ffprobe_duration", lambda _path: next(durations))
+    assert _same_length(original, preview) is True
+
+    durations = iter([1159.0, 1160.0])
+    monkeypatch.setattr(sermon_updater, "_ffprobe_duration", lambda _path: next(durations))
+    assert _same_length(original, preview) is True
+
+    durations = iter([100.0, 200.0])
+    monkeypatch.setattr(sermon_updater, "_ffprobe_duration", lambda _path: next(durations))
+    assert _same_length(original, preview) is False
 
 
 def test_restore_finds_sibling_original_when_metadata_is_stale(tmp_path: Path) -> None:
