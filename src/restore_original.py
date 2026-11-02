@@ -112,6 +112,19 @@ def _resolve_original(
     raise RestoreOriginalError("No original recording was found for this teaching.")
 
 
+def _same_length(original: Path, preview: Path) -> bool:
+    try:
+        from sermon_updater import _ffprobe_duration
+
+        first = _ffprobe_duration(original)
+        second = _ffprobe_duration(preview)
+    except Exception:
+        return True
+    if first is None or second is None:
+        return True
+    return abs(float(first) - float(second)) <= 3.0
+
+
 def _resolve_preview(
     original: Path,
     metadata: dict[str, Any],
@@ -120,10 +133,12 @@ def _resolve_preview(
     direct = [files.get("preview"), metadata.get("preview_file")]
     for value in direct:
         if _is_file(value):
-            return Path(str(value))
+            candidate = Path(str(value))
+            if _same_length(original, candidate):
+                return candidate
     for anchor in (original, files.get("audio"), files.get("processed_audio")):
         for candidate in _siblings_named(anchor, "preview"):
-            if candidate.suffix.lower() == ".mp4":
+            if candidate.suffix.lower() == ".mp4" and _same_length(original, candidate):
                 return candidate
     return None
 
@@ -158,7 +173,7 @@ def _repoint_files(
     with repo.db.get_connection() as conn:
         conn.execute(
             "DELETE FROM sermon_files WHERE sermon_id = ? "
-            "AND file_type IN ('processed', 'processed_audio')",
+            "AND file_type IN ('processed', 'processed_audio', 'preview')",
             (sermon_id,),
         )
         for kind, path in (("audio", playback), ("preview", preview)):
