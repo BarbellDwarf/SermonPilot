@@ -474,6 +474,61 @@ def re_detect_plan(sermon_id: str, user=Depends(require_user)):
     )
 
 
+@router.post("/sermons/{sermon_id}/plan/restore")
+def restore_plan(sermon_id: str, user=Depends(require_user)):
+    """Point this sermon back at its unedited recording."""
+    owner = _sermon_owner(sermon_id)
+    if owner is None or not visible(owner, user):
+        raise HTTPException(status_code=404, detail="sermon not found")
+    active = _active_job_for(sermon_id)
+    if active:
+        raise _active_job_error(active)
+
+    from server.api.accounts import get_db_path
+    from ui.database import SermonDatabase, SermonRepository
+
+    repo = SermonRepository(SermonDatabase(db_path=get_db_path()))
+    sermon = repo.get_sermon(sermon_id)
+    if sermon is None:
+        raise HTTPException(status_code=404, detail="sermon not found")
+    info = sermon.get("upload_info") or {}
+    published = bool(info.get("sermonaudio_id")) or sermon.get("status") == "processed"
+    if published:
+        _require_sermonaudio_connection(user.get("id"))
+
+    from src.restore_original import RestoreOriginalError, restore_original
+
+    try:
+        result = restore_original(sermon_id, repo)
+    except RestoreOriginalError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    job_id = None
+    if result["published"]:
+        from ui.job_labels import build_job_labels
+        from ui.job_queue import JobType
+
+        name, description = build_job_labels(
+            JobType.SERMON_PUBLISH, **_sermon_label_fields(sermon_id)
+        )
+        job_id = _enqueue_once(
+            sermon_id,
+            lambda: _queue().add_job(
+                JobType.SERMON_PUBLISH,
+                name,
+                description,
+                parameters={
+                    "sermon_id": result["remote_id"],
+                    "local_sermon_id": sermon_id,
+                    "reupload_original_path": result["original_path"],
+                    "config": _resolved_job_config(),
+                },
+                user_id=user.get("id"),
+            ),
+        )
+    return {**result, "job_id": job_id}
+
+
 _UPLOAD_ONLY_STATUS: dict[str, int] = {
     "not_found": 404,
     "already_published": 409,

@@ -58,6 +58,7 @@ export function MediaPlayer({
 }: MediaPlayerProps) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const lastAudioSync = useRef(0);
   const [failed, setFailed] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -93,11 +94,26 @@ export function MediaPlayer({
       return;
     }
     if (!audio) return;
-    const desired = Math.max(0, (video?.currentTime || 0) + offset);
-    if (Number.isFinite(desired)) audio.currentTime = desired;
-    if (video && !video.paused) {
-      void audio.play().catch(() => { });
+    let cancelled = false;
+    const sync = () => {
+      if (cancelled) return;
+      const desired = Math.max(0, (video?.currentTime || 0) + offset);
+      if (Number.isFinite(desired)) audio.currentTime = desired;
+      lastAudioSync.current = Date.now();
+      if (video) audio.playbackRate = video.playbackRate;
+      if (video && !video.paused) {
+        void audio.play().catch(() => { });
+      }
+    };
+    if (audio.readyState >= 2) {
+      sync();
+    } else {
+      audio.addEventListener("canplay", sync, { once: true });
     }
+    return () => {
+      cancelled = true;
+      audio.removeEventListener("canplay", sync);
+    };
   }, [offset]);
 
   useEffect(() => {
@@ -187,9 +203,12 @@ export function MediaPlayer({
               onTime?.(event.currentTarget.currentTime);
               if (offset !== 0) {
                 const audio = audioRef.current;
-                if (audio) {
+                if (audio && audio.readyState >= 2) {
                   const target = Math.max(0, event.currentTarget.currentTime + offset);
-                  if (Number.isFinite(target) && Math.abs(audio.currentTime - target) > 0.1) {
+                  const drift = Math.abs(audio.currentTime - target);
+                  const now = Date.now();
+                  if (Number.isFinite(target) && drift > 0.75 && now - lastAudioSync.current > 1000) {
+                    lastAudioSync.current = now;
                     try { audio.currentTime = target; } catch { }
                   }
                 }
@@ -198,11 +217,39 @@ export function MediaPlayer({
             onPlay={() => {
               const audio = audioRef.current;
               const video = mediaRef.current;
-              if (audio && video && offset !== 0) {
+              if (!audio || !video || offset === 0) return;
+              const startAudio = () => {
+                if (video.paused) return;
                 const desired = Math.max(0, (video.currentTime || 0) + offset);
+                if (Number.isFinite(desired)) audio.currentTime = desired;
+                lastAudioSync.current = Date.now();
+                audio.playbackRate = video.playbackRate;
+                void audio.play().catch(() => { });
+              };
+              if (audio.readyState >= 2) {
+                startAudio();
+              } else {
+                audio.addEventListener("canplay", startAudio, { once: true });
+              }
+            }}
+            onPlaying={() => {
+              const audio = audioRef.current;
+              const video = mediaRef.current;
+              if (audio && video && offset !== 0 && audio.paused && audio.readyState >= 2) {
+                const desired = Math.max(0, video.currentTime + offset);
                 if (Number.isFinite(desired)) audio.currentTime = desired;
                 void audio.play().catch(() => { });
               }
+            }}
+            onWaiting={() => {
+              const audio = audioRef.current;
+              if (audio && offset !== 0) {
+                try { audio.pause(); } catch { }
+              }
+            }}
+            onRateChange={(event) => {
+              const audio = audioRef.current;
+              if (audio && offset !== 0) audio.playbackRate = event.currentTarget.playbackRate;
             }}
             onPause={() => {
               const audio = audioRef.current;
@@ -212,9 +259,11 @@ export function MediaPlayer({
             }}
             onSeeked={(event) => {
               const audio = audioRef.current;
-              if (audio && offset !== 0) {
+              if (audio && offset !== 0 && audio.readyState >= 1) {
                 const desired = Math.max(0, event.currentTarget.currentTime + offset);
-                if (Number.isFinite(desired)) audio.currentTime = desired;
+                if (Number.isFinite(desired)) {
+                  try { audio.currentTime = desired; } catch { }
+                }
               }
             }}
           />
@@ -241,7 +290,7 @@ export function MediaPlayer({
         {video && offset !== 0 ? (
         <audio
           ref={audioRef}
-          preload="metadata"
+          preload="auto"
           src={src}
           aria-hidden="true"
           className="sr-only"

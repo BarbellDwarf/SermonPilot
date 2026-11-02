@@ -658,6 +658,14 @@ export const writeApi = {
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/plan/refine`, "POST", { notes }),
   reDetectPlan: (id: string) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/plan/re-detect`, "POST"),
+  restorePlan: (id: string) =>
+    send<{
+      original_path: string;
+      playback_path: string;
+      preview_path: string | null;
+      published: boolean;
+      job_id: string | null;
+    }>(`/api/sermons/${encodeURIComponent(id)}/plan/restore`, "POST"),
   uploadNow: (id: string) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/upload`, "POST"),
   regenerateDescription: (id: string) =>

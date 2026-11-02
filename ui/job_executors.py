@@ -2298,6 +2298,26 @@ def execute_sermon_publish_job(job: Job) -> JobResult:
         if refusal is not None:
             job.add_log(refusal.error or "")
             return refusal
+        reupload_path = job.parameters.get("reupload_original_path")
+        if reupload_path:
+            config = resolve_job_config(job)
+            if config:
+                _inject_sermon_updater_config(config)
+            from sermon_updater import reupload_media_for_sermon
+
+            job.update_progress(20, "Re-uploading the original recording...")
+            if not reupload_media_for_sermon(str(sermon_id), str(reupload_path)):
+                return JobResult(
+                    success=False,
+                    message="Original re-upload failed",
+                    error="SermonAudio rejected the original recording",
+                )
+            job.update_progress(100, "Original recording re-uploaded")
+            return JobResult(
+                success=True,
+                message="Original recording re-uploaded to SermonAudio",
+                data={"sermon_id": sermon_id},
+            )
         if job.parameters.get("upload_only"):
             return _execute_upload_existing(job, str(sermon_id))
         config = resolve_job_config(job)

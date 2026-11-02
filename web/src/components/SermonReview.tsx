@@ -320,6 +320,7 @@ export function SermonReview({
   const [mockNotes, setMockNotes] = useState<{ revision: number; note: string }[]>([]);
   const [statusLog, setStatusLog] = useState<string[]>([]);
   const [confirmRestore, setConfirmRestore] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [selected, setSelected] = useState<"start" | "end" | null>(null);
   const [removeSegments, setRemoveSegments] = useState<UiCut[]>(
     () => initialCuts(initial.removeSegments),
@@ -673,6 +674,35 @@ export function SermonReview({
       setUploading(false);
       onToast("Upload of the existing render queued (demo).");
     }, 900);
+  };
+
+  const restoreOriginal = () => {
+    if (restoring) return;
+    setConfirmRestore(false);
+    if (!live) {
+      setPlan((p) => ({ ...p, status: "draft", revision: 1 }));
+      setStatusLog([]);
+      onToast("Original restored (demo). Plan reset to draft.");
+      return;
+    }
+    setRestoring(true);
+    void writeApi
+      .restorePlan(sermon.id)
+      .then((result) => {
+        setRestoring(false);
+        setStatusLog([]);
+        onRefresh?.();
+        onToast(
+          result.job_id
+            ? "Original restored locally. Re-upload to SermonAudio queued."
+            : "Original restored. The plan is reset to the full recording.",
+        );
+      })
+      .catch((e) => {
+        setRestoring(false);
+        const err = e as ApiError;
+        onToast(err?.message || "Could not restore the original recording.", "error");
+      });
   };
 
   const approve = (renderOnly: boolean) => {
@@ -1436,10 +1466,10 @@ export function SermonReview({
                 <Button
                   variant="danger"
                   onClick={() => setConfirmRestore(true)}
-                  disabled={live}
-                  title={live ? "Restore original is not available in the console yet." : undefined}
+                  disabled={restoring || applying}
+                  title="Discard the applied cut and keep the unedited recording."
                 >
-                  Restore original
+                  {restoring ? "Restoring…" : "Restore original"}
                 </Button>
               </div>
             </div>
@@ -1933,11 +1963,7 @@ export function SermonReview({
         body="All applied cuts are discarded and the unedited source is kept. This cannot be undone."
         confirmLabel="Restore original"
         onClose={() => setConfirmRestore(false)}
-        onConfirm={() => {
-          setPlan((p) => ({ ...p, status: "draft", revision: 1 }));
-          setStatusLog([]);
-          onToast("Original restored (demo). Plan reset to draft.");
-        }}
+        onConfirm={restoreOriginal}
       />
 
       <ConfirmDialog
