@@ -1,6 +1,7 @@
 # SermonPilot Console (web/)
 
-Mock-first rebuild of the SermonPilot UI. The Streamlit app stays live; the console now has live API wiring as well.
+Mock-first rebuild of the SermonPilot UI. The console is the operator interface;
+the Streamlit app is retired.
 
 ## Stack
 
@@ -220,32 +221,22 @@ Deliberately parked (not v1.7.0):
 - Per-user cloud storage mounts (Drive/Dropbox/OneDrive/S3-class OAuth, accounts phase).
 - Scripture overlay cards + audio disclaimer intro card (render-phase work).
 
-Cutover stays a one-line nginx move: upstream `127.0.0.1:8501` (Streamlit)
+Cutover was a one-line nginx move: upstream `127.0.0.1:8501` (Streamlit)
 -> `127.0.0.1:8504` (FastAPI bridge serving bundle + `/api/*`), then
 `nginx -t && nginx -s reload` (see Front-door cutover above for headers).
 
-## Front-door cutover (P6c, prepared — NOT switched)
+## Front-door cutover (P6c, complete)
 
-Your domain currently proxies to Streamlit :8501 via the reverse proxy.
-Cutover is a two-step manual operation:
-
-1. The operator flips `web_console_ready: true` in the LIVE settings database
-   (the legacy UI System settings page writes it; the value is read from
-   `config_cache.app_config`). The console reports it at
-   `GET /api/meta/retirement` → `{"streamlit_ready": true}` (public, no auth),
-   and Settings → System shows the state in a read-only admin-only banner.
-2. The operator edits the reverse-proxy vhost for your domain: move the
-   upstream from `127.0.0.1:8501` (Streamlit) to `127.0.0.1:8504` (FastAPI
-   bridge, which serves the console bundle + `/api/*`), then
-   `nginx -t && nginx -s reload`.
-   Keep these directives on the location block:
+The reverse-proxy vhost for the domain points at the console on
+`127.0.0.1:8504` (FastAPI bridge, which serves the console bundle + `/api/*`).
+The `127.0.0.1:8501` Streamlit upstream is gone; the container no longer starts
+Streamlit. Keep these directives on the location block:
    - websocket headers (`proxy_http_version 1.1`, `Upgrade` + `Connection`
      maps) — the console polls over HTTP but future live tails use WS;
    - `proxy_buffering off` — streaming downloads (`/api/me/files/download`)
      and large multipart uploads must not spool;
    - `client_max_body_size 30G` — matches `SERMONPILOT_UPLOAD_GB` default 30.
 
-Rollback: flip `web_console_ready` back to false and restore the 8501 upstream.
 Nothing in this repo switches traffic on its own.
 
 ## v1.8.0 kickoff (Sep 18) — starts after v1.7.0 ships
