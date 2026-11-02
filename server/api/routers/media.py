@@ -416,7 +416,11 @@ def stream_sermon_artifact(request: Request, sermon_id: str, kind: str) -> Respo
         status = 206
         start, end = parsed
 
-    headers = {"Accept-Ranges": "bytes", "Content-Length": str(end - start)}
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(end - start),
+        "Cache-Control": "no-store",
+    }
     if status == 206:
         headers["Content-Range"] = f"bytes {start}-{end - 1}/{size}"
 

@@ -101,6 +101,7 @@ def test_media_preview_wins_primary_and_streams(client, scoped_setup, tmp_path):
     r = client.get("/api/media/sermons/s-a/preview", headers=_auth(s))
     assert r.status_code == 200
     assert r.content == preview.read_bytes()
+    assert r.headers["cache-control"] == "no-store"
 
 
 def test_stream_200_sets_accept_ranges_and_content_type(client, scoped_setup, tmp_path):
