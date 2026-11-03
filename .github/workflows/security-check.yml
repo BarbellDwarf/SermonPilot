@@ -122,7 +122,8 @@ jobs:
       run: |
         echo "Checking the production resolution for known vulnerabilities..."
         uv pip compile requirements/requirements.txt -o prod-requirements.txt --quiet
-        ./osv-scanner scan --lockfile prod-requirements.txt
+        # Already fully pinned; OSV cannot resolve the jsonpointer 3.8 constraint graph.
+        ./osv-scanner scan --lockfile prod-requirements.txt --no-resolve
         rm -f prod-requirements.txt
 
     - name: Run Bandit security linter

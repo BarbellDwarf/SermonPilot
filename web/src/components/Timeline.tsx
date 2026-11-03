@@ -645,7 +645,7 @@ export function Timeline({
         >
           <span
             aria-hidden="true"
-            className={`absolute left-1/2 top-1/2 h-5 w-6 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-accent/70 bg-surface shadow-sm ${
+            className={`absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-accent/70 bg-surface shadow-sm ${
               selected === "start" ? "ring-2 ring-accent" : ""
             }`}
           />
@@ -668,7 +668,7 @@ export function Timeline({
         >
           <span
             aria-hidden="true"
-            className={`absolute left-1/2 top-1/2 h-5 w-6 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-accent/70 bg-surface shadow-sm ${
+            className={`absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-accent/70 bg-surface shadow-sm ${
               selected === "end" ? "ring-2 ring-accent" : ""
             }`}
           />
