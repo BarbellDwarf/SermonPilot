@@ -53,6 +53,19 @@ describe("Timeline", () => {
     expect(screen.getByTestId("timeline-handle-start").getAttribute("aria-valuenow")).toBe("900");
   });
 
+  it("opens the detail window around the keep start and zooms", async () => {
+    const user = userEvent.setup();
+    render(<Timeline {...baseProps()} startSec={124} />);
+
+    const detail = screen.getByTestId("timeline-detail");
+    expect(detail.getAttribute("data-window-start")).toBe("109");
+    expect(detail.getAttribute("data-window-end")).toBe("169");
+
+    await user.click(screen.getByRole("button", { name: "30s" }));
+    expect(screen.getByTestId("timeline-detail").getAttribute("data-window-start")).toBe("109");
+    expect(screen.getByTestId("timeline-detail").getAttribute("data-window-end")).toBe("139");
+  });
+
   it("emits a seek with the region time when a region is clicked", async () => {
     const user = userEvent.setup();
     const onSeek = vi.fn();

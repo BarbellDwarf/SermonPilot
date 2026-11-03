@@ -282,3 +282,35 @@ def test_parse_range_forms():
         parse_range("bytes=200-", 100)
     with pytest.raises(RangeNotSatisfiable):
         parse_range("bytes=-0", 100)
+
+
+def test_waveform_endpoint_generates_and_caches_peaks(client, scoped_setup, tmp_path):
+    import math
+    import struct
+    import wave
+
+    s = scoped_setup
+    outdir = tmp_path / "a-out"
+    _seed_media(s["a"]["id"], "s-a", outdir)
+    source = outdir / "sermon - Original.wav"
+    rate = 8000
+    frames = b"".join(
+        struct.pack("<h", int(10000 * math.sin(2 * math.pi * 440 * index / rate)))
+        for index in range(rate)
+    )
+    with wave.open(str(source), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(frames)
+    (outdir / "metadata.json").write_text(
+        json.dumps({"original_file": str(source)}), encoding="utf-8"
+    )
+
+    response = client.get("/api/media/sermons/s-a/waveform", headers=_auth(s))
+
+    assert response.status_code == 200, response.text
+    assert len(response.json()["peaks"]) == 4000
+    assert response.json()["duration"] == pytest.approx(1.0, abs=0.1)
+    assert max(response.json()["peaks"]) > 0
+    assert (outdir / ".waveform-4000.json").exists()

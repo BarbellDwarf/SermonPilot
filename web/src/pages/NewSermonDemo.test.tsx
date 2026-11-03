@@ -12,7 +12,6 @@ function renderPage() {
     <QueryClientProvider client={client}>
       <MemoryRouter
         initialEntries={["/new"]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <NewSermon />
         <ToastHost />

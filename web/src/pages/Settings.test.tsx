@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../api/client", () => ({
+  mediaApi: { waveform: async () => ({ peaks: [], duration: 0 }) },
   isLive: false,
   adminApi: { listUsers: vi.fn().mockResolvedValue({ users: [] }) },
   meApi: { patch: vi.fn() },

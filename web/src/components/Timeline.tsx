@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { mediaApi } from "../api/client";
 import { formatCut } from "../utils/time";
 
 export interface TimelineClip {
@@ -30,10 +31,21 @@ export interface TimelineProps {
   onChangeEnd?: (sec: number) => void;
   onSeek?: (sec: number, regionId: string) => void;
   onPlayRegion?: (regionId: string, startSec: number, endSec: number) => void;
+  onRemoveSegment?: (index: number) => void;
+  sermonId?: string;
 }
 
 const MIN_GAP_SEC = 0.1;
 const MIN_SELECTION_SEC = 0.25;
+const WAVEFORM_BARS = 120;
+const waveformCache = new Map<string, number[]>();
+
+const ZOOM_OPTIONS = [
+  { value: 0, label: "Fit" },
+  { value: 120, label: "2m" },
+  { value: 60, label: "1m" },
+  { value: 30, label: "30s" },
+] as const;
 
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
@@ -63,6 +75,52 @@ export function timelinePercent(sec: number, span: number): number {
   return clamp((sec / span) * 100, 0, 100);
 }
 
+function shortCut(sec: number): string {
+  return formatCut(sec).replace(/\.0$/, "");
+}
+
+function Waveform({
+  peaks,
+  span,
+  windowStart,
+  windowEnd,
+}: {
+  peaks: number[] | null;
+  span: number;
+  windowStart: number;
+  windowEnd: number;
+}) {
+  const bars = useMemo(() => {
+    if (!peaks || peaks.length === 0 || span <= 0) {
+      return Array.from({ length: WAVEFORM_BARS }, (_, index) => 0.08 + 0.03 * Math.sin(index * 1.7));
+    }
+    const width = Math.max(windowEnd - windowStart, 0.001);
+    return Array.from({ length: WAVEFORM_BARS }, (_, index) => {
+      const from = windowStart + (width * index) / WAVEFORM_BARS;
+      const to = windowStart + (width * (index + 1)) / WAVEFORM_BARS;
+      const first = clamp(Math.floor((from / span) * peaks.length), 0, peaks.length - 1);
+      const last = clamp(Math.ceil((to / span) * peaks.length), first + 1, peaks.length);
+      let peak = 0;
+      for (let cursor = first; cursor < last; cursor += 1) {
+        peak = Math.max(peak, peaks[cursor] ?? 0);
+      }
+      return peak;
+    });
+  }, [peaks, span, windowStart, windowEnd]);
+
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center gap-px px-1">
+      {bars.map((peak, index) => (
+        <span
+          key={index}
+          className="min-h-[2px] flex-1 rounded-full bg-accent/50"
+          style={{ height: `${Math.max(peak * 100, 3)}%` }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function Timeline({
   durationSec,
   startSec,
@@ -79,20 +137,59 @@ export function Timeline({
   onChangeEnd,
   onSeek,
   onPlayRegion,
+  onRemoveSegment,
+  sermonId,
 }: TimelineProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
+  const detailRef = useRef<HTMLDivElement | null>(null);
   const selectionStartRef = useRef<HTMLButtonElement | null>(null);
   const focusSelectionOnActivate = useRef(false);
   const dragRef = useRef<"start" | "end" | null>(null);
   const selectionDragRef = useRef<number | null>(null);
+  const detailDragRef = useRef<"start" | "end" | "sel-start" | "sel-end" | null>(null);
+  const detailSelectionRef = useRef<{ anchor: number; moved: boolean } | null>(null);
+  const positionedRef = useRef(false);
+  const lastCurrentRef = useRef(currentSec);
   const [selecting, setSelecting] = useState(false);
+  const [zoomSec, setZoomSec] = useState(60);
+  const [windowStart, setWindowStart] = useState(() => Math.max(startSec - 15, 0));
+  const [peaks, setPeaks] = useState<number[] | null>(null);
   const [internalSelection, setInternalSelection] = useState<TimelineRange | null>(null);
   const selection = controlledSelection === undefined ? internalSelection : controlledSelection;
+
   useEffect(() => {
     if (!focusSelectionOnActivate.current || !selecting || !selection) return;
     focusSelectionOnActivate.current = false;
     selectionStartRef.current?.focus();
   }, [selecting, selection]);
+
+  useEffect(() => {
+    if (!sermonId) {
+      setPeaks(null);
+      return;
+    }
+    const cached = waveformCache.get(sermonId);
+    if (cached) {
+      setPeaks(cached);
+      return;
+    }
+    let cancelled = false;
+    if (!mediaApi?.waveform) return;
+    mediaApi
+      .waveform(sermonId)
+      .then((payload) => {
+        const next = Array.isArray(payload.peaks) ? payload.peaks : [];
+        waveformCache.set(sermonId, next);
+        if (!cancelled) setPeaks(next);
+      })
+      .catch(() => {
+        if (!cancelled) setPeaks([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sermonId]);
+
   const ending = endingSec ?? endSec;
   const span = timelineSpan(durationSec, endSec, ending, clips);
   const boundedStart = clamp(startSec, 0, span);
@@ -103,12 +200,49 @@ export function Timeline({
   const keepLeft = pct(startSec);
   const keepRight = pct(endSec);
   const keepWidth = Math.max(keepRight - keepLeft, 0);
+  const zoom = zoomSec > 0 ? Math.min(zoomSec, span) : span;
+  const windowEnd = Math.min(windowStart + zoom, span);
+
+  useEffect(() => {
+    if (zoom >= span) {
+      setWindowStart(0);
+      return;
+    }
+    const max = Math.max(span - zoom, 0);
+    if (!positionedRef.current) {
+      positionedRef.current = true;
+      lastCurrentRef.current = currentSec;
+      setWindowStart((previous) => clamp(previous, 0, max));
+      return;
+    }
+    const headMoved = currentSec !== lastCurrentRef.current;
+    lastCurrentRef.current = currentSec;
+    setWindowStart((previous) => {
+      const current = clamp(previous, 0, max);
+      if (!headMoved) return current;
+      const head = clamp(currentSec, 0, span);
+      if (head < current + zoom * 0.18 || head > current + zoom * 0.82) {
+        return roundTenths(clamp(head - zoom / 2, 0, max));
+      }
+      return current;
+    });
+  }, [currentSec, span, zoom]);
+
+  const detailPct = (sec: number) => clamp(((sec - windowStart) / Math.max(zoom, 0.001)) * 100, 0, 100);
+  const detailVisible = (from: number, to: number) => to >= windowStart && from <= windowEnd;
 
   const secFromClientX = (clientX: number): number => {
     const rect = trackRef.current?.getBoundingClientRect();
     if (!rect || rect.width <= 0) return 0;
     const ratio = (clientX - rect.left) / rect.width;
     return roundTenths(clamp(ratio * span, 0, span));
+  };
+
+  const secFromDetailX = (clientX: number): number => {
+    const rect = detailRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0) return windowStart;
+    const ratio = (clientX - rect.left) / rect.width;
+    return roundTenths(clamp(windowStart + ratio * zoom, 0, span));
   };
 
   const setSelection = (next: TimelineRange | null) => {
@@ -153,11 +287,10 @@ export function Timeline({
     if (selectionDragRef.current !== null) {
       event.preventDefault();
       const anchor = selectionDragRef.current;
-      const next = {
+      setSelection({
         startSec: roundTenths(Math.min(anchor, sec)),
         endSec: roundTenths(Math.max(anchor, sec)),
-      };
-      setSelection(next);
+      });
       return;
     }
     const handle = dragRef.current;
@@ -181,6 +314,7 @@ export function Timeline({
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
+      // optional
     }
   };
 
@@ -188,6 +322,80 @@ export function Timeline({
     if (selectionDragRef.current !== null) setSelecting(false);
     dragRef.current = null;
     selectionDragRef.current = null;
+  };
+
+  const beginDetailDrag =
+    (handle: "start" | "end" | "sel-start" | "sel-end") =>
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      detailDragRef.current = handle;
+      if (handle === "start" || handle === "end") onSelect?.(handle);
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // optional
+      }
+    };
+
+  const beginDetailSelection = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return;
+    const sec = secFromDetailX(event.clientX);
+    if (sec <= startSec || sec >= endSec) return;
+    event.preventDefault();
+    detailSelectionRef.current = { anchor: sec, moved: false };
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // optional
+    }
+  };
+
+  const moveDetail = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const sec = secFromDetailX(event.clientX);
+    const selectionDrag = detailSelectionRef.current;
+    if (selectionDrag) {
+      if (Math.abs(sec - selectionDrag.anchor) >= MIN_SELECTION_SEC) {
+        selectionDrag.moved = true;
+        setSelection({
+          startSec: roundTenths(Math.min(selectionDrag.anchor, sec)),
+          endSec: roundTenths(Math.max(selectionDrag.anchor, sec)),
+        });
+      }
+      return;
+    }
+    const handle = detailDragRef.current;
+    if (!handle) return;
+    event.preventDefault();
+    if (handle === "start") {
+      onChangeStart?.(roundTenths(clamp(sec, 0, startMax)));
+      return;
+    }
+    if (handle === "end") {
+      onChangeEnd?.(roundTenths(clamp(sec, endMin, span)));
+      return;
+    }
+    if (!selection) return;
+    if (handle === "sel-start") {
+      setSelection({
+        ...selection,
+        startSec: roundTenths(clamp(sec, startSec, selection.endSec - MIN_SELECTION_SEC)),
+      });
+      return;
+    }
+    setSelection({
+      ...selection,
+      endSec: roundTenths(clamp(sec, selection.startSec + MIN_SELECTION_SEC, endSec)),
+    });
+  };
+
+  const endDetail = () => {
+    const selectionDrag = detailSelectionRef.current;
+    if (selectionDrag && !selectionDrag.moved) {
+      onSeek?.(selectionDrag.anchor, "detail");
+    }
+    detailSelectionRef.current = null;
+    detailDragRef.current = null;
   };
 
   const nudge = (handle: "start" | "end") => (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -233,8 +441,10 @@ export function Timeline({
     onSeek?.(sec, "track");
   };
 
+  const middleJump = removeSegments[0]?.startSec ?? (startSec + endSec) / 2;
+
   return (
-    <div data-testid="timeline" className="flex flex-col gap-2">
+    <div data-testid="timeline" className="flex flex-col gap-3">
       <div
         ref={trackRef}
         data-testid="timeline-track"
@@ -245,18 +455,6 @@ export function Timeline({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
       >
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-0 z-0 h-3"
-        >
-          {Array.from({ length: 11 }).map((_, index) => (
-            <span
-              key={index}
-              className="absolute top-0 h-3 w-px bg-line/60"
-              style={{ left: `${index * 10}%` }}
-            />
-          ))}
-        </div>
         <div
           data-testid="timeline-region-cut-before"
           data-region="cut-before"
@@ -273,6 +471,14 @@ export function Timeline({
           style={{ left: `${keepRight}%`, width: `${Math.max(100 - keepRight, 0)}%` }}
           className="absolute inset-y-0 bg-raised/20"
         />
+        {zoom < span ? (
+          <div
+            aria-hidden="true"
+            data-testid="timeline-window"
+            style={{ left: `${pct(windowStart)}%`, width: `${pct(windowEnd) - pct(windowStart)}%` }}
+            className="pointer-events-none absolute inset-y-0 z-[5] border-x border-mist/30 bg-mist/5"
+          />
+        ) : null}
         {clips.map((clip) => {
           const left = pct(clip.startSec);
           return (
@@ -313,7 +519,8 @@ export function Timeline({
             onPlayRegion?.("keep", startSec, endSec);
           }}
           style={{ left: `${keepLeft}%`, width: `${keepWidth}%`, touchAction: "none" }}
-          className="absolute inset-y-0 z-10 rounded-[3px] border-x border-accent/70 bg-accent/25 transition-colors hover:bg-accent/35"        />
+          className="absolute inset-y-0 z-10 rounded-[3px] border-x border-accent/70 bg-accent/25 transition-colors hover:bg-accent/35"
+        />
         <div
           data-testid="timeline-selection-surface"
           onPointerDown={beginSelection}
@@ -467,27 +674,224 @@ export function Timeline({
           />
           <span aria-hidden="true" className="absolute left-1/2 top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-accent" />
         </button>
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-6"
-        >
-          {[10, 33, 67, 100].map((pctValue) => {
-            const sec = clamp((pctValue / 100) * span, 0, span);
-            return (
-              <span
-                key={pctValue}
-                className="absolute bottom-0 flex flex-col items-center"
-                style={{ left: `${pctValue}%`, transform: "translateX(-50%)" }}
-              >
-                <span className="mb-0.5 h-2 w-px bg-line" />
-                <span className="font-mono text-[9px] text-muted">
-                  {formatCut(sec).replace(/\.0$/, "")}
-                </span>
-              </span>
-            );
-          })}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-between px-1 font-mono text-[9px] text-muted">
+          <span>{shortCut(0)}</span>
+          <span>{shortCut(span / 2)}</span>
+          <span>{shortCut(span)}</span>
         </div>
       </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1">
+          <span className="px-1 text-[10px] font-semibold uppercase tracking-wide text-muted">Jump</span>
+          <button
+            type="button"
+            onClick={() => onSeek?.(startSec, "jump-start")}
+            className="min-h-[36px] rounded-md border border-line bg-raised px-2 text-[11px] font-semibold text-mist transition-colors hover:border-accent"
+          >
+            Opening
+          </button>
+          <button
+            type="button"
+            onClick={() => onSeek?.(middleJump, "jump-middle")}
+            className="min-h-[36px] rounded-md border border-line bg-raised px-2 text-[11px] font-semibold text-mist transition-colors hover:border-accent"
+          >
+            Middle
+          </button>
+          <button
+            type="button"
+            onClick={() => onSeek?.(endSec, "jump-end")}
+            className="min-h-[36px] rounded-md border border-line bg-raised px-2 text-[11px] font-semibold text-mist transition-colors hover:border-accent"
+          >
+            Closing
+          </button>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="px-1 text-[10px] font-semibold uppercase tracking-wide text-muted">Zoom</span>
+          {ZOOM_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={zoomSec === option.value}
+              onClick={() => setZoomSec(option.value)}
+              className={`min-h-[36px] rounded-md border px-2 text-[11px] font-semibold transition-colors ${
+                zoomSec === option.value
+                  ? "border-accent bg-accent/15 text-accent"
+                  : "border-line bg-raised text-mist hover:border-accent"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-md border border-line bg-surface p-2 shadow-inner">
+        <div className="mx-3">
+          <div
+            ref={detailRef}
+            data-testid="timeline-detail"
+            data-window-start={windowStart}
+            data-window-end={windowEnd}
+            className="relative h-28 w-full touch-none select-none overflow-visible rounded-sm bg-ink/60"
+            onPointerDown={beginDetailSelection}
+            onPointerMove={moveDetail}
+            onPointerUp={endDetail}
+            onPointerCancel={endDetail}
+          >
+            <Waveform peaks={peaks} span={span} windowStart={windowStart} windowEnd={windowEnd} />
+            {detailVisible(0, startSec) ? (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 left-0 bg-raised/40"
+                style={{ width: `${detailPct(startSec)}%` }}
+              />
+            ) : null}
+            {detailVisible(endSec, span) ? (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 right-0 bg-raised/40"
+                style={{ width: `${Math.max(100 - detailPct(endSec), 0)}%` }}
+              />
+            ) : null}
+            {removeSegments.map((segment, index) => {
+              if (!detailVisible(segment.startSec, segment.endSec)) return null;
+              const left = detailPct(segment.startSec);
+              const width = Math.max(detailPct(segment.endSec) - left, 0.6);
+              return (
+                <div
+                  key={`detail-${segment.startSec}-${segment.endSec}-${index}`}
+                  data-testid={`timeline-detail-removal-${index}`}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Cut ${index + 1}, ${shortCut(segment.startSec)} to ${shortCut(segment.endSec)}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSeek?.(segment.startSec, `detail_removal_${index}`);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    onSeek?.(segment.startSec, `detail_removal_${index}`);
+                  }}
+                  style={{ left: `${left}%`, width: `${width}%` }}
+                  className="absolute inset-y-0 z-10 cursor-pointer border-x-2 border-danger/80 bg-danger/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
+                >
+                  <button
+                    type="button"
+                    aria-label={`Delete cut ${index + 1} on timeline`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onRemoveSegment?.(index);
+                    }}
+                    className="absolute -top-2 right-0 z-20 grid h-6 w-6 place-items-center rounded-full border border-danger/60 bg-ink text-xs text-danger shadow"
+                  >
+                    ×
+                  </button>
+                </div>
+              );
+            })}
+            {selection && detailVisible(selection.startSec, selection.endSec) ? (
+              <>
+                <div
+                  aria-hidden="true"
+                  style={{
+                    left: `${detailPct(selection.startSec)}%`,
+                    width: `${Math.max(detailPct(selection.endSec) - detailPct(selection.startSec), 0.6)}%`,
+                  }}
+                  className="pointer-events-none absolute inset-y-0 z-20 border border-warn bg-warn/15"
+                />
+                <button
+                  type="button"
+                  role="slider"
+                  data-testid="timeline-detail-selection-handle-start"
+                  aria-label="Detail removal selection start"
+                  aria-valuemin={startSec}
+                  aria-valuemax={Math.max(startSec, selection.endSec - MIN_SELECTION_SEC)}
+                  aria-valuenow={selection.startSec}
+                  style={{ left: `${detailPct(selection.startSec)}%` }}
+                  onPointerDown={beginDetailDrag("sel-start")}
+                  onKeyDown={nudgeSelection("start")}
+                  className="absolute inset-y-0 z-40 w-8 -translate-x-1/2 cursor-ew-resize bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-warn"
+                >
+                  <span aria-hidden="true" className="absolute inset-y-1 left-1/2 w-0.5 -translate-x-1/2 bg-warn" />
+                </button>
+                <button
+                  type="button"
+                  role="slider"
+                  data-testid="timeline-detail-selection-handle-end"
+                  aria-label="Detail removal selection end"
+                  aria-valuemin={Math.min(endSec, selection.startSec + MIN_SELECTION_SEC)}
+                  aria-valuemax={endSec}
+                  aria-valuenow={selection.endSec}
+                  style={{ left: `${detailPct(selection.endSec)}%` }}
+                  onPointerDown={beginDetailDrag("sel-end")}
+                  onKeyDown={nudgeSelection("end")}
+                  className="absolute inset-y-0 z-40 w-8 -translate-x-1/2 cursor-ew-resize bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-warn"
+                >
+                  <span aria-hidden="true" className="absolute inset-y-1 left-1/2 w-0.5 -translate-x-1/2 bg-warn" />
+                </button>
+              </>
+            ) : null}
+            {detailVisible(ending, ending) ? (
+              <div
+                aria-hidden="true"
+                style={{ left: `${detailPct(ending)}%` }}
+                className="pointer-events-none absolute inset-y-0 z-20 w-0.5 -translate-x-1/2 bg-warn"
+              />
+            ) : null}
+            <div
+              aria-hidden="true"
+              style={{ left: `${detailPct(currentSec)}%` }}
+              className="pointer-events-none absolute inset-y-0 z-30 w-0.5 -translate-x-1/2 bg-mist shadow-[0_0_8px_rgba(233,237,239,0.4)]"
+            >
+              <span className="absolute left-1/2 top-0 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-mist" />
+            </div>
+            {detailVisible(startSec, startSec) ? (
+              <button
+                type="button"
+                role="slider"
+                data-testid="timeline-detail-handle-start"
+                aria-label="Detail keep start"
+                aria-valuemin={0}
+                aria-valuemax={startMax}
+                aria-valuenow={clamp(startSec, 0, startMax)}
+                style={{ left: `${detailPct(startSec)}%` }}
+                onPointerDown={beginDetailDrag("start")}
+                onKeyDown={nudge("start")}
+                className="absolute inset-y-0 z-40 w-11 -translate-x-1/2 cursor-ew-resize bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                <span aria-hidden="true" className="absolute inset-y-2 left-1/2 w-1.5 -translate-x-1/2 rounded-full bg-accent shadow-[0_0_10px_rgba(139,92,246,0.55)]" />
+                <span aria-hidden="true" className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-accent bg-ink" />
+              </button>
+            ) : null}
+            {detailVisible(endSec, endSec) ? (
+              <button
+                type="button"
+                role="slider"
+                data-testid="timeline-detail-handle-end"
+                aria-label="Detail keep end"
+                aria-valuemin={endMin}
+                aria-valuemax={span}
+                aria-valuenow={clamp(endSec, endMin, span)}
+                style={{ left: `${detailPct(endSec)}%` }}
+                onPointerDown={beginDetailDrag("end")}
+                onKeyDown={nudge("end")}
+                className="absolute inset-y-0 z-40 w-11 -translate-x-1/2 cursor-ew-resize bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                <span aria-hidden="true" className="absolute inset-y-2 left-1/2 w-1.5 -translate-x-1/2 rounded-full bg-accent shadow-[0_0_10px_rgba(139,92,246,0.55)]" />
+                <span aria-hidden="true" className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-accent bg-ink" />
+              </button>
+            ) : null}
+          </div>
+          <div className="mt-1 flex justify-between font-mono text-[10px] text-muted">
+            <span>{shortCut(windowStart)}</span>
+            <span>{shortCut(windowStart + zoom / 2)}</span>
+            <span>{shortCut(windowEnd)}</span>
+          </div>
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"

@@ -3,7 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../api/client", () => ({ isLive: true }));
+vi.mock("../api/client", () => ({
+  isLive: true,
+  mediaApi: { waveform: async () => ({ peaks: [], duration: 0 }) },
+}));
 
 import { Shell } from "./Shell";
 

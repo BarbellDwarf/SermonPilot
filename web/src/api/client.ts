@@ -905,6 +905,11 @@ export function mediaStreamUrl(sermonId: string, kind: string): string {
 export const mediaApi = {
   list: (id: string) => send<ApiSermonMedia>(`/api/media/sermons/${encodeURIComponent(id)}`, "GET"),
   url: mediaStreamUrl,
+  waveform: (id: string) =>
+    send<{ peaks: number[]; duration: number }>(
+      `/api/media/sermons/${encodeURIComponent(id)}/waveform`,
+      "GET",
+    ),
   fetchJson: async <T,>(id: string, kind: string): Promise<T> => {
     const res = await authFetch(
       `/api/media/sermons/${encodeURIComponent(id)}/${encodeURIComponent(kind)}`,

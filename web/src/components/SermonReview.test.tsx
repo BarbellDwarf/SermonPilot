@@ -557,7 +557,7 @@ describe("SermonReview single player and plan", () => {
 });
 
 describe("SermonReview artifacts", () => {
-  it("groups files, transcript, previews, and history into collapsible panels", async () => {
+  it("groups files, transcript, previews, and history into one tabbed panel", async () => {
     const user = userEvent.setup();
     renderReview(
       <SermonReview
@@ -570,24 +570,23 @@ describe("SermonReview artifacts", () => {
       />,
     );
 
+    expect(screen.getByTestId("info-panel")).toBeTruthy();
+    expect(screen.getByTestId("transcript-panel")).toBeTruthy();
+    expect(screen.queryByTestId("files-panel")).toBeNull();
+
+    await user.click(screen.getByRole("tab", { name: "Files" }));
     expect(screen.getAllByTestId("artifact-primary-row").length).toBe(3);
     expect(screen.getByTestId("artifact-group-files-media")).toBeTruthy();
-    const files = screen.getByTestId("files-panel");
-    const previews = screen.getByTestId("previews-panel");
-    expect(screen.getByTestId("transcript-panel")).toBeTruthy();
-    expect(screen.getByTestId("history-panel")).toBeTruthy();
-    expect(document.getElementById("files-body")?.hasAttribute("hidden")).toBe(true);
-    expect(document.getElementById("previews-body")?.hasAttribute("hidden")).toBe(true);
 
-    await user.click(within(files).getByRole("button", { name: "Expand Files" }));
-    await user.click(within(previews).getByRole("button", { name: "Expand Previews" }));
-
-    expect(document.getElementById("files-body")?.hasAttribute("hidden")).toBe(false);
-    expect(document.getElementById("previews-body")?.hasAttribute("hidden")).toBe(false);
+    await user.click(screen.getByRole("tab", { name: "Previews" }));
     expect(screen.getAllByTestId("artifact-preview-row").length).toBe(3);
+
+    await user.click(screen.getByRole("tab", { name: "History" }));
+    expect(screen.getByTestId("history-panel")).toBeTruthy();
   });
 
-  it("renders an empty previews panel when no preview artifacts exist", () => {
+  it("renders an empty previews panel when no preview artifacts exist", async () => {
+    const user = userEvent.setup();
     renderReview(
       <SermonReview
         sermon={sermon()}
@@ -599,10 +598,12 @@ describe("SermonReview artifacts", () => {
       />,
     );
 
+    await user.click(screen.getByRole("tab", { name: "Previews" }));
     expect(screen.getByTestId("previews-empty").textContent).toContain("Previews appear after a render");
   });
 
-  it("renders no preview card when the previews are unavailable, and explains instead", () => {
+  it("renders no preview card when the previews are unavailable, and explains instead", async () => {
+    const user = userEvent.setup();
     renderReview(
       <SermonReview
         sermon={sermon()}
@@ -614,6 +615,7 @@ describe("SermonReview artifacts", () => {
       />,
     );
 
+    await user.click(screen.getByRole("tab", { name: "Previews" }));
     expect(screen.queryAllByTestId("artifact-preview-row").length).toBe(0);
     expect(screen.getByTestId("previews-empty").textContent).toContain("Previews appear after a render");
   });
@@ -632,7 +634,7 @@ describe("SermonReview artifacts", () => {
     );
 
     expect(screen.getAllByTestId("transcript-entry").length).toBe(1);
-    expect(screen.getAllByRole("button", { name: /transcript/i }).length).toBe(1);
+    expect(screen.getAllByRole("tab", { name: /transcript/i }).length).toBe(1);
     expect(screen.queryByText("Plain-text transcript of the teaching.")).toBeNull();
   });
 });
@@ -653,15 +655,15 @@ describe("SermonReview mobile layout", () => {
 
     const player = document.getElementById("player-plan");
     const details = document.getElementById("details");
-    const files = document.getElementById("files");
+    const info = screen.getByTestId("info-panel");
     expect(player).toBeTruthy();
     expect(details).toBeTruthy();
-    expect(files).toBeTruthy();
+    expect(info).toBeTruthy();
     expect(
       player!.compareDocumentPosition(details!) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      player!.compareDocumentPosition(files!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      player!.compareDocumentPosition(info) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
@@ -690,8 +692,6 @@ describe("SermonReview mobile layout", () => {
       start!.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.queryByTestId("timeline-labels")).toBeNull();
-    expect(document.getElementById("previews-body")?.hasAttribute("hidden")).toBe(true);
-    expect(document.getElementById("history-body")?.hasAttribute("hidden")).toBe(true);
   });
 
   it("keeps one primary action and every secondary action behind More actions", async () => {
@@ -814,7 +814,7 @@ describe("SermonReview mobile layout", () => {
 
     const player = document.getElementById("player-plan");
     const details = document.getElementById("details");
-    const files = document.getElementById("files");
+    const info = screen.getByTestId("info-panel");
     expect(
       player!.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -822,7 +822,7 @@ describe("SermonReview mobile layout", () => {
       player!.compareDocumentPosition(details!) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
-      player!.compareDocumentPosition(files!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      player!.compareDocumentPosition(info) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 });
@@ -1184,6 +1184,7 @@ describe("SermonReview refine controls", () => {
       },
       { timeout: 3000 },
     );
+    await user.click(screen.getByRole("tab", { name: "History" }));
     expect(screen.getAllByText(/only the second class/).length).toBeGreaterThan(0);
     expect(toasts.join(" ")).toContain("Previous revision superseded");
   });
@@ -1211,6 +1212,7 @@ describe("SermonReview refine controls", () => {
       },
       { timeout: 3000 },
     );
+    await user.click(screen.getByRole("tab", { name: "History" }));
     expect(screen.queryByText("revision 2")).toBeNull();
     expect(screen.getByText("revision 1")).toBeTruthy();
     expect(toasts.join(" ")).toContain("from scratch");
