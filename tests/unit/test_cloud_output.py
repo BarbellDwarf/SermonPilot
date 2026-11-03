@@ -176,6 +176,26 @@ def test_local_output_unchanged(tmp_path, monkeypatch):
     assert (outdir / "sermon.mp3").is_file()
 
 
+def test_dry_run_ignores_remote_output(tmp_path, cloud_env, monkeypatch):
+    captured: dict = {}
+    _stub_pipeline(monkeypatch, captured)
+    uploads: list = []
+    monkeypatch.setattr(
+        job_executors, "_upload_cloud_output", lambda *a, **k: uploads.append(a)
+    )
+    src = tmp_path / "talk.mp3"
+    src.write_bytes(b"ID3")
+    params = _params(str(src), "remote:drive:talks")
+    params["form_data"]["dry_run"] = True
+
+    result = execute_sermon_processing_job(_job(params))
+
+    assert result.success is True, result.error
+    assert uploads == []
+    assert "cloud_output" not in result.data
+    assert not str(captured["output_directory"]).startswith(str(cloud_env["staging"]))
+
+
 def _write_remote_config(rclone_dir: Path, user_id: str, name: str = "drive") -> None:
     import re
 

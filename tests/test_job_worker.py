@@ -84,6 +84,7 @@ def test_production_entrypoint_supervises_every_long_running_role() -> None:
     entrypoint = Path(__file__).parents[1] / "docker" / "start_production.sh"
     script = entrypoint.read_text(encoding="utf-8")
 
-    for label in ("Web API", "Streamlit", "Job worker"):
+    for label in ("Web API", "Job worker"):
         assert f'restart_process "{label}"' in script
+    assert "Streamlit" not in script
     assert "-gt 5" in script

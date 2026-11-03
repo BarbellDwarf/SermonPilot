@@ -11,8 +11,11 @@ auth gate also accepts ``?token=`` for ``/api/media`` only.
 
 from __future__ import annotations
 
+import array
 import json
 import os
+import shutil
+import subprocess
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -45,6 +48,7 @@ _CONTENT_TYPES = {
 
 _MEDIA_KINDS = (
     "source",
+    "preview",
     "processed",
     "enhanced",
     "keeper",
@@ -66,6 +70,7 @@ _ALIASES = {
 
 _LABELS = {
     "source": "Source media",
+    "preview": "Browser preview",
     "processed": "Rendered audio",
     "enhanced": "Enhanced audio",
     "keeper": "Keeper video",
@@ -214,6 +219,7 @@ def _media_dirs(files: dict[str, str], metadata: dict[str, Any]) -> list[Path]:
         "enhanced_audio",
         "original_audio",
         "original_video",
+        "preview",
         "metadata",
         "transcript",
         "transcript_timestamps",
@@ -229,6 +235,11 @@ def artifact_candidates(
     raw: list[Any] = []
     if kind == "source":
         raw = [metadata.get("original_file")]
+    elif kind == "preview":
+        raw = [files.get("preview"), metadata.get("preview_file")]
+        raw.extend(
+            str(path) for directory in dirs for path in sorted(directory.glob("*- Preview.mp4"))
+        )
     elif kind == "processed":
         raw = [
             metadata.get("processed_file"),
@@ -363,13 +374,107 @@ def list_sermon_media(request: Request, sermon_id: str) -> dict[str, Any]:
     def available(kind: str) -> bool:
         return any(item["kind"] == kind and item["available"] for item in items)
 
-    primary = "processed" if available("processed") else "source" if available("source") else None
+    primary = (
+        "preview"
+        if available("preview")
+        else "processed"
+        if available("processed")
+        else "source"
+        if available("source")
+        else None
+    )
     audio: str | None = None
     for kind in ("keeper", "enhanced", "processed", "source"):
         if available(kind):
             audio = kind
             break
     return {"id": sermon_id, "items": items, "primary": primary, "audio": audio}
+
+
+_WAVEFORM_BUCKETS = 4000
+_WAVEFORM_SAMPLE_RATE = 8000
+
+
+def _waveform_cache_path(source: Path) -> Path:
+    return source.parent / f".waveform-{_WAVEFORM_BUCKETS}.json"
+
+
+def _read_waveform_cache(source: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(_waveform_cache_path(source).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    peaks = payload.get("peaks") if isinstance(payload, dict) else None
+    duration = payload.get("duration") if isinstance(payload, dict) else None
+    if not isinstance(peaks, list) or not peaks or not isinstance(duration, (int, float)):
+        return None
+    return {"peaks": peaks, "duration": float(duration)}
+
+
+def _generate_waveform(source: Path) -> dict[str, Any]:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise HTTPException(status_code=503, detail="waveform unavailable: ffmpeg not found")
+    command = [
+        ffmpeg,
+        "-v",
+        "error",
+        "-i",
+        str(source),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        str(_WAVEFORM_SAMPLE_RATE),
+        "-f",
+        "s16le",
+        "-",
+    ]
+    try:
+        completed = subprocess.run(command, check=True, capture_output=True, timeout=900)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise HTTPException(status_code=503, detail="waveform generation failed") from exc
+    samples = array.array("h")
+    samples.frombytes(completed.stdout)
+    if not samples:
+        raise HTTPException(status_code=503, detail="waveform unavailable: no audio samples")
+    step = max(len(samples) // _WAVEFORM_BUCKETS, 1)
+    peaks: list[float] = []
+    for start in range(0, len(samples), step):
+        chunk = samples[start : start + step]
+        peaks.append(round(max(abs(value) for value in chunk) / 32768.0, 4))
+        if len(peaks) == _WAVEFORM_BUCKETS:
+            break
+    payload = {
+        "peaks": peaks,
+        "duration": round(len(samples) / _WAVEFORM_SAMPLE_RATE, 3),
+    }
+    try:
+        _waveform_cache_path(source).write_text(json.dumps(payload), encoding="utf-8")
+    except OSError:
+        pass
+    return payload
+
+
+@router.get("/sermons/{sermon_id}/waveform")
+def sermon_waveform(request: Request, sermon_id: str) -> dict[str, Any]:
+    user = request_user(request)
+    repo = get_repository()
+    sermon = _load_owned_sermon(repo, sermon_id, user)
+    roots = allowed_roots(user) if user is not None else []
+    source: Path | None = None
+    for kind in ("preview", "source", "processed", "enhanced"):
+        try:
+            source = resolve_artifact(sermon, kind, roots, strict=False)
+            break
+        except HTTPException:
+            continue
+    if source is None:
+        raise HTTPException(status_code=404, detail="no audio artifact for waveform")
+    cached = _read_waveform_cache(source)
+    if cached is not None:
+        return cached
+    return _generate_waveform(source)
 
 
 @router.api_route("/sermons/{sermon_id}/{kind}", methods=["GET", "HEAD"])
@@ -400,7 +505,11 @@ def stream_sermon_artifact(request: Request, sermon_id: str, kind: str) -> Respo
         status = 206
         start, end = parsed
 
-    headers = {"Accept-Ranges": "bytes", "Content-Length": str(end - start)}
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(end - start),
+        "Cache-Control": "no-store",
+    }
     if status == 206:
         headers["Content-Range"] = f"bytes {start}-{end - 1}/{size}"
 

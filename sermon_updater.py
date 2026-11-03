@@ -3135,6 +3135,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             )
             from src.review_media import (
                 render_bounded_snippets,
+                render_browser_preview,
                 resolve_review_media_root,
                 retained_artifact_line,
                 sweep_abandoned_reviews,
@@ -3162,6 +3163,21 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 and Path(original_input_path).resolve() != original_path.resolve()
             ):
                 shutil.copy2(original_input_path, original_path)
+
+            preview_path: Path | None = None
+            if input_is_video and Path(original_path).is_file():
+                preview_path = render_browser_preview(
+                    original_path,
+                    review_dir
+                    / build_output_filename(
+                        review_title,
+                        series_title,
+                        speaker_name,
+                        recorded_date,
+                        "Preview",
+                        ".mp4",
+                    ),
+                )
 
             keeper_path: Path | None = None
             if keeper_used and Path(audio_path).exists():
@@ -3260,6 +3276,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             }
             if keeper_path is not None:
                 metadata['keeper_file'] = str(keeper_path)
+            if preview_path is not None:
+                metadata['preview_file'] = str(preview_path)
             if processed_path is not None:
                 metadata['processed_file'] = str(processed_path)
             if enhanced_path is not None:
@@ -3289,6 +3307,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 review_file_paths['keeper_audio'] = str(keeper_path)
             if input_is_video:
                 review_file_paths['original_video'] = str(original_path)
+            if preview_path is not None:
+                review_file_paths['preview'] = str(preview_path)
             if transcript:
                 review_file_paths['transcript'] = str(transcript_file)
                 if transcript_segments:

@@ -10,6 +10,7 @@ from src.review_media import (
     MARKER_FILENAME,
     finalize_review_media,
     render_bounded_snippets,
+    render_browser_preview,
     resolve_review_media_root,
     retention_summary,
     snippet_windows,
@@ -287,3 +288,47 @@ def test_retention_summary_exposes_bounds(tmp_path, monkeypatch):
     assert summary["root"] == str(tmp_path / "reviews")
     assert summary["retention_days"] == 7.0
     assert summary["snippet_max_seconds"] == 30.0
+
+
+def test_render_browser_preview_skips_playable_source(tmp_path):
+    source = tmp_path / "Sermon - Original.mp4"
+    source.write_bytes(b"mp4")
+    assert render_browser_preview(source, tmp_path / "Sermon - Preview.mp4") is None
+
+
+def test_render_browser_preview_remuxes_matroska(tmp_path, monkeypatch):
+    source = tmp_path / "Sermon - Original.mkv"
+    source.write_bytes(b"mkv")
+    dest = tmp_path / "Sermon - Preview.mp4"
+    commands: list[list[str]] = []
+
+    def fake_run(command, **kwargs):
+        commands.append(list(command))
+        Path(command[-1]).write_bytes(b"mp4")
+        return None
+
+    monkeypatch.setattr("src.review_media.shutil.which", lambda _name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr("src.review_media.subprocess.run", fake_run)
+
+    assert render_browser_preview(source, dest) == dest
+    assert commands
+    assert commands[0][commands[0].index("-c:v") + 1] == "copy"
+    assert commands[0][commands[0].index("-c:a") + 1] == "aac"
+    assert dest.read_bytes() == b"mp4"
+
+
+def test_render_browser_preview_returns_none_when_ffmpeg_fails(tmp_path, monkeypatch):
+    import subprocess
+
+    source = tmp_path / "Sermon - Original.mkv"
+    source.write_bytes(b"mkv")
+    dest = tmp_path / "Sermon - Preview.mp4"
+
+    def boom(*args, **kwargs):
+        raise subprocess.CalledProcessError(1, "ffmpeg")
+
+    monkeypatch.setattr("src.review_media.shutil.which", lambda _name: "/usr/bin/ffmpeg")
+    monkeypatch.setattr("src.review_media.subprocess.run", boom)
+
+    assert render_browser_preview(source, dest) is None
+    assert not dest.exists()

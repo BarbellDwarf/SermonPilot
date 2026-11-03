@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../api/client", () => ({
+  mediaApi: { waveform: async () => ({ peaks: [], duration: 0 }) },
   isLive: true,
   brandingApi: { list: mocks.listBranding, upload: mocks.uploadBranding },
   cloudApi: {
@@ -51,7 +52,6 @@ function renderPage(entry = "/new") {
     <QueryClientProvider client={client}>
       <MemoryRouter
         initialEntries={[entry]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <NewSermon />
       </MemoryRouter>

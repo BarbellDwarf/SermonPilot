@@ -86,6 +86,24 @@ def test_media_listing_reports_available_artifacts(client, scoped_setup, tmp_pat
     assert body["primary"] == "processed"
 
 
+def test_media_preview_wins_primary_and_streams(client, scoped_setup, tmp_path):
+    s = scoped_setup
+    outdir = tmp_path / "a-out"
+    _seed_media(s["a"]["id"], "s-a", outdir)
+    preview = outdir / "sermon - Preview.mp4"
+    preview.write_bytes(b"PREVIEW-BYTES" * 10)
+
+    body = client.get("/api/media/sermons/s-a", headers=_auth(s)).json()
+    kinds = {item["kind"]: item for item in body["items"]}
+    assert kinds["preview"]["available"] is True
+    assert body["primary"] == "preview"
+
+    r = client.get("/api/media/sermons/s-a/preview", headers=_auth(s))
+    assert r.status_code == 200
+    assert r.content == preview.read_bytes()
+    assert r.headers["cache-control"] == "no-store"
+
+
 def test_stream_200_sets_accept_ranges_and_content_type(client, scoped_setup, tmp_path):
     s = scoped_setup
     outdir = tmp_path / "a-out"
@@ -264,3 +282,35 @@ def test_parse_range_forms():
         parse_range("bytes=200-", 100)
     with pytest.raises(RangeNotSatisfiable):
         parse_range("bytes=-0", 100)
+
+
+def test_waveform_endpoint_generates_and_caches_peaks(client, scoped_setup, tmp_path):
+    import math
+    import struct
+    import wave
+
+    s = scoped_setup
+    outdir = tmp_path / "a-out"
+    _seed_media(s["a"]["id"], "s-a", outdir)
+    source = outdir / "sermon - Original.wav"
+    rate = 8000
+    frames = b"".join(
+        struct.pack("<h", int(10000 * math.sin(2 * math.pi * 440 * index / rate)))
+        for index in range(rate)
+    )
+    with wave.open(str(source), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(frames)
+    (outdir / "metadata.json").write_text(
+        json.dumps({"original_file": str(source)}), encoding="utf-8"
+    )
+
+    response = client.get("/api/media/sermons/s-a/waveform", headers=_auth(s))
+
+    assert response.status_code == 200, response.text
+    assert len(response.json()["peaks"]) == 4000
+    assert response.json()["duration"] == pytest.approx(1.0, abs=0.1)
+    assert max(response.json()["peaks"]) > 0
+    assert (outdir / ".waveform-4000.json").exists()

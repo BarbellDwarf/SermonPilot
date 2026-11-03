@@ -170,6 +170,51 @@ describe("MediaPlayer", () => {
     expect(onTime).toHaveBeenCalledWith(7.5);
   });
 
+  it("syncs the offset audio without seeking on every timeupdate", () => {
+    render(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        contentType="video/mp4"
+        available
+        offsetSec={2}
+      />,
+    );
+    const video = document.querySelector("video") as HTMLVideoElement;
+    const audio = document.querySelector("audio") as HTMLAudioElement;
+    Object.defineProperty(audio, "readyState", { configurable: true, value: 4 });
+    let audioTime = 0;
+    let seeks = 0;
+    Object.defineProperty(audio, "currentTime", {
+      configurable: true,
+      get: () => audioTime,
+      set: (value: number) => {
+        seeks += 1;
+        audioTime = value;
+      },
+    });
+    audio.play = vi.fn().mockResolvedValue(undefined);
+
+    video.currentTime = 10;
+    fireEvent.timeUpdate(video);
+    expect(audioTime).toBe(12);
+    expect(seeks).toBe(1);
+
+    video.currentTime = 10.2;
+    fireEvent.timeUpdate(video);
+    expect(seeks).toBe(1);
+
+    video.currentTime = 30;
+    fireEvent.timeUpdate(video);
+    expect(seeks).toBe(1);
+
+    video.currentTime = 5;
+    Object.defineProperty(video, "paused", { configurable: true, value: false });
+    fireEvent.play(video);
+    expect(audioTime).toBe(7);
+    expect(audio.play).toHaveBeenCalled();
+  });
+
   it("labels the readout as playback time so it does not read as a second clock", () => {
     render(
       <MediaPlayer

@@ -64,10 +64,6 @@ cleanup() {
         kill -TERM "$UVICORN_PID" 2>/dev/null
         wait "$UVICORN_PID" 2>/dev/null
     fi
-    if [ -n "$STREAMLIT_PID" ]; then
-        kill -TERM "$STREAMLIT_PID" 2>/dev/null
-        wait "$STREAMLIT_PID" 2>/dev/null
-    fi
     if [ -n "$INGEST_WATCHER_PID" ]; then
         kill -TERM "$INGEST_WATCHER_PID" 2>/dev/null
         wait "$INGEST_WATCHER_PID" 2>/dev/null
@@ -137,16 +133,6 @@ start_worker() {
     WORKER_PID=$!
 }
 
-start_streamlit() {
-    streamlit run streamlit_app.py \
-        --server.port=8501 \
-        --server.address=0.0.0.0 \
-        --server.headless=true \
-        --server.maxUploadSize=${STREAMLIT_SERVER_MAX_UPLOAD_SIZE:-30720} \
-        --browser.gatherUsageStats=false &
-    STREAMLIT_PID=$!
-}
-
 # Start the headless job worker. Set SERMONPILOT_JOB_WORKER_ENABLED=0 for a
 # submit-only deployment.
 case "${SERMONPILOT_JOB_WORKER_ENABLED:-1}" in
@@ -158,10 +144,6 @@ case "${SERMONPILOT_JOB_WORKER_ENABLED:-1}" in
         start_worker
         ;;
 esac
-
-# Start main application
-echo "Starting Streamlit application..."
-start_streamlit
 
 # Start read-only web API + SPA (opt out with SERMONPILOT_WEB_API=0)
 start_web_api() {
@@ -190,14 +172,12 @@ case "${INGEST_WATCHER_ENABLED:-}" in
 esac
 
 # Wait for background processes. Every long-running role is supervised: a
-# segfault in uvicorn, a dead job worker, or a crashed Streamlit must not
-# leave the container "Up" with that role gone. Restart in place with a short
-# backoff, and give up after five failures in ten minutes so Docker's restart
-# policy can recreate the container.
+# segfault in uvicorn or a dead job worker must not leave the container "Up"
+# with that role gone. Restart in place with a short backoff, and give up after
+# five failures in ten minutes so Docker's restart policy can recreate the
+# container.
 UVICORN_FAILURES=0
 UVICORN_WINDOW_START=$SECONDS
-STREAMLIT_FAILURES=0
-STREAMLIT_WINDOW_START=$SECONDS
 WORKER_FAILURES=0
 WORKER_WINDOW_START=$SECONDS
 
@@ -233,7 +213,7 @@ restart_process() {
 stop_container() {
     local dead_pid="$1"
     local var pid
-    for var in UVICORN_PID STREAMLIT_PID INGEST_WATCHER_PID WORKER_PID; do
+    for var in UVICORN_PID INGEST_WATCHER_PID WORKER_PID; do
         pid="${!var-}"
         if [ -n "$pid" ] && [ "$pid" != "$dead_pid" ]; then
             kill -TERM "$pid" 2>/dev/null || true
@@ -245,9 +225,6 @@ stop_container() {
 while true; do
     if [ -n "${UVICORN_PID:-}" ]; then
         restart_process "Web API" UVICORN_PID UVICORN_FAILURES UVICORN_WINDOW_START start_web_api || stop_container "$UVICORN_PID"
-    fi
-    if [ -n "${STREAMLIT_PID:-}" ]; then
-        restart_process "Streamlit" STREAMLIT_PID STREAMLIT_FAILURES STREAMLIT_WINDOW_START start_streamlit || stop_container "$STREAMLIT_PID"
     fi
     if [ -n "${WORKER_PID:-}" ]; then
         restart_process "Job worker" WORKER_PID WORKER_FAILURES WORKER_WINDOW_START start_worker || stop_container "$WORKER_PID"

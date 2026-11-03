@@ -112,6 +112,13 @@ const ARTIFACT_NOTES: Record<string, string> = {
 
 const MIN_CUT_SECONDS = 0.25;
 const JOIN_PREVIEW_SECONDS = 10;
+const INFO_TABS = [
+  { id: "transcript", label: "Transcript" },
+  { id: "files", label: "Files" },
+  { id: "previews", label: "Previews" },
+  { id: "history", label: "History" },
+] as const;
+type InfoTab = (typeof INFO_TABS)[number]["id"];
 
 export interface UiCut extends RemoveSegment {
   enabled: boolean;
@@ -320,6 +327,7 @@ export function SermonReview({
   const [mockNotes, setMockNotes] = useState<{ revision: number; note: string }[]>([]);
   const [statusLog, setStatusLog] = useState<string[]>([]);
   const [confirmRestore, setConfirmRestore] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [selected, setSelected] = useState<"start" | "end" | null>(null);
   const [removeSegments, setRemoveSegments] = useState<UiCut[]>(
     () => initialCuts(initial.removeSegments),
@@ -334,7 +342,7 @@ export function SermonReview({
   const [seek, setSeek] = useState<{ sec: number; n: number } | null>(null);
   const [playhead, setPlayhead] = useState(0);
   const [playerKind, setPlayerKind] = useState<string>(() => preferredKind(media));
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [infoTab, setInfoTab] = useState<InfoTab>("transcript");
   const [detailsOpen, setDetailsOpen] = useState(false);
   useEffect(() => {
     if (!detailsOpen) return;
@@ -517,7 +525,11 @@ export function SermonReview({
   };
 
   const playJoin = (segment: RemoveSegment) => {
-    const sourceKind = media.byKind.source?.available ? "source" : preferredKind(media);
+    const sourceKind = media.byKind.preview?.available
+      ? "preview"
+      : media.byKind.source?.available
+        ? "source"
+        : preferredKind(media);
     if (media.byKind[sourceKind]?.available) setPlayerKind(sourceKind);
     const startSec = Math.max(safeStart, segment.startSec - JOIN_PREVIEW_SECONDS);
     const endSec = Math.min(safeEnd, segment.endSec + JOIN_PREVIEW_SECONDS);
@@ -669,6 +681,35 @@ export function SermonReview({
       setUploading(false);
       onToast("Upload of the existing render queued (demo).");
     }, 900);
+  };
+
+  const restoreOriginal = () => {
+    if (restoring) return;
+    setConfirmRestore(false);
+    if (!live) {
+      setPlan((p) => ({ ...p, status: "draft", revision: 1 }));
+      setStatusLog([]);
+      onToast("Original restored (demo). Plan reset to draft.");
+      return;
+    }
+    setRestoring(true);
+    void writeApi
+      .restorePlan(sermon.id)
+      .then((result) => {
+        setRestoring(false);
+        setStatusLog([]);
+        onRefresh?.();
+        onToast(
+          result.job_id
+            ? "Original restored locally. Re-upload to SermonAudio queued."
+            : "Original restored. The plan is reset to the full recording.",
+        );
+      })
+      .catch((e) => {
+        setRestoring(false);
+        const err = e as ApiError;
+        onToast(err?.message || "Could not restore the original recording.", "error");
+      });
   };
 
   const approve = (renderOnly: boolean) => {
@@ -1149,6 +1190,7 @@ export function SermonReview({
                 </p>
               )}
               <Timeline
+                sermonId={sermon.id}
                 durationSec={timelineDuration}
                 startSec={safeStart}
                 endSec={safeEnd}
@@ -1157,6 +1199,11 @@ export function SermonReview({
                 currentSec={playhead}
                 clips={clips}
                 removeSegments={enabledRemoveSegments}
+                onRemoveSegment={(index) => {
+                  const segment = enabledRemoveSegments[index];
+                  const fullIndex = removeSegments.indexOf(segment);
+                  if (fullIndex >= 0) undoRemoval(fullIndex);
+                }}
                 selection={selection}
                 onChangeSelection={(next) => {
                   setSelection(next);
@@ -1269,17 +1316,6 @@ export function SermonReview({
                   </div>
                 </div>
                 <div data-testid="cut-table" className="mt-3">
-                  <div
-                    aria-hidden="true"
-                    className="hidden grid-cols-[minmax(0,1.4fr)_5.5rem_5.5rem_5.5rem_4rem_auto] gap-2 border-b border-line pb-1 text-xs font-semibold uppercase tracking-wide text-muted lg:grid"
-                  >
-                    <span>Cut</span>
-                    <span>Start</span>
-                    <span>End</span>
-                    <span>Duration</span>
-                    <span>Included</span>
-                    <span className="text-right">Actions</span>
-                  </div>
                   <ul className="flex flex-col">
                     {cutRows.map((row) => {
                       const durationSec = Math.max(0, row.endSec - row.startSec);
@@ -1288,40 +1324,28 @@ export function SermonReview({
                         <li
                           key={key}
                           data-testid={row.testId}
-                          className="grid min-w-0 grid-cols-2 gap-x-3 gap-y-1 border-t border-line py-2 first:border-t-0 lg:grid-cols-[minmax(0,1.4fr)_5.5rem_5.5rem_5.5rem_4rem_auto] lg:items-center"
+                          className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-line py-2 first:border-t-0"
                         >
-                          <div className="col-span-2 min-w-0 lg:col-span-1">
-                            <p className="text-sm font-medium">{row.label}</p>
-                            <p className="text-xs text-muted">
-                              {row.typeLabel} · {formatDuration(durationSec)}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-baseline gap-x-2">
+                              <p className="text-sm font-medium">{row.label}</p>
+                              <p className="text-xs text-muted">{row.typeLabel}</p>
+                            </div>
+                            <p className="font-mono text-xs text-muted">
+                              {formatCut(row.startSec)} – {formatCut(row.endSec)}
+                              {" · "}
+                              <span data-testid={row.durationTestId}>
+                                {formatDuration(durationSec)}
+                              </span>
                             </p>
                           </div>
-                          <div className="min-w-0">
-                            <span className="text-xs text-muted lg:hidden">Start </span>
-                            <span className="font-mono text-xs">{formatCut(row.startSec)}</span>
-                          </div>
-                          <div className="min-w-0">
-                            <span className="text-xs text-muted lg:hidden">End </span>
-                            <span className="font-mono text-xs">{formatCut(row.endSec)}</span>
-                          </div>
-                          <div className="min-w-0">
-                            <span className="text-xs text-muted lg:hidden">Duration </span>
-                            <span
-                              data-testid={row.durationTestId}
-                              className="font-mono text-xs"
-                            >
-                              {formatDuration(durationSec)}
-                            </span>
-                          </div>
-                          <div className="justify-self-start lg:justify-self-center">
-                            <Switch
-                              checked={row.enabled}
-                              onChange={row.onToggle}
-                              label={row.toggleLabel}
-                              testId={row.toggleTestId}
-                            />
-                          </div>
-                          <div className="col-span-2 flex flex-wrap justify-end gap-2 lg:col-span-1">
+                          <Switch
+                            checked={row.enabled}
+                            onChange={row.onToggle}
+                            label={row.toggleLabel}
+                            testId={row.toggleTestId}
+                          />
+                          <div className="flex flex-wrap justify-end gap-2">
                             {row.onPreview ? (
                               <button
                                 type="button"
@@ -1371,8 +1395,10 @@ export function SermonReview({
                   </button>
                 ))}
               </div>
-              <fieldset className="rounded-md border border-line bg-ink p-3">
-                <legend className="px-1 text-sm font-semibold">Start &amp; end</legend>
+              <details className="rounded-md border border-line bg-ink p-3">
+                <summary className="cursor-pointer px-1 text-sm font-semibold">Exact times</summary>
+                <fieldset className="mt-2">
+                  <legend className="px-1 text-sm font-semibold">Start &amp; end</legend>
                 <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
                     <label htmlFor="cut-start" className="text-xs font-medium text-muted">
@@ -1425,6 +1451,7 @@ export function SermonReview({
                   </ul>
                 ) : null}
               </fieldset>
+              </details>
               <div className="flex flex-wrap items-center gap-2">
                 <Button onClick={reset} disabled={!dirty || applying}>
                   Reset to plan values
@@ -1432,10 +1459,10 @@ export function SermonReview({
                 <Button
                   variant="danger"
                   onClick={() => setConfirmRestore(true)}
-                  disabled={live}
-                  title={live ? "Restore original is not available in the console yet." : undefined}
+                  disabled={restoring || applying}
+                  title="Discard the applied cut and keep the unedited recording."
                 >
-                  Restore original
+                  {restoring ? "Restoring…" : "Restore original"}
                 </Button>
               </div>
             </div>
@@ -1510,7 +1537,7 @@ export function SermonReview({
                   },
                   {
                     label: "History",
-                    onSelect: () => setHistoryOpen(true),
+                    onSelect: () => setInfoTab("history"),
                     testId: "open-history",
                   },
                   ...(onUpload && actions.canPublishLegacy
@@ -1533,165 +1560,164 @@ export function SermonReview({
             {notesPanel}
           </section>
 
-          <div className="flex flex-col gap-3">
-            <CollapsibleSection id="files" title="Files" testId="files-panel">
-              <ArtifactGroup id="files-media" title="Media">
-                {primaryArtifacts.length === 0 && extraMediaArtifacts.length === 0 ? (
-                  <p className="text-sm text-muted">No source, render, or keeper files recorded yet.</p>
-                ) : (
-                  <ul className="flex flex-col gap-2">
-                    {primaryArtifacts.map((item) => (
-                      <ArtifactRow
-                        key={item.kind}
-                        sermonId={sermon.id}
-                        item={item}
-                        testId="artifact-primary-row"
-                        live={live}
-                      />
-                    ))}
-                    {extraMediaArtifacts.map((item) => (
-                      <ArtifactRow
-                        key={item.kind}
-                        sermonId={sermon.id}
-                        item={item}
-                        testId="artifact-other-row"
-                        live={live}
-                        onOpen={setPlayerKind}
-                      />
-                    ))}
-                  </ul>
-                )}
-              </ArtifactGroup>
-            </CollapsibleSection>
-
-            <CollapsibleSection id="transcript" title="Transcript" testId="transcript-panel" summary="Plain text and timecoded segments">
-              {transcript ? (
-                <div data-testid="transcript-entry">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-semibold">Transcript</p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {transcript.open && transcript.plainText ? (
-                        <button type="button" onClick={transcript.onCopy} className={chipButtonClass}>
-                          {transcript.copied ? "Copied" : "Copy"}
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={transcript.onToggle}
-                        aria-expanded={transcript.open}
-                        aria-controls="transcript-body"
-                        className={chipButtonClass}
-                      >
-                        {transcript.open ? "Hide transcript" : "Show transcript"}
-                      </button>
-                    </div>
-                  </div>
-                  {transcript.open ? (
-                    <div id="transcript-body" className="mt-2">
-                      {!live ? (
-                        <p className="text-sm text-muted">Transcripts are available in the live bridge.</p>
-                      ) : transcript.loading ? (
-                        <div className="flex flex-col gap-2"><Skeleton className="h-3 w-4/5" /><Skeleton className="h-3 w-3/5" /><Skeleton className="h-3 w-2/3" /></div>
-                      ) : transcript.error ? (
-                        <p className="font-mono text-xs text-danger">{transcript.error}</p>
-                      ) : transcript.plainText || transcript.timestampsAvailable ? (
-                        <>
+          <div className="overflow-hidden rounded-lg border border-line bg-surface" data-testid="info-panel">
+            <div role="tablist" aria-label="Teaching information" className="flex gap-1 overflow-x-auto border-b border-line p-1">
+              {INFO_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  id={`info-tab-${tab.id}`}
+                  aria-selected={infoTab === tab.id}
+                  aria-controls={`info-${tab.id}`}
+                  onClick={() => setInfoTab(tab.id)}
+                  className={`min-h-[40px] shrink-0 rounded-md px-3 text-sm font-semibold ${
+                    infoTab === tab.id ? "bg-accent/15 text-accent" : "text-muted hover:text-mist"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="p-3">
+              {infoTab === "transcript" ? (
+                <div role="tabpanel" id="info-transcript" aria-labelledby="info-tab-transcript" data-testid="transcript-panel">
+                  <div data-testid="transcript-entry">
+                  {transcript ? (
+                    !live ? (
+                      <p className="text-sm text-muted">Transcripts are available in the live bridge.</p>
+                    ) : transcript.loading ? (
+                      <div className="flex flex-col gap-2"><Skeleton className="h-3 w-4/5" /><Skeleton className="h-3 w-3/5" /><Skeleton className="h-3 w-2/3" /></div>
+                    ) : transcript.error ? (
+                      <p className="font-mono text-xs text-danger">{transcript.error}</p>
+                    ) : transcript.plainText || transcript.timestampsAvailable ? (
+                      <>
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <p className="font-mono text-xs text-muted">
+                            {transcript.totalLength} characters
+                            {transcript.truncated ? " (truncated)" : ""}
+                          </p>
                           {transcript.plainText ? (
-                            <p className="mb-2 font-mono text-xs text-muted">
-                              {transcript.totalLength} characters
-                              {transcript.truncated ? " (truncated)" : ""}
-                            </p>
+                            <button type="button" onClick={transcript.onCopy} className={chipButtonClass}>
+                              {transcript.copied ? "Copied" : "Copy"}
+                            </button>
                           ) : null}
-                          <TranscriptViewer
-                            id={sermon.id}
-                            plainText={transcript.plainText}
-                            timestampsAvailable={transcript.timestampsAvailable}
-                            onSeek={requestSeek}
+                        </div>
+                        <TranscriptViewer
+                          id={sermon.id}
+                          plainText={transcript.plainText}
+                          timestampsAvailable={transcript.timestampsAvailable}
+                          onSeek={requestSeek}
+                        />
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
+                    )
+                  ) : (
+                    <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
+                  )}
+                  </div>
+                </div>
+              ) : null}
+
+              {infoTab === "files" ? (
+                <div role="tabpanel" id="info-files" aria-labelledby="info-tab-files" data-testid="files-panel">
+                  <ArtifactGroup id="files-media" title="Media">
+                    {primaryArtifacts.length === 0 && extraMediaArtifacts.length === 0 ? (
+                      <p className="text-sm text-muted">No source, render, or keeper files recorded yet.</p>
+                    ) : (
+                      <ul className="flex flex-col gap-2">
+                        {primaryArtifacts.map((item) => (
+                          <ArtifactRow
+                            key={item.kind}
+                            sermonId={sermon.id}
+                            item={item}
+                            testId="artifact-primary-row"
+                            live={live}
                           />
-                        </>
-                      ) : (
-                        <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
-                      )}
-                    </div>
+                        ))}
+                        {extraMediaArtifacts.map((item) => (
+                          <ArtifactRow
+                            key={item.kind}
+                            sermonId={sermon.id}
+                            item={item}
+                            testId="artifact-other-row"
+                            live={live}
+                            onOpen={setPlayerKind}
+                          />
+                        ))}
+                      </ul>
+                    )}
+                  </ArtifactGroup>
+                </div>
+              ) : null}
+
+              {infoTab === "previews" ? (
+                <div role="tabpanel" id="info-previews" aria-labelledby="info-tab-previews" data-testid="previews-panel">
+                  {availablePreviews.length === 0 ? (
+                    <p data-testid="previews-empty" className="text-sm text-muted">
+                      Previews appear after a render.
+                    </p>
+                  ) : (
+                    <ul className="flex flex-col gap-2">
+                      {availablePreviews.map((item) => (
+                        <ArtifactRow
+                          key={item.kind}
+                          sermonId={sermon.id}
+                          item={item}
+                          testId="artifact-preview-row"
+                          live={live}
+                          onOpen={setPlayerKind}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
+
+              {infoTab === "history" ? (
+                <div role="tabpanel" id="info-history" aria-labelledby="info-tab-history" data-testid="history-panel">
+                  {noteRows.length > 0 ? (
+                    <ul className="flex flex-col gap-1">
+                      {noteRows.map((row) => (
+                        <li key={`${row.revision}:${row.note}`} className="text-xs text-muted">
+                          <span className="font-mono">revision {row.revision}</span>: {row.note}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-muted">No rejection notes yet.</p>
+                  )}
+                  {statusLog.length > 0 ? (
+                    <p className="mt-2 font-mono text-xs text-muted">{statusLog.join(" · ")}</p>
+                  ) : null}
+                  {!detectionFailed && plan.reasoning ? (
+                    <p className="mt-2 max-w-prose text-sm text-muted">
+                      <span className="font-semibold">Reasoning:</span> {plan.reasoning}
+                    </p>
+                  ) : null}
+                  {!detectionFailed ? (
+                    <dl className="mt-2 grid grid-cols-1 gap-1 font-mono text-xs text-muted sm:grid-cols-3">
+                      <div>
+                        <dt className="inline">start </dt>
+                        <dd className="inline text-mist">{formatCut(plan.startSec)}</dd>
+                      </div>
+                      <div>
+                        <dt className="inline">end </dt>
+                        <dd className="inline text-mist">{formatCut(plan.endSec)}</dd>
+                      </div>
+                      <div>
+                        <dt className="inline">offset </dt>
+                        <dd className="inline text-mist">
+                          {plan.offsetSec >= 0 ? "+" : ""}
+                          {plan.offsetSec.toFixed(1)}s
+                        </dd>
+                      </div>
+                    </dl>
                   ) : null}
                 </div>
-              ) : (
-                <p className="text-sm text-muted">No transcript recorded for this teaching.</p>
-              )}
-            </CollapsibleSection>
-
-            <CollapsibleSection id="previews" title="Previews" testId="previews-panel">
-              {availablePreviews.length === 0 ? (
-                <p data-testid="previews-empty" className="text-sm text-muted">
-                  Previews appear after a render.
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {availablePreviews.map((item) => (
-                    <ArtifactRow
-                      key={item.kind}
-                      sermonId={sermon.id}
-                      item={item}
-                      testId="artifact-preview-row"
-                      live={live}
-                      onOpen={setPlayerKind}
-                    />
-                  ))}
-                </ul>
-              )}
-            </CollapsibleSection>
-
-            <CollapsibleSection
-              id="history"
-              title="History"
-              open={historyOpen}
-              onToggle={setHistoryOpen}
-              testId="history-panel"
-              summary={
-                noteRows.length === 0
-                  ? "No notes yet"
-                  : `${noteRows.length} ${noteRows.length === 1 ? "note" : "notes"}`
-              }
-            >
-              {noteRows.length > 0 ? (
-                <ul className="flex flex-col gap-1">
-                  {noteRows.map((row) => (
-                    <li key={`${row.revision}:${row.note}`} className="text-xs text-muted">
-                      <span className="font-mono">revision {row.revision}</span>: {row.note}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted">No rejection notes yet.</p>
-              )}
-              {statusLog.length > 0 ? (
-                <p className="mt-2 font-mono text-xs text-muted">{statusLog.join(" · ")}</p>
               ) : null}
-              {!detectionFailed && plan.reasoning ? (
-                <p className="mt-2 max-w-prose text-sm text-muted">
-                  <span className="font-semibold">Reasoning:</span> {plan.reasoning}
-                </p>
-              ) : null}
-              {!detectionFailed ? (
-                <dl className="mt-2 grid grid-cols-1 gap-1 font-mono text-xs text-muted sm:grid-cols-3">
-                  <div>
-                    <dt className="inline">start </dt>
-                    <dd className="inline text-mist">{formatCut(plan.startSec)}</dd>
-                  </div>
-                  <div>
-                    <dt className="inline">end </dt>
-                    <dd className="inline text-mist">{formatCut(plan.endSec)}</dd>
-                  </div>
-                  <div>
-                    <dt className="inline">offset </dt>
-                    <dd className="inline text-mist">
-                      {plan.offsetSec >= 0 ? "+" : ""}
-                      {plan.offsetSec.toFixed(1)}s
-                    </dd>
-                  </div>
-                </dl>
-              ) : null}
-            </CollapsibleSection>
+            </div>
           </div>
         </div>
 
@@ -1929,11 +1955,7 @@ export function SermonReview({
         body="All applied cuts are discarded and the unedited source is kept. This cannot be undone."
         confirmLabel="Restore original"
         onClose={() => setConfirmRestore(false)}
-        onConfirm={() => {
-          setPlan((p) => ({ ...p, status: "draft", revision: 1 }));
-          setStatusLog([]);
-          onToast("Original restored (demo). Plan reset to draft.");
-        }}
+        onConfirm={restoreOriginal}
       />
 
       <ConfirmDialog

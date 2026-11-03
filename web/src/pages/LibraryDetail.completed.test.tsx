@@ -26,6 +26,7 @@ vi.mock("../api/hooks", () => ({
 }));
 
 vi.mock("../api/client", () => ({
+  mediaApi: { waveform: async () => ({ peaks: [], duration: 0 }) },
   isLive: true,
   mediaStreamUrl: (id: string, kind: string) => `/api/media/sermons/${id}/${kind}`,
   api: { deleteSermon: vi.fn(), updateSermon: vi.fn() },
@@ -137,7 +138,6 @@ function renderDetail() {
     <QueryClientProvider client={client}>
       <MemoryRouter
         initialEntries={["/library/s-1"]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <Routes>
           <Route path="/library/:id" element={<LibraryDetail />} />

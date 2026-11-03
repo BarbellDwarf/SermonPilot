@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../api/client", () => ({
+  mediaApi: { waveform: async () => ({ peaks: [], duration: 0 }) },
   isLive: true,
   writeApi: { cancelJob: mocks.cancelJob },
 }));

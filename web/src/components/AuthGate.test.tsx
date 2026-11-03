@@ -19,6 +19,7 @@ vi.mock("../api/client", () => {
   }
   return {
     isLive: true,
+    mediaApi: { waveform: async () => ({ peaks: [], duration: 0 }) },
     AuthError,
     auth: {
       me: mocks.me,
