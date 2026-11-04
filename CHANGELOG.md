@@ -2,6 +2,27 @@
 
 Notable changes are documented here.
 
+## v1.9.2
+
+Patch release: circular timeline handles and a dependency-security CI fix.
+
+- The review timeline overview start and end handles now use the same circular shape as the detail handles.
+- The dependency-security job scans the pinned production lock with `--no-resolve`, avoiding an OSV resolver failure on `jsonpointer==3.8`.
+
+Full notes: [docs/RELEASES.md](docs/RELEASES.md#192).
+
+## v1.9.1
+
+Frontend security and toolchain patch. React Router 7.18.5, Vite 8.3.5, Vitest 5.1.0, and the Vite React plugin 6.2.1 close all 17 open Dependabot alerts. No application behavior changes.
+
+Full notes: [docs/RELEASES.md](docs/RELEASES.md#191).
+
+## v1.9.0
+
+Review editor rebuilt around trimming, with a two-strip timeline, server-generated waveform peaks, middle cuts, and one tab bar for transcript, files, previews, and history. Restore original returns a draft or published teaching to the unedited recording. Matroska review media is remuxed to a browser-safe `- Preview.mp4`, media responses disable caching, and dry runs no longer stage or trash cloud output. The legacy Streamlit server is retired; the console runs on port 8504 only.
+
+Full notes: [docs/RELEASES.md](docs/RELEASES.md#190).
+
 ## v1.8.0
 
 The operator-facing release notes are maintained in [docs/RELEASES.md](docs/RELEASES.md#180). Keeping the detailed list in one place avoids two release histories drifting apart.

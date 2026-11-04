@@ -1,5 +1,53 @@
 # Releases
 
+## 1.9.2
+
+Patch release. The review timeline overview start and end handles are circles, matching the detail handles and the mockup. No behavior change.
+
+The dependency-security CI job now scans the fully pinned production lock with `--no-resolve`. OSV's resolver cannot handle the `jsonpointer` 3.8 constraint graph, and the scan found no vulnerabilities.
+
+### Verification
+
+- `npm test`: 230 passed
+- `npm run build`: passed
+- `osv-scanner scan --lockfile prod-requirements.txt --no-resolve`: no issues
+
+## 1.9.1
+
+Security and toolchain patch. The frontend dependency upgrades close all 17 open Dependabot alerts on the default branch.
+
+- `react-router-dom` 6.30.6 -> 7.18.5
+- `vite` 5.4.8 -> 8.3.5
+- `vitest` 2.1.9 -> 5.1.0
+- `@vitejs/plugin-react` 4.3.2 -> 6.2.1
+- Node 22 setup added to CI
+- `npm audit` and `npm audit --omit=dev` both report 0 vulnerabilities
+
+No application behavior changes. The review editor, waveform timeline, restore original, and playback fixes from 1.9.0 are unchanged.
+
+### Verification
+
+- 230 web tests pass
+- Vite 8 production build passes
+- Dependabot open alerts: 0
+
+## 1.9.0
+
+The console review screen is rebuilt around trimming first, with middle cuts when needed.
+
+- Two-strip timeline: a full-sermon overview plus a zoomed detail strip with Fit, 2m, 1m, and 30s zoom.
+- Server-generated waveform peaks cached per media file.
+- Large trim handles, time labels, park-and-set, and ±1s / ±0.1s nudges.
+- Drag across the detail strip to remove a middle section, with each cut shown as a compact row.
+- One Transcript / Files / Previews / History tab bar.
+- Restore original from a draft review or a completed teaching.
+- Review media in Matroska is remuxed to a browser-safe `- Preview.mp4`.
+- Media responses send `Cache-Control: no-store`.
+- Dry runs keep output local and no longer stage, upload, or trash media in cloud output.
+- The legacy Streamlit server is retired; the console runs on port 8504 only.
+
+Full notes: https://github.com/BarbellDwarf/SermonPilot/releases/tag/v1.9.0
+
 ## 1.8.0
 
 SermonPilot 1.8.0 moves more of the operator workflow into the browser console. The release brings the recording workflow, review decisions, publishing, account settings, and recovery paths into one place while keeping the processing engine and the legacy interface available.
