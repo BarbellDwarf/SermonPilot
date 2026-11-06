@@ -83,6 +83,11 @@ export function MediaPlayer({
   }, [sermonId, kind]);
 
   useEffect(() => {
+    const video = mediaRef.current;
+    if (video instanceof HTMLVideoElement) video.muted = offset !== 0;
+  }, [offset, kind]);
+
+  useEffect(() => {
     applySeek(mediaRef.current);
   }, [seekToSec, seekNonce]);
 
@@ -218,8 +223,7 @@ export function MediaPlayer({
               const audio = audioRef.current;
               const video = mediaRef.current;
               if (!audio || !video || offset === 0) return;
-              const startAudio = () => {
-                if (video.paused) return;
+              const startAudio = () => {                if (video.paused) return;
                 const desired = Math.max(0, (video.currentTime || 0) + offset);
                 if (Number.isFinite(desired)) audio.currentTime = desired;
                 lastAudioSync.current = Date.now();
@@ -239,6 +243,11 @@ export function MediaPlayer({
                 const desired = Math.max(0, video.currentTime + offset);
                 if (Number.isFinite(desired)) audio.currentTime = desired;
                 void audio.play().catch(() => { });
+              }
+            }}
+            onVolumeChange={(event) => {
+              if (offset !== 0 && !event.currentTarget.muted) {
+                event.currentTarget.muted = true;
               }
             }}
             onWaiting={() => {

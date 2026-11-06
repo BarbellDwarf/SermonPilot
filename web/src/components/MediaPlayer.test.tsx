@@ -215,6 +215,35 @@ describe("MediaPlayer", () => {
     expect(audio.play).toHaveBeenCalled();
   });
 
+  it("mutes the original video audio while the offset track plays", () => {
+    const { rerender } = render(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        contentType="video/mp4"
+        available
+        offsetSec={0}
+      />,
+    );
+    const video = document.querySelector("video") as HTMLVideoElement;
+    expect(video.muted).toBe(false);
+
+    rerender(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        contentType="video/mp4"
+        available
+        offsetSec={0.8}
+      />,
+    );
+    expect(video.muted).toBe(true);
+
+    video.muted = false;
+    fireEvent.volumeChange(video);
+    expect(video.muted).toBe(true);
+  });
+
   it("labels the readout as playback time so it does not read as a second clock", () => {
     render(
       <MediaPlayer

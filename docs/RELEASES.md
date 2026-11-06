@@ -10,6 +10,7 @@ A published teaching now offers **Replace recording** in the overflow menu. The 
 - Only processed sermons with a SermonAudio id can be replaced.
 - The previous original moves to `_trash`; the new source becomes the retained original.
 - A replacement never stalls on the review screen. A low-confidence cut plan is skipped, the full recording is published, and the old cut plan is superseded.
+- The video offset preview keeps the original video audio muted, so the adjusted track plays once instead of doubling with the original.
 - No new header button or mode switch. One menu item opens one file-picker dialog.
 
 ### Verification

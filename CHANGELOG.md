@@ -10,6 +10,7 @@ Replace the recording on a published sermon without losing its SermonAudio entry
 - The reprocessed media uploads to the existing SermonAudio id. Title, description, hashtags, series, and publication state stay put.
 - The previous local original moves to trash through the normal deletion path. The new source becomes the retained original.
 - A replacement never stalls on the review screen. When cut detection is not confident, the full recording uploads and the old cut plan is superseded, so the review screen cannot apply cuts that described the retired recording.
+- The video offset preview mutes the original video audio while the shifted track plays, so the correction is heard once.
 
 Full notes: [docs/RELEASES.md](docs/RELEASES.md#194).
 
