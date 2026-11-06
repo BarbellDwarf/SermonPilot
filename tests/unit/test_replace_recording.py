@@ -112,3 +112,75 @@ def test_replace_is_hidden_from_another_user(client, scoped_setup, tmp_path, mon
     _seed_published("s-a")
 
     assert _replace(client, s["b"]["headers"]).status_code == 404
+
+
+def test_replacement_uploads_the_full_recording_when_the_auto_edit_gate_is_unsure(
+    tmp_path, monkeypatch
+):
+    """A replacement must never stall on an interactive review pause."""
+    from unittest.mock import Mock
+
+    import sermon_updater as su
+    from src.auto_edit import EditPlan
+
+    monkeypatch.setenv("DATABASE_URL", str(tmp_path / "replacement.db"))
+    monkeypatch.setattr("ui.database._db", None)
+    video = tmp_path / "replacement.mp4"
+    video.write_bytes(TINY_MP4)
+
+    cfg = {
+        "output_directory": str(tmp_path / "output"),
+        "auto_edit": {"enabled": True, "min_sermon_seconds": 1},
+    }
+    monkeypatch.setattr(
+        su,
+        "transcribe_segments",
+        Mock(return_value=[{"start": 0.0, "end": 40.0, "text": "teaching"}]),
+    )
+    monkeypatch.setattr(
+        su,
+        "detect_cut_points",
+        Mock(
+            return_value=EditPlan(
+                start=0.0,
+                end=40.0,
+                confidence=0.1,
+                needs_review=True,
+                evidence="uncertain",
+            )
+        ),
+    )
+    apply_edit = Mock()
+    monkeypatch.setattr(su, "apply_edit", apply_edit)
+    create = Mock(return_value="new")
+    monkeypatch.setattr(su, "create_new_sermon_api", create)
+    upload = Mock(return_value=True)
+    monkeypatch.setattr(su, "upload_media_file", upload)
+    monkeypatch.setattr(su, "set_sermon_published", Mock(return_value=True))
+
+    result = su.process_new_sermon(
+        str(video),
+        title="Apostolic Teaching on Prayer (1)",
+        description="Existing description.",
+        hashtags="#existing",
+        speaker_name="Mark Hogan",
+        recorded_date="2026-10-28",
+        event_type="Midweek Service",
+        series_title="All Things Prayer",
+        skip_ai_generation=True,
+        skip_audio=True,
+        auto_edit_mode="auto",
+        publish=True,
+        replace_recording=True,
+        remote_sermon_id="11226183043643",
+        existing_sermon_id="11226183043643",
+        config=cfg,
+    )
+
+    assert result["success"] is True, result.get("error")
+    assert result["edit_plan_status"] != "pending_review"
+    create.assert_not_called()
+    apply_edit.assert_not_called()
+    upload.assert_called_once()
+    assert upload.call_args.args[0] == "11226183043643"
+    assert upload.call_args.args[2] == "original-video"

@@ -9,7 +9,7 @@ A published teaching now offers **Replace recording** in the overflow menu. The 
 - The API endpoint is `POST /api/sermons/{id}/recording`.
 - Only processed sermons with a SermonAudio id can be replaced.
 - The previous original moves to `_trash`; the new source becomes the retained original.
-- A replacement without an auto-edit result supersedes the old cut plan.
+- A replacement never stalls on the review screen. A low-confidence cut plan is skipped, the full recording is published, and the old cut plan is superseded.
 - No new header button or mode switch. One menu item opens one file-picker dialog.
 
 ### Verification

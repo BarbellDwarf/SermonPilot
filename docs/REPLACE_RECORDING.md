@@ -22,7 +22,7 @@ The new file goes through the normal path:
 - metadata reuse
 - upload to the existing SermonAudio id
 
-If cut detection needs review, the job stops at the review screen. Approving it uploads to the same entry.
+Automatic cuts apply when detection is confident. If it is not, the replacement publishes the full recording rather than stalling in review. The old cut plan is superseded either way.
 
 ## Local files
 

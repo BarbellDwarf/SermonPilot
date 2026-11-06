@@ -3400,6 +3400,8 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'title': review_title,
                 'description': review_description,
                 'hashtags': review_hashtags,
+                'is_video': input_is_video,
+                'upload_type': upload_type,
                 'output_dir': str(review_dir),
                 'edit_plan_status': 'pending_review',
                 'auto_edit_applied': False,
@@ -3570,74 +3572,95 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 return result
 
             if not gate_apply:
-                return _persist_auto_edit_pending_review()
-
-            _report(58, "Applying automatic edit...")
-            logo_cfg = auto_edit_cfg.get('logo_path')
-            edit_logo_path = (
-                Path(logo_cfg).expanduser()
-                if logo_cfg and Path(str(logo_cfg)).expanduser().exists() else None
-            )
-            gate_plan.logo_hold = float(
-                auto_edit_cfg.get('logo_hold', gate_plan.logo_hold)
-            )
-            edit_fade_to_black = bool(auto_edit_cfg.get('fade_to_black', True))
-            edit_fade_out_tail = float(auto_edit_cfg.get('fade_out_tail_seconds', 2.0))
-            edited_path = _auto_edit_output_root() / "edited" / (
-                f"{original_input_path.stem}_edited{original_input_path.suffix or '.mp4'}"
-            )
-
-            def _render_progress(progress: float, message: str) -> None:
-                bounded = min(max(float(progress), 0.0), 100.0)
-                _report(
-                    58.0 + bounded * 0.02,
-                    f"Applying automatic edit... ({message})",
+                if not replace_recording:
+                    return _persist_auto_edit_pending_review()
+                # A replacement must not stall on review: publish the full
+                # recording rather than leave the old media on the entry.
+                logger.info(
+                    "Replacement auto edit did not meet the apply gate; "
+                    "uploading the full recording"
+                )
+                console_print(
+                    "Auto edit skipped for this replacement; "
+                    "uploading the full recording"
+                )
+                _report(58, "Skipping auto edit for replacement")
+            else:
+                _report(58, "Applying automatic edit...")
+                logo_cfg = auto_edit_cfg.get('logo_path')
+                edit_logo_path = (
+                    Path(logo_cfg).expanduser()
+                    if logo_cfg and Path(str(logo_cfg)).expanduser().exists() else None
+                )
+                gate_plan.logo_hold = float(
+                    auto_edit_cfg.get('logo_hold', gate_plan.logo_hold)
+                )
+                edit_fade_to_black = bool(auto_edit_cfg.get('fade_to_black', True))
+                edit_fade_out_tail = float(auto_edit_cfg.get('fade_out_tail_seconds', 2.0))
+                edited_path = _auto_edit_output_root() / "edited" / (
+                    f"{original_input_path.stem}_edited{original_input_path.suffix or '.mp4'}"
                 )
 
-            try:
-                edited_path = apply_edit(
-                    Path(render_source),
-                    gate_plan,
-                    edited_path,
-                    logo_path=edit_logo_path,
-                    fade_to_black=edit_fade_to_black,
-                    fade_out_tail_seconds=edit_fade_out_tail,
-                    cancel_check=_check_cancelled,
-                    cancel_log=cancel_log,
-                    progress_callback=_render_progress,
-                )
-            except ProcessCancelled:
-                raise
-            except Exception as e:
-                logger.error("Auto edit apply failed: %s", e)
-                if edit_plan_file:
-                    console_print(f"❌ Approved edit render failed ({e}); nothing was rendered")
-                    result['success'] = False
-                    result['auto_edit_applied'] = False
-                    result['edit_plan_status'] = None
-                    result['error'] = (
-                        f"Approved edit render failed ({e}); nothing was rendered."
+                def _render_progress(progress: float, message: str) -> None:
+                    bounded = min(max(float(progress), 0.0), 100.0)
+                    _report(
+                        58.0 + bounded * 0.02,
+                        f"Applying automatic edit... ({message})",
                     )
-                    return result
-                console_print(f"⚠️  Auto edit apply failed ({e}); saving plan for review")
-                gate_plan.needs_review = True
-                gate_notes = f"{gate_notes}; apply failed: {e}".strip("; ")
-                return _persist_auto_edit_pending_review()
 
-            final_upload_path = edited_path
-            upload_type = "original-video"
-            auto_edit_state = {
-                'plan': gate_plan,
-                'source_path': str(edit_source),
-                'trash_source_path': str(trash_source),
-                'edited_path': str(edited_path),
-                'notes': gate_notes,
-            }
-            result['final_upload_path'] = str(edited_path)
-            result['upload_type'] = upload_type
-            result['auto_edit_applied'] = True
-            result['edit_plan_status'] = 'auto_applied'
-            console_print(f"✂️ Auto edit ready: {edited_path.name}")
+                try:
+                    edited_path = apply_edit(
+                        Path(render_source),
+                        gate_plan,
+                        edited_path,
+                        logo_path=edit_logo_path,
+                        fade_to_black=edit_fade_to_black,
+                        fade_out_tail_seconds=edit_fade_out_tail,
+                        cancel_check=_check_cancelled,
+                        cancel_log=cancel_log,
+                        progress_callback=_render_progress,
+                    )
+                except ProcessCancelled:
+                    raise
+                except Exception as e:
+                    logger.error("Auto edit apply failed: %s", e)
+                    if edit_plan_file:
+                        console_print(f"❌ Approved edit render failed ({e}); nothing was rendered")
+                        result['success'] = False
+                        result['auto_edit_applied'] = False
+                        result['edit_plan_status'] = None
+                        result['error'] = (
+                            f"Approved edit render failed ({e}); nothing was rendered."
+                        )
+                        return result
+                    if replace_recording:
+                        logger.error(
+                            "Replacement auto edit failed; uploading the full recording: %s",
+                            e,
+                        )
+                        console_print(
+                            f"Auto edit failed ({e}); uploading the full recording"
+                        )
+                    else:
+                        console_print(f"⚠️  Auto edit apply failed ({e}); saving plan for review")
+                        gate_plan.needs_review = True
+                        gate_notes = f"{gate_notes}; apply failed: {e}".strip("; ")
+                        return _persist_auto_edit_pending_review()
+                else:
+                    final_upload_path = edited_path
+                    upload_type = "original-video"
+                    auto_edit_state = {
+                        'plan': gate_plan,
+                        'source_path': str(edit_source),
+                        'trash_source_path': str(trash_source),
+                        'edited_path': str(edited_path),
+                        'notes': gate_notes,
+                    }
+                    result['final_upload_path'] = str(edited_path)
+                    result['upload_type'] = upload_type
+                    result['auto_edit_applied'] = True
+                    result['edit_plan_status'] = 'auto_applied'
+                    console_print(f"✂️ Auto edit ready: {edited_path.name}")
 
         transcript_finalized = False
         if auto_edit_state:
