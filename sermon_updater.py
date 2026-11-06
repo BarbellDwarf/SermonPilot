@@ -2406,7 +2406,9 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                       keeper_prepared: bool = False,
                       enhanced_audio_file: str | None = None,
                       require_enhancement: bool = False,
-                      existing_description_needs_review: bool | None = None) -> dict:
+                      existing_description_needs_review: bool | None = None,
+                      replace_recording: bool = False,
+                      remote_sermon_id: str | None = None) -> dict:
     """Process a new sermon from audio file with automatic metadata generation.
 
     Args:
@@ -2449,6 +2451,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         existing_description_needs_review: The review flag to keep when the
             stored description is reused instead of regenerated. None leaves
             the flag to the generator.
+        replace_recording: Replace the media on an already published
+            SermonAudio sermon instead of creating another entry. The local
+            row is updated in place and the existing metadata is preserved.
+        remote_sermon_id: The published SermonAudio id to replace. Required
+            when replace_recording is True.
 
     Returns:
         Dict with keys: success, sermon_id, title, description, hashtags,
@@ -2482,11 +2489,6 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
     if not config:
         refresh_runtime_config()
         config = globals()['config']
-    auto_edit_cfg: dict[str, Any] = {}
-    gate_active = False
-    if series_id is None and series_title:
-        series_id = resolve_series_id(series_title, create_missing=not dry_run)
-
     result = {
         'success': False,
         'sermon_id': None,
@@ -2511,6 +2513,15 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
         'processing_temp_dir': None,
         'error': None,
     }
+
+    if replace_recording and not remote_sermon_id:
+        result['error'] = "A published SermonAudio id is required to replace a recording"
+        return result
+
+    auto_edit_cfg: dict[str, Any] = {}
+    gate_active = False
+    if series_id is None and series_title:
+        series_id = resolve_series_id(series_title, create_missing=not dry_run)
 
     try:
         validate_event_type_for_api(event_type)
@@ -4090,9 +4101,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
 
         # Reuse an already-uploaded sermon with identical identity fields so a
         # retry after dying mid-upload cannot create a duplicate remote sermon.
-        reusable_sermon_id = _find_existing_processed_sermon_id(
-            title, speaker_name, recorded_date
-        )
+        reusable_sermon_id = None
+        if not replace_recording:
+            reusable_sermon_id = _find_existing_processed_sermon_id(
+                title, speaker_name, recorded_date
+            )
 
         recovery_draft_id: str | None = None
         recovery_output_dir: Path | None = None
@@ -4107,7 +4120,13 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 "creating a new sermon instead of reusing it"
             )
             reusable_sermon_id = None
-        if reusable_sermon_id:
+        if replace_recording:
+            sermon_id = str(remote_sermon_id)
+            console_print(
+                f"Replacing the recording on SermonAudio sermon {sermon_id}"
+            )
+            _report(88, f"Replacing recording on sermon: {sermon_id}")
+        elif reusable_sermon_id:
             sermon_id = reusable_sermon_id
             console_print(
                 f"Existing processed sermon {sermon_id} matches "
@@ -4270,14 +4289,18 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     )
                 return result
 
-        result['sermon_id'] = sermon_id
+        record_id = (
+            (existing_sermon_id or sermon_id) if replace_recording else sermon_id
+        )
+        result['sermon_id'] = record_id
         if auto_edit_state:
-            _log_auto_edit_applied(sermon_id)
-        _report(90, f"Created sermon: {sermon_id}")
+            _log_auto_edit_applied(record_id)
+        _report(90, f"Using SermonAudio sermon: {sermon_id}")
 
         # Single application path for series: the API ignores it during
-        # creation, so always PATCH it onto the sermon afterwards
-        if series_id is not None:
+        # creation, so always PATCH it onto the sermon afterwards. A
+        # replacement keeps the series already on the published entry.
+        if series_id is not None and not replace_recording:
             if set_sermon_series(sermon_id, series_id):
                 console_print(f"Series set: {series_title} (ID {series_id})")
             else:
@@ -4337,12 +4360,41 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 source = enhanced_audio_path if enhanced_audio_path != audio_path else audio_path
                 shutil.copy2(source, final_output_path)
 
-            # Save original file for future reprocessing
+            # Save original file for future reprocessing. A replacement must
+            # retire the previous source first: overwriting it would destroy
+            # the only recoverable copy.
+            original_source = original_input_path if replace_recording else audio_path
+            original_ext = Path(original_source).suffix or ext
             original_save_path = output_dir / build_output_filename(
-                title, series_title, speaker_name, recorded_date, "Original", ext
+                title, series_title, speaker_name, recorded_date, "Original", original_ext
             )
+            if replace_recording and original_save_path.exists():
+                try:
+                    from src.safe_delete import trash_local
+
+                    record = trash_local(
+                        original_save_path,
+                        reason="replace_recording",
+                        sermon_id=record_id,
+                        stage="replace",
+                    )
+                except Exception as trash_err:
+                    logger.warning(
+                        "Could not trash the old original %s: %s",
+                        original_save_path, trash_err,
+                    )
+                    record = None
+                if record is None and original_save_path.exists():
+                    original_save_path = output_dir / build_output_filename(
+                        title,
+                        series_title,
+                        speaker_name,
+                        recorded_date,
+                        f"Original-replaced-{int(time.time())}",
+                        original_ext,
+                    )
             if not original_save_path.exists():
-                shutil.copy2(audio_path, original_save_path)
+                shutil.copy2(original_source, original_save_path)
                 logger.info("Saved original file to %s", original_save_path)
 
             # Save metadata
@@ -4352,7 +4404,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             # repoint metadata original_file at the trimmed render: retain the
             # existing on-disk full-length source for the next apply.
             retained_original: str | None = None
-            if auto_edit_state:
+            if auto_edit_state and not replace_recording:
                 try:
                     import json as _retain_json
                     existing_meta_path = get_file_path(output_dir, "metadata")
@@ -4366,7 +4418,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 except Exception:
                     retained_original = None
             metadata = {
-                'sermon_id': sermon_id,
+                'sermon_id': record_id,
                 'sermonID': sermon_id,
                 'title': title,
                 'speaker': speaker_name,
@@ -4377,7 +4429,11 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 'subtitle': subtitle,
                 'description': description,
                 'hashtags': hashtags,
-                'original_file': retained_original or str(audio_path),
+                'original_file': (
+                    str(original_save_path)
+                    if replace_recording
+                    else retained_original or str(audio_path)
+                ),
                 'processed_file': str(final_output_path),
                 'is_video': input_is_video,
                 'upload_type': upload_type,
@@ -4444,7 +4500,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 except Exception:
                     pass
                 repo.save_sermon({
-                    'id': sermon_id,
+                    'id': record_id,
                     'title': title or '',
                     'subtitle': subtitle or '',
                     'series_title': series_title or '',
@@ -4476,6 +4532,17 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     },
                 })
 
+                if replace_recording and not auto_edit_state:
+                    # The previous cut plan described the retired recording.
+                    with repo.db.get_connection() as conn:
+                        conn.execute(
+                            "UPDATE edit_plans SET status = 'superseded'"
+                            " WHERE sermon_id = ?"
+                            " AND status NOT IN ('superseded', 'reverted')",
+                            (record_id,),
+                        )
+                        conn.commit()
+
                 # Remove the pre-upload recovery draft now that the real
                 # sermon record is saved
                 if recovery_draft_id:
@@ -4494,7 +4561,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
             console_print(f"Sermon files saved to: {output_dir}")
 
             if auto_edit_state:
-                _persist_auto_edit_applied_plan(sermon_id)
+                _persist_auto_edit_applied_plan(record_id)
                 edit_original = Path(
                     auto_edit_state.get('trash_source_path')
                     or auto_edit_state['source_path']
@@ -4503,7 +4570,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 try:
                     record = trash_original_after_edit(
                         edit_original, edit_keeper, config, True,
-                        sermon_id=sermon_id, stage="post_publish",
+                        sermon_id=record_id, stage="post_publish",
                     )
                     if record is not None:
                         console_print(
@@ -4513,7 +4580,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 except Exception as e:
                     logger.warning("Original removal after auto edit failed: %s", e)
 
-            _report(100, f"Done - sermon {sermon_id} created and uploaded")
+            _report(100, f"Done - sermon {record_id} updated on SermonAudio")
             result['success'] = True
             return result
         else:
@@ -4524,7 +4591,7 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                 from ui.database import SermonRepository
                 repo = SermonRepository()
                 repo.save_sermon({
-                    'id': sermon_id,
+                    'id': record_id,
                     'title': title or '',
                     'subtitle': subtitle or '',
                     'series_title': series_title or '',

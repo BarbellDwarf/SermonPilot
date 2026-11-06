@@ -2,6 +2,17 @@
 
 Notable changes are documented here.
 
+## v1.9.4
+
+Replace the recording on a published sermon without losing its SermonAudio entry.
+
+- The completed teaching view has one **Replace recording** action in the overflow menu. Pick a new video or audio file and the full pipeline runs again: transcription, enhancement, auto-edit, and upload.
+- The reprocessed media uploads to the existing SermonAudio id. Title, description, hashtags, series, and publication state stay put.
+- The previous local original moves to trash through the normal deletion path. The new source becomes the retained original.
+- A replacement that produces no new auto-edit plan supersedes the old cut plan, so the review screen cannot apply cuts that described the retired recording.
+
+Full notes: [docs/RELEASES.md](docs/RELEASES.md#194).
+
 ## v1.9.2
 
 Patch release: circular timeline handles and a dependency-security CI fix.

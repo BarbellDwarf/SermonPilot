@@ -8,7 +8,7 @@ import { sermonStatusLabel, sermonStatusTone } from "./Library";
 import { Button, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, buttonClass } from "../components/ui";
 import { useToast, dismissToast } from "../components/toast";
 import { QueryError, useSermonDetail, useSermonMedia, useSermonPlan, useSermonTranscript } from "../api/hooks";
-import { api, isLive, writeApi } from "../api/client";
+import { ApiError, api, isLive, writeApi } from "../api/client";
 import type { ApiTrashRecord } from "../api/client";
 import { fieldValue, useConfigSection } from "../api/useConfigSection";
 import { formatDate, formatDurationValue } from "../utils/format";
@@ -206,6 +206,29 @@ export function LibraryDetail() {
     }, 1200);
   };
 
+  const replaceRecording = (file: File) => {
+    if (!id) return Promise.reject(new Error("Teaching not found."));
+    if (!isLive) {
+      showToast("Replacement queued (demo).");
+      return Promise.resolve();
+    }
+    return writeApi
+      .replaceRecording(id, file)
+      .then(() => {
+        showToast("Replacement queued.");
+        void queryClient.invalidateQueries({ queryKey: ["sermon", id] });
+        void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      })
+      .catch((error: unknown) => {
+        const active = error instanceof ApiError && error.status === 409;
+        throw new Error(
+          active
+            ? "A job is already running for this teaching."
+            : `Could not queue the replacement: ${(error as Error).message}`,
+        );
+      });
+  };
+
   const regenerateDescription = () => {
     if (!id) return Promise.resolve();
     if (isLive) {
@@ -340,6 +363,7 @@ export function LibraryDetail() {
           onSaveDetails={saveDetails}
           onRegenerateDescription={regenerateDescription}
           onPushDetails={pushDetails}
+          onReplaceRecording={detail?.sermonaudioId ? replaceRecording : undefined}
         />
       ) : planLoading ? (
         <SkeletonList rows={3} />

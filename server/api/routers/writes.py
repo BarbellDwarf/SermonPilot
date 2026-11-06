@@ -192,15 +192,22 @@ def _enqueue_sermon_processing(
     event_type: str,
     series_title: str = "",
     bible_text: str = "",
+    subtitle: str = "",
+    description: str = "",
+    hashtags: str = "",
     skip_audio: bool = False,
     skip_transcription: bool = False,
     skip_ai_generation: bool = False,
     dry_run: bool = False,
+    publish: bool = True,
     auto_edit_enabled: bool = False,
     auto_edit_mode: str | None = None,
     logo_path: str = "",
     fade_to_black: bool = True,
     output_dir: str | None = None,
+    replace_recording: bool = False,
+    remote_sermon_id: str | None = None,
+    description_needs_review: bool = False,
     user_id: str | None,
 ) -> str:
     from ui.job_labels import build_job_labels
@@ -216,11 +223,16 @@ def _enqueue_sermon_processing(
         "event_type": event_type.strip() or "Sunday Service",
         "bible_text": bible_text.strip() or None,
         "title": title.strip() or None,
+        "subtitle": subtitle.strip() or None,
         "series_title": series_title.strip() or None,
+        "description": description.strip() or None,
+        "hashtags": hashtags.strip() or None,
         "skip_audio": bool(skip_audio),
         "skip_transcription": bool(skip_transcription),
         "skip_ai_generation": bool(skip_ai_generation),
         "dry_run": bool(dry_run),
+        "publish": bool(publish),
+        "description_needs_review": bool(description_needs_review),
         "auto_edit_enabled": bool(auto_edit_enabled),
         "auto_edit_mode": auto_edit_mode,
         "auto_edit_logo_path": logo_path.strip(),
@@ -250,6 +262,8 @@ def _enqueue_sermon_processing(
             "auto_edit_enabled": bool(auto_edit_enabled),
             "auto_edit_mode": auto_edit_mode,
             "output_dir": output_dir,
+            "replace_recording": bool(replace_recording),
+            "remote_sermon_id": remote_sermon_id,
             "user_id": user_id,
         },
         priority=8,
@@ -1138,6 +1152,128 @@ async def upload_sermon(
                 logo_path=resolved_logo,
                 fade_to_black=fade_to_black,
                 output_dir=_output_dir_for(user, output_dir),
+                user_id=user.get("id"),
+            ),
+        )
+    except HTTPException as exc:
+        if exc.status_code == 409:
+            from src.safe_delete import trash_local
+
+            trash_local(dest, reason="duplicate_upload", stage="upload")
+        raise
+    return {
+        "id": sermon_id,
+        "job_id": job_id,
+        "status": "queued",
+        "filename": dest.name,
+    }
+
+
+@router.post("/sermons/{sermon_id}/recording", status_code=201)
+async def replace_sermon_recording(
+    sermon_id: str,
+    file: UploadFile = File(...),
+    user=Depends(require_user),
+):
+    """Reprocess a new source file onto an already published sermon."""
+    from server.api.db import get_repository
+
+    sermon = get_repository().get_sermon(sermon_id)
+    if sermon is None or not visible(sermon.get("user_id"), user):
+        raise HTTPException(status_code=404, detail="sermon not found")
+    if str(sermon.get("status") or "") != "processed":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "not_processed",
+                "message": "only a processed sermon can have its recording replaced",
+            },
+        )
+    upload_info = sermon.get("upload_info") or {}
+    remote_id = str(upload_info.get("sermonaudio_id") or "").strip()
+    if not remote_id:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "not_published",
+                "message": "this sermon has no SermonAudio entry to replace",
+            },
+        )
+    _require_sermonaudio_connection(user.get("id"))
+
+    active = _active_job_for(sermon_id)
+    if active:
+        raise _active_job_error(active)
+
+    original = Path(file.filename or "").name
+    ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
+    if ext not in _UPLOAD_EXTENSIONS:
+        raise HTTPException(
+            status_code=415,
+            detail=f"unsupported file type: .{ext or '?'} "
+            f"(allowed: {', '.join(sorted(_UPLOAD_EXTENSIONS))})",
+        )
+
+    user_dir = _user_ingest_dir(user.get("id"))
+    user_dir.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r"[^A-Za-z0-9_.-]", "_", original) or "upload"
+    dest = user_dir / f"{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}_{safe}"
+    cap = _upload_cap_bytes()
+    written = 0
+    try:
+        with open(dest, "wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > cap:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"file exceeds the upload cap of "
+                        f"{os.environ.get('SERMONPILOT_UPLOAD_GB', '30')} GB",
+                    )
+                out.write(chunk)
+    except HTTPException:
+        try:
+            dest.unlink()
+        except OSError:
+            pass
+        raise
+    finally:
+        await file.close()
+    if written == 0:
+        try:
+            dest.unlink()
+        except OSError:
+            pass
+        raise HTTPException(status_code=422, detail="uploaded file is empty")
+
+    content = sermon.get("content") or {}
+    try:
+        job_id = _enqueue_once(
+            sermon_id,
+            lambda: _enqueue_sermon_processing(
+                sermon_id=sermon_id,
+                source_path=str(dest),
+                original_name=original,
+                title=str(sermon.get("title") or ""),
+                speaker=str(sermon.get("speaker") or ""),
+                recorded_date=str(sermon.get("recorded_date") or ""),
+                event_type=str(sermon.get("event_type") or "Sunday Service"),
+                series_title=str(sermon.get("series_title") or ""),
+                bible_text=str(sermon.get("bible_text") or ""),
+                subtitle=str(sermon.get("subtitle") or ""),
+                description=str(content.get("description") or sermon.get("description") or ""),
+                hashtags=str(content.get("hashtags") or ""),
+                skip_ai_generation=True,
+                publish=True,
+                auto_edit_enabled=True,
+                auto_edit_mode="auto",
+                output_dir=_output_dir_for(user, ""),
+                replace_recording=True,
+                remote_sermon_id=remote_id,
+                description_needs_review=bool(sermon.get("description_needs_review")),
                 user_id=user.get("id"),
             ),
         )

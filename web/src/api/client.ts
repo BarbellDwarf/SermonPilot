@@ -668,6 +668,16 @@ export const writeApi = {
     }>(`/api/sermons/${encodeURIComponent(id)}/plan/restore`, "POST"),
   uploadNow: (id: string) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/upload`, "POST"),
+  replaceRecording: async (id: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await authFetch(`/api/sermons/${encodeURIComponent(id)}/recording`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) throw await responseError(res, "POST", `/api/sermons/${id}/recording`);
+    return (await res.json()) as { id: string; job_id: string; status: string; filename: string };
+  },
   regenerateDescription: (id: string) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/description/regenerate`, "POST"),
   generateMetadata: (id: string, field: ApiMetadataField) =>
