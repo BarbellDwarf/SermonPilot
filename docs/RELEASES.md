@@ -12,6 +12,7 @@ A published teaching now offers **Replace recording** in the overflow menu. The 
 - A replacement never stalls on the review screen. A low-confidence cut plan is skipped, the full recording is published, and the old cut plan is superseded.
 - The video offset preview keeps the original video audio muted, so the adjusted track plays once instead of doubling with the original.
 - A completed teaching with no edit plan offers **Detect cuts**. Detection is queued and the page polls for the plan, then the normal trim and re-render flow takes over.
+- Video renders are converted to H.264 when the source codec is not browser-safe, so HEVC recordings preview in Chrome and Brave. H.264, VP9, and AV1 sources are left unchanged.
 - No new header button or mode switch. One menu item opens one file-picker dialog.
 
 ### Verification

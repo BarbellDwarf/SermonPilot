@@ -3662,6 +3662,30 @@ def process_new_sermon(audio_file: str, speaker_name: str, recorded_date: str,
                     result['edit_plan_status'] = 'auto_applied'
                     console_print(f"✂️ Auto edit ready: {edited_path.name}")
 
+        if input_is_video and final_upload_path:
+            from src.auto_edit import ensure_browser_video
+
+            _report(60, "Preparing video for browser preview...")
+            try:
+                final_upload_path = ensure_browser_video(
+                    Path(final_upload_path),
+                    cancel_check=_check_cancelled,
+                    cancel_log=cancel_log,
+                    progress_callback=lambda progress, message: _report(
+                        60 + progress * 0.04,
+                        f"Preparing video for browser preview... ({message})",
+                    ),
+                )
+            except ProcessCancelled:
+                raise
+            except Exception as e:
+                logger.warning("Video compatibility transcode failed: %s", e)
+                console_print(
+                    "⚠️  Video compatibility conversion failed; "
+                    "uploading the original codec",
+                    level="warning",
+                )
+
         transcript_finalized = False
         if auto_edit_state:
             from src.auto_edit import finalize_transcript
