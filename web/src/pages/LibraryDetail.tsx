@@ -8,7 +8,7 @@ import { sermonStatusLabel, sermonStatusTone } from "./Library";
 import { Button, Chip, ConfirmDialog, EmptyState, PageHeader, SkeletonList, buttonClass } from "../components/ui";
 import { useToast, dismissToast } from "../components/toast";
 import { QueryError, useSermonDetail, useSermonMedia, useSermonPlan, useSermonTranscript } from "../api/hooks";
-import { api, isLive, writeApi } from "../api/client";
+import { ApiError, api, isLive, writeApi } from "../api/client";
 import type { ApiTrashRecord } from "../api/client";
 import { fieldValue, useConfigSection } from "../api/useConfigSection";
 import { formatDate, formatDurationValue } from "../utils/format";
@@ -49,6 +49,7 @@ export function LibraryDetail() {
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [editingOverride, setEditingOverride] = useState(false);
+  const [detectingPlan, setDetectingPlan] = useState(false);
 
   useEffect(() => {
     setEditingOverride(false);
@@ -59,6 +60,7 @@ export function LibraryDetail() {
     setTranscriptOpen(false);
     setCopied(false);
     setPushing(false);
+    setDetectingPlan(false);
   }, [id]);
 
   const { data: detail, isLoading, error, retry } = useSermonDetail(id);
@@ -66,6 +68,20 @@ export function LibraryDetail() {
   const media = useSermonMedia(id, isLive && !deleted);
   const transcript = useSermonTranscript(id, transcriptOpen);
   const audioConfig = useConfigSection("audio");
+  useEffect(() => {
+    if (plan) setDetectingPlan(false);
+  }, [plan]);
+  useEffect(() => {
+    if (!detectingPlan || !id) return;
+    const refresh = window.setInterval(() => {
+      void queryClient.invalidateQueries({ queryKey: ["sermon-plan", id] });
+    }, 4000);
+    const stop = window.setTimeout(() => setDetectingPlan(false), 180000);
+    return () => {
+      window.clearInterval(refresh);
+      window.clearTimeout(stop);
+    };
+  }, [detectingPlan, id, queryClient]);
   const enhanceDefault =
     fieldValue<boolean>(audioConfig.fields, "metadata_processing.process_audio", true) !== false &&
     fieldValue<string>(audioConfig.fields, "audio_enhancement_method", "deepfilternet") !== "none";
@@ -206,6 +222,53 @@ export function LibraryDetail() {
     }, 1200);
   };
 
+  const replaceRecording = (file: File) => {
+    if (!id) return Promise.reject(new Error("Teaching not found."));
+    if (!isLive) {
+      showToast("Replacement queued (demo).");
+      return Promise.resolve();
+    }
+    return writeApi
+      .replaceRecording(id, file)
+      .then(() => {
+        showToast("Replacement queued.");
+        void queryClient.invalidateQueries({ queryKey: ["sermon", id] });
+        void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      })
+      .catch((error: unknown) => {
+        const active = error instanceof ApiError && error.status === 409;
+        throw new Error(
+          active
+            ? "A job is already running for this teaching."
+            : `Could not queue the replacement: ${(error as Error).message}`,
+        );
+      });
+  };
+
+  const detectPlan = () => {
+    if (!id || detectingPlan) return;
+    if (!isLive) {
+      showToast("Cut detection queued (demo).", "info");
+      return;
+    }
+    setDetectingPlan(true);
+    void writeApi
+      .reDetectPlan(id)
+      .then(() => {
+        showToast("Cut detection queued. This page updates when the plan is ready.", "info");
+      })
+      .catch((e) => {
+        setDetectingPlan(false);
+        const msg = (e as Error).message;
+        showToast(
+          /409/.test(msg)
+            ? "A job is already running for this teaching."
+            : `Could not queue detection: ${msg}`,
+          /409/.test(msg) ? "info" : "error",
+        );
+      });
+  };
+
   const regenerateDescription = () => {
     if (!id) return Promise.resolve();
     if (isLive) {
@@ -340,6 +403,7 @@ export function LibraryDetail() {
           onSaveDetails={saveDetails}
           onRegenerateDescription={regenerateDescription}
           onPushDetails={pushDetails}
+          onReplaceRecording={detail?.sermonaudioId ? replaceRecording : undefined}
         />
       ) : planLoading ? (
         <SkeletonList rows={3} />
@@ -381,9 +445,13 @@ export function LibraryDetail() {
             }
           />
           <EmptyState
-            title="No auto-edit plan"
-            body="This teaching has no proposed cuts to review yet. A plan appears here after detection runs."
-            action={<Button onClick={retryPlan}>Check for a plan</Button>}
+            title="No edit plan yet"
+            body="Detect the opening and closing cuts, then review and approve them before the recording is re-rendered."
+            action={
+              <Button onClick={detectPlan} disabled={detectingPlan} aria-busy={detectingPlan}>
+                {detectingPlan ? "Detecting…" : "Detect cuts"}
+              </Button>
+            }
           />
         </div>
       )}

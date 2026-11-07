@@ -25,21 +25,32 @@ vi.mock("../api/hooks", () => ({
   useTranscriptSegments: mocks.segments,
 }));
 
-vi.mock("../api/client", () => ({
-  mediaApi: { waveform: async () => ({ peaks: [], duration: 0 }) },
-  isLive: true,
-  mediaStreamUrl: (id: string, kind: string) => `/api/media/sermons/${id}/${kind}`,
-  api: { deleteSermon: vi.fn(), updateSermon: vi.fn() },
-  writeApi: {
-    uploadNow: vi.fn(),
-    uploadOnly: vi.fn(),
-    applyPlan: vi.fn(),
-    refinePlan: vi.fn(),
-    reDetectPlan: vi.fn(),
-    regenerateDescription: vi.fn(),
-    pushMetadata: vi.fn(),
-  },
-}));
+vi.mock("../api/client", () => {
+  class ApiError extends Error {
+    status: number;
+    constructor(message: string, status: number) {
+      super(message);
+      this.status = status;
+    }
+  }
+  return {
+    ApiError,
+    mediaApi: { waveform: async () => ({ peaks: [], duration: 0 }) },
+    isLive: true,
+    mediaStreamUrl: (id: string, kind: string) => `/api/media/sermons/${id}/${kind}`,
+    api: { deleteSermon: vi.fn(), updateSermon: vi.fn() },
+    writeApi: {
+      uploadNow: vi.fn(),
+      uploadOnly: vi.fn(),
+      applyPlan: vi.fn(),
+      refinePlan: vi.fn(),
+      reDetectPlan: vi.fn(),
+      regenerateDescription: vi.fn(),
+      pushMetadata: vi.fn(),
+      replaceRecording: vi.fn(),
+    },
+  };
+});
 
 vi.mock("../api/useConfigSection", () => ({
   useConfigSection: () => ({ fields: {}, loaded: true, error: null, save: vi.fn() }),
@@ -279,7 +290,33 @@ describe("LibraryDetail completed details editing", () => {
     await user.click(screen.getByTestId("completed-more-actions"));
     const menu = screen.getByTestId("completed-actions");
     expect(within(menu).getByRole("menuitem", { name: "Edit teaching" })).toBeTruthy();
+    expect(within(menu).getByRole("menuitem", { name: "Replace recording" })).toBeTruthy();
     expect(within(menu).getByRole("menuitem", { name: "Delete" })).toBeTruthy();
+  });
+
+  it("queues a replacement for the same SermonAudio entry", async () => {
+    const user = userEvent.setup();
+    setSermon("processed", "pending_review");
+    (writeApi.replaceRecording as unknown as Mock).mockResolvedValue({
+      id: "s-1",
+      job_id: "j-replace",
+      status: "queued",
+      filename: "replacement.mp4",
+    });
+    renderDetail();
+
+    await user.click(screen.getByTestId("completed-more-actions"));
+    await user.click(screen.getByTestId("replace-recording"));
+
+    const dialog = screen.getByTestId("replace-recording-dialog");
+    const file = new File(["video"], "replacement.mp4", { type: "video/mp4" });
+    await user.upload(within(dialog).getByLabelText("New video or audio file"), file);
+    await user.click(within(dialog).getByRole("button", { name: "Replace and reprocess" }));
+
+    await waitFor(() =>
+      expect(writeApi.replaceRecording).toHaveBeenCalledWith("s-1", file),
+    );
+    await waitFor(() => expect(screen.getByText("Replacement queued.")).toBeTruthy());
   });
 
   it("queues a full metadata push from the finished view", async () => {

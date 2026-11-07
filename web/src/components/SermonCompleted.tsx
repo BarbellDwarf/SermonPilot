@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { mediaStreamUrl, type ApiMediaItem } from "../api/client";
 import type { SermonMediaData } from "../api/hooks";
 import type { EditPlan, LibrarySermon } from "../mock/data";
@@ -53,6 +53,7 @@ export interface SermonCompletedProps {
   onSaveDetails?: (patch: DetailsPatch) => Promise<void> | void;
   onRegenerateDescription?: () => Promise<void> | void;
   onPushDetails?: () => Promise<void> | void;
+  onReplaceRecording?: (file: File) => Promise<void>;
 }
 
 export function SermonCompleted({
@@ -75,7 +76,13 @@ export function SermonCompleted({
   onSaveDetails,
   onRegenerateDescription,
   onPushDetails,
+  onReplaceRecording,
 }: SermonCompletedProps) {
+  const replaceDialogRef = useRef<HTMLDialogElement>(null);
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [replaceFile, setReplaceFile] = useState<File | null>(null);
+  const [replacing, setReplacing] = useState(false);
+  const [replaceError, setReplaceError] = useState<string | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [seek, setSeek] = useState<{ sec: number; n: number } | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -103,6 +110,37 @@ export function SermonCompleted({
     setSaveState("idle");
     setSeek(null);
   }, [sermon.id]);
+
+  useEffect(() => {
+    const dialog = replaceDialogRef.current;
+    if (!dialog) return;
+    if (replaceOpen && !dialog.open) dialog.showModal();
+    if (!replaceOpen && dialog.open) dialog.close();
+  }, [replaceOpen]);
+
+  const closeReplace = () => {
+    if (replacing) return;
+    setReplaceOpen(false);
+    setReplaceFile(null);
+    setReplaceError(null);
+  };
+
+  const submitReplace = () => {
+    if (!onReplaceRecording || !replaceFile || replacing) return;
+    setReplacing(true);
+    setReplaceError(null);
+    Promise.resolve(onReplaceRecording(replaceFile))
+      .then(() => {
+        setReplaceOpen(false);
+        setReplaceFile(null);
+      })
+      .catch((error: unknown) => {
+        setReplaceError(
+          error instanceof Error ? error.message : "Could not queue the replacement.",
+        );
+      })
+      .finally(() => setReplacing(false));
+  };
 
   const requestSeek = (sec: number) => setSeek((previous) => ({ sec, n: (previous?.n ?? 0) + 1 }));
 
@@ -190,6 +228,19 @@ export function SermonCompleted({
               items={[
                 { label: "Edit teaching", onSelect: onEdit, testId: "edit-sermon" },
                 ...(onUpload ? [{ label: "Push to SermonAudio", onSelect: onUpload }] : []),
+                ...(onReplaceRecording
+                  ? [
+                      {
+                        label: "Replace recording",
+                        onSelect: () => {
+                          setReplaceFile(null);
+                          setReplaceError(null);
+                          setReplaceOpen(true);
+                        },
+                        testId: "replace-recording",
+                      },
+                    ]
+                  : []),
                 ...(onDelete
                   ? [
                       {
@@ -532,6 +583,72 @@ export function SermonCompleted({
           <p className="text-sm text-muted">No files recorded for this teaching.</p>
         )}
       </CollapsibleSection>
+
+      <dialog
+        ref={replaceDialogRef}
+        data-testid="replace-recording-dialog"
+        aria-labelledby="replace-recording-title"
+        onCancel={(event) => {
+          event.preventDefault();
+          closeReplace();
+        }}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) closeReplace();
+        }}
+        className="w-[min(30rem,calc(100vw-2rem))] rounded-xl border border-line bg-surface p-6 text-mist backdrop:bg-black/60"
+      >
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitReplace();
+          }}
+        >
+          <div>
+            <h2 id="replace-recording-title" className="text-lg font-semibold">
+              Replace recording
+            </h2>
+            <p className="mt-1 text-sm text-muted">
+              The new file goes through the full processing pipeline and replaces the
+              media on the existing SermonAudio entry. Its title, description, and
+              publication stay the same.
+            </p>
+          </div>
+
+          <div>
+            <label htmlFor="replace-recording-file" className="text-xs font-medium text-muted">
+              New video or audio file
+            </label>
+            <input
+              id="replace-recording-file"
+              type="file"
+              accept="video/*,audio/*"
+              onChange={(event) => setReplaceFile(event.target.files?.[0] ?? null)}
+              className="mt-1 block min-h-[44px] w-full min-w-0 rounded-md border border-line bg-ink px-3 py-2 text-sm text-mist file:mr-3 file:rounded-md file:border-0 file:bg-surface file:px-3 file:py-2 file:text-sm file:text-mist"
+            />
+          </div>
+
+          {replaceError ? (
+            <p role="alert" className="text-sm text-danger">
+              {replaceError}
+            </p>
+          ) : null}
+
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" onClick={closeReplace} disabled={replacing}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={!replaceFile || replacing}
+              aria-busy={replacing}
+            >
+              {replacing ? "Queueing…" : "Replace and reprocess"}
+            </Button>
+          </div>
+        </form>
+      </dialog>
 
       <CollapsibleSection
         id="completed-history"

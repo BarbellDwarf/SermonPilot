@@ -218,6 +218,33 @@ def test_publish_executor_uses_the_owners_credentials(
     assert passed["broadcaster_id"] == "beta"
 
 
+def test_replacement_job_passes_the_remote_entry_and_review_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = tmp_path / "settings.db"
+    _seed(db, "u-a", [_account("sa-a", "Alpha", "key-alpha-1111", "alpha")], "sa-a")
+    _point_at(monkeypatch, db)
+    process = Mock(return_value=SUCCESS_RESULT)
+    monkeypatch.setattr("sermon_updater.process_new_sermon", process)
+
+    job = _job(
+        "u-a",
+        form_data={**FORM_DATA, "description_needs_review": True},
+        uploaded_file_path=AUDIO_FILE,
+        sermon_id="s-a",
+        replace_recording=True,
+        remote_sermon_id="11226183043643",
+    )
+    result = execute_sermon_processing_job(job)
+
+    assert result.success is True
+    passed = process.call_args.kwargs
+    assert passed["existing_sermon_id"] == "s-a"
+    assert passed["replace_recording"] is True
+    assert passed["remote_sermon_id"] == "11226183043643"
+    assert passed["existing_description_needs_review"] is True
+
+
 def test_no_secret_leaks_into_logs_or_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

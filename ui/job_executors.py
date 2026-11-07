@@ -1169,6 +1169,9 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             cancel_check=lambda: _raise_if_job_cancelled(job),
             cancel_log=job.add_log,
             existing_sermon_id=job.parameters.get("sermon_id"),
+            replace_recording=bool(job.parameters.get("replace_recording")),
+            remote_sermon_id=job.parameters.get("remote_sermon_id"),
+            existing_description_needs_review=form_data.get("description_needs_review"),
         )
         processing_temp_dir = result.get('processing_temp_dir')
 
