@@ -31,6 +31,7 @@ interface MediaPlayerProps {
   timeLabel?: string;
   className?: string;
   offsetSec?: number;
+  syncStartSec?: number;
 }
 
 export function isVideoContent(contentType?: string | null, kind = ""): boolean {
@@ -55,6 +56,7 @@ export function MediaPlayer({
   timeLabel = "Playback",
   className = "",
   offsetSec = 0,
+  syncStartSec = 0,
 }: MediaPlayerProps) {
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -65,6 +67,7 @@ export function MediaPlayer({
   const [duration, setDuration] = useState(0);
 
   const offset = Number.isFinite(offsetSec) ? (offsetSec as number) : 0;
+  const floor = Number.isFinite(syncStartSec) ? Math.max(0, syncStartSec) : 0;
   const syncOffsetAudio = (
     video: HTMLVideoElement | null,
     audio: HTMLAudioElement,
@@ -73,10 +76,10 @@ export function MediaPlayer({
     if (!video) return;
     const target = video.currentTime - offset;
     if (!Number.isFinite(target)) return;
-    if (target < 0) {
+    if (target < floor) {
       delayHeld.current = true;
       audio.pause();
-      if (audio.currentTime !== 0) audio.currentTime = 0;
+      if (audio.currentTime !== floor) audio.currentTime = floor;
       return;
     }
     delayHeld.current = false;
@@ -91,7 +94,7 @@ export function MediaPlayer({
       element.currentTime = Math.max(0, seekToSec);
       const audio = audioRef.current;
       if (audio && offset !== 0) {
-        const desired = Math.max(0, seekToSec - offset);
+        const desired = Math.max(floor, seekToSec - offset);
         if (Number.isFinite(desired)) audio.currentTime = desired;
       }
     } catch {
@@ -225,10 +228,10 @@ export function MediaPlayer({
                 const audio = audioRef.current;
                 if (audio && audio.readyState >= 2) {
                   const target = event.currentTarget.currentTime - offset;
-                  if (target < 0) {
+                  if (target < floor) {
                     delayHeld.current = true;
                     audio.pause();
-                    if (audio.currentTime !== 0) audio.currentTime = 0;
+                    if (audio.currentTime !== floor) audio.currentTime = floor;
                   } else {
                     const drift = Math.abs(audio.currentTime - target);
                     const now = Date.now();

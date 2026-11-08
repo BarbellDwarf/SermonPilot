@@ -234,6 +234,34 @@ describe("MediaPlayer", () => {
     expect(audio.currentTime).toBe(0);
   });
 
+  it("holds the offset audio at the plan start until the delay elapses", () => {
+    render(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        contentType="video/mp4"
+        available
+        offsetSec={2}
+        syncStartSec={552}
+      />,
+    );
+    const video = document.querySelector("video") as HTMLVideoElement;
+    const audio = document.querySelector("audio") as HTMLAudioElement;
+    Object.defineProperty(audio, "readyState", { configurable: true, value: 4 });
+    const pause = vi.fn();
+    audio.pause = pause;
+    audio.currentTime = 700;
+
+    video.currentTime = 553;
+    fireEvent.timeUpdate(video);
+    expect(pause).toHaveBeenCalled();
+    expect(audio.currentTime).toBe(552);
+
+    video.currentTime = 554.5;
+    fireEvent.timeUpdate(video);
+    expect(audio.currentTime).toBe(552.5);
+  });
+
   it("mutes the original video audio while the offset track plays", () => {
     const { rerender } = render(
       <MediaPlayer
