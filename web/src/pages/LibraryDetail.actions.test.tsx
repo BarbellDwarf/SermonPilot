@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ToastHost } from "../components/toast";
-import { api } from "../api/client";
+import { api, writeApi } from "../api/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiMediaItem } from "../api/client";
 import type { EditPlan, LibrarySermon } from "../mock/data";
@@ -180,6 +180,29 @@ describe("LibraryDetail state-aware header actions", () => {
     renderDetail();
 
     expect(screen.getByTestId("timeline-track").getAttribute("data-span-sec")).toBe("3600");
+  });
+
+  it("queues cut detection when a completed sermon has no plan", async () => {
+    const user = userEvent.setup();
+    vi.mocked(writeApi.reDetectPlan).mockResolvedValue({ job_id: "j-1", status: "queued" });
+    setSermon("processed", true);
+    mocks.plan.mockReturnValue({
+      plan: undefined,
+      history: [],
+      isLoading: false,
+      error: null,
+      retry: vi.fn(),
+    });
+    renderDetail();
+
+    await user.click(screen.getByTestId("completed-more-actions"));
+    await user.click(screen.getByTestId("edit-sermon"));
+    expect(screen.getByText("No edit plan yet")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Detect cuts" }));
+
+    expect(writeApi.reDetectPlan).toHaveBeenCalledWith("s-1");
+    expect(await screen.findByText(/Cut detection queued/)).toBeTruthy();
   });
 
   it("defers a delete so Undo can cancel it before the server call", async () => {

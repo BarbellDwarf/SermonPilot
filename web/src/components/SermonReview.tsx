@@ -341,7 +341,12 @@ export function SermonReview({
   const [playWindow, setPlayWindow] = useState<PlayWindow | null>(null);
   const [seek, setSeek] = useState<{ sec: number; n: number } | null>(null);
   const [playhead, setPlayhead] = useState(0);
-  const [playerKind, setPlayerKind] = useState<string>(() => preferredKind(media));
+  const [playerKind, setPlayerKind] = useState<string>(() => {
+    const preferred = preferredKind(media);
+    const preferredEnd = media.byKind[preferred]?.end_sec ?? 0;
+    if (media.byKind.source?.available && plan.endSec > preferredEnd + 1) return "source";
+    return preferred;
+  });
   const [infoTab, setInfoTab] = useState<InfoTab>("transcript");
   const [detailsOpen, setDetailsOpen] = useState(false);
   useEffect(() => {
@@ -1182,6 +1187,7 @@ export function SermonReview({
                   seekNonce={seek?.n}
                   playWindow={playWindow}
                   offsetSec={offset ?? plan.offsetSec}
+                  syncStartSec={safeStart}
                   onTime={setPlayhead}
                 />
               ) : live ? null : (
@@ -1426,7 +1432,7 @@ export function SermonReview({
                   </div>
                   <div>
                     <label htmlFor="cut-offset" className="text-xs font-medium text-muted">
-                      Audio offset, s (±5, 0.1 steps)
+                      Audio offset, s (+ delays, - advances)
                     </label>
                     <input
                       id="cut-offset"
