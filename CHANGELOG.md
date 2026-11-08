@@ -12,6 +12,7 @@ Replace the recording on a published sermon without losing its SermonAudio entry
 - A replacement never stalls on the review screen. When cut detection is not confident, the full recording uploads and the old cut plan is superseded, so the review screen cannot apply cuts that described the retired recording.
 - The video offset preview mutes the original video audio while the shifted track plays, so the correction is heard once.
 - The audio offset preview now matches the render direction: positive values delay audio, negative values advance it. The control labels that direction.
+- The review player opens the original source when the stored plan extends beyond the current render, so the preview matches the source the renderer will cut.
 - A completed teaching with no edit plan offers **Detect cuts** instead of a dead-end refresh. Detection is queued, the page polls for the plan, and the normal trim and re-render flow takes over.
 - Video renders whose source uses a codec browsers cannot decode are transcoded to H.264 before upload. HEVC recordings now preview in Chrome and Brave, while H.264, VP9, and AV1 sources are left untouched.
 
