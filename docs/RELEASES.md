@@ -11,6 +11,7 @@ A published teaching now offers **Replace recording** in the overflow menu. The 
 - The previous original moves to `_trash`; the new source becomes the retained original.
 - A replacement never stalls on the review screen. A low-confidence cut plan is skipped, the full recording is published, and the old cut plan is superseded.
 - The video offset preview keeps the original video audio muted, so the adjusted track plays once instead of doubling with the original.
+- The audio offset preview uses the same direction as the render: positive values delay audio, negative values advance it. The control says so.
 - A completed teaching with no edit plan offers **Detect cuts**. Detection is queued and the page polls for the plan, then the normal trim and re-render flow takes over.
 - Video renders are converted to H.264 when the source codec is not browser-safe, so HEVC recordings preview in Chrome and Brave. H.264, VP9, and AV1 sources are left unchanged.
 - No new header button or mode switch. One menu item opens one file-picker dialog.
@@ -18,7 +19,7 @@ A published teaching now offers **Replace recording** in the overflow menu. The 
 ### Verification
 
 - Python unit suite: 842 passed, 6 skipped, one unrelated pre-existing prompts config failure.
-- Web tests: 233 passed.
+- Web tests: 234 passed.
 - Production web build passes.
 
 ## 1.9.2

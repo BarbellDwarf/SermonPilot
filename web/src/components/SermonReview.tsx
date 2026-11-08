@@ -1426,7 +1426,7 @@ export function SermonReview({
                   </div>
                   <div>
                     <label htmlFor="cut-offset" className="text-xs font-medium text-muted">
-                      Audio offset, s (±5, 0.1 steps)
+                      Audio offset, s (+ delays, - advances)
                     </label>
                     <input
                       id="cut-offset"

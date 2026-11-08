@@ -59,18 +59,39 @@ export function MediaPlayer({
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastAudioSync = useRef(0);
+  const delayHeld = useRef(false);
   const [failed, setFailed] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
 
   const offset = Number.isFinite(offsetSec) ? (offsetSec as number) : 0;
+  const syncOffsetAudio = (
+    video: HTMLVideoElement | null,
+    audio: HTMLAudioElement,
+    play: boolean,
+  ) => {
+    if (!video) return;
+    const target = video.currentTime - offset;
+    if (!Number.isFinite(target)) return;
+    if (target < 0) {
+      delayHeld.current = true;
+      audio.pause();
+      if (audio.currentTime !== 0) audio.currentTime = 0;
+      return;
+    }
+    delayHeld.current = false;
+    audio.currentTime = target;
+    lastAudioSync.current = Date.now();
+    audio.playbackRate = video.playbackRate;
+    if (play && !video.paused) void audio.play().catch(() => { });
+  };
   const applySeek = (element: HTMLMediaElement | null) => {
     if (seekToSec == null || !element) return;
     try {
       element.currentTime = Math.max(0, seekToSec);
       const audio = audioRef.current;
       if (audio && offset !== 0) {
-        const desired = Math.max(0, seekToSec + offset);
+        const desired = Math.max(0, seekToSec - offset);
         if (Number.isFinite(desired)) audio.currentTime = desired;
       }
     } catch {
@@ -102,13 +123,7 @@ export function MediaPlayer({
     let cancelled = false;
     const sync = () => {
       if (cancelled) return;
-      const desired = Math.max(0, (video?.currentTime || 0) + offset);
-      if (Number.isFinite(desired)) audio.currentTime = desired;
-      lastAudioSync.current = Date.now();
-      if (video) audio.playbackRate = video.playbackRate;
-      if (video && !video.paused) {
-        void audio.play().catch(() => { });
-      }
+      syncOffsetAudio(video as HTMLVideoElement | null, audio, true);
     };
     if (audio.readyState >= 2) {
       sync();
@@ -209,26 +224,27 @@ export function MediaPlayer({
               if (offset !== 0) {
                 const audio = audioRef.current;
                 if (audio && audio.readyState >= 2) {
-                  const target = Math.max(0, event.currentTarget.currentTime + offset);
-                  const drift = Math.abs(audio.currentTime - target);
-                  const now = Date.now();
-                  if (Number.isFinite(target) && drift > 0.75 && now - lastAudioSync.current > 1000) {
-                    lastAudioSync.current = now;
-                    try { audio.currentTime = target; } catch { }
+                  const target = event.currentTarget.currentTime - offset;
+                  if (target < 0) {
+                    delayHeld.current = true;
+                    audio.pause();
+                    if (audio.currentTime !== 0) audio.currentTime = 0;
+                  } else {
+                    const drift = Math.abs(audio.currentTime - target);
+                    const now = Date.now();
+                    if (delayHeld.current || (drift > 0.75 && now - lastAudioSync.current > 1000)) {
+                      syncOffsetAudio(event.currentTarget, audio, true);
+                    }
                   }
                 }
               }
             }}
             onPlay={() => {
               const audio = audioRef.current;
-              const video = mediaRef.current;
+              const video = mediaRef.current as HTMLVideoElement | null;
               if (!audio || !video || offset === 0) return;
-              const startAudio = () => {                if (video.paused) return;
-                const desired = Math.max(0, (video.currentTime || 0) + offset);
-                if (Number.isFinite(desired)) audio.currentTime = desired;
-                lastAudioSync.current = Date.now();
-                audio.playbackRate = video.playbackRate;
-                void audio.play().catch(() => { });
+              const startAudio = () => {
+                if (!video.paused) syncOffsetAudio(video, audio, true);
               };
               if (audio.readyState >= 2) {
                 startAudio();
@@ -238,11 +254,9 @@ export function MediaPlayer({
             }}
             onPlaying={() => {
               const audio = audioRef.current;
-              const video = mediaRef.current;
-              if (audio && video && offset !== 0 && audio.paused && audio.readyState >= 2) {
-                const desired = Math.max(0, video.currentTime + offset);
-                if (Number.isFinite(desired)) audio.currentTime = desired;
-                void audio.play().catch(() => { });
+              const video = mediaRef.current as HTMLVideoElement | null;
+              if (audio && video && offset !== 0) {
+                syncOffsetAudio(video, audio, true);
               }
             }}
             onVolumeChange={(event) => {
@@ -269,10 +283,7 @@ export function MediaPlayer({
             onSeeked={(event) => {
               const audio = audioRef.current;
               if (audio && offset !== 0 && audio.readyState >= 1) {
-                const desired = Math.max(0, event.currentTarget.currentTime + offset);
-                if (Number.isFinite(desired)) {
-                  try { audio.currentTime = desired; } catch { }
-                }
+                syncOffsetAudio(event.currentTarget, audio, !event.currentTarget.paused);
               }
             }}
           />
