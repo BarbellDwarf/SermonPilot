@@ -9,7 +9,7 @@
 
 # Per-index overrides for the torch family (torch/torchaudio are released independently on ROCm)
 torch==2.13.0+rocm7.1
-torchaudio==2.11.0+rocm7.1
+torchaudio==2.11.1+cpu
 
 # Note: onnxruntime-rocm pip wheels are built against ROCm 6.4.2 ABI
 # (libhipblas.so.2, libamdhip64.so.6, symbol hipblasGemmStridedBatchedEx_v2)
