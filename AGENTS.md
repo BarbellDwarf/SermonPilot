@@ -51,6 +51,17 @@ environment variable name, `db`, or `default` (no `file` source). The console
 Settings sections read and write the same `config_cache.app_config` through
 `server/api/routers/app_config.py`; see `docs/SETTINGS_PARITY.md`.
 
+## UI quality gate
+
+The React console in `web/` is the active UI. The Streamlit UI is deprecated and
+is being removed; see `docs/UI_CORRECTIONS.md`.
+
+Before marking any `web/` change complete, run the `visual-qa` subagent. It must
+cover `/`, `/new`, `/library`, `/library/s-01`, `/jobs`, and `/settings` at
+390x844, 768x1024, and 1440x900, in dark and light. Fix P0 and P1 findings before
+ship. The full gate and the current correction list live in
+`docs/UI_CORRECTIONS.md`.
+
 ## Key Conventions
 
 - **No comments in code** unless absolutely necessary (existing code has some, but don't add new ones)
