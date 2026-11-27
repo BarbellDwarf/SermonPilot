@@ -15,11 +15,15 @@ export interface ApiSermonListItem {
   duration: string;
   series: string;
   status: string;
+  edit_status: string | null;
+  upload_status: string | null;
+  plan_status: string | null;
 }
 
 export interface ApiSermonList {
   items: ApiSermonListItem[];
   total: number;
+  counts: Record<string, number>;
 }
 
 export interface ApiSermonFile {
@@ -31,6 +35,8 @@ export interface ApiSermonFile {
 export interface ApiSermonDetail extends ApiSermonListItem {
   duration_seconds: number | null;
   description: string | null;
+  edit_status: string | null;
+  plan_status: string | null;
   description_needs_review: boolean;
   files: ApiSermonFile[];
   transcript_available: boolean;
