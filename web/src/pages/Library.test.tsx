@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LibrarySermon } from "../mock/data";
+import { lifecycleOfSermon } from "../api/hooks";
+import { lifecycleCounts, type LifecycleCounts } from "../utils/lifecycle";
 
 const mocks = vi.hoisted(() => ({ sermons: vi.fn() }));
 
@@ -20,6 +22,13 @@ vi.mock("../api/client", () => ({
 }));
 
 import { Library } from "./Library";
+
+function countsOf(items: LibrarySermon[]): LifecycleCounts {
+  const counts = lifecycleCounts([]);
+  for (const item of items) counts[lifecycleOfSermon(item)] += 1;
+  counts.total = items.length;
+  return counts;
+}
 
 const rows: LibrarySermon[] = [
   {
@@ -61,6 +70,7 @@ function libraryData(items: LibrarySermon[] = rows) {
     hasMore: false,
     isLoadingMore: false,
     loadMore: vi.fn(),
+    counts: countsOf(items),
   };
 }
 
@@ -163,7 +173,7 @@ describe("Library toolbar", () => {
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
 
     await user.type(screen.getByLabelText("Search teachings"), "Sample Teaching 1");
-    await user.selectOptions(screen.getByLabelText("Filter by status"), "processed");
+    await user.selectOptions(screen.getByLabelText("Filter by status"), "published");
     await user.click(screen.getByTestId("library-toolbar-menu"));
     const menu = screen.getByRole("menu", { name: "Library actions" });
     expect(within(menu).getByRole("menuitem", { name: "Export CSV" })).toBeTruthy();
@@ -185,6 +195,34 @@ describe("Library toolbar", () => {
     expect(click).toHaveBeenCalledTimes(1);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:sample");
     click.mockRestore();
+  });
+});
+
+describe("Library lifecycle", () => {
+  const cases: [string, LibrarySermon, string][] = [
+    ["needs_review", { ...rows[0], id: "s-needs", status: "rendered", edit_status: "pending_review" }, "Needs review"],
+    ["ready", { ...rows[0], id: "s-ready", status: "rendered", edit_status: "rendered" }, "Ready to publish"],
+    ["processing", { ...rows[0], id: "s-processing", status: "draft", edit_status: "applied" }, "Processing"],
+    ["failed", { ...rows[0], id: "s-failed", status: "failed", edit_status: "failed" }, "Failed"],
+    ["draft", { ...rows[0], id: "s-draft", status: "draft", edit_status: "draft" }, "Draft"],
+    ["published", { ...rows[0], id: "s-published", status: "processed", edit_status: "uploaded" }, "Published"],
+  ];
+
+  it("filters by each of the six lifecycle states and shows that label", async () => {
+    const user = userEvent.setup();
+    mocks.sermons.mockReturnValue(libraryData(cases.map(([, item]) => item)));
+    renderLibrary();
+
+    expect(screen.getAllByTestId(/^library-row-/)).toHaveLength(6);
+    expect(screen.getByRole("option", { name: "All (6)" })).toBeTruthy();
+
+    for (const [state, item, label] of cases) {
+      await user.selectOptions(screen.getByLabelText("Filter by status"), state);
+      expect(screen.getAllByTestId(/^library-row-/)).toHaveLength(1);
+      const row = screen.getByTestId(`library-row-${item.id}`);
+      expect(within(row).getByText(label)).toBeTruthy();
+      expect(screen.getByRole("option", { name: `${state === "draft" ? "Drafts" : label} (1)` })).toBeTruthy();
+    }
   });
 });
 
