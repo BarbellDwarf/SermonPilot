@@ -111,7 +111,11 @@ describe("Home", () => {
     expect(screen.getByText("RUNNING")).toBeTruthy();
     expect(screen.getByText("QUEUED")).toBeTruthy();
     expect(screen.getByText("Recent teachings")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Sample Teaching 3 by Speaker C, Processed" })).toBeTruthy();
+    expect(
+      screen.getByRole("link", {
+        name: "Sample Teaching 3 by Speaker C, Processed, updated Oct 24, 41m 2s",
+      }),
+    ).toBeTruthy();
     expect(screen.queryByText("Up next")).toBeNull();
     expect(screen.getAllByRole("link", { name: "New teaching" })).toHaveLength(1);
   });

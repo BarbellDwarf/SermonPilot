@@ -190,7 +190,11 @@ export function Menu({
     const rawLeft = align === "right" ? rect.right - width : rect.left;
     const maxLeft = Math.max(VIEWPORT_MARGIN, viewportWidth - width - VIEWPORT_MARGIN);
     const left = Math.min(Math.max(rawLeft, VIEWPORT_MARGIN), maxLeft);
-    setPosition({ top, left, side: placed });
+    setPosition((prev) =>
+      prev && prev.top === top && prev.left === left && prev.side === placed
+        ? prev
+        : { top, left, side: placed },
+    );
   }, [align, side]);
 
   useLayoutEffect(() => {
@@ -251,6 +255,12 @@ export function Menu({
   }, [open]);
 
   const onMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Tab") {
+      event.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
     const entries = Array.from(
       menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? [],
     );

@@ -99,6 +99,21 @@ describe("Menu", () => {
     expect(document.activeElement).toBe(trigger);
   });
 
+  it("closes on Tab and returns focus to the trigger", async () => {
+    const user = userEvent.setup();
+    setTriggerRect(600, 100);
+    renderMenu();
+
+    const trigger = screen.getByTestId("row-actions");
+    await user.click(trigger);
+    expect(document.activeElement).toBe(screen.getByTestId("item-open"));
+
+    await user.keyboard("{Tab}");
+
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
   it("moves focus with ArrowDown, ArrowUp, Home, and End", async () => {
     const user = userEvent.setup();
     setTriggerRect(600, 100);

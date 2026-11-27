@@ -184,7 +184,7 @@ export function Home() {
               <li key={s.id} className="stagger-item" style={staggerStyle(index)}>
                 <Link
                   to={`/library/${s.id}`}
-                  aria-label={`${s.title} by ${s.speaker}, ${sermonLabel[s.status]}`}
+                  aria-label={`${s.title} by ${s.speaker}, ${sermonLabel[s.status]}, updated ${s.updated}, ${formatDurationValue(s.duration)}`}
                   className="flex min-h-[56px] items-center gap-3 px-4 py-2.5 transition-colors hover:bg-raised"
                 >
                   <Chip tone={sermonTone[s.status]}>{sermonLabel[s.status]}</Chip>

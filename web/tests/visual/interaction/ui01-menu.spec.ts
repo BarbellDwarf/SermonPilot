@@ -61,6 +61,19 @@ test.describe("UI-01 library row menu", () => {
     await expectEveryItemHitTestable(menu);
   });
 
+  test("Tab closes the menu and returns focus to the trigger", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/library");
+
+    const { trigger, menu } = await openMenu(page, "s-01");
+    await expect(menu.getByRole("menuitem").first()).toBeFocused();
+
+    await page.keyboard.press("Tab");
+
+    await expect(menu).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  });
+
   test("Escape closes the menu and returns focus to the trigger", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/library");

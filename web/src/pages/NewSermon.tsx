@@ -298,19 +298,6 @@ export function NewSermon() {
   const dateError = touched.date && !meta.date;
   const sourceError = touched.source && !hasSource;
 
-  const speakerBox = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const input = speakerBox.current?.querySelector("input");
-    if (!input) return;
-    if (speakerError) {
-      input.setAttribute("aria-invalid", "true");
-      input.setAttribute("aria-describedby", "ns-speaker-error");
-    } else {
-      input.removeAttribute("aria-invalid");
-      input.removeAttribute("aria-describedby");
-    }
-  }, [speakerError]);
-
   const pickMockFile = () => setFileName("sample-sermon-upload.mp3");
 
   const showToast = (
@@ -662,6 +649,8 @@ export function NewSermon() {
                 value={cloudPick}
                 onChange={(e) => chooseCloudRemote(e.target.value)}
                 onBlur={() => touch("source")}
+                aria-invalid={sourceError || undefined}
+                aria-describedby={sourceError ? "ns-cloud-error" : undefined}
                 className={inputCls}
               >
                 <option value="">Choose a remote…</option>
@@ -699,7 +688,7 @@ export function NewSermon() {
               </p>
             ) : null}
             {sourceError ? (
-              <p role="alert" className="text-xs text-danger">
+              <p id="ns-cloud-error" role="alert" className="text-xs text-danger">
                 Pick a file with “Use this file”.
               </p>
             ) : null}
@@ -822,7 +811,7 @@ export function NewSermon() {
             ) : null}
           </Field>
           <Field label="Speaker (required)" htmlFor="ns-speaker">
-            <div ref={speakerBox} onBlur={() => touch("speaker")}>
+            <div onBlur={() => touch("speaker")}>
               <Combobox
                 id="ns-speaker"
                 value={meta.speaker}
@@ -832,6 +821,8 @@ export function NewSermon() {
                 ariaLabel="Speaker"
                 className={inputCls}
                 required
+                invalid={speakerError}
+                describedBy={speakerError ? "ns-speaker-error" : undefined}
               />
               {speakerError ? (
                 <p id="ns-speaker-error" className="mt-1 text-xs text-danger">
