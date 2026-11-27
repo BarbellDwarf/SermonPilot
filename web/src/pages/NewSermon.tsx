@@ -36,6 +36,7 @@ import { formatBytes } from "../utils/format";
 
 type SourceKind = "browser" | "server" | "cloud";
 type AutoEditMode = "interactive" | "auto";
+type FieldKey = "source" | "title" | "speaker" | "date";
 
 const sourceOptions: { id: SourceKind; label: string }[] = [
   { id: "browser", label: "Upload" },
@@ -96,6 +97,12 @@ export function NewSermon() {
   const [pathStat, setPathStat] = useState<ServerPathStat | null>(null);
   const [statPending, setStatPending] = useState(false);
   const [meta, setMeta] = useState(initialMeta);
+  const [touched, setTouched] = useState<Record<FieldKey, boolean>>({
+    source: false,
+    title: false,
+    speaker: false,
+    date: false,
+  });
   const [enhance, setEnhance] = useState(true);
   const [transcribe, setTranscribe] = useState(true);
   const [generateMetadata, setGenerateMetadata] = useState(true);
@@ -283,7 +290,13 @@ export function NewSermon() {
     ? isLive
       ? "Ready to queue. The pipeline run appears under Jobs."
       : "Source and details are complete. Demo mode sends nothing."
-    : `Missing: ${missing.join(", ")}.`;
+    : `Still needed: ${missing.join(", ")}.`;
+
+  const touch = (key: FieldKey) => setTouched((t) => (t[key] ? t : { ...t, [key]: true }));
+  const titleError = touched.title && !meta.title.trim();
+  const speakerError = touched.speaker && !meta.speaker.trim();
+  const dateError = touched.date && !meta.date;
+  const sourceError = touched.source && !hasSource;
 
   const pickMockFile = () => setFileName("sample-sermon-upload.mp3");
 
@@ -301,6 +314,7 @@ export function NewSermon() {
     setCloudFile(null);
     setCloudBrowse("");
     setMeta(initialMeta);
+    setTouched({ source: false, title: false, speaker: false, date: false });
     setEnhance(true);
     setTranscribe(true);
     setGenerateMetadata(true);
@@ -320,6 +334,7 @@ export function NewSermon() {
     setCloudFile(null);
     setCloudBrowse("");
     setMeta(initialMeta);
+    setTouched({ source: false, title: false, speaker: false, date: false });
     setEnhance(true);
     setTranscribe(true);
     setGenerateMetadata(true);
@@ -504,18 +519,17 @@ export function NewSermon() {
         </Field>
 
         {source === "browser" ? (
-          <div
-            id="source-panel-browser"
-            role="tabpanel"
-            aria-label="Upload source"
-            className="mt-3"
-          >
+          <section id="source-panel-browser" className="mt-3">
             <input
               ref={fileInput}
               type="file"
               accept=".mkv,.mp4,.mov,.webm,.m4v,.mp3,.wav,.m4a,.flac,.ogg,.mpa"
               className="sr-only"
+              tabIndex={-1}
               aria-label="Choose a teaching file"
+              aria-invalid={sourceError || undefined}
+              aria-describedby={sourceError ? "ns-source-error" : undefined}
+              onBlur={() => touch("source")}
               onChange={(e) => {
                 const f = e.target.files?.[0] ?? null;
                 if (isLive) setFileObj(f);
@@ -523,13 +537,6 @@ export function NewSermon() {
               }}
             />
             <div
-              role="button"
-              tabIndex={0}
-              aria-label={
-                isLive
-                  ? "Drop a teaching file here, or press Enter to choose one"
-                  : "Drop a teaching file here, or press Enter to pick a sample file"
-              }
               onDragOver={(e) => {
                 e.preventDefault();
                 setDragOver(true);
@@ -538,24 +545,13 @@ export function NewSermon() {
               onDrop={(e) => {
                 e.preventDefault();
                 setDragOver(false);
+                touch("source");
                 const f = e.dataTransfer.files?.[0];
                 if (isLive) {
                   if (f) setFileObj(f);
                 } else {
                   pickMockFile();
                 }
-              }}
-              onKeyDown={(e) => {
-                if (e.target !== e.currentTarget) return;
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  if (isLive) fileInput.current?.click();
-                  else pickMockFile();
-                }
-              }}
-              onClick={() => {
-                if (isLive) fileInput.current?.click();
-                else pickMockFile();
               }}
               className={`flex min-h-[10rem] flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-6 text-center transition-colors ${
                 dragOver ? "border-accent bg-raised" : "border-line bg-ink"
@@ -571,9 +567,10 @@ export function NewSermon() {
                   : "Files stay local in this demo. Nothing is uploaded."}
               </p>
               <Button
-                variant="primary"
-                onClick={(e) => {
-                  e.stopPropagation();
+                variant="secondary"
+                aria-describedby={sourceError ? "ns-source-error" : undefined}
+                onClick={() => {
+                  touch("source");
                   if (isLive) fileInput.current?.click();
                   else pickMockFile();
                 }}
@@ -591,21 +588,16 @@ export function NewSermon() {
             <p className="mt-2 text-xs text-muted">
               Large files (over ~500 MB) may take a while on slow connections. Prefer Server path or Cloud file for those.
             </p>
-            {!browserHasSource ? (
-              <p role="alert" className="mt-2 text-xs text-danger">
+            {sourceError ? (
+              <p id="ns-source-error" className="mt-2 text-xs text-danger">
                 Choose a file to upload.
               </p>
             ) : null}
-          </div>
+          </section>
         ) : null}
 
         {source === "server" ? (
-          <div
-            id="source-panel-server"
-            role="tabpanel"
-            aria-label="Server path source"
-            className="mt-3 flex flex-col gap-3"
-          >
+          <section id="source-panel-server" className="mt-3 flex flex-col gap-3">
             <Field
               label="Server path"
               htmlFor="server-path"
@@ -616,6 +608,9 @@ export function NewSermon() {
                   id="server-path"
                   value={serverPath}
                   onChange={(e) => setServerPath(e.target.value)}
+                  onBlur={() => touch("source")}
+                  aria-invalid={sourceError || undefined}
+                  aria-describedby={sourceError ? "ns-server-error" : undefined}
                   placeholder="/media/sample-sermon.mp3"
                   inputMode="text"
                   autoComplete="off"
@@ -629,8 +624,8 @@ export function NewSermon() {
             <div className="flex flex-wrap gap-2" aria-live="polite" aria-label="Path validation">
               {serverChips}
             </div>
-            {!serverValid ? (
-              <p role="alert" className="text-xs text-danger">
+            {sourceError ? (
+              <p id="ns-server-error" role="alert" className="text-xs text-danger">
                 Enter an absolute path that exists on the server.
               </p>
             ) : null}
@@ -639,16 +634,11 @@ export function NewSermon() {
                 The server checks the path exists, then queues the real pipeline against it. Local paths are read in place.
               </p>
             ) : null}
-          </div>
+          </section>
         ) : null}
 
         {source === "cloud" ? (
-          <div
-            id="source-panel-cloud"
-            role="tabpanel"
-            aria-label="Cloud file source"
-            className="mt-3 flex flex-col gap-3"
-          >
+          <section id="source-panel-cloud" className="mt-3 flex flex-col gap-3">
             <Field
               label="Cloud remote"
               htmlFor="cloud-remote"
@@ -658,6 +648,9 @@ export function NewSermon() {
                 id="cloud-remote"
                 value={cloudPick}
                 onChange={(e) => chooseCloudRemote(e.target.value)}
+                onBlur={() => touch("source")}
+                aria-invalid={sourceError || undefined}
+                aria-describedby={sourceError ? "ns-cloud-error" : undefined}
                 className={inputCls}
               >
                 <option value="">Choose a remote…</option>
@@ -694,15 +687,15 @@ export function NewSermon() {
                 ) : null}
               </p>
             ) : null}
-            {!cloudValid ? (
-              <p role="alert" className="text-xs text-danger">
+            {sourceError ? (
+              <p id="ns-cloud-error" role="alert" className="text-xs text-danger">
                 Pick a file with “Use this file”.
               </p>
             ) : null}
             <p className="text-xs text-muted">
               The selected file is fetched into the server's work area for processing, then removed.
             </p>
-          </div>
+          </section>
         ) : null}
       </SectionCard>
 
@@ -801,22 +794,59 @@ export function NewSermon() {
       <SectionCard n={2} title="Metadata" sub="Title, speaker, and date are required. The rest sharpens search and display.">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Title (required)" htmlFor="ns-title">
-            <input id="ns-title" value={meta.title} onChange={set("title")} placeholder="Sample teaching title" className={inputCls} />
+            <input
+              id="ns-title"
+              value={meta.title}
+              onChange={set("title")}
+              onBlur={() => touch("title")}
+              aria-invalid={titleError || undefined}
+              aria-describedby={titleError ? "ns-title-error" : undefined}
+              placeholder="Sample teaching title"
+              className={inputCls}
+            />
+            {titleError ? (
+              <p id="ns-title-error" className="mt-1 text-xs text-danger">
+                Add a title.
+              </p>
+            ) : null}
           </Field>
           <Field label="Speaker (required)" htmlFor="ns-speaker">
-            <Combobox
-              id="ns-speaker"
-              value={meta.speaker}
-              onChange={(value) => setMeta((m) => ({ ...m, speaker: value }))}
-              options={facetSpeakerOptions}
-              placeholder="Speaker name"
-              ariaLabel="Speaker"
-              className={inputCls}
-              required
-            />
+            <div onBlur={() => touch("speaker")}>
+              <Combobox
+                id="ns-speaker"
+                value={meta.speaker}
+                onChange={(value) => setMeta((m) => ({ ...m, speaker: value }))}
+                options={facetSpeakerOptions}
+                placeholder="Speaker name"
+                ariaLabel="Speaker"
+                className={inputCls}
+                required
+                invalid={speakerError}
+                describedBy={speakerError ? "ns-speaker-error" : undefined}
+              />
+              {speakerError ? (
+                <p id="ns-speaker-error" className="mt-1 text-xs text-danger">
+                  Add a speaker.
+                </p>
+              ) : null}
+            </div>
           </Field>
           <Field label="Date (required)" htmlFor="ns-date">
-            <input id="ns-date" type="date" value={meta.date} onChange={set("date")} className={inputCls} />
+            <input
+              id="ns-date"
+              type="date"
+              value={meta.date}
+              onChange={set("date")}
+              onBlur={() => touch("date")}
+              aria-invalid={dateError || undefined}
+              aria-describedby={dateError ? "ns-date-error" : undefined}
+              className={inputCls}
+            />
+            {dateError ? (
+              <p id="ns-date-error" className="mt-1 text-xs text-danger">
+                Add the recording date.
+              </p>
+            ) : null}
           </Field>
           <Field label="Series" htmlFor="ns-series">
             <Combobox
@@ -991,15 +1021,17 @@ export function NewSermon() {
             >
               {summaryBits.join(" · ")}
             </p>
-            <p className="truncate text-xs text-muted" role="status" aria-live="polite">
+            <p id="ns-readiness" className="truncate text-xs text-muted" role="status" aria-live="polite">
               {helper}
             </p>
           </div>
           <Button
             variant="primary"
+            data-testid="start-processing"
             onClick={start}
             disabled={!valid || starting}
             aria-busy={starting}
+            aria-describedby={valid ? undefined : "ns-readiness"}
             className="w-full shrink-0 sm:w-auto"
           >
             {starting ? "Queueing…" : "Start processing"}

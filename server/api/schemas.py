@@ -21,11 +21,15 @@ class SermonListItem(BaseModel):
     duration: str
     series: str
     status: str
+    edit_status: str | None = None
+    upload_status: str | None = None
+    plan_status: str | None = None
 
 
 class SermonListOut(BaseModel):
     items: list[SermonListItem]
     total: int
+    counts: dict[str, int]
 
 
 class SermonFileOut(BaseModel):
@@ -43,6 +47,8 @@ class SermonDetailOut(BaseModel):
     duration_seconds: float | None = None
     series: str
     status: str
+    edit_status: str | None = None
+    plan_status: str | None = None
     description: str | None = None
     description_needs_review: bool = False
     files: list[SermonFileOut] = []

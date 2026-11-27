@@ -924,20 +924,20 @@ export function SermonReview({
 
   const confidence =
     plan.confidence > 0 ? `${plan.confidence}% confidence` : null;
+  const qaText = detectionFailed ? "" : qaCopy(plan.qa);
   const statusPills = (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <Chip tone={planStatusTone[plan.status]}>Cut plan: {planStatusLabel[plan.status]}</Chip>
-      {statusChip ? (
-        <span className="inline-flex items-center gap-1 text-xs text-muted">
-          Teaching status {statusChip}
-        </span>
-      ) : null}
+      {statusChip}
       <span className="font-mono text-xs text-muted" data-testid="plan-meta">
         Revision {plan.revision} of {plan.revisionsTotal}
         {confidence ? ` · ${confidence}` : ""}
-        {qaCopy(plan.qa) ? ` · ${qaCopy(plan.qa)}` : ""}
-        {` · ${detectionFailed ? "Cut detection unavailable" : "Cuts found automatically"}`}
       </span>
+      {qaText ? (
+        <span className="text-xs text-muted" data-testid="plan-qa">
+          {qaText}
+        </span>
+      ) : null}
     </div>
   );
 
@@ -1055,7 +1055,7 @@ export function SermonReview({
       />
       <div className="mt-2">
         <Button
-          variant="primary"
+          variant="secondary"
           onClick={submitRefine}
           disabled={!notesText.trim() || refining}
           aria-busy={refining}
@@ -1477,7 +1477,7 @@ export function SermonReview({
           <section
             aria-label="Approval"
             data-testid="approval-bar"
-            className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 shadow-lg"
+            className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)] z-20 flex flex-col gap-3 rounded-lg border border-line bg-surface/95 p-4 shadow-[0_-8px_24px_-16px_rgba(0,0,0,0.8)] backdrop-blur md:bottom-0"
           >
             <div className="flex flex-wrap items-center gap-2">
               {refining ? (
@@ -1578,7 +1578,7 @@ export function SermonReview({
                   aria-controls={`info-${tab.id}`}
                   onClick={() => setInfoTab(tab.id)}
                   className={`min-h-[40px] shrink-0 rounded-md px-3 text-sm font-semibold ${
-                    infoTab === tab.id ? "bg-accent/15 text-accent" : "text-muted hover:text-mist"
+                    infoTab === tab.id ? "bg-accent/15 text-mist" : "text-muted hover:text-mist"
                   }`}
                 >
                   {tab.label}
@@ -1933,7 +1933,7 @@ export function SermonReview({
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="submit"
-                  variant="primary"
+                  variant="secondary"
                   disabled={!onSaveDetails || !detailsDirty || saveState === "saving"}
                 >
                   {saveState === "saving" ? "Saving…" : "Save details"}

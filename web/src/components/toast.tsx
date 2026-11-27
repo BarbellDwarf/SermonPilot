@@ -163,6 +163,7 @@ export function ToastHost() {
   return (
     <div
       aria-label="Notifications"
+      role="region"
       className="pointer-events-none fixed inset-x-4 bottom-[calc(8.5rem+env(safe-area-inset-bottom))] z-50 flex flex-col items-center gap-2 md:inset-x-auto md:bottom-6 md:right-6 md:items-end"
     >
       {current.map((item) => (

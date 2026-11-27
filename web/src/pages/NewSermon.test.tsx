@@ -176,7 +176,76 @@ describe("NewSermon source options", () => {
     expect(within(footer).getAllByRole("button").map((b) => b.textContent?.trim())).toEqual([
       "Start processing",
     ]);
-    expect(within(footer).getByRole("status").textContent).toContain("Missing:");
+    expect(within(footer).getByRole("status").textContent).toContain("Still needed:");
+  });
+
+  it("paints no errors or invalid fields before interaction", () => {
+    renderPage();
+
+    expect(screen.queryAllByRole("alert")).toHaveLength(0);
+    expect(document.querySelectorAll("[aria-invalid]")).toHaveLength(0);
+    expect(screen.getByRole("status").textContent).toBe(
+      "Still needed: source file, title, speaker, date.",
+    );
+    const start = submitButton();
+    expect(start.disabled).toBe(true);
+    expect(start.getAttribute("aria-describedby")).toBe("ns-readiness");
+  });
+
+  it("shows inline errors on blur and clears them once the field is filled", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const title = screen.getByLabelText("Title (required)");
+    await user.click(title);
+    await user.tab();
+    expect(screen.getByText("Add a title.")).toBeTruthy();
+    expect(title.getAttribute("aria-invalid")).toBe("true");
+    expect(title.getAttribute("aria-describedby")).toBe("ns-title-error");
+    await user.type(title, "Sample Title");
+    expect(screen.queryByText("Add a title.")).toBeNull();
+    expect(title.hasAttribute("aria-invalid")).toBe(false);
+
+    const speaker = screen.getByRole("combobox", { name: "Speaker" });
+    await user.click(speaker);
+    await user.tab();
+    expect(screen.getByText("Add a speaker.")).toBeTruthy();
+    expect(speaker.getAttribute("aria-invalid")).toBe("true");
+    expect(speaker.getAttribute("aria-describedby")).toBe("ns-speaker-error");
+
+    const date = screen.getByLabelText("Date (required)");
+    await user.click(date);
+    await user.tab();
+    expect(screen.getByText("Add the recording date.")).toBeTruthy();
+    expect(date.getAttribute("aria-invalid")).toBe("true");
+    expect(date.getAttribute("aria-describedby")).toBe("ns-date-error");
+  });
+
+  it("shows the source error only after the source is touched", () => {
+    renderPage();
+    const fileInput = screen.getByLabelText("Choose a teaching file");
+
+    expect(screen.queryByText("Choose a file to upload.")).toBeNull();
+    fireEvent.blur(fileInput);
+    expect(screen.getByText("Choose a file to upload.")).toBeTruthy();
+    expect(fileInput.getAttribute("aria-invalid")).toBe("true");
+    expect(fileInput.getAttribute("aria-describedby")).toBe("ns-source-error");
+  });
+
+  it("uses one dropzone control with no nested interactive role", () => {
+    renderPage();
+    const panel = document.getElementById("source-panel-browser") as HTMLElement;
+    const button = within(panel).getByRole("button", { name: "Choose file" });
+
+    expect(panel.getAttribute("role")).toBeNull();
+    expect(panel.querySelector('[role="button"]')).toBeNull();
+    expect(button.parentElement?.getAttribute("role")).toBeNull();
+    expect(button.className).toContain("bg-raised");
+    expect(button.className).not.toContain("bg-accent");
+
+    const fileInput = screen.getByLabelText("Choose a teaching file");
+    expect(fileInput.tabIndex).toBe(-1);
+    expect(button.contains(fileInput)).toBe(false);
   });
 
   it("keeps reset in the header overflow menu", async () => {
@@ -257,6 +326,7 @@ describe("NewSermon source options", () => {
     await fillMetadata(user);
 
     expect(submitButton().disabled).toBe(true);
+    fireEvent.blur(screen.getByLabelText("Choose a teaching file"));
     expect(screen.getByText("Choose a file to upload.")).toBeTruthy();
 
     await user.selectOptions(screen.getByRole("combobox", { name: "Source" }), "server");

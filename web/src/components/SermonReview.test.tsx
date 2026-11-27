@@ -827,6 +827,105 @@ describe("SermonReview mobile layout", () => {
   });
 });
 
+describe("SermonReview action hierarchy", () => {
+  const accentButtons = () =>
+    screen
+      .getAllByRole("button")
+      .filter((button) => button.className.split(/\s+/).includes("bg-accent"));
+
+  it("sticks the approval bar above the mobile nav without extra margins", () => {
+    setViewportWidth(390);
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        onToast={noop}
+      />,
+    );
+
+    const bar = screen.getByTestId("approval-bar");
+    expect(bar.className).toContain("sticky");
+    expect(bar.className).toContain(
+      "bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)]",
+    );
+    expect(bar.className).toContain("md:bottom-0");
+    expect(bar.className).toContain("z-20");
+    expect(bar.className).toContain("backdrop-blur");
+    expect(bar.className).not.toContain("-mx-");
+  });
+
+  it("keeps Approve & upload as the only accent primary", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description="Existing description."
+        hashtags="#faith"
+        plan={plan()}
+        media={media()}
+        isLive
+        onSaveDetails={noop}
+        onUpload={noop}
+        onDelete={noop}
+        onToast={noop}
+      />,
+    );
+
+    const accents = accentButtons();
+    expect(accents).toHaveLength(1);
+    expect(accents[0]).toBe(screen.getByTestId("approve-primary"));
+  });
+
+  it("renders Save details and Re-run with notes as secondary actions", async () => {
+    const user = userEvent.setup();
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description="Existing description."
+        plan={plan()}
+        media={media()}
+        isLive
+        onSaveDetails={noop}
+        onToast={noop}
+      />,
+    );
+
+    const save = screen.getByRole("button", { name: /Save details/ });
+    expect(save.className).toContain("bg-raised");
+
+    await clickMore(user, "Reject with notes");
+    const rerun = screen.getByRole("button", { name: /Re-run with notes/ });
+    expect(rerun.className).toContain("bg-raised");
+    expect(accentButtons()).toHaveLength(1);
+  });
+
+  it("keeps the status strip to status, revision, confidence and QA", () => {
+    renderReview(
+      <SermonReview
+        sermon={sermon()}
+        description={null}
+        plan={plan()}
+        media={media()}
+        isLive
+        statusChip={<span>Rendered</span>}
+        onToast={noop}
+      />,
+    );
+
+    const summary = screen.getByTestId("approval-summary");
+    expect(summary.textContent).toContain("Cut plan: Pending review");
+    expect(summary.textContent).toContain("Rendered");
+    expect(summary.textContent).toContain("No problems found");
+    expect(summary.textContent).not.toContain("Teaching status");
+    expect(summary.textContent).not.toContain("Cuts found automatically");
+    expect(screen.getByTestId("plan-meta").textContent).toContain(
+      "Revision 2 of 3 · 87% confidence",
+    );
+  });
+});
+
 describe("SermonReview enhancement choice", () => {
   it("defaults the enhancement control to the app config and sends it", async () => {
     const user = userEvent.setup();
@@ -1128,7 +1227,7 @@ describe("SermonReview refine controls", () => {
       />,
     );
 
-    expect(screen.getByText(/Cuts found automatically/)).toBeTruthy();
+    expect(screen.getByTestId("plan-meta").textContent).toContain("Revision 2 of 3");
     await clickMore(user, "History");
     expect(screen.getByText(/Teaching starts after the welcome/)).toBeTruthy();
     expect(screen.getByText("revision 1")).toBeTruthy();
@@ -1232,8 +1331,9 @@ describe("SermonReview refine controls", () => {
     );
 
     expect(screen.getByRole("alert")).toBeTruthy();
-    expect(screen.getByText(/Cut detection unavailable/)).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("Cut detection failed");
     expect(screen.getByTestId("plan-meta").textContent).not.toContain("confidence");
+    expect(screen.queryByTestId("plan-qa")).toBeNull();
     await clickMore(user, "Reject with notes");
     expect(screen.getByLabelText("Reject with notes")).toBeTruthy();
     const menu = await openMore(user);

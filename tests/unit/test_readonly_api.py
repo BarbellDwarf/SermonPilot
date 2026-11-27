@@ -162,7 +162,18 @@ def test_sermons_list_shape_and_default_sort(client: TestClient) -> None:
     assert body["total"] == 2
     first, second = body["items"]
     assert first["id"] == "s-02"
-    assert set(first) == {"id", "title", "speaker", "date", "duration", "series", "status"}
+    assert set(first) == {
+        "id",
+        "title",
+        "speaker",
+        "date",
+        "duration",
+        "series",
+        "status",
+        "edit_status",
+        "upload_status",
+        "plan_status",
+    }
     assert "transcript" not in json.dumps(body).lower()
     assert first["duration"] == "38:44"
     assert second["duration"] == "42:10"
