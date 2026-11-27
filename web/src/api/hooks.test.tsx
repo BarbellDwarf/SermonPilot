@@ -103,7 +103,7 @@ describe("QueryError", () => {
   it("renders the server error copy for a 500", () => {
     render(
       <QueryError
-        message={describeLoadError(new ApiError("boom", 500), "Home data") ?? ""}
+        message={describeLoadError(new ApiError("boom", 500), "Inbox data") ?? ""}
         onRetry={vi.fn()}
       />,
     );

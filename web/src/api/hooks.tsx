@@ -364,7 +364,11 @@ export function useInboxCount(): number {
   });
 
   if (!isLive) return sermonCounts.needs_review;
-  return sermonsQuery.data?.counts?.needs_review ?? 0;
+  const items = (sermonsQuery.data?.items ?? []).map(toLibrarySermon);
+  const counts = sermonsQuery.data?.counts
+    ? toLifecycleCounts(sermonsQuery.data.counts)
+    : lifecycleCounts(items);
+  return counts.needs_review;
 }
 
 export interface SermonDetailData {

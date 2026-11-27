@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Button, ClampText, Icon, Menu, staggerStyle, type MenuItem } from "./ui";
 import { StatusChip } from "./StatusChip";
 import type { LibrarySermon } from "../mock/data";
-import { LIFECYCLE_META, type LifecycleState } from "../utils/lifecycle";
+import type { LifecycleState } from "../utils/lifecycle";
 import { formatDate, formatDurationValue } from "../utils/format";
 
 export interface TeachingRowAction {
@@ -38,7 +38,6 @@ function useIsDesktop(): boolean {
 
 export function TeachingRow({ sermon, state, action, evidence, menu, index = 0 }: TeachingRowProps) {
   const desktop = useIsDesktop();
-  const label = LIFECYCLE_META[state].label;
   const speaker = sermon.speaker || "Unknown speaker";
 
   return (
@@ -55,7 +54,6 @@ export function TeachingRow({ sermon, state, action, evidence, menu, index = 0 }
         <div className="col-span-2 row-start-2 min-w-0 md:col-span-1 md:col-start-2 md:row-start-1">
           <Link
             to={`/teaching/${sermon.id}`}
-            aria-label={`Open ${sermon.title} by ${speaker}, ${label}`}
             className="flex min-h-[44px] flex-col justify-center rounded-md"
           >
             <ClampText text={sermon.title} className="text-sm font-semibold" />

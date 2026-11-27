@@ -79,7 +79,7 @@ function renderLibrary() {
     <MemoryRouter initialEntries={["/library"]}>
       <Routes>
         <Route path="/library" element={<Library />} />
-        <Route path="/library/:id" element={<p>teaching detail</p>} />
+        <Route path="/teaching/:id" element={<p>teaching detail</p>} />
       </Routes>
     </MemoryRouter>,
   );

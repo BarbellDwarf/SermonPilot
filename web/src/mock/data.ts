@@ -10,20 +10,6 @@ export interface ServiceStatus {
   level: number;
 }
 
-export type SermonStatus = "ready" | "processing" | "draft" | "failed";
-
-export interface Sermon {
-  id: string;
-  title: string;
-  speaker: string;
-  duration: string;
-  status: SermonStatus;
-  updated: string;
-  edit_status?: string | null;
-  upload_status?: string | null;
-  plan_status?: string | null;
-}
-
 export type JobState = "queued" | "running" | "done" | "failed" | "cancelled" | "interrupted";
 
 export interface Job {
@@ -117,13 +103,6 @@ export const activeJobs: Job[] = [
   },
 ];
 
-export const recentSermons: Sermon[] = [
-  { id: "s-01", title: "Sample Teaching 1", speaker: "Speaker A", duration: "42:10", status: "ready", updated: "Today 09:12", edit_status: "rendered", upload_status: null, plan_status: "draft" },
-  { id: "s-02", title: "Sample Teaching 2", speaker: "Speaker B", duration: "38:44", status: "processing", updated: "Today 08:50", edit_status: "applied", upload_status: null, plan_status: "applied_local" },
-  { id: "s-03", title: "Sample Teaching 3", speaker: "Speaker C", duration: "51:02", status: "draft", updated: "Yesterday 17:20", edit_status: "draft", upload_status: null, plan_status: null },
-  { id: "s-04", title: "Sample Teaching 4", speaker: "Speaker A", duration: "44:37", status: "failed", updated: "Yesterday 15:03", edit_status: "failed", upload_status: "failed", plan_status: null },
-];
-
 export type LibrarySermonStatus = "draft" | "rendered" | "processed" | "failed";
 
 export interface LibrarySermon {
@@ -142,7 +121,7 @@ export interface LibrarySermon {
 export const librarySermons: LibrarySermon[] = [
   { id: "s-01", title: "Sample Teaching 1", speaker: "Speaker A", date: "2026-09-06", duration: "42:10", series: "Sample Series A", status: "rendered", edit_status: "pending_review", upload_status: null, plan_status: "pending_review" },
   { id: "s-02", title: "Sample Teaching 2", speaker: "Speaker B", date: "2026-09-05", duration: "38:44", series: "Sample Series A", status: "failed", edit_status: "failed", upload_status: "failed", plan_status: null },
-  { id: "s-03", title: "Sample Teaching 3", speaker: "Speaker C", date: "2026-10-24", duration: "51:02", series: "Sample Series B", status: "processed", edit_status: "uploaded", upload_status: "complete", plan_status: "processed" },
+  { id: "s-03", title: "Sample Teaching 3", speaker: "Speaker C", date: minutesAgo(2 * 24 * 60).iso, duration: "51:02", series: "Sample Series B", status: "processed", edit_status: "uploaded", upload_status: "complete", plan_status: "processed" },
   { id: "s-04", title: "Sample Teaching 4", speaker: "Speaker A", date: "2026-10-20", duration: "44:37", series: "Sample Series B", status: "rendered", edit_status: "rendered", upload_status: null, plan_status: "draft" },
   { id: "s-05", title: "Sample Teaching 5", speaker: "Speaker B", date: "2026-09-02", duration: "39:15", series: "Sample Series C", status: "draft", edit_status: "draft", upload_status: null, plan_status: null },
   { id: "s-06", title: "Sample Teaching 6", speaker: "Speaker C", date: "2026-09-01", duration: "47:28", series: "Sample Series C", status: "draft", edit_status: "applied", upload_status: null, plan_status: "applied_local" },

@@ -64,7 +64,6 @@ export function Inbox() {
                     primary: sermon.id === primaryId,
                     testId: `inbox-action-${sermon.id}`,
                   }}
-                  menu={[{ label: "Open teaching", onSelect: () => open(sermon.id) }]}
                 />
               ))}
             </ol>

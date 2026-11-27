@@ -56,7 +56,7 @@ function SermonRow({ sermon, index }: { sermon: LibrarySermon; index: number }) 
     <li data-testid={`library-row-${sermon.id}`} className="stagger-item" style={staggerStyle(index)}>
       <div className="group relative">
         <Link
-          to={`/library/${sermon.id}`}
+          to={`/teaching/${sermon.id}`}
           aria-label={`Open ${sermon.title} by ${sermon.speaker}, ${status}`}
           className="peer absolute inset-0 rounded-md"
         />
@@ -84,7 +84,7 @@ function SermonRow({ sermon, index }: { sermon: LibrarySermon; index: number }) 
                 <Icon name="more" />
               }
               items={[
-                { label: "Open teaching", onSelect: () => navigate(`/library/${sermon.id}`) },
+                { label: "Open teaching", onSelect: () => navigate(`/teaching/${sermon.id}`) },
                 {
                   label: open ? "Hide preview" : "Preview",
                   onSelect: () => setOpen((value) => !value),

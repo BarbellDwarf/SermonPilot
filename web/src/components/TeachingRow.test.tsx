@@ -60,7 +60,7 @@ describe("TeachingRow", () => {
 
     expect(within(row).getByTestId("row-action").textContent).toBe("Review");
     expect(within(row).getByTestId("teaching-actions-s-1")).toBeTruthy();
-    expect(within(row).getByRole("link", { name: /^Open Sample Teaching 1/ })).toBeTruthy();
+    expect(within(row).getByRole("link", { name: /^Sample Teaching 1/ })).toBeTruthy();
     expect(row.querySelectorAll("button")).toHaveLength(2);
   });
 

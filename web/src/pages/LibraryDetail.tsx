@@ -234,6 +234,7 @@ export function LibraryDetail() {
         showToast("Replacement queued.");
         void queryClient.invalidateQueries({ queryKey: ["sermon", id] });
         void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+        void queryClient.invalidateQueries({ queryKey: ["sermons"] });
       })
       .catch((error: unknown) => {
         const active = error instanceof ApiError && error.status === 409;
