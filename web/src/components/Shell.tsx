@@ -2,42 +2,53 @@ import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { isLive, type AuthUser } from "../api/client";
+import { pageTitle } from "../utils/pageTitle";
 import { Chip, Icon, Menu, type IconName } from "./ui";
 
-const items: { to: string; end?: boolean; label: string; short: string; icon: IconName }[] = [
-  { to: "/", end: true, label: "Home", short: "Home", icon: "home" },
-  { to: "/new", label: "New teaching", short: "New", icon: "plus" },
+interface NavItem {
+  to: string;
+  end?: boolean;
+  label: string;
+  short: string;
+  ariaLabel?: string;
+  icon: IconName;
+  badge?: ReactNode;
+}
+
+const items: NavItem[] = [
+  { to: "/", end: true, label: "Inbox", short: "Inbox", icon: "home" },
   { to: "/library", label: "Library", short: "Library", icon: "library" },
-  { to: "/jobs", label: "Jobs", short: "Jobs", icon: "jobs" },
+  { to: "/new", label: "New teaching", short: "New", ariaLabel: "New teaching", icon: "plus" },
+  { to: "/activity", label: "Activity", short: "Activity", icon: "jobs" },
   { to: "/settings", label: "Settings", short: "Settings", icon: "settings" },
 ];
-
-const titles: Record<string, string> = {
-  "/": "Home · SermonPilot",
-  "/new": "New teaching · SermonPilot",
-  "/library": "Library · SermonPilot",
-  "/jobs": "Jobs · SermonPilot",
-  "/settings": "Settings · SermonPilot",
-};
-
-function routeTitle(pathname: string): string {
-  const path = pathname === "/" ? pathname : pathname.replace(/\/+$/, "");
-  const title = titles[path];
-  if (title) return title;
-  if (/^\/library\/[^/]+$/.test(path)) return "Teaching review · SermonPilot";
-  return "SermonPilot Console";
-}
 
 function useRouteMeta(main: { current: HTMLElement | null }) {
   const { pathname } = useLocation();
   const previousPath = useRef(pathname);
 
   useEffect(() => {
-    document.title = routeTitle(pathname);
+    document.title = pageTitle(pathname);
     if (previousPath.current === pathname) return;
     previousPath.current = pathname;
     main.current?.focus({ preventScroll: true });
   }, [pathname, main]);
+}
+
+function NavBadge({ item, mobile }: { item: NavItem; mobile?: boolean }) {
+  if (item.badge === undefined || item.badge === null) return null;
+  return (
+    <span
+      data-testid={`nav-badge-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+      className={
+        mobile
+          ? "absolute right-2 top-1.5 flex min-w-4 items-center justify-center rounded-full border border-line bg-raised px-1 font-mono text-[10px] leading-4 text-muted"
+          : "ml-auto flex min-w-5 items-center justify-center rounded-full border border-line bg-raised px-1 font-mono text-[11px] leading-4 text-muted"
+      }
+    >
+      {item.badge}
+    </span>
+  );
 }
 
 function initials(name: string): string {
@@ -135,7 +146,8 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
               }
             >
               <Icon name={item.icon} />
-              {item.label}
+              <span className="min-w-0 truncate">{item.label}</span>
+              <NavBadge item={item} />
             </NavLink>
           ))}
         </nav>
@@ -154,6 +166,8 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
               key={item.to}
               to={item.to}
               end={item.end}
+              aria-label={item.ariaLabel}
+              title={item.ariaLabel}
               className={({ isActive }) =>
                 `relative flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 px-1 text-xs font-semibold transition-colors duration-150 ${
                   isActive
@@ -164,6 +178,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
             >
               <Icon name={item.icon} />
               {item.short}
+              <NavBadge item={item} mobile />
             </NavLink>
           ))}
         </div>

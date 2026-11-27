@@ -25,7 +25,7 @@ vi.mock("../api/hooks", async (importOriginal) => {
   };
 });
 
-import { Jobs } from "./Jobs";
+import { Activity } from "./Activity";
 
 function job({ id, state, ...overrides }: Partial<Job> & Pick<Job, "id" | "state">): Job {
   return {
@@ -90,20 +90,27 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderJobs() {
+function renderActivity() {
   return render(
     <MemoryRouter>
-      <Jobs />
+      <Activity />
       <ToastHost />
     </MemoryRouter>,
   );
 }
 
-describe("Jobs rows", () => {
+describe("Activity rows", () => {
+  it("renders the Activity heading without a page-header create button", () => {
+    renderActivity();
+
+    expect(screen.getByRole("heading", { level: 1, name: "Activity" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "New teaching" })).toBeNull();
+  });
+
   it("renders one scannable row with sermon name, action, and an always-visible timestamp", () => {
     mocks.jobsData.mockReturnValue(jobsData([job({ id: "job-1", state: "running" })]));
 
-    renderJobs();
+    renderActivity();
 
     const row = screen.getByTestId("job-row-job-1");
     expect(within(row).getByText("Sunday Teaching · Process")).toBeTruthy();
@@ -142,7 +149,7 @@ describe("Jobs rows", () => {
       ]),
     );
 
-    renderJobs();
+    renderActivity();
 
     expect(screen.getByText("Midweek Class · Edit")).toBeTruthy();
     expect(screen.getByText("Sunday Teaching · Upload")).toBeTruthy();
@@ -156,7 +163,7 @@ describe("Jobs rows", () => {
       jobsData([job({ id: "job-1", state: "running", progress: 42.4 })]),
     );
 
-    renderJobs();
+    renderActivity();
 
     const bar = screen.getByRole("progressbar", { name: /Progress for Sunday Teaching/i });
     expect(bar.getAttribute("aria-valuenow")).toBe("42");
@@ -175,7 +182,7 @@ describe("Jobs rows", () => {
       ]),
     );
 
-    renderJobs();
+    renderActivity();
     fireEvent.click(screen.getByRole("tab", { name: /Failed/ }));
 
     const row = screen.getByTestId("job-row-job-failed");
@@ -189,7 +196,7 @@ describe("Jobs rows", () => {
       jobsData([], [job({ id: "job-cancelled", state: "cancelled", error: "Job cancelled by user" })]),
     );
 
-    renderJobs();
+    renderActivity();
     fireEvent.click(screen.getByRole("tab", { name: /Completed/ }));
 
     const row = screen.getByTestId("job-row-job-cancelled");
@@ -208,7 +215,7 @@ describe("Jobs rows", () => {
       ]),
     );
 
-    renderJobs();
+    renderActivity();
     fireEvent.click(screen.getByRole("tab", { name: /Failed/ }));
 
     expect(within(screen.getByTestId("job-row-job-interrupted")).getByText("INTERRUPTED")).toBeTruthy();
@@ -217,7 +224,7 @@ describe("Jobs rows", () => {
   it("reveals description, type, context, id, readable parameters, log, and actions on expansion", () => {
     mocks.jobsData.mockReturnValue(jobsData([job({ id: "job-1", state: "running", progress: 42 })]));
 
-    renderJobs();
+    renderActivity();
     expect(screen.queryByText(/Processing "Sunday Teaching"/)).toBeNull();
 
     fireEvent.click(screen.getByTestId("job-row-job-1"));
@@ -249,14 +256,14 @@ describe("Jobs rows", () => {
     });
     mocks.jobsData.mockReturnValue(jobsData([first, second]));
 
-    const { rerender } = renderJobs();
+    const { rerender } = renderActivity();
     fireEvent.click(screen.getByTestId("job-row-job-a"));
     expect(screen.getByTestId("job-row-job-a").getAttribute("aria-expanded")).toBe("true");
 
     mocks.jobsData.mockReturnValue(jobsData([{ ...first }, { ...second }]));
     rerender(
       <MemoryRouter>
-        <Jobs />
+        <Activity />
         <ToastHost />
       </MemoryRouter>,
     );
@@ -270,7 +277,7 @@ describe("Jobs rows", () => {
   it("still cancels a running job through the confirm dialog", async () => {
     mocks.jobsData.mockReturnValue(jobsData([job({ id: "job-1", state: "running" })]));
 
-    renderJobs();
+    renderActivity();
     fireEvent.click(screen.getByTestId("job-row-job-1"));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByText("Cancel this job?")).toBeTruthy();
@@ -283,7 +290,7 @@ describe("Jobs rows", () => {
     mocks.jobsData.mockReturnValue(jobsData([job({ id: "job-1", state: "running" })]));
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined });
 
-    renderJobs();
+    renderActivity();
     fireEvent.click(screen.getByTestId("job-row-job-1"));
     fireEvent.click(screen.getByRole("button", { name: "Copy" }));
 
@@ -292,7 +299,7 @@ describe("Jobs rows", () => {
   });
 });
 
-describe("Jobs edge cases and failures", () => {
+describe("Activity edge cases and failures", () => {
   it("clamps a 120-character job title and keeps the full text on the tooltip", () => {
     const sermon = "A very long teaching title ".repeat(5).trim();
     mocks.jobsData.mockReturnValue(
@@ -305,7 +312,7 @@ describe("Jobs edge cases and failures", () => {
         }),
       ]),
     );
-    renderJobs();
+    renderActivity();
 
     const row = screen.getByTestId("job-row-job-long");
     const title = within(row).getAllByTitle(new RegExp(sermon.slice(0, 20)))[0];
@@ -321,7 +328,7 @@ describe("Jobs edge cases and failures", () => {
       error: "Server error (500). Try again in a moment.",
       retry,
     });
-    renderJobs();
+    renderActivity();
 
     expect(screen.getByText("Server error (500). Try again in a moment.")).toBeTruthy();
     expect(screen.queryByText(/API bridge/)).toBeNull();
