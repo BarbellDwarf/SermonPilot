@@ -1,5 +1,6 @@
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { isLive, type AuthUser } from "../api/client";
 import { Chip, Icon, Menu, type IconName } from "./ui";
 
@@ -10,6 +11,34 @@ const items: { to: string; end?: boolean; label: string; short: string; icon: Ic
   { to: "/jobs", label: "Jobs", short: "Jobs", icon: "jobs" },
   { to: "/settings", label: "Settings", short: "Settings", icon: "settings" },
 ];
+
+const titles: Record<string, string> = {
+  "/": "Home · SermonPilot",
+  "/new": "New teaching · SermonPilot",
+  "/library": "Library · SermonPilot",
+  "/jobs": "Jobs · SermonPilot",
+  "/settings": "Settings · SermonPilot",
+};
+
+function routeTitle(pathname: string): string {
+  const path = pathname === "/" ? pathname : pathname.replace(/\/+$/, "");
+  const title = titles[path];
+  if (title) return title;
+  if (/^\/library\/[^/]+$/.test(path)) return "Teaching review · SermonPilot";
+  return "SermonPilot Console";
+}
+
+function useRouteMeta(main: { current: HTMLElement | null }) {
+  const { pathname } = useLocation();
+  const previousPath = useRef(pathname);
+
+  useEffect(() => {
+    document.title = routeTitle(pathname);
+    if (previousPath.current === pathname) return;
+    previousPath.current = pathname;
+    main.current?.focus({ preventScroll: true });
+  }, [pathname, main]);
+}
 
 function initials(name: string): string {
   return name
@@ -30,6 +59,8 @@ interface ShellProps {
 
 export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellProps) {
   const navigate = useNavigate();
+  const main = useRef<HTMLElement>(null);
+  useRouteMeta(main);
 
   return (
     <div className="min-h-screen bg-ink text-mist">
@@ -108,7 +139,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
             </NavLink>
           ))}
         </nav>
-        <main id="main" className="min-w-0 max-w-[78rem] flex-1">
+        <main id="main" ref={main} tabIndex={-1} className="min-w-0 max-w-[78rem] flex-1">
           {children}
         </main>
       </div>
