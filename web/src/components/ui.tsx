@@ -630,7 +630,7 @@ export function SkeletonList({
 }) {
   if (variant === "row") {
     return (
-      <div aria-hidden="true" aria-label="Loading" className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+      <div aria-hidden="true" className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
         {Array.from({ length: rows }).map((_, i) => (
           <div key={i} className="flex items-center gap-3 px-4 py-3" style={{ height: rowHeight }}>
             <div className="min-w-0 flex-1">
@@ -645,7 +645,7 @@ export function SkeletonList({
     );
   }
   return (
-    <div aria-hidden="true" aria-label="Loading" className="flex flex-col gap-3">
+    <div aria-hidden="true" className="flex flex-col gap-3">
       {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className="rounded-lg border border-line bg-surface p-4">
           <Skeleton className="h-4 w-2/5" />

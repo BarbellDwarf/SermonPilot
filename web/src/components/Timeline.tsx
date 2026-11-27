@@ -716,7 +716,7 @@ export function Timeline({
               onClick={() => setZoomSec(option.value)}
               className={`min-h-[36px] rounded-md border px-2 text-[11px] font-semibold transition-colors ${
                 zoomSec === option.value
-                  ? "border-accent bg-accent/15 text-accent"
+                  ? "border-accent bg-accent/15 text-mist"
                   : "border-line bg-raised text-mist hover:border-accent"
               }`}
             >

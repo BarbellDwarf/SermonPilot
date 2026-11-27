@@ -38,7 +38,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
       </a>
       <header className="sticky top-0 z-30 border-b border-line bg-ink/95 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-shell items-center gap-3 px-4 lg:px-8">
-          <Link to="/" className="flex min-h-[44px] min-w-0 items-center gap-2 rounded-md" aria-label="SermonPilot home">
+          <Link to="/" className="flex min-h-[44px] min-w-0 items-center gap-2 rounded-md">
             <span className="flex h-8 w-8 items-center justify-center rounded-md bg-accent font-mono text-sm font-bold text-[var(--accent-ink)]" aria-hidden="true">
               SP
             </span>
@@ -50,7 +50,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
           <div className="ml-auto flex min-w-0 items-center">
             {user ? (
               <Menu
-                label={`Account menu for ${user.display_name}`}
+                label={`Account menu for ${initials(user.display_name)} ${user.display_name}`}
                 triggerTestId="account-menu-trigger"
                 triggerClassName="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-md px-1.5 text-mist transition-colors hover:bg-raised"
                 menuClassName="w-60"
@@ -69,7 +69,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
                   <>
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-raised font-mono text-xs font-bold uppercase" aria-hidden="true">
                       {initials(user.display_name)}
-                    </span>
+                    </span>{" "}
                     <span className="hidden max-w-24 truncate text-sm font-medium sm:inline">{user.display_name}</span>
                     <Icon name="chevron" className="h-4 w-4 text-muted" />
                   </>

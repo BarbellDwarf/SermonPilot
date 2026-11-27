@@ -36,7 +36,7 @@ describe("Shell chrome", () => {
   it("renders one brand block, the live pill, and one account trigger", () => {
     renderShell();
 
-    expect(screen.getByRole("link", { name: "SermonPilot home" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "SermonPilot live" })).toBeTruthy();
     expect(screen.getByText("live")).toBeTruthy();
     expect(screen.getByTestId("account-menu-trigger")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Logout" })).toBeNull();
@@ -49,7 +49,7 @@ describe("Shell chrome", () => {
     const { onToggleTheme, onLogout } = renderShell();
 
     await userEvents.click(screen.getByTestId("account-menu-trigger"));
-    const menu = screen.getByRole("menu", { name: "Account menu for Sample Admin" });
+    const menu = screen.getByRole("menu", { name: "Account menu for SA Sample Admin" });
     expect(screen.getByText("admin")).toBeTruthy();
     expect(within(menu).getByRole("menuitem", { name: "Settings" })).toBeTruthy();
     expect(within(menu).getByRole("menuitem", { name: "Switch to light theme" })).toBeTruthy();

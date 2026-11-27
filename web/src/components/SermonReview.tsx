@@ -1572,7 +1572,7 @@ export function SermonReview({
                   aria-controls={`info-${tab.id}`}
                   onClick={() => setInfoTab(tab.id)}
                   className={`min-h-[40px] shrink-0 rounded-md px-3 text-sm font-semibold ${
-                    infoTab === tab.id ? "bg-accent/15 text-accent" : "text-muted hover:text-mist"
+                    infoTab === tab.id ? "bg-accent/15 text-mist" : "text-muted hover:text-mist"
                   }`}
                 >
                   {tab.label}
