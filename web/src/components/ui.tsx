@@ -291,9 +291,10 @@ export function Menu({
               style={{
                 top: position?.top ?? 0,
                 left: position?.left ?? 0,
-                visibility: position ? undefined : "hidden",
               }}
-              className={`menu-panel fixed z-40 flex max-h-[min(60vh,20rem)] w-56 flex-col overflow-y-auto rounded-lg border border-line bg-surface p-2 shadow-2xl ${menuClassName}`}
+              className={`menu-panel fixed z-40 flex max-h-[min(60vh,20rem)] w-56 flex-col overflow-y-auto rounded-lg border border-line bg-surface p-2 shadow-2xl ${
+                position ? "" : "pointer-events-none opacity-0"
+              } ${menuClassName}`}
             >
               {header ? <div className="border-b border-line px-3 pb-2 pt-1">{header}</div> : null}
               <div
