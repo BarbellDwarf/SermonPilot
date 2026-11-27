@@ -34,7 +34,7 @@ test("blurred required fields show linked inline errors", async ({ page }) => {
 
   const date = page.getByLabel("Date (required)");
   await date.focus();
-  await page.keyboard.press("Tab");
+  await date.evaluate((element: HTMLInputElement) => element.blur());
   await expect(page.locator("#ns-date-error")).toBeVisible();
   await expect(date).toHaveAttribute("aria-invalid", "true");
   await expect(date).toHaveAttribute("aria-describedby", "ns-date-error");
