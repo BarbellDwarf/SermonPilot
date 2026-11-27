@@ -172,12 +172,12 @@ Derived in one function from four inputs: `edit_status`, `status`,
 wins. The same function feeds Inbox, Library, the workspace header, the nav
 count and the tests.
 
-| # | Condition (first match wins) | `OperatorState` | Label | Tone | Primary action | Overflow |
+| # | Condition (first match wins) | `LifecycleState` | Label | Tone | Primary action | Overflow |
 |---|---|---|---|---|---|---|
 | 1 | `status = error` or `upload_status = failed` or `edit_status = failed` | `failed` | Failed | danger | `Retry` (retry the last job when its id is known, else `Retry upload`) | Open job, Delete |
 | 2 | `edit_status = applied` | `processing` | Processing | info | `View job` | Delete |
 | 3 | `edit_status = rendered` | `ready` | Ready to publish | ok | `Upload to SermonAudio` | Re-render, Edit details, Delete |
-| 4 | plan status `pending_review` or `edit_status = pending_review` | `review` | Needs review | warn | Row: `Review`. Workspace: `Approve & upload` | Render only, Reject with notes, Re-detect, Delete |
+| 4 | plan status `pending_review` or `edit_status = pending_review` | `needs_review` | Needs review | warn | Row: `Review`. Workspace: `Approve & upload` | Render only, Reject with notes, Re-detect, Delete |
 | 5 | `edit_status = uploaded` or `status = processed` | `published` | Published | ok | none | Update SermonAudio details (inside Details, dirty only), Replace recording, Delete |
 | 6 | `status = draft` or `edit_status = draft` or no other match | `draft` | Draft | neutral | A render exists: `Publish draft`. Otherwise: `Run cut detection` | Edit details, Delete |
 
@@ -418,7 +418,7 @@ tell the truth.
 | Publish a dry-run draft | `server/api/routers/writes.py`, `web/src/api/client.ts` | `POST /api/sermons/{id}/publish-draft` wraps `publish_dry_run_sermon` (`sermon_updater.py:4652`) with an ownership check, returns `{job_id, status}`. Manual live validation only. |
 | Job list total and per-state fetch | `server/api/routers/jobs.py` | Return a real `total` (not `len(items)` after the limit), accept `offset`, and include `interrupted` in the failed filter. |
 | Client types | `web/src/api/client.ts` | `ApiSermonListItem` fields, `ApiSermonList.counts`, `api.sermons` params, `writeApi.retryJob`, `writeApi.publishDraft`. |
-| Lifecycle helper | new `web/src/utils/lifecycle.ts` | `OperatorState`, `operatorState()`, `STATE_LABEL`, `STATE_TONE`, `PRIMARY_ACTION`, `needsAttention`. Single source in TS; the server's `state` filter is tested against the same fixture table. |
+| Lifecycle helper | `web/src/utils/lifecycle.ts` | `LifecycleState`, `LifecycleInput`, `deriveLifecycleState()`, `LIFECYCLE_META`, `lifecycleTone()`, `lifecycleCounts()`. Single source in TS; the server mirrors the same precedence and fixtures cover both suites. |
 | Remove the Home data path | `web/src/api/hooks.tsx` | Delete `useHomeData`, `toRecentSermon`, `SERMON_STATUS_MAP` once Inbox lands. |
 | Shared sermon query | `web/src/api/hooks.tsx` | `useSermonsQuery(params)` with `placeholderData: keepPreviousData`, key `["sermons", {params}]`, consumed by Inbox and Library. Keep the mock branch inside the hook, not in pages. |
 | Fixtures | `web/src/mock/data.ts` | One record per lifecycle state, agreeing across every surface; a draft with a render; a failed job linked to its teaching; a long title, empty series, non-Latin title; `plan_status` on each record. Delete the `ready/processing/draft/failed` Home enum and `recentSermons`. |
@@ -492,7 +492,7 @@ File ownership: Track H `server/api/**`, `ui/database.py`, `ui/job_executors.py`
 `web/src/utils/lifecycle.test.ts`, `web/src/mock/data.ts`, backend tests.
 
 Tasks: the data rows in §7 except the two new write routes, which land in Phase 4
-and Phase 3 respectively. Add `operatorState` and the fixture table. Rewrite the
+and Phase 3 respectively. Add `deriveLifecycleState` and the fixture table. Rewrite the
 mock data so every surface agrees.
 
 Tests: `lifecycle.test.ts` table over every input combination; Python

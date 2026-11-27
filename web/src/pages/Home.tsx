@@ -1,11 +1,11 @@
 import { Link } from "react-router-dom";
 import { type SermonStatus } from "../mock/data";
-import { Chip, ClampText, EmptyState, Meter, PageHeader, SkeletonList, buttonClass, staggerStyle } from "../components/ui";
+import { Chip, ClampText, EmptyState, Meter, PageHeader, SkeletonList, buttonClass, staggerStyle, type ChipTone } from "../components/ui";
 import { QueryError, useHomeData } from "../api/hooks";
 import { formatDurationValue, formatRelativeTime } from "../utils/format";
 import { STATUS_DOT, STATUS_TEXT, jobRowTitle, jobStatus } from "./jobRow";
 
-const sermonTone: Record<SermonStatus, string> = {
+const sermonTone: Record<SermonStatus, ChipTone> = {
   ready: "ok",
   processing: "info",
   draft: "neutral",

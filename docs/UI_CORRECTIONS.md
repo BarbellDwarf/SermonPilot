@@ -320,8 +320,9 @@ rule from `web/DESIGN.md`, and a suggested fix with the test that would catch it
 - [x] UI-07 Skeleton ARIA fixed
 - [ ] UI-08 All touch targets at least 44x44
 - [ ] UI-09 Jobs tabs complete
-- [ ] UI-10 Per-route titles
-- [ ] UI-11 Demo waveform 404 removed
+- [x] UI-10 Per-route titles
+- [x] UI-11 Demo waveform 404 removed
+- [x] Deterministic axe gate in the visual suite
 - [ ] UI-12 Row anatomy unified
 - [ ] UI-13 Home density and stat labels
 - [ ] UI-14 Single New teaching entry point
@@ -341,3 +342,4 @@ rule from `web/DESIGN.md`, and a suggested fix with the test that would catch it
 | --- | --- | --- | --- | --- |
 | 2026-11-27 | `d4d2532` | parent review | 18 open items, 3 P0 | parent review evidence |
 | 2026-11-27 | `37f0724` | phase 0 | UI-01 to UI-05 and UI-07 fixed; 249 vitest, 127 Playwright passed, 8 skipped, axe clean on 24 runs | PR #406 |
+| 2026-11-27 | `100c0b2` | phase 1 | UI-10 and UI-11 fixed; route titles and focus verified; 36 axe checks, 300 vitest, 163 Playwright passed, 8 skipped | PR #407 |

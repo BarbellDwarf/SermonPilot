@@ -15,11 +15,15 @@ export interface ApiSermonListItem {
   duration: string;
   series: string;
   status: string;
+  edit_status: string | null;
+  upload_status: string | null;
+  plan_status: string | null;
 }
 
 export interface ApiSermonList {
   items: ApiSermonListItem[];
   total: number;
+  counts: Record<string, number>;
 }
 
 export interface ApiSermonFile {
@@ -31,6 +35,8 @@ export interface ApiSermonFile {
 export interface ApiSermonDetail extends ApiSermonListItem {
   duration_seconds: number | null;
   description: string | null;
+  edit_status: string | null;
+  plan_status: string | null;
   description_needs_review: boolean;
   files: ApiSermonFile[];
   transcript_available: boolean;
@@ -912,14 +918,20 @@ export function mediaStreamUrl(sermonId: string, kind: string): string {
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
+function emptyWaveform(): { peaks: number[]; duration: number } {
+  return { peaks: [], duration: 0 };
+}
+
 export const mediaApi = {
   list: (id: string) => send<ApiSermonMedia>(`/api/media/sermons/${encodeURIComponent(id)}`, "GET"),
   url: mediaStreamUrl,
   waveform: (id: string) =>
-    send<{ peaks: number[]; duration: number }>(
-      `/api/media/sermons/${encodeURIComponent(id)}/waveform`,
-      "GET",
-    ),
+    isLive
+      ? send<{ peaks: number[]; duration: number }>(
+          `/api/media/sermons/${encodeURIComponent(id)}/waveform`,
+          "GET",
+        )
+      : Promise.resolve(emptyWaveform()),
   fetchJson: async <T,>(id: string, kind: string): Promise<T> => {
     const res = await authFetch(
       `/api/media/sermons/${encodeURIComponent(id)}/${encodeURIComponent(kind)}`,
