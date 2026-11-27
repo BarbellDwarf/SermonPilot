@@ -33,6 +33,33 @@ _SORT_KEYS = {"date", "title", "duration"}
 
 _FACET_LIMIT = 200
 
+_LIFECYCLE_STATES = ("draft", "review", "processing", "ready", "published", "failed")
+
+
+def _lifecycle_state(row: dict) -> str:
+    status = str(row.get("status") or "").strip().lower()
+    edit_status = str(row.get("edit_status") or "").strip().lower()
+    upload_status = str(row.get("upload_status") or "").strip().lower()
+    plan_status = str(row.get("latest_plan_status") or "").strip().lower()
+    if status == "error" or upload_status == "failed" or edit_status == "failed":
+        return "failed"
+    if edit_status == "applied":
+        return "processing"
+    if edit_status == "rendered":
+        return "ready"
+    if plan_status == "pending_review" or edit_status == "pending_review":
+        return "review"
+    if edit_status == "uploaded" or status == "processed":
+        return "published"
+    return "draft"
+
+
+def _lifecycle_counts(rows: list[dict]) -> dict[str, int]:
+    counts = dict.fromkeys(_LIFECYCLE_STATES, 0)
+    for row in rows:
+        counts[_lifecycle_state(row)] += 1
+    return counts
+
 
 def _facet_counts(values: list[str]) -> list[dict[str, Any]]:
     counts: dict[str, int] = {}
@@ -121,6 +148,15 @@ def _row_to_list_item(row: dict) -> SermonListItem:
         duration=mapping.format_duration(row.get("duration")),
         series=str(row.get("series_title") or ""),
         status=str(row.get("status") or ""),
+        edit_status=(
+            str(row["edit_status"]) if row.get("edit_status") else None
+        ),
+        upload_status=(
+            str(row["upload_status"]) if row.get("upload_status") else None
+        ),
+        plan_status=(
+            str(row["latest_plan_status"]) if row.get("latest_plan_status") else None
+        ),
     )
 
 
@@ -195,12 +231,13 @@ def list_sermons(
     else:
         rows.sort(key=lambda row: str(row.get("recorded_date") or ""), reverse=True)
     total = len(rows)
+    counts = _lifecycle_counts(rows)
     if limit is not None:
         rows = rows[offset : offset + limit]
     elif offset:
         rows = rows[offset:]
     items = [_row_to_list_item(row) for row in rows]
-    return SermonListOut(items=items, total=total)
+    return SermonListOut(items=items, total=total, counts=counts)
 
 
 @router.get("/{sermon_id}", response_model=SermonDetailOut)
@@ -210,6 +247,7 @@ def get_sermon(request: Request, sermon_id: str) -> SermonDetailOut:
     if sermon is None or not visible(sermon.get("user_id"), request_user(request)):
         raise HTTPException(status_code=404, detail="sermon not found")
     files = repo.get_sermon_files(sermon_id)
+    current_plan = repo.get_current_edit_plan(sermon_id)
     content = sermon.get("content") or {}
     upload_info = sermon.get("upload_info") or {}
     transcript = content.get("transcript_text") or ""
@@ -229,6 +267,14 @@ def get_sermon(request: Request, sermon_id: str) -> SermonDetailOut:
         duration_seconds=duration_seconds,
         series=str(sermon.get("series_title") or ""),
         status=str(sermon.get("status") or ""),
+        edit_status=(
+            str(sermon["edit_status"]) if sermon.get("edit_status") else None
+        ),
+        plan_status=(
+            str(current_plan["status"])
+            if current_plan and current_plan.get("status")
+            else None
+        ),
         description=str(description) if description else None,
         description_needs_review=bool(sermon.get("description_needs_review")),
         files=[

@@ -120,6 +120,19 @@ def _stamp_sermon_owner(sermon_id: str | None, user_id: str | None) -> None:
         logger.warning("Failed to stamp sermon owner %s: %s", sermon_id, e)
 
 
+def _mark_pending_review(sermon_id: str | None) -> None:
+    if not sermon_id:
+        return
+    try:
+        from ui.database import SermonRepository
+
+        SermonRepository().update_sermon_edit_status(sermon_id, "pending_review")
+    except Exception as exc:
+        logger.warning(
+            "Could not set edit_status=pending_review for %s: %s", sermon_id, exc
+        )
+
+
 def _raise_if_job_cancelled(job: Job) -> None:
     """cancel_check hook for process_new_sermon: raise when the job is cancelled."""
     if job.cancelled or job.status == JobStatus.CANCELLED:
@@ -1210,6 +1223,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
                     )
             if plan_status == 'pending_review':
                 job.add_log("Auto-edit cut awaits manual review")
+                _mark_pending_review(sermon_id)
                 cleanup_state["keep_staged"] = True
                 return JobResult(
                     success=True,
@@ -1382,6 +1396,7 @@ def execute_auto_edit_job(job: Job) -> JobResult:
             plan_status = result.get('edit_plan_status')
             if plan_status == 'pending_review':
                 job.add_log("Auto-edit cut awaits manual review")
+                _mark_pending_review(sermon_id)
                 return JobResult(
                     success=True,
                     message=(f"Auto-edit cut awaiting manual review "

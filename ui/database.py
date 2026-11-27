@@ -1941,6 +1941,13 @@ class SermonRepository:
                        s.bible_text, s.duration, s.status, s.edit_status, s.created_at,
                        s.updated_at, s.series_title, s.scripture_reference, s.church_name,
                        s.is_favorite, s.notes,
+                       (SELECT ep.status
+                          FROM edit_plans ep
+                         WHERE ep.sermon_id = s.id
+                           AND ep.revision = (SELECT MAX(ep2.revision)
+                                                FROM edit_plans ep2
+                                               WHERE ep2.sermon_id = s.id))
+                           AS latest_plan_status,
                        pi.enhancement_method,
                        ui.upload_status,
                        sc.description,
