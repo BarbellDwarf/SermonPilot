@@ -912,14 +912,18 @@ export function mediaStreamUrl(sermonId: string, kind: string): string {
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
+const EMPTY_WAVEFORM = { peaks: [] as number[], duration: 0 };
+
 export const mediaApi = {
   list: (id: string) => send<ApiSermonMedia>(`/api/media/sermons/${encodeURIComponent(id)}`, "GET"),
   url: mediaStreamUrl,
   waveform: (id: string) =>
-    send<{ peaks: number[]; duration: number }>(
-      `/api/media/sermons/${encodeURIComponent(id)}/waveform`,
-      "GET",
-    ),
+    isLive
+      ? send<{ peaks: number[]; duration: number }>(
+          `/api/media/sermons/${encodeURIComponent(id)}/waveform`,
+          "GET",
+        )
+      : Promise.resolve(EMPTY_WAVEFORM),
   fetchJson: async <T,>(id: string, kind: string): Promise<T> => {
     const res = await authFetch(
       `/api/media/sermons/${encodeURIComponent(id)}/${encodeURIComponent(kind)}`,
