@@ -14,7 +14,7 @@ import { MediaPlayer, type PlayWindow } from "./MediaPlayer";
 import { Timeline, type TimelineClip, type TimelineRange } from "./Timeline";
 import { TranscriptViewer } from "./TranscriptViewer";
 import { sermonActionMatrix } from "./sermonActions";
-import { Button, Chip, ConfirmDialog, Icon, Menu, PageHeader, Skeleton, Switch, Toggle, buttonClass } from "./ui";
+import { Button, Chip, ConfirmDialog, Icon, Menu, PageHeader, Skeleton, Switch, Toggle, buttonClass, type ChipTone } from "./ui";
 
 export const planStatusLabel: Record<PlanStatus, string> = {
   draft: "Draft",
@@ -24,7 +24,7 @@ export const planStatusLabel: Record<PlanStatus, string> = {
   superseded: "Superseded",
 };
 
-const planStatusTone: Record<PlanStatus, string> = {
+const planStatusTone: Record<PlanStatus, ChipTone> = {
   draft: "neutral",
   pending_review: "warn",
   applied_local: "info",

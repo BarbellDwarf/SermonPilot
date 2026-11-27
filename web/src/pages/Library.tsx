@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { type LibrarySermon, type LibrarySermonStatus } from "../mock/data";
-import { Button, Chip, ClampText, EmptyState, Icon, Menu, PageHeader, SkeletonList, buttonClass, staggerStyle } from "../components/ui";
+import { Button, Chip, ClampText, EmptyState, Icon, Menu, PageHeader, SkeletonList, buttonClass, staggerStyle, type ChipTone } from "../components/ui";
 import { MediaPlayer } from "../components/MediaPlayer";
 import { QueryError, useLibrarySermons, type LibrarySort } from "../api/hooks";
 import { isLive } from "../api/client";
 import { formatCount, formatDate, formatDurationValue } from "../utils/format";
 
-export const sermonStatusTone: Record<LibrarySermonStatus, string> = {
+export const sermonStatusTone: Record<LibrarySermonStatus, ChipTone> = {
   draft: "neutral",
   rendered: "warn",
   processed: "ok",

@@ -44,16 +44,19 @@ export function Button({ variant = "secondary", className = "", type = "button",
   );
 }
 
-const chipTones: Record<string, string> = {
+const chipTones = {
   ok: "text-ok border-ok",
   warn: "text-warn border-warn",
   error: "text-danger border-danger",
+  danger: "text-danger border-danger",
   info: "text-info border-info",
   neutral: "text-muted border-line",
   accent: "text-accent border-accent",
-};
+} satisfies Record<string, string>;
 
-export function Chip({ tone = "neutral", children }: { tone?: keyof typeof chipTones | string; children: ReactNode }) {
+export type ChipTone = keyof typeof chipTones;
+
+export function Chip({ tone = "neutral", children }: { tone?: ChipTone; children: ReactNode }) {
   const toneClass = chipTones[tone] ?? chipTones.neutral;
   return (
     <span

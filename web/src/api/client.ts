@@ -918,7 +918,9 @@ export function mediaStreamUrl(sermonId: string, kind: string): string {
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
-const EMPTY_WAVEFORM = { peaks: [] as number[], duration: 0 };
+function emptyWaveform(): { peaks: number[]; duration: number } {
+  return { peaks: [], duration: 0 };
+}
 
 export const mediaApi = {
   list: (id: string) => send<ApiSermonMedia>(`/api/media/sermons/${encodeURIComponent(id)}`, "GET"),
@@ -929,7 +931,7 @@ export const mediaApi = {
           `/api/media/sermons/${encodeURIComponent(id)}/waveform`,
           "GET",
         )
-      : Promise.resolve(EMPTY_WAVEFORM),
+      : Promise.resolve(emptyWaveform()),
   fetchJson: async <T,>(id: string, kind: string): Promise<T> => {
     const res = await authFetch(
       `/api/media/sermons/${encodeURIComponent(id)}/${encodeURIComponent(kind)}`,
