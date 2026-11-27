@@ -137,14 +137,7 @@ export function Library() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Library"
-        actions={
-          <Link to="/new" className={buttonClass("primary")}>
-            New teaching
-          </Link>
-        }
-      />
+      <PageHeader title="Library" />
 
       <div className="flex flex-col gap-2">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">

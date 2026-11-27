@@ -6,7 +6,6 @@ import {
   editPlans,
   failedJobs,
   librarySermons,
-  recentSermons,
   sermonCounts,
   services,
   type EditPlan,
@@ -14,8 +13,6 @@ import {
   type JobState,
   type LibrarySermon,
   type PlanStatus,
-  type Sermon,
-  type SermonStatus,
   type ServiceStatus,
 } from "../mock/data";
 import { Button, Card, useBriefLoading } from "../components/ui";
@@ -295,6 +292,13 @@ function publishedThisWeek(items: LibrarySermon[]): number {
   }).length;
 }
 
+const SERVICE_LABELS: Record<string, string> = {
+  sermonaudio_api: "API",
+  database: "Database",
+  llm_primary: "LLM",
+  local_storage: "Storage",
+};
+
 function toServiceStatus(data: { status?: Record<string, { status: string; message: string; details: string }> } | undefined): ServiceStatus[] {
   return Object.entries(data?.status ?? {})
     .filter(([id]) => id in SERVICE_LABELS)
@@ -349,6 +353,18 @@ export function useInboxData(): InboxData {
       void statusQuery.refetch();
     },
   };
+}
+
+export function useInboxCount(): number {
+  const sermonsQuery = useQuery({
+    queryKey: ["sermons", { limit: 50, sort: "date" }],
+    queryFn: () => api.sermons({ limit: 50, sort: "date" }),
+    enabled: isLive,
+    staleTime: 15_000,
+  });
+
+  if (!isLive) return sermonCounts.needs_review;
+  return sermonsQuery.data?.counts?.needs_review ?? 0;
 }
 
 export interface SermonDetailData {
@@ -631,98 +647,3 @@ export function useUserFiles(enabled: boolean) {
   };
 }
 
-export interface HomeData {
-  services: ServiceStatus[];
-  activeJobs: Job[];
-  recentSermons: Sermon[];
-  upNext: Job[];
-}
-
-const SERMON_STATUS_MAP: Record<string, SermonStatus> = {
-  processed: "ready",
-  draft: "draft",
-  pending: "processing",
-  error: "failed",
-};
-
-function toRecentSermon(s: ApiSermonListItem): Sermon {
-  return {
-    id: s.id,
-    title: s.title || "(untitled)",
-    speaker: s.speaker || "Unknown speaker",
-    duration: s.duration,
-    status: SERMON_STATUS_MAP[s.status] ?? "processing",
-    updated: fmtStamp(s.date),
-  };
-}
-
-const SERVICE_LABELS: Record<string, string> = {
-  sermonaudio_api: "API",
-  database: "Database",
-  llm_primary: "LLM",
-  local_storage: "Storage",
-};
-
-export function useHomeData() {
-  const briefLoading = useBriefLoading();
-  const statusQuery = useQuery({
-    queryKey: ["status"],
-    queryFn: api.status,
-    enabled: isLive,
-    staleTime: 15_000,
-  });
-  const jobsQuery = useQuery({
-    queryKey: ["jobs"],
-    queryFn: () => api.jobs({ limit: 100 }),
-    enabled: isLive,
-    staleTime: 5_000,
-    refetchInterval: isLive ? 5_000 : false,
-  });
-  const sermonsQuery = useQuery({
-    queryKey: ["sermons", "", "date"],
-    queryFn: () => api.sermons({ sort: "date" }),
-    enabled: isLive,
-    staleTime: 15_000,
-  });
-  const mock = useMemo(
-    () => ({
-      services,
-      activeJobs,
-      recentSermons,
-      upNext: activeJobs.filter((j) => j.state === "queued").slice(0, 3),
-    }),
-    [],
-  );
-
-  if (!isLive) {
-    return { data: mock, isLoading: briefLoading, error: null as string | null, retry: () => {} };
-  }
-  const servicesLive: ServiceStatus[] = Object.entries(statusQuery.data?.status ?? {})
-    .filter(([id]) => id in SERVICE_LABELS)
-    .map(([id, s]) => ({
-      id,
-      label: SERVICE_LABELS[id],
-      detail: s.message || s.details,
-      state: s.status === "ok" ? "ok" : s.status === "warning" ? "warn" : "error",
-      level: s.status === "ok" ? 85 : s.status === "warning" ? 40 : 15,
-    }));
-  const allJobs = (jobsQuery.data?.items ?? []).map((j) => toJob(j));
-  const data: HomeData = {
-    services: servicesLive,
-    activeJobs: allJobs.filter((j) => j.state === "queued" || j.state === "running"),
-    recentSermons: (sermonsQuery.data?.items ?? []).slice(0, 4).map(toRecentSermon),
-    upNext: allJobs.filter((j) => j.state === "queued").slice(0, 3),
-  };
-  const isLoading = statusQuery.isPending || jobsQuery.isPending || sermonsQuery.isPending;
-  const queryError = statusQuery.error ?? jobsQuery.error ?? sermonsQuery.error;
-  return {
-    data,
-    isLoading,
-    error: describeLoadError(queryError, "Home data"),
-    retry: () => {
-      void statusQuery.refetch();
-      void jobsQuery.refetch();
-      void sermonsQuery.refetch();
-    },
-  };
-}

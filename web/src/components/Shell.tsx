@@ -65,13 +65,17 @@ interface ShellProps {
   onToggleTheme: () => void;
   user?: AuthUser | null;
   onLogout?: () => void;
+  badges?: Partial<Record<string, ReactNode>>;
   children: ReactNode;
 }
 
-export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellProps) {
+export function Shell({ dark, onToggleTheme, user, onLogout, badges, children }: ShellProps) {
   const navigate = useNavigate();
   const main = useRef<HTMLElement>(null);
   useRouteMeta(main);
+  const navItems = badges
+    ? items.map((item) => ({ ...item, badge: badges[item.label] ?? item.badge }))
+    : items;
 
   return (
     <div className="min-h-screen bg-ink text-mist">
@@ -132,7 +136,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
 
       <div className="mx-auto flex max-w-shell items-stretch gap-6 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-6 md:pb-6 lg:px-8">
         <nav aria-label="Sections" className="sticky top-24 hidden h-fit w-52 shrink-0 flex-col gap-1 md:flex">
-          {items.map((item) => (
+          {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -161,7 +165,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, children }: ShellPr
         className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-ink/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
       >
         <div className="mx-auto flex max-w-shell">
-          {items.map((item) => (
+          {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

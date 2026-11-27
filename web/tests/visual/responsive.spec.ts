@@ -1,12 +1,12 @@
 import { test, expect } from "@playwright/test";
 
 const PAGES = [
-  { name: "home", path: "/" },
+  { name: "inbox", path: "/" },
   { name: "library", path: "/library" },
-  { name: "jobs", path: "/jobs" },
+  { name: "activity", path: "/activity" },
   { name: "settings", path: "/settings" },
   { name: "new-teaching", path: "/new" },
-  { name: "review", path: "/library/s-01" },
+  { name: "review", path: "/teaching/s-01" },
 ] as const;
 
 const WIDTHS = [390, 768, 1024, 1440] as const;

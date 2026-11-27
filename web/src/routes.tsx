@@ -5,8 +5,9 @@ import { Shell } from "./components/Shell";
 import { ToastHost } from "./components/toast";
 import { EmptyState, PageHeader, buttonClass } from "./components/ui";
 import type { AuthUser } from "./api/client";
+import { useInboxCount } from "./api/hooks";
 
-const Home = lazy(() => import("./pages/Home").then((m) => ({ default: m.Home })));
+const Inbox = lazy(() => import("./pages/Inbox").then((m) => ({ default: m.Inbox })));
 const NewSermon = lazy(() => import("./pages/NewSermon").then((m) => ({ default: m.NewSermon })));
 const Library = lazy(() => import("./pages/Library").then((m) => ({ default: m.Library })));
 const LibraryDetail = lazy(() =>
@@ -29,6 +30,7 @@ function useChrome(): Chrome {
 
 function RootLayout() {
   const [dark, setDark] = useState(true);
+  const inboxCount = useInboxCount();
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -39,7 +41,13 @@ function RootLayout() {
     <AuthGate>
       {({ user, logout }) => (
         <ChromeContext.Provider value={{ user }}>
-          <Shell dark={dark} onToggleTheme={() => setDark((d) => !d)} user={user} onLogout={logout}>
+          <Shell
+            dark={dark}
+            onToggleTheme={() => setDark((d) => !d)}
+            user={user}
+            onLogout={logout}
+            badges={{ Inbox: inboxCount || undefined }}
+          >
             <Suspense fallback={<p role="status" className="text-sm text-muted">Loading…</p>}>
               <Outlet />
             </Suspense>
@@ -94,7 +102,7 @@ export const routes: RouteObject[] = [
   {
     element: <RootLayout />,
     children: [
-      { index: true, element: <Home /> },
+      { index: true, element: <Inbox /> },
       { path: "new", element: <NewSermon /> },
       { path: "teaching/:id", element: <LibraryDetail /> },
       { path: "library", element: <Library /> },

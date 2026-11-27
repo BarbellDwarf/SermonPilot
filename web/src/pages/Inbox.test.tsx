@@ -64,7 +64,7 @@ function renderInbox() {
     <MemoryRouter initialEntries={["/"]}>
       <Routes>
         <Route path="/" element={<Inbox />} />
-        <Route path="/library/:id" element={<p>teaching detail</p>} />
+        <Route path="/teaching/:id" element={<p>teaching detail</p>} />
       </Routes>
     </MemoryRouter>,
   );

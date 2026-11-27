@@ -12,7 +12,7 @@ export function Inbox() {
   const primaryId = visible[0]?.items[0]?.id;
   const okServices = services.filter((service) => service.state === "ok").length;
 
-  const open = (id: string) => navigate(`/library/${id}`);
+  const open = (id: string) => navigate(`/teaching/${id}`);
 
   return (
     <div className="flex flex-col gap-6">

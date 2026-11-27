@@ -54,7 +54,7 @@ export function TeachingRow({ sermon, state, action, evidence, menu, index = 0 }
 
         <div className="col-span-2 row-start-2 min-w-0 md:col-span-1 md:col-start-2 md:row-start-1">
           <Link
-            to={`/library/${sermon.id}`}
+            to={`/teaching/${sermon.id}`}
             aria-label={`Open ${sermon.title} by ${speaker}, ${label}`}
             className="flex min-h-[44px] flex-col justify-center rounded-md"
           >
