@@ -1944,9 +1944,9 @@ class SermonRepository:
                        (SELECT ep.status
                           FROM edit_plans ep
                          WHERE ep.sermon_id = s.id
-                           AND ep.revision = (SELECT MAX(ep2.revision)
-                                                FROM edit_plans ep2
-                                               WHERE ep2.sermon_id = s.id))
+                           AND ep.status != 'superseded'
+                         ORDER BY ep.revision DESC
+                         LIMIT 1)
                            AS latest_plan_status,
                        pi.enhancement_method,
                        ui.upload_status,

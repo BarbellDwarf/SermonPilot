@@ -73,18 +73,12 @@ def fixture_db(tmp_path, monkeypatch) -> str:
         row.setdefault("speaker", "Speaker A")
         row.setdefault("recorded_date", f"2026-09-{index + 1:02d}")
         assert repo.save_sermon(row) is True
-    repo.save_edit_plan_revision(
-        "s-review", {"status": "approved", "confidence": 0.4}
-    )
-    repo.save_edit_plan_revision(
-        "s-review", {"status": "pending_review", "confidence": 0.8}
-    )
+    repo.save_edit_plan_revision("s-review", {"status": "approved", "confidence": 0.4})
+    repo.save_edit_plan_revision("s-review", {"status": "pending_review", "confidence": 0.8})
     repo.save_edit_plan_revision(
         "s-latest-approved", {"status": "pending_review", "confidence": 0.5}
     )
-    repo.save_edit_plan_revision(
-        "s-latest-approved", {"status": "approved", "confidence": 0.9}
-    )
+    repo.save_edit_plan_revision("s-latest-approved", {"status": "approved", "confidence": 0.9})
     return db_path
 
 
@@ -232,6 +226,4 @@ def test_park_point_writes_pending_review(monkeypatch) -> None:
 
     assert result.success is True
     assert "awaiting manual review" in result.message
-    repo.update_sermon_edit_status.assert_called_once_with(
-        "draft_123", "pending_review"
-    )
+    repo.update_sermon_edit_status.assert_called_once_with("draft_123", "pending_review")
