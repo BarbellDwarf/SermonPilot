@@ -311,13 +311,13 @@ rule from `web/DESIGN.md`, and a suggested fix with the test that would catch it
 
 ## Completion checklist
 
-- [ ] UI-01 Library menu hit target and viewport clamp
-- [ ] UI-02 Review sticky primary action
-- [ ] UI-03 New teaching validation on interaction only
-- [ ] UI-04 Dropzone nested interactive removed
-- [ ] UI-05 Source tabs use valid ARIA
+- [x] UI-01 Library menu hit target and viewport clamp
+- [x] UI-02 Review sticky primary action
+- [x] UI-03 New teaching validation on interaction only
+- [x] UI-04 Dropzone nested interactive removed
+- [x] UI-05 Source tabs use valid ARIA
 - [ ] UI-06 Settings save surfaces disambiguated
-- [ ] UI-07 Skeleton ARIA fixed
+- [x] UI-07 Skeleton ARIA fixed
 - [ ] UI-08 All touch targets at least 44x44
 - [ ] UI-09 Jobs tabs complete
 - [ ] UI-10 Per-route titles
@@ -339,4 +339,5 @@ rule from `web/DESIGN.md`, and a suggested fix with the test that would catch it
 
 | Date | Commit | Agent | Result | Evidence |
 | --- | --- | --- | --- | --- |
-| 2026-11-27 | `d4d2532` | parent review | 18 open items, 3 P0 | `/tmp/ui-review` |
+| 2026-11-27 | `d4d2532` | parent review | 18 open items, 3 P0 | parent review evidence |
+| 2026-11-27 | `37f0724` | phase 0 | UI-01 to UI-05 and UI-07 fixed; 249 vitest, 127 Playwright passed, 8 skipped, axe clean on 24 runs | PR #406 |
