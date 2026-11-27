@@ -1,8 +1,10 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ButtonHTMLAttributes,
@@ -10,6 +12,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 
@@ -136,6 +139,15 @@ interface MenuProps {
   triggerTestId?: string;
 }
 
+const MENU_GAP = 8;
+const VIEWPORT_MARGIN = 8;
+
+interface MenuPosition {
+  top: number;
+  left: number;
+  side: "top" | "bottom";
+}
+
 export function Menu({
   items,
   trigger,
@@ -149,28 +161,87 @@ export function Menu({
   triggerTestId,
 }: MenuProps) {
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<MenuPosition | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const pointerInsideRef = useRef(false);
   const menuId = `menu-${useId()}`;
+
+  const place = useCallback(() => {
+    const triggerEl = triggerRef.current;
+    const panelEl = panelRef.current;
+    if (!triggerEl || !panelEl) return;
+    const rect = triggerEl.getBoundingClientRect();
+    const width = panelEl.offsetWidth;
+    const height = panelEl.offsetHeight;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const below = rect.bottom + MENU_GAP;
+    const above = rect.top - MENU_GAP - height;
+    const fitsBelow = below + height <= viewportHeight - VIEWPORT_MARGIN;
+    const fitsAbove = above >= VIEWPORT_MARGIN;
+    const flipped = side === "bottom" ? !fitsBelow && fitsAbove : !fitsAbove && fitsBelow;
+    const placed = flipped ? (side === "bottom" ? "top" : "bottom") : side;
+    const rawTop = placed === "bottom" ? below : above;
+    const maxTop = Math.max(VIEWPORT_MARGIN, viewportHeight - height - VIEWPORT_MARGIN);
+    const top = Math.min(Math.max(rawTop, VIEWPORT_MARGIN), maxTop);
+    const rawLeft = align === "right" ? rect.right - width : rect.left;
+    const maxLeft = Math.max(VIEWPORT_MARGIN, viewportWidth - width - VIEWPORT_MARGIN);
+    const left = Math.min(Math.max(rawLeft, VIEWPORT_MARGIN), maxLeft);
+    setPosition({ top, left, side: placed });
+  }, [align, side]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPosition(null);
+      return;
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, place]);
 
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
+      const target = event.target as Node;
+      const inside = Boolean(wrapRef.current?.contains(target) || panelRef.current?.contains(target));
+      pointerInsideRef.current = inside;
+      if (!inside) setOpen(false);
+    };
+    const onPointerUp = () => {
+      pointerInsideRef.current = false;
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setOpen(false);
       triggerRef.current?.focus();
     };
+    const onFocusOut = (event: FocusEvent) => {
+      if (pointerInsideRef.current) return;
+      const next = event.relatedTarget as Node | null;
+      if (!next) return;
+      if (wrapRef.current?.contains(next) || panelRef.current?.contains(next)) return;
+      setOpen(false);
+    };
+    const onWindowBlur = () => setOpen(false);
     document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("pointerup", onPointerUp);
     document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("focusout", onFocusOut);
+    window.addEventListener("blur", onWindowBlur);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("pointerup", onPointerUp);
       document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("focusout", onFocusOut);
+      window.removeEventListener("blur", onWindowBlur);
     };
   }, [open]);
 
@@ -212,45 +283,52 @@ export function Menu({
       >
         {trigger}
       </button>
-      {open ? (
-        <div
-          data-side={side}
-          className={`menu-panel absolute z-40 flex w-56 flex-col rounded-lg border border-line bg-surface p-2 shadow-2xl ${
-            align === "right" ? "right-0" : "left-0"
-          } ${side === "top" ? "bottom-full mb-2 origin-bottom" : "top-full mt-2 origin-top"} ${menuClassName}`}
-        >
-          {header ? <div className="border-b border-line px-3 pb-2 pt-1">{header}</div> : null}
-          <div
-            ref={menuRef}
-            id={menuId}
-            role="menu"
-            aria-label={label}
-            data-testid={menuTestId}
-            onKeyDown={onMenuKeyDown}
-            className="flex flex-col gap-1 pt-1"
-          >
-            {items.map((item, index) => (
-              <button
-                key={index}
-                type="button"
-                role="menuitem"
-                data-testid={item.testId}
-                disabled={item.disabled}
-                aria-expanded={item.expanded}
-                aria-controls={item.controls}
-                onClick={() => {
-                  setOpen(false);
-                  triggerRef.current?.focus();
-                  item.onSelect();
-                }}
-                className={`${menuItemClass} ${item.danger ? "text-danger" : ""}`}
+      {open
+        ? createPortal(
+            <div
+              ref={panelRef}
+              data-side={position?.side ?? side}
+              style={{
+                top: position?.top ?? 0,
+                left: position?.left ?? 0,
+                visibility: position ? undefined : "hidden",
+              }}
+              className={`menu-panel fixed z-40 flex max-h-[min(60vh,20rem)] w-56 flex-col overflow-y-auto rounded-lg border border-line bg-surface p-2 shadow-2xl ${menuClassName}`}
+            >
+              {header ? <div className="border-b border-line px-3 pb-2 pt-1">{header}</div> : null}
+              <div
+                ref={menuRef}
+                id={menuId}
+                role="menu"
+                aria-label={label}
+                data-testid={menuTestId}
+                onKeyDown={onMenuKeyDown}
+                className="flex flex-col gap-1 pt-1"
               >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
+                {items.map((item, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    role="menuitem"
+                    data-testid={item.testId}
+                    disabled={item.disabled}
+                    aria-expanded={item.expanded}
+                    aria-controls={item.controls}
+                    onClick={() => {
+                      setOpen(false);
+                      triggerRef.current?.focus();
+                      item.onSelect();
+                    }}
+                    className={`${menuItemClass} ${item.danger ? "text-danger" : ""}`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
