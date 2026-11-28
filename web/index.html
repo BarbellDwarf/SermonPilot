@@ -22,6 +22,9 @@
                 : "dark";
           document.documentElement.classList.remove("dark", "light");
           document.documentElement.classList.add(theme);
+          document
+            .querySelector('meta[name="theme-color"]')
+            ?.setAttribute("content", theme === "light" ? "#edf1f4" : "#0e1216");
         } catch {}
       })();
     </script>

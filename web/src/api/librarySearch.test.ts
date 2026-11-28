@@ -22,7 +22,7 @@ describe("matchesLibraryQuery", () => {
     expect(matchesLibraryQuery(sermon, "sample missing")).toBe(false);
   });
 
-  it("does not match across field boundaries as a phrase", () => {
+  it("matches tokens across different fields", () => {
     expect(matchesLibraryQuery(sermon, "2 speaker")).toBe(true);
     expect(matchesLibraryQuery(sermon, "teaching 2 speaker")).toBe(true);
   });

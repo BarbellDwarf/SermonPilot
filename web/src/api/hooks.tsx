@@ -207,12 +207,21 @@ function sortLibrarySermons(rows: LibrarySermon[], sort: LibrarySort): LibrarySe
 
 export function useLibrarySermons(query: string, sort: LibrarySort) {
   const briefLoading = useBriefLoading();
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
   const [paging, setPaging] = useState({ query, sort, pages: 1 });
-  const pages = paging.query === query && paging.sort === sort ? paging.pages : 1;
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query), 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+  const pages = paging.query === debouncedQuery && paging.sort === sort ? paging.pages : 1;
   const live = useQuery({
-    queryKey: ["sermons", { search: query.trim(), sort, limit: LIBRARY_PAGE_SIZE * pages }],
+    queryKey: ["sermons", { search: debouncedQuery.trim(), sort, limit: LIBRARY_PAGE_SIZE * pages }],
     queryFn: () =>
-      api.sermons({ search: query.trim() || undefined, sort, limit: LIBRARY_PAGE_SIZE * pages }),
+      api.sermons({
+        search: debouncedQuery.trim() || undefined,
+        sort,
+        limit: LIBRARY_PAGE_SIZE * pages,
+      }),
     enabled: isLive,
     staleTime: 10_000,
     placeholderData: keepPreviousData,

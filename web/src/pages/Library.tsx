@@ -63,7 +63,7 @@ function SermonRow({ sermon, index }: { sermon: LibrarySermon; index: number }) 
             <span className="truncate" title={`${sermon.speaker || "Unknown speaker"} · ${formatDate(sermon.date)}`}>
               {sermon.speaker || "Unknown speaker"} · {formatDate(sermon.date)}
             </span>
-            <span className="shrink-0 lg:hidden"> · {formatDurationValue(sermon.duration)}</span>
+            <span className="hidden shrink-0 sm:inline lg:hidden"> · {formatDurationValue(sermon.duration)}</span>
             {sermon.series ? (
               <span className="hidden min-w-0 truncate md:inline lg:hidden" title={sermon.series}>
                 {" "}· {sermon.series}
@@ -124,6 +124,8 @@ export function Library() {
   const visible =
     stateFilter === "all" ? rows : rows.filter((s) => lifecycleOfSermon(s) === stateFilter);
   const filtersActive = query.length > 0 || stateFilter !== "all" || sort !== "date";
+  const activeFilterCount =
+    (query.length > 0 ? 1 : 0) + (stateFilter !== "all" ? 1 : 0) + (sort !== "date" ? 1 : 0);
 
   const setParam = (key: string, value: string, fallback: string) => {
     const next = new URLSearchParams(params);
@@ -207,7 +209,9 @@ export function Library() {
               data-testid="library-filters-trigger"
             >
               Filters
-              {stateFilter !== "all" ? <span className="font-mono text-xs text-muted">1</span> : null}
+              {activeFilterCount > 0 ? (
+                <span className="font-mono text-xs text-muted">{activeFilterCount}</span>
+              ) : null}
             </Button>
             <Menu
               label="Library actions"
@@ -248,11 +252,19 @@ export function Library() {
         <QueryError message={error} onRetry={retry} />
       ) : visible.length === 0 ? (
         <EmptyState
-          title={filtersActive ? "No teachings match" : "No teachings yet"}
+          title={
+            filtersActive && hasMore
+              ? "No matches on this page"
+              : filtersActive
+                ? "No teachings match"
+                : "No teachings yet"
+          }
           body={
-            filtersActive
-              ? "Try a different search term, or clear the filters to see everything."
-              : "Teachings appear here after a run finishes, with speaker, date, duration, and series."
+            filtersActive && hasMore
+              ? "Load older teachings or clear the filters to keep looking."
+              : filtersActive
+                ? "Try a different search term, or clear the filters to see everything."
+                : "Teachings appear here after a run finishes, with speaker, date, duration, and series."
           }
           action={
             filtersActive ? (
