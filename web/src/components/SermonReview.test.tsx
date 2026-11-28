@@ -444,7 +444,8 @@ describe("SermonReview single player and plan", () => {
     const startSec = Number(removal.getAttribute("data-start-sec"));
     const endSec = Number(removal.getAttribute("data-end-sec"));
 
-    await user.click(screen.getByRole("button", { name: /Preview join 1/ }));
+    await user.click(screen.getByTestId("cut-menu-interior-0"));
+    await user.click(screen.getByRole("menuitem", { name: "Preview join" }));
     const video = document.querySelector("video") as HTMLVideoElement;
     expect(video.currentTime).toBeCloseTo(startSec - 10, 1);
     video.currentTime = startSec;
@@ -460,7 +461,8 @@ describe("SermonReview single player and plan", () => {
       remove_segments: [{ start_sec: startSec, end_sec: endSec }],
     });
 
-    await user.click(screen.getByRole("button", { name: /Remove cut 1/ }));
+    await user.click(screen.getByTestId("cut-menu-interior-0"));
+    await user.click(screen.getByRole("menuitem", { name: "Delete cut" }));
     expect(screen.queryByTestId("timeline-removal-0")).toBeNull();
     expect(screen.getAllByText("0 cuts removed").length).toBeGreaterThan(0);
   });
@@ -572,7 +574,7 @@ describe("SermonReview artifacts", () => {
 
     expect(screen.getByTestId("info-panel")).toBeTruthy();
     expect(screen.getByTestId("transcript-panel")).toBeTruthy();
-    expect(screen.queryByTestId("files-panel")).toBeNull();
+    expect(screen.getByTestId("files-panel").hasAttribute("hidden")).toBe(true);
 
     await user.click(screen.getByRole("tab", { name: "Files" }));
     expect(screen.getAllByTestId("artifact-primary-row").length).toBe(3);
@@ -1611,7 +1613,7 @@ describe("SermonReview cut plan table", () => {
     expect(screen.getByTestId("removal-duration-0").textContent).toBe("30s");
     expect(screen.getByTestId("removal-duration-1").textContent).toBe("40s");
     expect(screen.getByTestId("cut-kept-summary").textContent).toContain("Kept ");
-    expect(screen.getByTestId("removal-list").textContent).toContain("2 cuts");
+    expect(screen.getByTestId("removal-list").textContent).toContain("2 interior cuts");
     expect(screen.getByTestId("cut-toggle-0").getAttribute("role")).toBe("switch");
     expect(screen.getByTestId("cut-toggle-0").getAttribute("aria-checked")).toBe("true");
   });
@@ -1634,7 +1636,7 @@ describe("SermonReview cut plan table", () => {
 
     await user.click(screen.getByTestId("cut-toggle-0"));
     expect(screen.getByTestId("cut-toggle-0").getAttribute("aria-checked")).toBe("false");
-    expect(screen.getByTestId("removal-list").textContent).toContain("1 cut");
+    expect(screen.getByTestId("removal-list").textContent).toContain("1 interior cuts");
 
     await user.click(screen.getByTestId("cut-undo"));
     expect(screen.getByTestId("cut-toggle-0").getAttribute("aria-checked")).toBe("true");
@@ -1665,16 +1667,17 @@ describe("SermonReview cut plan table", () => {
     expect(screen.getByTestId("cut-toggle-start").getAttribute("aria-checked")).toBe("true");
     await user.click(screen.getByTestId("cut-toggle-start"));
     expect(startInput.value).toBe("00:00.0");
-    expect(screen.getByTestId("cut-toggle-start").getAttribute("aria-checked")).toBe("false");
+    expect(screen.queryByTestId("cut-toggle-start")).toBeNull();
     await user.click(screen.getByTestId("cut-undo"));
     expect(startInput.value).toBe("00:08.5");
+    expect(screen.getByTestId("cut-toggle-start").getAttribute("aria-checked")).toBe("true");
 
     const endInput = screen.getByLabelText(/^End \(/) as HTMLInputElement;
     await user.click(screen.getByTestId("cut-toggle-end"));
     expect(endInput.value).not.toBe("41:52.3");
-    expect(screen.getByTestId("cut-toggle-end").getAttribute("aria-checked")).toBe("false");
+    expect(screen.queryByTestId("cut-toggle-end")).toBeNull();
     await user.click(screen.getByTestId("cut-redo"));
-    expect(screen.getByTestId("cut-toggle-end").getAttribute("aria-checked")).toBe("false");
+    expect(screen.queryByTestId("cut-toggle-end")).toBeNull();
   });
 
   it("keeps the cut table above the approval action on mobile", () => {
