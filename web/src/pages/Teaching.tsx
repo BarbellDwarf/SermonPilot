@@ -75,7 +75,7 @@ function TeachingWorkspace({ id }: { id?: string }) {
   const showToast = (message: string, variant: "success" | "error" | "info" = "success") => notify[variant](message);
   const actions = useTeachingActions({ id, onToast: showToast });
   const {
-    queueing, detectingPlan, setDetectingPlan, queuedJob, captureJob, publish, detectPlan,
+    queueing, detectingPlan, setDetectingPlan, queuedJob, clearQueuedJob, captureJob, publish, detectPlan,
     regenerateDescription, pushMetadata, replaceRecording, saveDetails,
   } = actions;
   const enhanceDefault =
@@ -102,6 +102,13 @@ function TeachingWorkspace({ id }: { id?: string }) {
   useEffect(() => {
     if (plan) setDetectingPlan(false);
   }, [plan, setDetectingPlan]);
+
+  useEffect(() => {
+    if (!queuedJob || !jobs.data) return;
+    const active = jobs.data.active.some((job) => job.id === queuedJob.id);
+    const known = [...jobs.data.active, ...jobs.data.completed, ...jobs.data.failed].some((job) => job.id === queuedJob.id);
+    if (known && !active) clearQueuedJob();
+  }, [clearQueuedJob, jobs.data, queuedJob]);
 
   useEffect(() => {
     if (!detectingPlan || !id) return;

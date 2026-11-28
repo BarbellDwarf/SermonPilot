@@ -17,6 +17,7 @@ export function useTeachingActions({ id, onToast }: TeachingActionsOptions) {
   const mockJobSequence = useRef(3000);
   const nextMockJob = () => `job-${++mockJobSequence.current}`;
 
+  const clearQueuedJob = useCallback(() => setQueuedJob(null), []);
   const captureJob = useCallback((jobId: string, message: string) => {
     setQueuedJob({ id: jobId, message });
     void queryClient.invalidateQueries({ queryKey: ["sermon", id] });
@@ -149,6 +150,7 @@ export function useTeachingActions({ id, onToast }: TeachingActionsOptions) {
     detectingPlan,
     setDetectingPlan,
     queuedJob,
+    clearQueuedJob,
     captureJob,
     publish,
     detectPlan,

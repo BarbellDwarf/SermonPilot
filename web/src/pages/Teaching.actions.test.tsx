@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   media: vi.fn(),
   plan: vi.fn(),
   transcript: vi.fn(),
+  jobs: vi.fn(),
 }));
 
 vi.mock("../api/hooks", async (importOriginal) => {
@@ -25,7 +26,7 @@ vi.mock("../api/hooks", async (importOriginal) => {
     useSermonMedia: mocks.media,
     useSermonPlan: mocks.plan,
     useSermonTranscript: mocks.transcript,
-    useJobsData: () => ({ data: { active: [], completed: [], failed: [] }, isLoading: false, error: null, retry: vi.fn() }),
+    useJobsData: mocks.jobs,
   };
 });
 
@@ -151,6 +152,7 @@ beforeEach(() => {
   vi.mocked(writeApi.applyPlan).mockResolvedValue({ job_id: "job-approve", status: "queued" });
   vi.mocked(writeApi.uploadNow).mockResolvedValue({ job_id: "job-publish", status: "queued" });
   vi.mocked(writeApi.reDetectPlan).mockResolvedValue({ job_id: "job-detect", status: "queued" });
+  mocks.jobs.mockReturnValue({ data: { active: [], completed: [], failed: [] }, isLoading: false, error: null, retry: vi.fn() });
 });
 
 describe("Teaching lifecycle actions", () => {
@@ -188,6 +190,26 @@ describe("Teaching lifecycle actions", () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["sermon-plan", "s-1"] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["sermons"] });
+  });
+
+  it("restores workspace actions after the queued job leaves the active list", async () => {
+    const user = userEvent.setup();
+    setSermon("rendered", false);
+    renderDetail();
+    await user.click(screen.getByTestId("approve-primary"));
+    await expect(screen.findByTestId("queued-state")).resolves.toBeTruthy();
+    mocks.jobs.mockReturnValue({
+      data: {
+        active: [],
+        completed: [{ id: "job-approve", state: "done" }],
+        failed: [],
+      },
+      isLoading: false,
+      error: null,
+      retry: vi.fn(),
+    });
+    await user.click(screen.getByRole("tab", { name: "Transcript" }));
+    await expect(pagePrimary()).toBeVisible();
   });
 
   it("publishes a ready render through uploadNow", async () => {
