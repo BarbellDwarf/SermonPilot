@@ -759,9 +759,9 @@ def execute_validation_job(job: Job) -> JobResult:
 
         job.update_progress(20, f"Starting validation of {len(sermon_ids)} sermons...")
 
-        # Import validation components
-        from ui_processor import UIProcessor
-        processor = UIProcessor()
+        from ui.database import SermonRepository
+
+        repo = SermonRepository()
 
         # Track results
         results = {
@@ -799,7 +799,7 @@ def execute_validation_job(job: Job) -> JobResult:
 
                 if validation_result:
                     # Save to database
-                    processor.db.save_validation_result(
+                    repo.save_validation_result(
                         sermon_id,
                         validation_result.is_valid,
                         validation_result.validation_score,

@@ -144,7 +144,7 @@ CONFIG_SEED_VERSION = 1
 
 INFRA_ONLY_ENV_VARS: dict[str, str] = {
     "DATABASE_URL": "SQLite location consumed directly by ui.database",
-    "APP_PASSWORD": "UI authentication consumed directly by ui.auth",
+    "APP_PASSWORD": "Reserved for future UI authentication; test-only today",
     "ENVIRONMENT": "container runtime label with no in-app consumer",
     "SERMONPILOT_JOB_WORKER_ENABLED": (
         "Container worker toggle, read by the entrypoint and queue startup"
