@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { type LibrarySermon, type LibrarySermonStatus } from "../mock/data";
-import { Button, Chip, ClampText, EmptyState, Icon, Menu, PageHeader, SkeletonList, buttonClass, staggerStyle, type ChipTone } from "../components/ui";
+import { Button, ClampText, EmptyState, Icon, Menu, PageHeader, SkeletonList, buttonClass, staggerStyle, type ChipTone } from "../components/ui";
+import { StatusChip } from "../components/StatusChip";
 import { MediaPlayer } from "../components/MediaPlayer";
-import { QueryError, useLibrarySermons, type LibrarySort } from "../api/hooks";
+import { QueryError, lifecycleOfSermon, useLibrarySermons, type LibrarySort } from "../api/hooks";
 import { isLive } from "../api/client";
 import { formatCount, formatDate, formatDurationValue } from "../utils/format";
+import { LIFECYCLE_META, type LifecycleState } from "../utils/lifecycle";
 
+// Kept for LibraryDetail until Phase 3 moves the workspace onto the lifecycle labels.
 export const sermonStatusTone: Record<LibrarySermonStatus, ChipTone> = {
   draft: "neutral",
   rendered: "warn",
@@ -21,6 +24,19 @@ export const sermonStatusLabel: Record<LibrarySermonStatus, string> = {
   failed: "Failed",
 };
 
+const lifecycleOrder: LifecycleState[] = [
+  "needs_review",
+  "ready",
+  "processing",
+  "failed",
+  "draft",
+  "published",
+];
+
+function filterLabel(state: LifecycleState): string {
+  return state === "draft" ? "Drafts" : LIFECYCLE_META[state].label;
+}
+
 const sortOptions: { id: LibrarySort; label: string }[] = [
   { id: "date", label: "Date (newest)" },
   { id: "title", label: "Title (A–Z)" },
@@ -33,13 +49,14 @@ const selectCls =
 function SermonRow({ sermon, index }: { sermon: LibrarySermon; index: number }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const status = sermonStatusLabel[sermon.status];
+  const state = lifecycleOfSermon(sermon);
+  const status = LIFECYCLE_META[state].label;
 
   return (
     <li data-testid={`library-row-${sermon.id}`} className="stagger-item" style={staggerStyle(index)}>
       <div className="group relative">
         <Link
-          to={`/library/${sermon.id}`}
+          to={`/teaching/${sermon.id}`}
           aria-label={`Open ${sermon.title} by ${sermon.speaker}, ${status}`}
           className="peer absolute inset-0 rounded-md"
         />
@@ -56,7 +73,7 @@ function SermonRow({ sermon, index }: { sermon: LibrarySermon; index: number }) 
               <p className="font-mono text-xs text-muted">{formatDurationValue(sermon.duration)}</p>
               <ClampText text={sermon.series || "No series"} className="text-xs text-muted" />
             </div>
-            <Chip tone={sermonStatusTone[sermon.status]}>{status}</Chip>
+            <StatusChip state={state} />
           </div>
           <div className="relative z-10">
             <Menu
@@ -67,7 +84,7 @@ function SermonRow({ sermon, index }: { sermon: LibrarySermon; index: number }) 
                 <Icon name="more" />
               }
               items={[
-                { label: "Open teaching", onSelect: () => navigate(`/library/${sermon.id}`) },
+                { label: "Open teaching", onSelect: () => navigate(`/teaching/${sermon.id}`) },
                 {
                   label: open ? "Hide preview" : "Preview",
                   onSelect: () => setOpen((value) => !value),
@@ -97,17 +114,18 @@ function SermonRow({ sermon, index }: { sermon: LibrarySermon; index: number }) 
 export function Library() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<LibrarySort>("date");
-  const [status, setStatus] = useState<"all" | LibrarySermonStatus>("all");
-  const { items: rows, isLoading: loading, error, retry, total, hasMore, isLoadingMore, loadMore } =
+  const [stateFilter, setStateFilter] = useState<"all" | LifecycleState>("all");
+  const { items: rows, isLoading: loading, error, retry, total, hasMore, isLoadingMore, loadMore, counts } =
     useLibrarySermons(query, sort);
-  const visible = status === "all" ? rows : rows.filter((s) => s.status === status);
-  const filtersActive = query.length > 0 || status !== "all";
+  const visible =
+    stateFilter === "all" ? rows : rows.filter((s) => lifecycleOfSermon(s) === stateFilter);
+  const filtersActive = query.length > 0 || stateFilter !== "all";
 
   const exportCsv = () => {
     const head = "id,title,speaker,date,duration,series,status";
     const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
     const body = visible
-      .map((s) => [s.id, s.title, s.speaker, s.date, s.duration, s.series, s.status].map(esc).join(","))
+      .map((s) => [s.id, s.title, s.speaker, s.date, s.duration, s.series, lifecycleOfSermon(s)].map(esc).join(","))
       .join("\n");
     const url = URL.createObjectURL(new Blob([[head, body].join("\n")], { type: "text/csv" }));
     const a = document.createElement("a");
@@ -119,14 +137,7 @@ export function Library() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Library"
-        actions={
-          <Link to="/new" className={buttonClass("primary")}>
-            New teaching
-          </Link>
-        }
-      />
+      <PageHeader title="Library" />
 
       <div className="flex flex-col gap-2">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -147,14 +158,14 @@ export function Library() {
             </label>
             <select
               id="library-status"
-              value={status}
-              onChange={(e) => setStatus(e.target.value as "all" | LibrarySermonStatus)}
+              value={stateFilter}
+              onChange={(e) => setStateFilter(e.target.value as "all" | LifecycleState)}
               className={`${selectCls} flex-1 sm:flex-none`}
             >
-              <option value="all">All statuses</option>
-              {(Object.keys(sermonStatusLabel) as LibrarySermonStatus[]).map((s) => (
-                <option key={s} value={s}>
-                  {sermonStatusLabel[s]}
+              <option value="all">All ({counts.total})</option>
+              {lifecycleOrder.map((state) => (
+                <option key={state} value={state}>
+                  {filterLabel(state)} ({counts[state]})
                 </option>
               ))}
             </select>
@@ -191,7 +202,7 @@ export function Library() {
                   label: "Clear filters",
                   onSelect: () => {
                     setQuery("");
-                    setStatus("all");
+                    setStateFilter("all");
                   },
                   disabled: !filtersActive,
                   testId: "library-clear-filters",
@@ -226,7 +237,7 @@ export function Library() {
               <Button
                 onClick={() => {
                   setQuery("");
-                  setStatus("all");
+                  setStateFilter("all");
                 }}
               >
                 Clear filters

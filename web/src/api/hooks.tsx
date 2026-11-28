@@ -6,19 +6,23 @@ import {
   editPlans,
   failedJobs,
   librarySermons,
-  recentSermons,
+  sermonCounts,
   services,
   type EditPlan,
   type Job,
   type JobState,
   type LibrarySermon,
   type PlanStatus,
-  type Sermon,
-  type SermonStatus,
   type ServiceStatus,
 } from "../mock/data";
 import { Button, Card, useBriefLoading } from "../components/ui";
 import { formatDate, formatDateTime } from "../utils/format";
+import {
+  deriveLifecycleState,
+  lifecycleCounts,
+  type LifecycleCounts,
+  type LifecycleState,
+} from "../utils/lifecycle";
 import { api, filesApi, isLive, mediaApi, type ApiEditPlan, type ApiJob, type ApiMediaItem, type ApiSermonListItem } from "./client";
 
 export type LibrarySort = "date" | "title" | "duration";
@@ -111,7 +115,31 @@ export function toLibrarySermon(s: ApiSermonListItem): LibrarySermon {
     duration: s.duration,
     series: s.series,
     status,
+    edit_status: s.edit_status ?? null,
+    upload_status: s.upload_status ?? null,
+    plan_status: s.plan_status ?? null,
   };
+}
+
+export function lifecycleOfSermon(sermon: LibrarySermon): LifecycleState {
+  return deriveLifecycleState({
+    status: sermon.status === "failed" ? "error" : sermon.status,
+    edit_status:
+      sermon.edit_status ??
+      (sermon.status === "rendered" ? "rendered" : sermon.status === "failed" ? "failed" : null),
+    upload_status: sermon.upload_status,
+    plan_status: sermon.plan_status,
+  });
+}
+
+function toLifecycleCounts(raw: Record<string, number> | undefined): LifecycleCounts {
+  const counts = lifecycleCounts([]);
+  if (!raw) return counts;
+  for (const state of ["draft", "needs_review", "processing", "ready", "published", "failed"] as const) {
+    counts[state] = Number(raw[state]) || 0;
+  }
+  counts.total = Number(raw.total) || counts.draft + counts.needs_review + counts.processing + counts.ready + counts.published + counts.failed;
+  return counts;
 }
 
 const JOB_STATE_MAP: Record<string, JobState> = {
@@ -209,6 +237,7 @@ export function useLibrarySermons(query: string, sort: LibrarySort) {
       hasMore: false,
       isLoadingMore: false,
       loadMore: () => {},
+      counts: sermonCounts,
     };
   }
   return {
@@ -220,7 +249,126 @@ export function useLibrarySermons(query: string, sort: LibrarySort) {
     hasMore: loaded.length < serverTotal,
     isLoadingMore: live.isFetching && !live.isPending,
     loadMore: () => setPages((p) => p + 1),
+    counts: live.data?.counts ? toLifecycleCounts(live.data.counts) : lifecycleCounts(loaded),
   };
+}
+
+export interface InboxSection {
+  state: LifecycleState;
+  items: LibrarySermon[];
+}
+
+export interface InboxData {
+  sections: InboxSection[];
+  counts: LifecycleCounts;
+  services: ServiceStatus[];
+  publishedThisWeek: number;
+  isLoading: boolean;
+  error: string | null;
+  retry: () => void;
+}
+
+const INBOX_STATES: LifecycleState[] = [
+  "needs_review",
+  "ready",
+  "processing",
+  "failed",
+  "draft",
+];
+
+function buildInboxSections(items: LibrarySermon[]): InboxSection[] {
+  return INBOX_STATES.map((state) => ({
+    state,
+    items: items.filter((item) => lifecycleOfSermon(item) === state),
+  })).filter((section) => section.items.length > 0);
+}
+
+function publishedThisWeek(items: LibrarySermon[]): number {
+  const now = Date.now();
+  return items.filter((item) => {
+    if (lifecycleOfSermon(item) !== "published") return false;
+    const date = Date.parse(item.date);
+    return Number.isFinite(date) && now - date <= 7 * 24 * 60 * 60 * 1000;
+  }).length;
+}
+
+const SERVICE_LABELS: Record<string, string> = {
+  sermonaudio_api: "API",
+  database: "Database",
+  llm_primary: "LLM",
+  local_storage: "Storage",
+};
+
+function toServiceStatus(data: { status?: Record<string, { status: string; message: string; details: string }> } | undefined): ServiceStatus[] {
+  return Object.entries(data?.status ?? {})
+    .filter(([id]) => id in SERVICE_LABELS)
+    .map(([id, s]) => ({
+      id,
+      label: SERVICE_LABELS[id],
+      detail: s.message || s.details,
+      state: s.status === "ok" ? "ok" : s.status === "warning" ? "warn" : "error",
+      level: s.status === "ok" ? 85 : s.status === "warning" ? 40 : 15,
+    }));
+}
+
+export function useInboxData(): InboxData {
+  const briefLoading = useBriefLoading();
+  const sermonsQuery = useQuery({
+    queryKey: ["sermons", { limit: 50, sort: "date" }],
+    queryFn: () => api.sermons({ limit: 50, sort: "date" }),
+    enabled: isLive,
+    staleTime: 15_000,
+  });
+  const statusQuery = useQuery({
+    queryKey: ["status"],
+    queryFn: api.status,
+    enabled: isLive,
+    staleTime: 15_000,
+  });
+
+  if (!isLive) {
+    return {
+      sections: buildInboxSections(librarySermons),
+      counts: sermonCounts,
+      services,
+      publishedThisWeek: publishedThisWeek(librarySermons),
+      isLoading: briefLoading,
+      error: null,
+      retry: () => {},
+    };
+  }
+
+  const items = (sermonsQuery.data?.items ?? []).map(toLibrarySermon);
+  return {
+    sections: buildInboxSections(items),
+    counts: sermonsQuery.data?.counts
+      ? toLifecycleCounts(sermonsQuery.data.counts)
+      : lifecycleCounts(items),
+    services: toServiceStatus(statusQuery.data),
+    publishedThisWeek: publishedThisWeek(items),
+    isLoading: sermonsQuery.isPending,
+    error: describeLoadError(sermonsQuery.error, "The inbox"),
+    retry: () => {
+      void sermonsQuery.refetch();
+      void statusQuery.refetch();
+    },
+  };
+}
+
+export function useInboxCount(): number {
+  const sermonsQuery = useQuery({
+    queryKey: ["sermons", { limit: 50, sort: "date" }],
+    queryFn: () => api.sermons({ limit: 50, sort: "date" }),
+    enabled: isLive,
+    staleTime: 15_000,
+  });
+
+  if (!isLive) return sermonCounts.needs_review;
+  const items = (sermonsQuery.data?.items ?? []).map(toLibrarySermon);
+  const counts = sermonsQuery.data?.counts
+    ? toLifecycleCounts(sermonsQuery.data.counts)
+    : lifecycleCounts(items);
+  return counts.needs_review;
 }
 
 export interface SermonDetailData {
@@ -503,98 +651,3 @@ export function useUserFiles(enabled: boolean) {
   };
 }
 
-export interface HomeData {
-  services: ServiceStatus[];
-  activeJobs: Job[];
-  recentSermons: Sermon[];
-  upNext: Job[];
-}
-
-const SERMON_STATUS_MAP: Record<string, SermonStatus> = {
-  processed: "ready",
-  draft: "draft",
-  pending: "processing",
-  error: "failed",
-};
-
-function toRecentSermon(s: ApiSermonListItem): Sermon {
-  return {
-    id: s.id,
-    title: s.title || "(untitled)",
-    speaker: s.speaker || "Unknown speaker",
-    duration: s.duration,
-    status: SERMON_STATUS_MAP[s.status] ?? "processing",
-    updated: fmtStamp(s.date),
-  };
-}
-
-const SERVICE_LABELS: Record<string, string> = {
-  sermonaudio_api: "API",
-  database: "Database",
-  llm_primary: "LLM",
-  local_storage: "Storage",
-};
-
-export function useHomeData() {
-  const briefLoading = useBriefLoading();
-  const statusQuery = useQuery({
-    queryKey: ["status"],
-    queryFn: api.status,
-    enabled: isLive,
-    staleTime: 15_000,
-  });
-  const jobsQuery = useQuery({
-    queryKey: ["jobs"],
-    queryFn: () => api.jobs({ limit: 100 }),
-    enabled: isLive,
-    staleTime: 5_000,
-    refetchInterval: isLive ? 5_000 : false,
-  });
-  const sermonsQuery = useQuery({
-    queryKey: ["sermons", "", "date"],
-    queryFn: () => api.sermons({ sort: "date" }),
-    enabled: isLive,
-    staleTime: 15_000,
-  });
-  const mock = useMemo(
-    () => ({
-      services,
-      activeJobs,
-      recentSermons,
-      upNext: activeJobs.filter((j) => j.state === "queued").slice(0, 3),
-    }),
-    [],
-  );
-
-  if (!isLive) {
-    return { data: mock, isLoading: briefLoading, error: null as string | null, retry: () => {} };
-  }
-  const servicesLive: ServiceStatus[] = Object.entries(statusQuery.data?.status ?? {})
-    .filter(([id]) => id in SERVICE_LABELS)
-    .map(([id, s]) => ({
-      id,
-      label: SERVICE_LABELS[id],
-      detail: s.message || s.details,
-      state: s.status === "ok" ? "ok" : s.status === "warning" ? "warn" : "error",
-      level: s.status === "ok" ? 85 : s.status === "warning" ? 40 : 15,
-    }));
-  const allJobs = (jobsQuery.data?.items ?? []).map((j) => toJob(j));
-  const data: HomeData = {
-    services: servicesLive,
-    activeJobs: allJobs.filter((j) => j.state === "queued" || j.state === "running"),
-    recentSermons: (sermonsQuery.data?.items ?? []).slice(0, 4).map(toRecentSermon),
-    upNext: allJobs.filter((j) => j.state === "queued").slice(0, 3),
-  };
-  const isLoading = statusQuery.isPending || jobsQuery.isPending || sermonsQuery.isPending;
-  const queryError = statusQuery.error ?? jobsQuery.error ?? sermonsQuery.error;
-  return {
-    data,
-    isLoading,
-    error: describeLoadError(queryError, "Home data"),
-    retry: () => {
-      void statusQuery.refetch();
-      void jobsQuery.refetch();
-      void sermonsQuery.refetch();
-    },
-  };
-}

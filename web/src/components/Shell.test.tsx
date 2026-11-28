@@ -27,12 +27,13 @@ function renderShell({
     <MemoryRouter initialEntries={initialEntries}>
       <Shell dark onToggleTheme={onToggleTheme} user={user} onLogout={onLogout}>
         <Routes>
-          <Route path="/" element={<p>home page</p>} />
+          <Route path="/" element={<p>inbox page</p>} />
           <Route path="/new" element={<p>new page</p>} />
           <Route path="/library" element={<p>library page</p>} />
-          <Route path="/library/:id" element={<p>detail page</p>} />
-          <Route path="/jobs" element={<p>jobs page</p>} />
+          <Route path="/teaching/:id" element={<p>detail page</p>} />
+          <Route path="/activity" element={<p>activity page</p>} />
           <Route path="/settings" element={<p>settings page</p>} />
+          <Route path="/settings/:section" element={<p>settings page</p>} />
           <Route path="*" element={<p>unknown page</p>} />
         </Routes>
       </Shell>
@@ -94,13 +95,36 @@ describe("Shell chrome", () => {
     expect(document.activeElement).toBe(screen.getByTestId("account-menu-trigger"));
   });
 
-  it("keeps the same nav membership in both breakpoint treatments", () => {
+  it("keeps five nav items in Inbox, Library, New teaching, Activity, Settings order", () => {
+    renderShell();
+    const labels = within(screen.getByRole("navigation", { name: "Sections" }))
+      .getAllByRole("link")
+      .map((link) => link.textContent?.trim());
+    expect(labels).toEqual(["Inbox", "Library", "New teaching", "Activity", "Settings"]);
+  });
+
+  it("keeps the same nav membership and hrefs in both breakpoint treatments", () => {
     renderShell();
     const hrefs = (name: string) =>
       [...screen.getByRole("navigation", { name }).querySelectorAll("a")].map((a) =>
         a.getAttribute("href"),
       );
     expect(hrefs("Primary")).toEqual(hrefs("Sections"));
+    expect(hrefs("Sections")).toEqual(["/", "/library", "/new", "/activity", "/settings"]);
+  });
+
+  it("centres New on mobile with a New teaching accessible name", () => {
+    renderShell();
+    const links = within(screen.getByRole("navigation", { name: "Primary" })).getAllByRole("link");
+
+    expect(links.map((link) => link.textContent?.trim())).toEqual([
+      "Inbox",
+      "Library",
+      "New",
+      "Activity",
+      "Settings",
+    ]);
+    expect(links[Math.floor(links.length / 2)].getAttribute("aria-label")).toBe("New teaching");
   });
 
   it("uses one mobile nav treatment with no drawer and no header nav", () => {
@@ -116,13 +140,16 @@ describe("Shell chrome", () => {
 
 describe("Shell route metadata", () => {
   it.each([
-    ["/", "Home · SermonPilot"],
+    ["/", "Inbox · SermonPilot"],
     ["/new", "New teaching · SermonPilot"],
     ["/library", "Library · SermonPilot"],
     ["/library/s-01", "Teaching review · SermonPilot"],
-    ["/jobs", "Jobs · SermonPilot"],
+    ["/teaching/s-01", "Teaching review · SermonPilot"],
+    ["/activity", "Activity · SermonPilot"],
+    ["/activity/job-1", "Activity · SermonPilot"],
     ["/settings", "Settings · SermonPilot"],
-    ["/missing", "SermonPilot Console"],
+    ["/settings/preferences", "Settings · SermonPilot"],
+    ["/missing", "Not found · SermonPilot"],
   ])("titles %s as %s", (path, title) => {
     renderShell({ initialEntries: [path] });
     expect(document.title).toBe(title);
@@ -145,8 +172,8 @@ describe("Shell route metadata", () => {
     renderShell({ initialEntries: ["/?tab=one"] });
     const main = screen.getByRole("main");
 
-    await userEvents.click(screen.getAllByRole("link", { name: "Home" })[0]);
-    expect(screen.getByText("home page")).toBeTruthy();
+    await userEvents.click(screen.getAllByRole("link", { name: "Inbox" })[0]);
+    expect(screen.getByText("inbox page")).toBeTruthy();
     expect(document.activeElement).not.toBe(main);
   });
 });

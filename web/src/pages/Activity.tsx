@@ -284,7 +284,7 @@ function JobRow({
   );
 }
 
-export function Jobs() {
+export function Activity() {
   const [tab, setTab] = useState<Tab>("active");
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -329,15 +329,7 @@ export function Jobs() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Jobs"
-        sub={isLive ? "Refreshes every 5 seconds." : undefined}
-        actions={
-          <Link to="/new" className={buttonClass("primary")}>
-            New teaching
-          </Link>
-        }
-      />
+      <PageHeader title="Activity" sub={isLive ? "Refreshes every 5 seconds." : undefined} />
 
       <div role="tablist" aria-label="Job states" onKeyDown={onKeyDown} className="flex gap-1 overflow-x-auto rounded-lg border border-line bg-surface p-1">
         {tabs.map((t) => {

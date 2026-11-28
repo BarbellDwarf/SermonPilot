@@ -288,7 +288,7 @@ export function NewSermon() {
   const valid = missing.length === 0;
   const helper = valid
     ? isLive
-      ? "Ready to queue. The pipeline run appears under Jobs."
+      ? "Ready to queue. The pipeline run appears under Activity."
       : "Source and details are complete. Demo mode sends nothing."
     : `Still needed: ${missing.join(", ")}.`;
 
@@ -1002,8 +1002,8 @@ export function NewSermon() {
 
       {queuedJob ? (
         <p className="text-sm">
-          <Link to="/jobs" className="font-medium text-accent hover:underline">
-            Track job {queuedJob} under Jobs →
+          <Link to="/activity" className="font-medium text-accent hover:underline">
+            Track job {queuedJob} under Activity →
           </Link>
         </p>
       ) : null}

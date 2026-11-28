@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   mediaStreamUrl,
@@ -311,6 +312,7 @@ export function SermonReview({
   enhanceDefault = true,
   onShowCompleted,
 }: SermonReviewProps) {
+  const queryClient = useQueryClient();
   const [plan, setPlan] = useState(initial);
   const [startText, setStartText] = useState(formatCut(initial.startSec));
   const [endText, setEndText] = useState(formatCut(initial.endSec));
@@ -738,6 +740,10 @@ export function SermonReview({
         .then(() => {
           applyInFlight.current = false;
           setApplying(false);
+          void queryClient.invalidateQueries({ queryKey: ["sermon", sermon.id] });
+          void queryClient.invalidateQueries({ queryKey: ["sermon-plan", sermon.id] });
+          void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+          void queryClient.invalidateQueries({ queryKey: ["sermons"] });
           onToast(renderOnly ? "Plan approved, render queued." : "Plan approved, render + upload queued.");
         })
         .catch((e) => {
