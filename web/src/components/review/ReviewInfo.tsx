@@ -12,13 +12,11 @@ import type { TranscriptState } from "./types";
 const INFO_TABS = [
   { id: "transcript", label: "Transcript" },
   { id: "files", label: "Files" },
-  { id: "previews", label: "Previews" },
   { id: "history", label: "History" },
 ] as const;
 export type InfoTab = (typeof INFO_TABS)[number]["id"];
 
 const PRIMARY_KINDS = ["source", "processed", "keeper"] as const;
-const PREVIEW_KINDS = ["snippet_start", "snippet_end", "snippet_ending"] as const;
 const TRANSCRIPT_KINDS = ["transcript", "transcript_timestamps"] as const;
 const ARTIFACT_NOTES: Record<string, string> = {
   source: "The original recording as it was ingested.",
@@ -88,8 +86,7 @@ export function ReviewInfo({
 }: ReviewInfoProps) {
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const primaryArtifacts = PRIMARY_KINDS.map((kind) => media.byKind[kind]).filter((item): item is ApiMediaItem => !!item?.available);
-  const extraMediaArtifacts = media.items.filter((item) => item.available && !(PRIMARY_KINDS as readonly string[]).includes(item.kind) && !(TRANSCRIPT_KINDS as readonly string[]).includes(item.kind) && !(PREVIEW_KINDS as readonly string[]).includes(item.kind));
-  const availablePreviews = PREVIEW_KINDS.map((kind) => media.byKind[kind]).filter((item): item is ApiMediaItem => !!item?.available);
+  const extraMediaArtifacts = media.items.filter((item) => item.available && !(PRIMARY_KINDS as readonly string[]).includes(item.kind) && !(TRANSCRIPT_KINDS as readonly string[]).includes(item.kind));
   const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     let next: number | null = null;
     if (event.key === "ArrowRight") next = (index + 1) % INFO_TABS.length;
@@ -151,11 +148,6 @@ export function ReviewInfo({
               </ul>
             )}
           </ArtifactGroup>
-        </div>
-        <div role="tabpanel" id="info-previews" aria-labelledby="info-tab-previews" data-testid="previews-panel" hidden={infoTab !== "previews"} tabIndex={infoTab === "previews" ? 0 : -1}>
-          {availablePreviews.length === 0 ? <p data-testid="previews-empty" className="text-sm text-muted">Previews appear after a render.</p> : (
-            <ul className="flex flex-col gap-2">{availablePreviews.map((item) => <ArtifactRow key={item.kind} sermonId={sermonId} item={item} testId="artifact-preview-row" live={isLive} onOpen={onOpenArtifact} />)}</ul>
-          )}
         </div>
         <div role="tabpanel" id="info-history" aria-labelledby="info-tab-history" data-testid="history-panel" hidden={infoTab !== "history"} tabIndex={infoTab === "history" ? 0 : -1}>
           {noteRows.length > 0 ? <ul className="flex flex-col gap-1">{noteRows.map((row) => <li key={`${row.revision}:${row.note}`} className="text-xs text-muted"><span className="font-mono">revision {row.revision}</span>: {row.note}</li>)}</ul> : <p className="text-sm text-muted">No rejection notes yet.</p>}

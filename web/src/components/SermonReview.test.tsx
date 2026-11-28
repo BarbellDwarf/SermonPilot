@@ -2,8 +2,11 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ReactElement } from "react";
-import { SermonReview, type DetailsPatch, type TranscriptState } from "./SermonReview";
+import { useState, type ReactElement } from "react";
+import { SermonReview as SermonReviewEditor, type DetailsPatch, type SermonReviewProps, type TranscriptState } from "./SermonReview";
+import { ApprovalBar } from "./review/ApprovalBar";
+import { ReviewInfo, type InfoTab } from "./review/ReviewInfo";
+import { PageHeader } from "./ui";
 import { writeApi, ApiError } from "../api/client";
 import type { SermonMediaData } from "../api/hooks";
 import type { ApiMediaItem } from "../api/client";
@@ -171,17 +174,6 @@ function setViewportWidth(width: number) {
   }) as typeof window.matchMedia;
 }
 
-function withUnavailablePreviews(source: SermonMediaData): SermonMediaData {
-  const items = source.items.map((item) =>
-    item.kind.startsWith("snippet_") ? { ...item, available: false, size: null } : item,
-  );
-  return {
-    ...source,
-    items,
-    byKind: Object.fromEntries(items.map((item) => [item.kind, item])),
-  };
-}
-
 function withoutPreviews(source: SermonMediaData): SermonMediaData {
   const items = source.items.filter((item) => !item.kind.startsWith("snippet_"));
   return {
@@ -204,6 +196,69 @@ afterEach(() => {
   vi.restoreAllMocks();
   window.matchMedia = originalMatchMedia;
 });
+
+function SermonReview(props: Omit<SermonReviewProps, "children">) {
+  const [infoTab, setInfoTab] = useState<InfoTab>("transcript");
+  return (
+    <SermonReviewEditor {...props}>
+      {(view) => (
+        <div data-testid="sermon-review" className="flex flex-col gap-4">
+          <PageHeader
+            title={props.sermon.title}
+            sub={`${props.sermon.speaker} · ${props.sermon.date}`}
+            actions={view.onShowCompleted ? <button type="button" data-testid="show-completed-view" onClick={view.onShowCompleted}>Back to finished view</button> : undefined}
+          />
+          <div data-testid="approval-content" className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="flex min-w-0 flex-col gap-4">
+              {view.player}
+              <ApprovalBar
+                editor={view.editor}
+                actions={view.actions.actions}
+                published={view.actions.actions.published}
+                applying={view.actions.applying}
+                uploading={view.actions.uploading}
+                refining={view.actions.refining}
+                deleting={props.deleting ?? false}
+                notesOpen={view.actions.notesOpen}
+                notesText={view.actions.notesText}
+                onNotesTextChange={view.actions.setNotesText}
+                onToggleNotes={() => view.actions.setNotesOpen((value) => !value)}
+                onSubmitNotes={view.actions.submitRefine}
+                onApprove={(renderOnly) => view.actions.approve(view.editor, renderOnly)}
+                onUploadExisting={() => view.actions.uploadExisting(false)}
+                onReDetect={view.actions.reDetect}
+                onHistory={() => setInfoTab("history")}
+                onLegacyUpload={props.onUpload}
+                onDelete={props.onDelete}
+              />
+              <ReviewInfo
+                sermonId={props.sermon.id}
+                media={props.media}
+                isLive={props.isLive}
+                transcript={props.transcript}
+                plan={view.actions.plan}
+                history={props.history}
+                noteRows={[
+                  ...(props.history ?? []).filter((row) => row.notes.trim()).map((row) => ({ revision: row.revision, note: row.notes.trim() })),
+                  ...view.actions.mockNotes,
+                ]}
+                statusLog={view.actions.statusLog}
+                infoTab={infoTab}
+                onInfoTabChange={setInfoTab}
+                onSeek={view.editor.requestSeek}
+                onOpenArtifact={view.editor.setPlayerKind}
+              />
+            </div>
+            <aside id="details" className="rounded-lg border border-line bg-surface p-4">
+              <h2 className="text-lg font-semibold">Details</h2>
+              <div className="mt-3">{view.details}</div>
+            </aside>
+          </div>
+        </div>
+      )}
+    </SermonReviewEditor>
+  );
+}
 
 describe("SermonReview single player and plan", () => {
   it("renders exactly one media element with every artifact present", () => {
@@ -559,7 +614,7 @@ describe("SermonReview single player and plan", () => {
 });
 
 describe("SermonReview artifacts", () => {
-  it("groups files, transcript, previews, and history into one tabbed panel", async () => {
+  it("groups files, transcript, and history into one tabbed panel", async () => {
     const user = userEvent.setup();
     renderReview(
       <SermonReview
@@ -580,46 +635,8 @@ describe("SermonReview artifacts", () => {
     expect(screen.getAllByTestId("artifact-primary-row").length).toBe(3);
     expect(screen.getByTestId("artifact-group-files-media")).toBeTruthy();
 
-    await user.click(screen.getByRole("tab", { name: "Previews" }));
-    expect(screen.getAllByTestId("artifact-preview-row").length).toBe(3);
-
     await user.click(screen.getByRole("tab", { name: "History" }));
     expect(screen.getByTestId("history-panel")).toBeTruthy();
-  });
-
-  it("renders an empty previews panel when no preview artifacts exist", async () => {
-    const user = userEvent.setup();
-    renderReview(
-      <SermonReview
-        sermon={sermon()}
-        description={null}
-        plan={plan()}
-        media={withoutPreviews(media())}
-        isLive
-        onToast={noop}
-      />,
-    );
-
-    await user.click(screen.getByRole("tab", { name: "Previews" }));
-    expect(screen.getByTestId("previews-empty").textContent).toContain("Previews appear after a render");
-  });
-
-  it("renders no preview card when the previews are unavailable, and explains instead", async () => {
-    const user = userEvent.setup();
-    renderReview(
-      <SermonReview
-        sermon={sermon()}
-        description={null}
-        plan={plan()}
-        media={withUnavailablePreviews(media())}
-        isLive
-        onToast={noop}
-      />,
-    );
-
-    await user.click(screen.getByRole("tab", { name: "Previews" }));
-    expect(screen.queryAllByTestId("artifact-preview-row").length).toBe(0);
-    expect(screen.getByTestId("previews-empty").textContent).toContain("Previews appear after a render");
   });
 
   it("shows exactly one transcript entry point", () => {
@@ -1678,6 +1695,21 @@ describe("SermonReview cut plan table", () => {
     expect(screen.queryByTestId("cut-toggle-end")).toBeNull();
     await user.click(screen.getByTestId("cut-redo"));
     expect(screen.queryByTestId("cut-toggle-end")).toBeNull();
+  });
+
+  it("restores edited boundaries from the secondary row menu", async () => {
+    const user = userEvent.setup();
+    renderReview(
+      <SermonReview sermon={sermon()} description={null} plan={plan()} media={media()} isLive onToast={noop} />,
+    );
+    fireEvent.change(screen.getByLabelText(/^Start \(/), { target: { value: "00:20.0" } });
+    fireEvent.change(screen.getByLabelText(/^End \(/), { target: { value: "30:00.0" } });
+    await user.click(screen.getByTestId("cut-menu-start"));
+    await user.click(screen.getByTestId("restore-start"));
+    await user.click(screen.getByTestId("cut-menu-end"));
+    await user.click(screen.getByTestId("restore-end"));
+    expect((screen.getByLabelText(/^Start \(/) as HTMLInputElement).value).toBe("00:08.5");
+    expect((screen.getByLabelText(/^End \(/) as HTMLInputElement).value).toBe("41:52.3");
   });
 
   it("keeps the cut table above the approval action on mobile", () => {

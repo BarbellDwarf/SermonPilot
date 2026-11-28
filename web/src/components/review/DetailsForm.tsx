@@ -164,7 +164,7 @@ export function DetailsForm({
     }
     return (
       <Menu
-        label={`${label} generation options`}
+        label={`Replace ${label} generation options`}
         triggerTestId={`generate-${field}`}
         triggerClassName={buttonClass("secondary", "min-w-[7rem] px-3")}
         trigger={<span className="inline-flex items-center gap-2">Replace<Icon name="chevron" className="h-4 w-4" /></span>}

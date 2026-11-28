@@ -5,10 +5,9 @@ import { formatCut, parseCut } from "../../utils/time";
 import type { PlayWindow } from "../MediaPlayer";
 import type { TimelineClip, TimelineRange } from "../Timeline";
 import { preferredKind } from "./media";
+import { initialCuts, MIN_CUT_SECONDS, normalizeUiRemoveSegments, type UiCut } from "./cutUtils";
 
-export interface UiCut extends RemoveSegment {
-  enabled: boolean;
-}
+export type { UiCut } from "./cutUtils";
 
 interface CutSnapshot {
   startText: string;
@@ -23,58 +22,12 @@ export interface CutEditorOptions {
   enhanceDefault?: boolean;
 }
 
-const MIN_CUT_SECONDS = 0.25;
 const JOIN_PREVIEW_SECONDS = 10;
 const ARTIFACT_LABELS: Record<string, string> = {
   snippet_start: "Start cut",
   snippet_end: "End cut",
   snippet_ending: "Proposed ending",
 };
-
-function initialCuts(segments: RemoveSegment[] | undefined): UiCut[] {
-  return (segments ?? []).map((segment) => ({ ...segment, enabled: true }));
-}
-
-export function normalizeUiRemoveSegments(
-  segments: RemoveSegment[],
-  startSec: number,
-  endSec: number,
-): { segments: RemoveSegment[]; errors: string[] } {
-  const errors: string[] = [];
-  const parsed = segments
-    .map((segment, index) => ({ ...segment, index }))
-    .sort((left, right) => left.startSec - right.startSec || left.endSec - right.endSec);
-  const normalized: RemoveSegment[] = [];
-  for (const segment of parsed) {
-    if (
-      !Number.isFinite(segment.startSec) ||
-      !Number.isFinite(segment.endSec) ||
-      segment.endSec <= segment.startSec
-    ) {
-      errors.push(`Cut ${segment.index + 1} must end after it starts.`);
-      continue;
-    }
-    if (segment.endSec - segment.startSec < MIN_CUT_SECONDS) {
-      errors.push(`Cut ${segment.index + 1} needs at least 0.25 seconds.`);
-      continue;
-    }
-    if (segment.startSec <= startSec || segment.endSec >= endSec) {
-      errors.push(`Cut ${segment.index + 1} must stay inside the keep window.`);
-      continue;
-    }
-    const previous = normalized[normalized.length - 1];
-    if (previous && segment.startSec < previous.endSec) {
-      errors.push(`Cut ${segment.index + 1} overlaps another cut.`);
-      continue;
-    }
-    if (previous && segment.startSec === previous.endSec) {
-      previous.endSec = segment.endSec;
-    } else {
-      normalized.push({ startSec: segment.startSec, endSec: segment.endSec });
-    }
-  }
-  return { segments: normalized, errors };
-}
 
 export function useCutEditor({
   initialPlan,
@@ -228,6 +181,10 @@ export function useCutEditor({
     applyCutSnapshot(next);
   };
   const toggleCut = (index: number, enabled: boolean) => {
+    if (!enabled) {
+      setSelectedCut(null);
+      setSelection(null);
+    }
     commitCut({
       cuts: removeSegments.map((segment, currentIndex) =>
         currentIndex === index ? { ...segment, enabled } : segment,
@@ -236,6 +193,8 @@ export function useCutEditor({
   };
   const undoRemoval = (index: number) => {
     commitCut({ cuts: removeSegments.filter((_, currentIndex) => currentIndex !== index) });
+    setSelectedCut(null);
+    setSelection(null);
     setRemovalError(null);
   };
   const addRemoval = () => {
@@ -264,6 +223,8 @@ export function useCutEditor({
   };
   const toggleStartCut = (enabled: boolean) => {
     if (!enabled) {
+      setSelectedCut(null);
+      setSelection(null);
       if (safeStart > 0) startRestore.current = safeStart;
       commitCut({ startText: formatCut(0) });
       return;
@@ -273,6 +234,8 @@ export function useCutEditor({
   };
   const toggleEndCut = (enabled: boolean) => {
     if (!enabled) {
+      setSelectedCut(null);
+      setSelection(null);
       endRestore.current = safeEnd;
       commitCut({ endText: formatCut(timelineDuration) });
       return;

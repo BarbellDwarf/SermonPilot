@@ -38,7 +38,7 @@ test.describe("UI-02 review primary action", () => {
     });
 
     expect(geometry.scrollY).toBe(0);
-    expect(geometry.barPosition).toBe("sticky");
+    expect(geometry.barPosition).toBe((page.viewportSize()?.width ?? 0) >= 1024 ? "sticky" : "fixed");
     expect(geometry.approveTop).not.toBeNull();
     expect(geometry.approveTop as number).toBeGreaterThanOrEqual(0);
     expect(geometry.approveBottom as number).toBeLessThanOrEqual(geometry.innerHeight);

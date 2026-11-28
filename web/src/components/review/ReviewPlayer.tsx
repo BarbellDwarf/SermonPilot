@@ -7,21 +7,19 @@ import { MediaPlayer } from "../MediaPlayer";
 import { Timeline } from "../Timeline";
 import { Button, Icon, Menu, Switch, buttonClass } from "../ui";
 import { PlanSummary } from "./PlanSummary";
-import { useCutEditor, type CutEditor } from "./useCutEditor";
+import type { CutEditor } from "./useCutEditor";
 
 interface ReviewPlayerProps {
   sermonId: string;
+  editor: CutEditor;
   plan: EditPlan;
   media: SermonMediaData;
   isLive: boolean;
-  sourceDurationSec?: number | null;
   statusChip?: ReactNode;
-  enhanceDefault?: boolean;
   readOnly?: boolean;
   applying?: boolean;
   restoring?: boolean;
   onRestore?: () => void;
-  children?: (editor: CutEditor) => ReactNode;
 }
 
 interface CutRow {
@@ -42,21 +40,18 @@ interface CutRow {
 const chipButtonClass =
   "inline-flex min-h-[44px] items-center rounded-md border border-line bg-raised px-3 text-xs font-semibold text-mist transition-[background-color,border-color,color,filter] duration-150 hover:border-muted hover:brightness-110 active:brightness-95";
 
-export function ReviewPlayer({
+export function ReviewPlayerBody({
   sermonId,
+  editor,
   plan,
   media,
   isLive,
-  sourceDurationSec,
   statusChip,
-  enhanceDefault,
   readOnly = false,
   applying = false,
   restoring = false,
   onRestore,
-  children,
 }: ReviewPlayerProps) {
-  const editor = useCutEditor({ initialPlan: plan, media, sourceDurationSec, enhanceDefault });
   const rows: CutRow[] = [
     {
       id: "start",
@@ -164,7 +159,7 @@ export function ReviewPlayer({
                 if (fullIndex >= 0) editor.undoRemoval(fullIndex);
               }}
               selection={editor.selection}
-              onChangeSelection={(next) => { editor.setSelection(next); editor.setRemovalError(null); }}
+              onChangeSelection={(next) => { editor.selectCut(null); editor.setSelection(next); editor.setRemovalError(null); }}
               selected={editor.selected}
               selectedCut={editor.selectedCut}
               onSelect={(handle) => editor.selectCut(handle)}
@@ -189,7 +184,7 @@ export function ReviewPlayer({
               }}
             />
           ) : null}
-          {!readOnly && editor.selection ? (
+          {!readOnly && editor.selection && !editor.selectedCut ? (
             <section data-testid="removal-selection-panel" aria-labelledby="removal-selection-heading" className="rounded-md border border-warn bg-ink p-3 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -222,7 +217,7 @@ export function ReviewPlayer({
               <ul className="flex flex-col">
                 {rows.map((row) => (
                   <li key={row.id} data-testid={row.testId} aria-current={editor.selectedCut === row.id ? "true" : undefined} className={`flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-line py-2 first:border-t-0 ${editor.selectedCut === row.id ? "bg-warn/10" : ""}`}>
-                    <button type="button" aria-label={`Select ${row.label}`} aria-pressed={editor.selectedCut === row.id} onClick={() => editor.selectCut(row.id)} className="min-h-[44px] min-w-0 flex-1 text-left">
+                    <button type="button" aria-pressed={editor.selectedCut === row.id} onClick={() => editor.selectCut(row.id)} className="min-h-[44px] min-w-0 flex-1 text-left">
                       <span className="flex flex-wrap items-baseline gap-x-2"><span className="text-sm font-medium">{row.label}</span><span className="text-xs text-muted">{row.typeLabel}</span></span>
                       {!readOnly ? <span className="block font-mono text-xs text-muted">{formatCut(row.startSec)} – {formatCut(row.endSec)} · <span data-testid={row.durationTestId}>{formatDuration(row.endSec - row.startSec)}</span></span> : <span className="block text-xs text-muted">{formatDuration(row.endSec - row.startSec)}</span>}
                     </button>
@@ -238,8 +233,8 @@ export function ReviewPlayer({
                           menuClassName="w-56"
                           items={[
                             ...(row.onPreview ? [{ label: "Preview join", onSelect: row.onPreview, testId: `preview-join-${row.id}` }] : []),
-                            ...(row.id === "start" ? [{ label: "Restore start", onSelect: () => editor.toggleStartCut(true), disabled: row.enabled, testId: "restore-start" }] : []),
-                            ...(row.id === "end" ? [{ label: "Restore end", onSelect: () => editor.toggleEndCut(true), disabled: row.enabled, testId: "restore-end" }] : []),
+                            ...(row.id === "start" ? [{ label: "Restore start", onSelect: () => editor.toggleStartCut(true), testId: "restore-start" }] : []),
+                            ...(row.id === "end" ? [{ label: "Restore end", onSelect: () => editor.toggleEndCut(true), testId: "restore-end" }] : []),
                             { label: "Delete cut", onSelect: () => row.onToggle(false), disabled: !row.enabled, testId: `delete-cut-${row.id}` },
                           ]}
                         />
@@ -285,7 +280,6 @@ export function ReviewPlayer({
           ) : null}
         </div>
       </section>
-      {children?.(editor)}
     </>
   );
 }
