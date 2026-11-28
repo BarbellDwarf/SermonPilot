@@ -10,8 +10,8 @@ import { useInboxCount } from "./api/hooks";
 const Inbox = lazy(() => import("./pages/Inbox").then((m) => ({ default: m.Inbox })));
 const NewSermon = lazy(() => import("./pages/NewSermon").then((m) => ({ default: m.NewSermon })));
 const Library = lazy(() => import("./pages/Library").then((m) => ({ default: m.Library })));
-const LibraryDetail = lazy(() =>
-  import("./pages/LibraryDetail").then((m) => ({ default: m.LibraryDetail })),
+const Teaching = lazy(() =>
+  import("./pages/Teaching").then((m) => ({ default: m.Teaching })),
 );
 const Activity = lazy(() => import("./pages/Activity").then((m) => ({ default: m.Activity })));
 const Settings = lazy(() => import("./pages/Settings").then((m) => ({ default: m.Settings })));
@@ -104,7 +104,7 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, element: <Inbox /> },
       { path: "new", element: <NewSermon /> },
-      { path: "teaching/:id", element: <LibraryDetail /> },
+      { path: "teaching/:id", element: <Teaching /> },
       { path: "library", element: <Library /> },
       { path: "library/:id", element: <LegacyTeachingRedirect /> },
       { path: "activity", element: <Activity /> },

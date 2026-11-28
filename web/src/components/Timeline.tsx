@@ -26,7 +26,9 @@ export interface TimelineProps {
   selection?: TimelineRange | null;
   onChangeSelection?: (range: TimelineRange | null) => void;
   selected?: "start" | "end" | null;
+  selectedCut?: string | null;
   onSelect?: (handle: "start" | "end") => void;
+  onSelectCut?: (id: string | null) => void;
   onChangeStart?: (sec: number) => void;
   onChangeEnd?: (sec: number) => void;
   onSeek?: (sec: number, regionId: string) => void;
@@ -132,7 +134,9 @@ export function Timeline({
   selection: controlledSelection,
   onChangeSelection,
   selected = null,
+  selectedCut = null,
   onSelect,
+  onSelectCut,
   onChangeStart,
   onChangeEnd,
   onSeek,
@@ -542,14 +546,16 @@ export function Timeline({
               data-start-sec={segment.startSec}
               data-end-sec={segment.endSec}
               aria-label={`Removal ${index + 1}, ${segment.startSec}s to ${segment.endSec}s`}
+              aria-pressed={selectedCut === `interior-${index}`}
               title={`Removal ${index + 1}`}
               onClick={(event) => {
                 event.stopPropagation();
+                onSelectCut?.(`interior-${index}`);
                 onSeek?.(segment.startSec, `removal_${index}`);
                 onPlayRegion?.(`removal_join_${index}`, segment.startSec, segment.endSec);
               }}
               style={{ left: `${left}%`, width: `${Math.max(width, 0.6)}%` }}
-              className="absolute bottom-0 z-30 h-11 min-w-[24px] bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
+              className={`absolute bottom-0 z-30 h-11 min-w-[24px] bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger ${selectedCut === `interior-${index}` ? "ring-2 ring-inset ring-warn" : ""}`}
             >
               <span
                 aria-hidden="true"
@@ -762,21 +768,20 @@ export function Timeline({
                 <div
                   key={`detail-${segment.startSec}-${segment.endSec}-${index}`}
                   data-testid={`timeline-detail-removal-${index}`}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Cut ${index + 1}, ${shortCut(segment.startSec)} to ${shortCut(segment.endSec)}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSeek?.(segment.startSec, `detail_removal_${index}`);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" && event.key !== " ") return;
-                    event.preventDefault();
-                    onSeek?.(segment.startSec, `detail_removal_${index}`);
-                  }}
                   style={{ left: `${left}%`, width: `${width}%` }}
-                  className="absolute inset-y-0 z-10 cursor-pointer border-x-2 border-danger/80 bg-danger/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
+                  className={`absolute inset-y-0 z-10 border-x-2 border-danger/80 bg-danger/25 ${selectedCut === `interior-${index}` ? "ring-2 ring-inset ring-warn" : ""}`}
                 >
+                  <button
+                    type="button"
+                    aria-label={`Cut ${index + 1}, ${shortCut(segment.startSec)} to ${shortCut(segment.endSec)}`}
+                    aria-pressed={selectedCut === `interior-${index}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSelectCut?.(`interior-${index}`);
+                      onSeek?.(segment.startSec, `detail_removal_${index}`);
+                    }}
+                    className="absolute inset-0 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
+                  />
                   <button
                     type="button"
                     aria-label={`Delete cut ${index + 1} on timeline`}
@@ -784,7 +789,7 @@ export function Timeline({
                       event.stopPropagation();
                       onRemoveSegment?.(index);
                     }}
-                    className="absolute -top-2 right-0 z-20 grid h-6 w-6 place-items-center rounded-full border border-danger/60 bg-ink text-xs text-danger shadow"
+                    className="absolute -right-2 -top-2 z-20 grid h-11 w-11 place-items-center rounded-full border border-danger/60 bg-ink text-xs text-danger shadow"
                   >
                     ×
                   </button>

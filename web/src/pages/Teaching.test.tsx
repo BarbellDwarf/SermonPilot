@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeDeleteOutcome } from "./LibraryDetail";
+import { describeDeleteOutcome } from "./Teaching";
 import type { ApiTrashRecord } from "../api/client";
 
 function record(overrides: Partial<ApiTrashRecord>): ApiTrashRecord {
