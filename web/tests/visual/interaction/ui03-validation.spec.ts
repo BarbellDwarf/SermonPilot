@@ -40,6 +40,15 @@ test("blurred required fields show linked inline errors", async ({ page }) => {
   await expect(date).toHaveAttribute("aria-describedby", "ns-date-error");
 });
 
+test("submit attempt focuses the first invalid field", async ({ page }) => {
+  await page.locator("form").evaluate((form: HTMLFormElement) => form.requestSubmit());
+  await expect(page.getByRole("button", { name: "Choose file" })).toBeFocused();
+  await expect(page.locator("#ns-source-error")).toBeVisible();
+  await expect(page.locator("#ns-title-error")).toBeVisible();
+  await expect(page.locator("#ns-speaker-error")).toBeVisible();
+  await expect(page.locator("#ns-date-error")).toBeVisible();
+});
+
 test("dropzone has one control and the file input is not a tab stop", async ({ page }) => {
   const panel = page.locator("#source-panel-browser");
   await expect(panel.locator('[role="button"]')).toHaveCount(0);
