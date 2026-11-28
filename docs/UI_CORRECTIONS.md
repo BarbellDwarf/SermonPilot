@@ -224,6 +224,11 @@ Clicking the whole dropzone in demo mode selects
 behavior explicit in the copy, or accept a real file and keep the mock only for
 the demo button.
 
+Documented demo-only limitation: the demo build substitutes
+`sample-sermon-upload.mp3` for any chosen or dropped file and sends nothing.
+Real file handling requires the live console. Accepting real files in demo mode
+is deferred; it does not affect the live intake path.
+
 ## Legacy Streamlit removal
 
 Completed. `ui/` now holds only backend modules that the console API, worker,
@@ -314,25 +319,25 @@ rule from `web/DESIGN.md`, and a suggested fix with the test that would catch it
 - [x] UI-03 New teaching validation on interaction only
 - [x] UI-04 Dropzone nested interactive removed
 - [x] UI-05 Source tabs use valid ARIA
-- [ ] UI-06 Settings save surfaces disambiguated
+- [x] UI-06 Settings save surfaces disambiguated
 - [x] UI-07 Skeleton ARIA fixed
-- [ ] UI-08 All touch targets at least 44x44
-- [ ] UI-09 Jobs tabs complete
+- [x] UI-08 All touch targets at least 44x44
+- [x] UI-09 Jobs tabs complete (replaced by Activity filters in Phase 4)
 - [x] UI-10 Per-route titles
 - [x] UI-11 Demo waveform 404 removed
 - [x] Deterministic axe gate in the visual suite
-- [ ] UI-12 Row anatomy unified
-- [ ] UI-13 Home density and stat labels
-- [ ] UI-14 Single New teaching entry point
-- [ ] UI-15 Tokenized Library search
-- [ ] UI-16 Light theme surfaces separated
-- [ ] UI-17 Review density reduced
-- [ ] UI-18 Demo dropzone behavior documented
+- [x] UI-12 Row anatomy unified (Home removed; shared row slots)
+- [x] UI-13 Home density and stat labels (Home removed in Phase 2)
+- [x] UI-14 Single New teaching entry point
+- [x] UI-15 Tokenized Library search
+- [x] UI-16 Light theme surfaces separated
+- [x] UI-17 Review density reduced (Phase 3 workspace)
+- [x] UI-18 Demo dropzone behavior documented (demo-only limitation noted above)
 - [x] Legacy Streamlit removal complete
-- [ ] Visual QA pass on 390, 768, and 1440, dark and light
-- [ ] Final QA pass at the release cut
-- [ ] `npm run build`, `npm test`, and `npm run visual` pass
-- [ ] No serious or critical axe findings
+- [x] Visual QA pass on 390, 768, and 1440, dark and light
+- [x] Final QA pass at the release cut
+- [x] `npm run build`, `npm test`, and `npm run visual` pass
+- [x] No serious or critical axe findings
 
 ## QA log
 
@@ -341,3 +346,8 @@ rule from `web/DESIGN.md`, and a suggested fix with the test that would catch it
 | 2026-11-27 | `d4d2532` | parent review | 18 open items, 3 P0 | parent review evidence |
 | 2026-11-27 | `37f0724` | phase 0 | UI-01 to UI-05 and UI-07 fixed; 249 vitest, 127 Playwright passed, 8 skipped, axe clean on 24 runs | PR #406 |
 | 2026-11-27 | `100c0b2` | phase 1 | UI-10 and UI-11 fixed; route titles and focus verified; 36 axe checks, 300 vitest, 163 Playwright passed, 8 skipped | PR #407 |
+| 2026-11-27 | `e0209d1` | phase 4 | Activity filters, retry clone, deep links, scoped totals; 393 vitest, 264 Playwright passed, 30 skipped, 66 axe | PR #410 |
+| 2026-11-28 | `08052a3` | phase 5 | Intake and Settings split, one save surface, prepaint theme; 431 vitest, 312 Playwright passed, 30 skipped, 66 axe | PR #411 |
+| 2026-11-28 | `e2ebc78` | phase 6 | Responsive Library and Teaching, tokens, debounce, 44px targets, final screenshots; 439 vitest, 337 Playwright passed, 44 skipped, 66 axe | PR #412 |
+| 2026-11-28 | `96355e1` | Streamlit removal | Presentation and dependencies removed, validation retargeted; 1041 pytest passed, 5 skipped, 5 pre-existing base failures; 30 targeted tests | PR #413 |
+| 2026-11-28 | `dce6bf7` | final merged QA | Merged release verified: 439 vitest, 337 Playwright passed, 44 skipped, 66 axe, build clean; 28 targeted Python tests passed after tokenized-search test update | closeout |

@@ -182,8 +182,10 @@ def test_sermons_list_shape_and_default_sort(client: TestClient) -> None:
 def test_sermons_search_param(client: TestClient) -> None:
     body = client.get("/api/sermons", params={"search": "Teaching 1"}).json()
     assert [item["id"] for item in body["items"]] == ["s-02"]
-    body = client.get("/api/sermons", params={"search": "speaker a"}).json()
+    body = client.get("/api/sermons", params={"search": "sample 2"}).json()
     assert [item["id"] for item in body["items"]] == ["s-01"]
+    body = client.get("/api/sermons", params={"search": "speaker b"}).json()
+    assert [item["id"] for item in body["items"]] == ["s-02"]
 
 
 def test_sermons_sort_params(client: TestClient) -> None:
