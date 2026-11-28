@@ -30,8 +30,9 @@ of it is operated from a web console.
 - **Finished sermons stay editable**: a published sermon shows its details and
   can be re-opened to re-render or edit.
 
-The legacy Streamlit interface (`ui/`) is deprecated and is no longer started by
-the container. The console runs the job queue and serves every operator screen.
+The console is the only interface. The `ui/` package holds the shared backend
+modules the API, headless worker, and CLI use; the legacy Streamlit
+presentation layer has been removed.
 
 ## Quick start
 

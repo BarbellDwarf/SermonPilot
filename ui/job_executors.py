@@ -30,7 +30,7 @@ sys.path.insert(0, str(project_root / "src"))
 
 try:  # noqa: E402 - prefer package path so ui.* and top-level resolve to ONE module
     from ui.job_queue import Job, JobCancelledError, JobResult, JobStatus, JobType
-except ImportError:  # Streamlit entrypoint runs from /app (top-level imports)
+except ImportError:  # container entrypoint runs from /app (top-level imports)
     from job_queue import Job, JobCancelledError, JobResult, JobStatus, JobType  # noqa: E402
 
 # Belt-and-braces: coerce str/foreign-enum job types via value lookup so a dual-module
@@ -669,8 +669,8 @@ def _log_job_llm_source(
 def _scope_sermonaudio_to_user(config: dict, user_id: str | None) -> dict:
     """Bind SermonAudio credentials to the job owner's own account.
 
-    A job with no owner keeps the resolved global fallback (legacy and
-    Streamlit jobs). A job with an owner gets that owner's account, or an
+    A job with no owner keeps the resolved global fallback (legacy jobs). A
+    job with an owner gets that owner's account, or an
     explicit empty credential when they have none, so a publish fails with a
     connect-your-account message instead of borrowing another user's account.
     The marker records the source for diagnostics and never carries a key.
@@ -1009,7 +1009,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
     """Execute a sermon processing job from an uploaded file (UI flow).
 
     This handles the 'new sermon' workflow where a user uploads an audio file
-    via the Streamlit UI and it gets processed, transcribed, and uploaded
+    through the console and it gets processed, transcribed, and uploaded
     to SermonAudio.
 
     Required job parameters:

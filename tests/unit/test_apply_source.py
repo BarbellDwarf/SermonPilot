@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from ui.ui_pages.library import _resolve_apply_source
+from ui.auto_edit_apply import _resolve_apply_source
 
 
 class _Repo:

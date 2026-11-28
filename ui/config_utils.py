@@ -1,8 +1,8 @@
 """
-Configuration utilities for the Streamlit UI
+Configuration resolution and persistence.
 
-Provides the single configuration resolution path used by the UI, the
-engine, and the job executors, plus session state helpers.
+Provides the single configuration resolution path used by the API server, the
+engine, and the job executors.
 """
 
 import copy
@@ -146,9 +146,6 @@ INFRA_ONLY_ENV_VARS: dict[str, str] = {
     "DATABASE_URL": "SQLite location consumed directly by ui.database",
     "APP_PASSWORD": "UI authentication consumed directly by ui.auth",
     "ENVIRONMENT": "container runtime label with no in-app consumer",
-    "STREAMLIT_SERVER_MAX_UPLOAD_SIZE": (
-        "Streamlit runtime upload limit, read by the Streamlit server rather than app config"
-    ),
     "SERMONPILOT_JOB_WORKER_ENABLED": (
         "Container worker toggle, read by the entrypoint and queue startup"
     ),
@@ -695,12 +692,6 @@ def load_config_from_file():
         sources = _config_sources(config, db_layer)
     except Exception as e:
         logger.error("Failed to load configuration: %s", e)
-        try:
-            import streamlit as st
-
-            st.error(f"Failed to load configuration: {e}")
-        except ImportError:
-            pass
         return {}
     _warn_plaintext_api_keys(config, sources)
     return config
@@ -762,35 +753,14 @@ def _warn_plaintext_api_keys(
         "Set the listed environment variables to keep them out of the database."
     )
     logger.warning(message)
-    try:
-        import streamlit as st
-
-        st.warning(message)
-    except Exception:
-        pass
 
 
 def reload_configuration():
-    """Re-resolve the effective configuration and update session state"""
+    """Re-resolve the effective configuration."""
     try:
-        import streamlit as st
-
-        config = load_config_from_file()
-
-        st.session_state.config = config
-
-        if "llm_manager" in st.session_state:
-            st.session_state.llm_manager = None
-
-        return config
-
+        return load_config_from_file()
     except Exception as e:
-        try:
-            import streamlit as st
-
-            st.error(f"Failed to reload configuration: {e}")
-        except ImportError:
-            pass  # Not in Streamlit context
+        logger.error("Failed to reload configuration: %s", e)
         return {}
 
 
@@ -824,20 +794,8 @@ def save_config_to_file(config):
         except Exception:
             pass
 
-        try:
-            import streamlit as st
-
-            st.info("Configuration saved to the settings database (YAML export updated).")
-        except Exception:
-            pass  # Not in Streamlit context
-
         return True
 
     except Exception as e:
-        try:
-            import streamlit as st
-
-            st.error(f"Failed to save configuration: {e}")
-        except Exception:
-            pass  # Not in Streamlit context
+        logger.error("Failed to save configuration: %s", e)
         return False

@@ -45,6 +45,13 @@ def main() -> None:
     shutdown = threading.Event()
     previous_handlers: dict[signal.Signals, object] = {}
 
+    try:
+        from ui.config_utils import sweep_stale_job_files
+
+        sweep_stale_job_files()
+    except Exception:
+        logger.exception("startup sweep failed")
+
     def request_shutdown(signum: int, frame: FrameType | None) -> None:
         shutdown.set()
 

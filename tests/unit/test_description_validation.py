@@ -2,9 +2,9 @@
 
 A refusal, a stub, a placeholder, or a reply below the minimum length is
 unusable. In that case the existing description stays, the record is flagged
-for review, and the job log names the reason. Both description generators (the
-pipeline one and the console regenerate path) route through the single shared
-validator in ``src.metadata_cleanup`` so they cannot drift apart again.
+for review, and the job log names the reason. The pipeline generator and the
+console regenerate path both route through the single shared validator in
+``src.metadata_cleanup`` so they cannot drift apart.
 """
 
 from __future__ import annotations
@@ -16,15 +16,6 @@ import pytest
 import sermon_updater as su
 from llm_manager import LLMManager
 from ui.database import SermonDatabase, SermonRepository
-
-GOOD = (
-    "Pastor Example Speaker teaches on the biblical doctrine of work, concluding "
-    "with Matthew 5:16 and Colossians 3:23-24, where believers are called to "
-    "labor 'as unto the Lord' and not merely for men, so their diligent work "
-    "shines before others. A discussion followed on vocation versus career and "
-    "the temptation to chase status, closing with a call to work faithfully, "
-    "rest rightly, and prepare for worship."
-)
 
 REFUSAL = (
     "I'm sorry, but I cannot write a description for this sermon. As an AI "
@@ -82,56 +73,6 @@ def test_pipeline_generator_rejects_unusable_reply(
     assert expected_reason in str(excinfo.value)
     assert notes["description_needs_review"] is True
     assert expected_reason in notes["description_error"]
-
-
-def test_library_generator_rejects_refusal_without_storing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import ui.ui_pages.library as library
-
-    provider = _ScriptedProvider([REFUSAL, REFUSAL])
-    description, reason = library.generate_library_description(
-        provider, "grace and mercy " * 40, "Sunday Service", "Test Speaker"
-    )
-
-    assert description is None
-    assert reason == "refusal"
-    assert provider.calls == 2
-
-
-def test_library_generator_returns_a_genuine_description() -> None:
-    import ui.ui_pages.library as library
-
-    provider = _ScriptedProvider([GOOD])
-    description, reason = library.generate_library_description(
-        provider, "grace and mercy " * 40, "Sunday Service", "Test Speaker"
-    )
-
-    assert description == GOOD
-    assert reason is None
-
-
-def test_both_generators_route_through_shared_validator(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import ui.ui_pages.library as library
-
-    seen: list[str] = []
-
-    def _fake_validate(raw, regenerate, **_kwargs):
-        seen.append(raw)
-        return GOOD, None
-
-    monkeypatch.setattr(su, "validate_description", _fake_validate)
-    monkeypatch.setattr(library, "validate_description", _fake_validate)
-    monkeypatch.setattr(su, "llm_manager", _manager_with(_ScriptedProvider([GOOD])))
-
-    su.generate_summary("grace and mercy " * 40)
-    library.generate_library_description(
-        _ScriptedProvider([GOOD]), "grace and mercy " * 40, "Sunday Service", "Test Speaker"
-    )
-
-    assert len(seen) == 2
 
 
 def test_metadata_job_logs_rejection_reason_and_keeps_description(
