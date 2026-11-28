@@ -43,6 +43,7 @@ function useDesktopWorkspace(): boolean {
     if (typeof window.matchMedia !== "function") return;
     const query = window.matchMedia("(min-width: 768px)");
     const update = () => setDesktop(query.matches);
+    update();
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
   }, []);
@@ -163,6 +164,7 @@ function TeachingWorkspace({ id }: { id?: string }) {
 
   const remove = () => {
     if (!id) return;
+    dialogs.closeNotes();
     setConfirmDelete(false);
     setDeleted(true);
     setPendingDelete(true);

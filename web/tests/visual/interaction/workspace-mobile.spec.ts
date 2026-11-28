@@ -12,6 +12,8 @@ test.describe("mobile teaching review", () => {
     await expect(page.getByTestId("timeline")).toHaveCount(0);
     await expect(page.getByTestId("cut-toggle-start")).toHaveCount(0);
     await expect(page.getByTestId("cut-menu-interior-0")).toHaveCount(0);
+    await expect(page.getByRole("tablist")).toHaveCount(0);
+    await expect(page.getByTestId("workspace-accordion-details")).toBeVisible();
 
     const geometry = await page.getByTestId("approval-bar").evaluate((element) => {
       const rect = element.getBoundingClientRect();
@@ -27,6 +29,14 @@ test.describe("mobile teaching review", () => {
     expect(geometry.height).toBeLessThanOrEqual(58);
     expect(geometry.navTop).not.toBeNull();
     expect(geometry.bottom).toBeLessThanOrEqual(geometry.navTop ?? 0);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(page.getByTestId("timeline")).toBeVisible();
+    await expect(page.getByRole("tablist")).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByTestId("timeline")).toHaveCount(0);
+    await expect(page.getByRole("tablist")).toHaveCount(0);
+    await expect(page.getByTestId("workspace-accordion-details")).toBeVisible();
   });
 
   test("opens the one-line status as a named dialog and returns focus", async ({ page }) => {

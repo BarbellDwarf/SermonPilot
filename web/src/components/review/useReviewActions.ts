@@ -154,36 +154,39 @@ export function useReviewActions({
       });
   };
 
-  const submitRefine = (noteOverride: string) => {
+  const submitRefine = async (noteOverride: string): Promise<boolean> => {
     const note = noteOverride.trim();
-    if (!note || refining) return;
+    if (!note || refining) return false;
     if (isLive) {
       setRefining(true);
-      void writeApi.refinePlan(sermon.id, note)
-        .then((result) => {
-          setRefining(false);
-          onRefresh?.();
-          onJobQueued?.(result.job_id, "Re-detection queued with your notes.");
-          onToast("Re-detection queued with your notes. The panel updates when the new proposal is ready.");
-        })
-        .catch((error: unknown) => {
-          setRefining(false);
-          const message = (error as Error).message;
-          onToast(/409/.test(message) ? "A job is already running for this teaching." : `Could not queue: ${message}`, /409/.test(message) ? "info" : "error");
-        });
-      return;
+      try {
+        const result = await writeApi.refinePlan(sermon.id, note);
+        onRefresh?.();
+        onJobQueued?.(result.job_id, "Re-detection queued with your notes.");
+        onToast("Re-detection queued with your notes. The panel updates when the new proposal is ready.");
+        return true;
+      } catch (error) {
+        const message = (error as Error).message;
+        onToast(/409/.test(message) ? "A job is already running for this teaching." : `Could not queue: ${message}`, /409/.test(message) ? "info" : "error");
+        return false;
+      } finally {
+        setRefining(false);
+      }
     }
     setRefining(true);
-    window.setTimeout(() => {
-      setRefining(false);
-      const nextRevision = plan.revision + 1;
-      const jobId = nextMockJob();
-      setMockNotes((rows) => [...rows, { revision: nextRevision, note }]);
-      setStatusLog((history) => [...history, `revision ${plan.revision} superseded`]);
-      setPlan((current) => ({ ...current, status: "pending_review", revision: nextRevision, revisionsTotal: Math.max(current.revisionsTotal, nextRevision), reasoning: `Re-ran detection against your note: "${note}".` }));
-      onJobQueued?.(jobId, "Re-detection queued with your notes.");
-      onToast("New cut proposal ready (demo). Previous revision superseded.");
-    }, 900);
+    return new Promise<boolean>((resolve) => {
+      window.setTimeout(() => {
+        setRefining(false);
+        const nextRevision = plan.revision + 1;
+        const jobId = nextMockJob();
+        setMockNotes((rows) => [...rows, { revision: nextRevision, note }]);
+        setStatusLog((history) => [...history, `revision ${plan.revision} superseded`]);
+        setPlan((current) => ({ ...current, status: "pending_review", revision: nextRevision, revisionsTotal: Math.max(current.revisionsTotal, nextRevision), reasoning: `Re-ran detection against your note: "${note}".` }));
+        onJobQueued?.(jobId, "Re-detection queued with your notes.");
+        onToast("New cut proposal ready (demo). Previous revision superseded.");
+        resolve(true);
+      }, 900);
+    });
   };
 
   const reDetect = () => {

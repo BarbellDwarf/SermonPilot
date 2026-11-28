@@ -23,12 +23,17 @@ export function useWorkspaceDialogs({
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
   const [replacing, setReplacing] = useState(false);
   const [replaceError, setReplaceError] = useState<string | null>(null);
-  const submitNotesRef = useRef<(note: string) => void>(() => undefined);
+  const submitNotesRef = useRef<(note: string) => Promise<boolean>>(async () => false);
 
   const openNotes = () => {
     setNotesText("");
     setNotesSubmitting(false);
     setNotesOpen(true);
+  };
+  const closeNotes = () => {
+    setNotesOpen(false);
+    setNotesText("");
+    setNotesSubmitting(false);
   };
 
   const openReplace = () => {
@@ -60,15 +65,16 @@ export function useWorkspaceDialogs({
         </div>
       </WorkspaceDialog>
       <WorkspaceDialog open={notesOpen} title="Send back with note" onClose={() => { if (!notesSubmitting) setNotesOpen(false); }} testId="send-back-dialog" initialFocus="content">
-        <form className="flex flex-col gap-3" onSubmit={(event) => {
+        <form className="flex flex-col gap-3" onSubmit={async (event) => {
           event.preventDefault();
           const note = notesText.trim();
           if (!note || notesSubmitting) return;
           setNotesSubmitting(true);
-          submitNotesRef.current(note);
+          const submitted = await submitNotesRef.current(note);
+          setNotesSubmitting(false);
+          if (!submitted) return;
           setNotesOpen(false);
           setNotesText("");
-          setNotesSubmitting(false);
         }}>
           <label htmlFor="send-back-note" className="text-sm font-semibold">Note</label>
           <textarea id="send-back-note" autoFocus rows={4} value={notesText} onChange={(event) => setNotesText(event.target.value)} disabled={notesSubmitting} className="min-h-[44px] w-full rounded-md border border-line bg-ink p-3 text-sm text-mist" placeholder="What should change in the next proposal?" />
@@ -90,8 +96,9 @@ export function useWorkspaceDialogs({
   return {
     openStatus: () => setStatusOpen(true),
     openNotes,
+    closeNotes,
     openReplace,
-    registerNotesHandler: (handler: (note: string) => void) => { submitNotesRef.current = handler; },
+    registerNotesHandler: (handler: (note: string) => Promise<boolean>) => { submitNotesRef.current = handler; },
     dialogs,
   };
 }

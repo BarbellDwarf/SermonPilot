@@ -263,6 +263,25 @@ describe("Teaching lifecycle actions", () => {
     await expect(screen.findByTestId("queued-state")).resolves.toBeTruthy();
   });
 
+  it("keeps the note when refinement fails", async () => {
+    const user = userEvent.setup();
+    vi.mocked(writeApi.refinePlan).mockRejectedValueOnce(new Error("refine failed"));
+    setSermon("rendered", false);
+    renderDetail();
+    await user.click(screen.getByTestId("more-actions-trigger"));
+    await user.click(within(screen.getByTestId("more-actions")).getByRole("menuitem", { name: "Send back with note" }));
+
+    const dialog = screen.getByRole("dialog");
+    const note = within(dialog).getByLabelText("Note");
+    await user.type(note, "Keep the second class.");
+    await user.click(within(dialog).getByRole("button", { name: "Re-run with notes" }));
+
+    await waitFor(() => expect(writeApi.refinePlan).toHaveBeenCalledWith("s-1", "Keep the second class."));
+    await expect(dialog).toBeVisible();
+    expect(note).toHaveValue("Keep the second class.");
+    expect(within(dialog).getByRole("button", { name: "Re-run with notes" })).toBeEnabled();
+  });
+
   it("queues an existing render from the workspace menu", async () => {
     const user = userEvent.setup();
     setSermon("draft", true);

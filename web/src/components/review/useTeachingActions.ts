@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, api, isLive, writeApi } from "../../api/client";
 import type { QueuedWorkspaceJob } from "./DecisionRail";
@@ -15,13 +15,26 @@ export function useTeachingActions({ id, onToast }: TeachingActionsOptions) {
   const [detectingPlan, setDetectingPlan] = useState(false);
   const [queuedJob, setQueuedJob] = useState<QueuedWorkspaceJob | null>(null);
   const mockJobSequence = useRef(3000);
+  const mockTimers = useRef<number[]>([]);
   const nextMockJob = () => `job-${++mockJobSequence.current}`;
+  const scheduleMock = useCallback((callback: () => void, delay: number) => {
+    const timer = window.setTimeout(() => {
+      mockTimers.current = mockTimers.current.filter((id) => id !== timer);
+      callback();
+    }, delay);
+    mockTimers.current.push(timer);
+  }, []);
+
+  useEffect(() => () => {
+    for (const timer of mockTimers.current) window.clearTimeout(timer);
+    mockTimers.current = [];
+  }, []);
 
   const clearQueuedJob = useCallback(() => setQueuedJob(null), []);
   const captureJob = useCallback((jobId: string, message: string) => {
     setQueuedJob({ id: jobId, message });
     if (!isLive) {
-      window.setTimeout(() => {
+      scheduleMock(() => {
         setQueuedJob((current) => current?.id === jobId ? null : current);
       }, 1200);
     }
@@ -29,13 +42,13 @@ export function useTeachingActions({ id, onToast }: TeachingActionsOptions) {
     void queryClient.invalidateQueries({ queryKey: ["sermon-plan", id] });
     void queryClient.invalidateQueries({ queryKey: ["jobs"] });
     void queryClient.invalidateQueries({ queryKey: ["sermons"] });
-  }, [id, queryClient]);
+  }, [id, queryClient, scheduleMock]);
 
   const publish = () => {
     if (!id || queueing || queuedJob) return;
     if (!isLive) {
       setQueueing(true);
-      window.setTimeout(() => {
+      scheduleMock(() => {
         setQueueing(false);
         captureJob(nextMockJob(), "Upload queued.");
         onToast("Publish queued (demo).", "info");
@@ -60,7 +73,7 @@ export function useTeachingActions({ id, onToast }: TeachingActionsOptions) {
     if (!id || detectingPlan || queuedJob) return;
     if (!isLive) {
       setDetectingPlan(true);
-      window.setTimeout(() => {
+      scheduleMock(() => {
         setDetectingPlan(false);
         captureJob(nextMockJob(), "Cut detection queued.");
         onToast("Cut detection queued (demo).", "info");
