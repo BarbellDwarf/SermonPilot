@@ -177,6 +177,80 @@ describe("useActivityJobs", () => {
     );
     expect(result.current.page).toBe(1);
   });
+
+  it("ranks restart-marked failures with interrupted jobs", async () => {
+    const jobs: ApiJob[] = [
+      {
+        ...base,
+        id: "plain-failed",
+        status: "failed",
+        error: "Gateway timeout",
+        created_at: "2026-01-01T12:00:03Z",
+      },
+      {
+        ...base,
+        id: "restart-failed",
+        status: "failed",
+        error: "Job interrupted by app restart: the worker no longer exists.",
+        created_at: "2026-01-01T12:00:01Z",
+      },
+      {
+        ...base,
+        id: "cancelled",
+        status: "cancelled",
+        error: "Job cancelled by user",
+        created_at: "2026-01-01T12:00:02Z",
+      },
+    ];
+    apiMocks.jobs.mockImplementation(async (params: { status?: string }) => ({
+      items: params.status ? [] : jobs,
+      total: params.status ? 0 : jobs.length,
+    }));
+
+    const { result } = renderHook(() => useActivityJobs("all"), {
+      wrapper: queryWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.jobs.map((job) => job.id)).toEqual([
+      "restart-failed",
+      "plain-failed",
+      "cancelled",
+    ]);
+  });
+
+  it("clamps the page and requests the first page when the total shrinks", async () => {
+    let total = 125;
+    apiMocks.jobs.mockImplementation(async (params: { status?: string }) => ({
+      items: [],
+      total: params.status === "failed" ? total : 0,
+    }));
+
+    const { result } = renderHook(() => useActivityJobs("failed"), {
+      wrapper: queryWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.pageCount).toBe(3));
+    act(() => result.current.nextPage());
+    await waitFor(() => expect(result.current.page).toBe(1));
+    act(() => result.current.nextPage());
+    await waitFor(() => expect(result.current.page).toBe(2));
+    await waitFor(() =>
+      expect(apiMocks.jobs).toHaveBeenCalledWith({ status: "failed", limit: 50, offset: 100 }),
+    );
+
+    apiMocks.jobs.mockClear();
+    total = 10;
+    act(() => result.current.retry());
+
+    await waitFor(() => expect(result.current.total).toBe(10));
+    await waitFor(() => expect(result.current.page).toBe(0));
+    await waitFor(() =>
+      expect(apiMocks.jobs).toHaveBeenCalledWith({ status: "failed", limit: 50, offset: 0 }),
+    );
+    await waitFor(() => expect(result.current.total).toBe(10));
+    expect(result.current.pageCount).toBe(1);
+  });
 });
 
 describe("useJobDetail", () => {

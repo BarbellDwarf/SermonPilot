@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from server.api.accounts import get_db_path
+from ui.job_queue import INTERRUPTED_BY_RESTART_MARKER
 
 _JOB_COLUMNS = (
     "id, type, title, description, status, progress, parameters, result, logs,"
@@ -23,10 +24,16 @@ def _insert_job(
     status: str = "failed",
     *,
     created_at: str | None = None,
+    result: dict[str, Any] | None = None,
+    logs: list[str] | None = None,
 ) -> None:
     created_at = created_at or datetime.now().isoformat()
     started_at = created_at if status != "queued" else None
     completed_at = created_at if status in {"completed", "failed", "cancelled"} else None
+    if result is None:
+        result = {"success": False, "message": "failed", "error": "boom"}
+    if logs is None:
+        logs = [f"original log {job_id}"]
     conn = sqlite3.connect(get_db_path())
     conn.execute(
         f"INSERT INTO background_jobs ({_JOB_COLUMNS})"
@@ -39,8 +46,8 @@ def _insert_job(
             status,
             65.0,
             json.dumps({"sermon_id": "s-a", "nested": {"keep": True}}),
-            json.dumps({"success": False, "message": "failed", "error": "boom"}),
-            json.dumps([f"original log {job_id}"]),
+            json.dumps(result),
+            json.dumps(logs),
             created_at,
             started_at,
             completed_at,
@@ -223,6 +230,181 @@ def test_jobs_offset_and_total_are_scoped_and_stable(client, scoped_setup):
     other = client.get("/api/jobs", headers=scoped_setup["b"]["headers"]).json()
     assert other["total"] == 3
     assert [item["id"] for item in other["items"]] == ["b-2", "b-1", "b-0"]
+
+
+def test_jobs_active_filter_includes_queued_and_running_with_scoped_paging(client, scoped_setup):
+    conn = sqlite3.connect(get_db_path())
+    conn.execute("DELETE FROM background_jobs")
+    conn.commit()
+    conn.close()
+    for index, (job_id, owner, status) in enumerate(
+        [
+            ("a-queued", scoped_setup["a"]["id"], "queued"),
+            ("a-running", scoped_setup["a"]["id"], "running"),
+            ("a-completed", scoped_setup["a"]["id"], "completed"),
+            ("b-running", scoped_setup["b"]["id"], "running"),
+        ]
+    ):
+        _insert_job(
+            job_id,
+            owner,
+            status,
+            created_at=f"2026-11-28T12:00:0{index}",
+        )
+
+    headers = scoped_setup["a"]["headers"]
+    first = client.get(
+        "/api/jobs", params={"status": "active", "limit": 1, "offset": 0}, headers=headers
+    ).json()
+    assert first["total"] == 2
+    assert [item["id"] for item in first["items"]] == ["a-running"]
+
+    second = client.get(
+        "/api/jobs", params={"status": "active", "limit": 1, "offset": 1}, headers=headers
+    ).json()
+    assert second["total"] == 2
+    assert [item["id"] for item in second["items"]] == ["a-queued"]
+
+    other = client.get(
+        "/api/jobs", params={"status": "active"}, headers=scoped_setup["b"]["headers"]
+    ).json()
+    assert other["total"] == 1
+    assert [item["id"] for item in other["items"]] == ["b-running"]
+
+
+def test_jobs_completed_filter_includes_only_completed_jobs(client, scoped_setup):
+    conn = sqlite3.connect(get_db_path())
+    conn.execute("DELETE FROM background_jobs")
+    conn.commit()
+    conn.close()
+    _insert_job("a-completed", scoped_setup["a"]["id"], "completed")
+    _insert_job("a-failed", scoped_setup["a"]["id"], "failed")
+    _insert_job("b-completed", scoped_setup["b"]["id"], "completed")
+
+    body = client.get(
+        "/api/jobs", params={"status": "completed"}, headers=scoped_setup["a"]["headers"]
+    ).json()
+
+    assert body["total"] == 1
+    assert [item["id"] for item in body["items"]] == ["a-completed"]
+
+
+def test_jobs_failed_filter_includes_cancelled_and_excludes_restart_markers(client, scoped_setup):
+    conn = sqlite3.connect(get_db_path())
+    conn.execute("DELETE FROM background_jobs")
+    conn.commit()
+    conn.close()
+    owner = scoped_setup["a"]["id"]
+    _insert_job("a-cancelled", owner, "cancelled", created_at="2026-11-28T12:00:04")
+    _insert_job("a-failed", owner, "failed", created_at="2026-11-28T12:00:03")
+    _insert_job(
+        "a-interrupted-result",
+        owner,
+        "failed",
+        created_at="2026-11-28T12:00:02",
+        result={"success": False, "error": INTERRUPTED_BY_RESTART_MARKER},
+    )
+    _insert_job(
+        "a-interrupted-logs",
+        owner,
+        "cancelled",
+        created_at="2026-11-28T12:00:01",
+        logs=[INTERRUPTED_BY_RESTART_MARKER],
+    )
+    _insert_job("b-cancelled", scoped_setup["b"]["id"], "cancelled")
+
+    headers = scoped_setup["a"]["headers"]
+    first = client.get(
+        "/api/jobs", params={"status": "failed", "limit": 1, "offset": 0}, headers=headers
+    ).json()
+    assert first["total"] == 2
+    assert [item["id"] for item in first["items"]] == ["a-cancelled"]
+
+    second = client.get(
+        "/api/jobs", params={"status": "failed", "limit": 1, "offset": 1}, headers=headers
+    ).json()
+    assert second["total"] == 2
+    assert [item["id"] for item in second["items"]] == ["a-failed"]
+
+    other = client.get(
+        "/api/jobs", params={"status": "failed"}, headers=scoped_setup["b"]["headers"]
+    ).json()
+    assert other["total"] == 1
+    assert [item["id"] for item in other["items"]] == ["b-cancelled"]
+
+
+def test_jobs_interrupted_filter_matches_result_and_logs_for_terminal_jobs(client, scoped_setup):
+    conn = sqlite3.connect(get_db_path())
+    conn.execute("DELETE FROM background_jobs")
+    conn.commit()
+    conn.close()
+    owner = scoped_setup["a"]["id"]
+    _insert_job(
+        "a-result-error",
+        owner,
+        "failed",
+        created_at="2026-11-28T12:00:06",
+        result={"success": False, "error": INTERRUPTED_BY_RESTART_MARKER},
+    )
+    _insert_job(
+        "a-logs",
+        owner,
+        "cancelled",
+        created_at="2026-11-28T12:00:05",
+        logs=[f"prefix {INTERRUPTED_BY_RESTART_MARKER} suffix"],
+    )
+    _insert_job(
+        "a-result-message",
+        owner,
+        "failed",
+        created_at="2026-11-28T12:00:04",
+        result={"success": False, "message": INTERRUPTED_BY_RESTART_MARKER},
+    )
+    _insert_job("a-plain-failed", owner, "failed", created_at="2026-11-28T12:00:03")
+    _insert_job("a-plain-cancelled", owner, "cancelled", created_at="2026-11-28T12:00:02")
+    _insert_job(
+        "a-running-marker",
+        owner,
+        "running",
+        created_at="2026-11-28T12:00:01",
+        result={"success": False, "error": INTERRUPTED_BY_RESTART_MARKER},
+    )
+    _insert_job(
+        "b-result-error",
+        scoped_setup["b"]["id"],
+        "failed",
+        result={"success": False, "error": INTERRUPTED_BY_RESTART_MARKER},
+    )
+
+    headers = scoped_setup["a"]["headers"]
+    first = client.get(
+        "/api/jobs", params={"status": "interrupted", "limit": 2, "offset": 0}, headers=headers
+    ).json()
+    assert first["total"] == 3
+    assert [item["id"] for item in first["items"]] == ["a-result-error", "a-logs"]
+
+    second = client.get(
+        "/api/jobs", params={"status": "interrupted", "limit": 2, "offset": 2}, headers=headers
+    ).json()
+    assert second["total"] == 3
+    assert [item["id"] for item in second["items"]] == ["a-result-message"]
+
+
+def test_jobs_unknown_status_keeps_exact_match_behavior(client, scoped_setup):
+    conn = sqlite3.connect(get_db_path())
+    conn.execute("DELETE FROM background_jobs")
+    conn.commit()
+    conn.close()
+    _insert_job("a-paused", scoped_setup["a"]["id"], "paused")
+    _insert_job("a-failed", scoped_setup["a"]["id"], "failed")
+    _insert_job("b-paused", scoped_setup["b"]["id"], "paused")
+
+    body = client.get(
+        "/api/jobs", params={"status": "paused"}, headers=scoped_setup["a"]["headers"]
+    ).json()
+
+    assert body["total"] == 1
+    assert [item["id"] for item in body["items"]] == ["a-paused"]
 
 
 @pytest.mark.parametrize("params", [{"limit": 0}, {"limit": 1001}, {"offset": -1}])

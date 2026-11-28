@@ -58,8 +58,21 @@ def _job_query_filters(status: str | None, user_id: str | None) -> tuple[str, li
     clauses: list[str] = []
     params: list[Any] = []
     if status:
-        clauses.append("status = ?")
-        params.append(status)
+        if status == "active":
+            clauses.append("status IN ('queued', 'running')")
+        elif status in {"failed", "interrupted"}:
+            from ui.job_queue import INTERRUPTED_BY_RESTART_MARKER
+
+            marker = f"%{INTERRUPTED_BY_RESTART_MARKER}%"
+            marker_match = "(COALESCE(result, '') LIKE ? OR COALESCE(logs, '') LIKE ?)"
+            if status == "failed":
+                clauses.append(f"(status IN ('failed', 'cancelled') AND NOT {marker_match})")
+            else:
+                clauses.append(f"(status IN ('failed', 'cancelled') AND {marker_match})")
+            params.extend((marker, marker))
+        else:
+            clauses.append("status = ?")
+            params.append(status)
     if user_id is not None:
         clauses.append("user_id = ?")
         params.append(user_id)

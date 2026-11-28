@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   activeJobs,
   completedJobs,
@@ -619,14 +619,14 @@ function partitionJobs(jobs: Job[]): JobsData {
 export type ActivityFilter = "all" | ActivityJobState;
 
 const ACTIVITY_FILTERS: ActivityFilter[] = ["all", "active", "completed", "failed", "interrupted"];
-const ACTIVITY_PAGE_SIZE = 50;
+export const ACTIVITY_PAGE_SIZE = 50;
 
 function activityStateRank(job: Job): number {
   if (job.state === "running") return 0;
   if (job.state === "queued") return 1;
-  if (job.state === "failed") return 2;
-  if (job.state === "cancelled") return 3;
-  if (jobActivityState(job) === "interrupted") return 4;
+  if (jobActivityState(job) === "interrupted") return 2;
+  if (job.state === "failed") return 3;
+  if (job.state === "cancelled") return 4;
   return 5;
 }
 
@@ -639,6 +639,7 @@ function sortActivityJobs(jobs: Job[]): Job[] {
 }
 
 export function useActivityJobs(state: ActivityFilter) {
+  const queryClient = useQueryClient();
   const [pages, setPages] = useState<Record<ActivityFilter, number>>({
     all: 0,
     active: 0,
@@ -646,12 +647,12 @@ export function useActivityJobs(state: ActivityFilter) {
     failed: 0,
     interrupted: 0,
   });
-  const page = pages[state];
+  const requestedPage = pages[state];
   const queries = useQueries({
     queries: ACTIVITY_FILTERS.map((filter) => {
       const selected = filter === state;
       const limit = selected ? ACTIVITY_PAGE_SIZE : 1;
-      const offset = selected ? page * ACTIVITY_PAGE_SIZE : 0;
+      const offset = selected ? requestedPage * ACTIVITY_PAGE_SIZE : 0;
       return {
         queryKey: ["jobs", "activity", filter, limit, offset],
         queryFn: () =>
@@ -669,6 +670,14 @@ export function useActivityJobs(state: ActivityFilter) {
   const selected = queries[ACTIVITY_FILTERS.indexOf(state)];
   const total = selected.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / ACTIVITY_PAGE_SIZE));
+  const page = isLive && selected.data ? Math.min(requestedPage, pageCount - 1) : requestedPage;
+  useEffect(() => {
+    if (!isLive || page === requestedPage) return;
+    setPages((current) => ({ ...current, [state]: page }));
+    void queryClient.invalidateQueries({
+      queryKey: ["jobs", "activity", state, ACTIVITY_PAGE_SIZE, page * ACTIVITY_PAGE_SIZE],
+    });
+  }, [isLive, page, queryClient, requestedPage, state]);
   const counts = ACTIVITY_FILTERS.reduce(
     (result, filter, index) => {
       result[filter] = queries[index].data?.total ?? 0;

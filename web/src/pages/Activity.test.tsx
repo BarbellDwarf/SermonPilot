@@ -419,6 +419,20 @@ describe("Activity filters and URLs", () => {
     expect(screen.queryByTestId("job-row-job-running")).toBeNull();
   });
 
+  it("removes an invalid state value while preserving the job deep link", async () => {
+    mocks.jobsData.mockReturnValue(jobsData([], [], [job({ id: "job-failed", state: "failed" })]));
+
+    renderActivity("/activity/job-failed?state=unknown&job=job-failed");
+
+    expect(mocks.activityJobs).toHaveBeenCalledWith("all");
+    expect(screen.getByTestId("job-row-job-failed").getAttribute("aria-expanded")).toBe("true");
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        "/activity/job-failed?job=job-failed",
+      ),
+    );
+  });
+
   it("opens a route deep link expanded and preserves the filter on back", () => {
     const failed = job({ id: "job-failed", state: "failed" });
     mocks.activityJobs.mockImplementation((state: ActivityState) =>

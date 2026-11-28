@@ -16,6 +16,7 @@ import {
 } from "../components/ui";
 import { useToast } from "../components/toast";
 import {
+  ACTIVITY_PAGE_SIZE,
   QueryError,
   useActivityJobs,
   useJobDetail,
@@ -360,8 +361,15 @@ export function Activity() {
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const data = useActivityJobs(state);
-  const rows = data.jobs.filter((job) => !removed.includes(job.id));
+  const rows = isLive ? data.jobs : data.jobs.filter((job) => !removed.includes(job.id));
   const hasRunning = rows.some((job) => job.state === "running");
+
+  useEffect(() => {
+    if (stateParam === null || FILTERS.some((filter) => filter.id === stateParam)) return;
+    const next = new URLSearchParams(location.search);
+    next.delete("state");
+    navigate({ pathname: location.pathname, search: next.toString() }, { replace: true });
+  }, [location.pathname, location.search, navigate, stateParam]);
 
   useEffect(() => {
     if (!hasRunning) return;
@@ -504,10 +512,10 @@ export function Activity() {
         <p className="font-mono">
           {data.total === 0
             ? "0 jobs"
-            : `${data.page * 50 + 1}-${Math.min((data.page + 1) * 50, data.total)} of ${formatCount(
+            : `${data.page * ACTIVITY_PAGE_SIZE + 1}-${Math.min(
+                (data.page + 1) * ACTIVITY_PAGE_SIZE,
                 data.total,
-                "job",
-              )}`}
+              )} of ${formatCount(data.total, "job")}`}
         </p>
       </div>
 
