@@ -337,16 +337,25 @@ export function NewSermon() {
         logoPath,
         fadeBlack,
       });
+    } catch (e) {
+      showToast(`Could not save run defaults: ${(e as Error).message}`, "error");
+      setSavingDefaults(false);
+      return;
+    }
+    try {
       if (isLive) {
         const result = await outputDirApi.put(outputDir);
         defaultOutputDir.current = result.output_dir;
         defaultOutputSource.current = result.source;
         setOutputDir(result.output_dir);
         setOutputSource(result.source);
+      } else {
+        defaultOutputDir.current = outputDir;
+        defaultOutputSource.current = outputSource === "run" ? "user" : outputSource;
       }
       showToast(isLive ? "Saved as your default." : "Defaults saved for this demo session.");
     } catch (e) {
-      showToast(`Could not save defaults: ${(e as Error).message}`, "error");
+      showToast(`Run defaults saved, but the output folder could not be saved: ${(e as Error).message}`, "error");
     } finally {
       setSavingDefaults(false);
     }

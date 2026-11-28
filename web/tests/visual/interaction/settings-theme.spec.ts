@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+test("stored light theme applies before the app mounts", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("sp_theme", "light"));
+  await page.goto("/settings/preferences", { waitUntil: "domcontentloaded" });
+  await expect(page.locator("html")).toHaveClass(/light/);
+});
+
 test("Light applies immediately and survives reload", async ({ page }) => {
   await page.goto("/settings/preferences");
   await expect(page.locator("html")).toHaveClass(/dark/);

@@ -43,3 +43,11 @@ test("run summary shows human choices and dry run", async ({ page }) => {
   await expect(summary).toContainText("Metadata generated");
   await expect(page.getByRole("button", { name: "Save as my default" })).toBeVisible();
 });
+
+test("shows the readiness hint on a phone", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload();
+  const readiness = page.locator("#ns-readiness");
+  await expect(readiness).toBeVisible();
+  await expect(readiness).not.toBeEmpty();
+});

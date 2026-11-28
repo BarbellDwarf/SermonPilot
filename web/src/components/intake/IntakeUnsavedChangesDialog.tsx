@@ -8,7 +8,7 @@ export function IntakeUnsavedChangesDialog({
   when: boolean;
   suppressed?: boolean;
 }) {
-  const blocker = useUnsavedChanges(when);
+  const blocker = useUnsavedChanges(when && !suppressed);
   const blocked = blocker.state === "blocked";
 
   if (suppressed) return null;

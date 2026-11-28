@@ -445,11 +445,15 @@ function ProcessingSection({ show }: { show: ShowMessage }) {
         </p>
       ) : null}
       <SaveBar
-        dirty={isDirty && offsetOk}
+        dirty={isDirty}
         busy={saving}
         error={saveError}
         label="Save processing defaults"
         onSave={async () => {
+          if (!offsetOk) {
+            setSaveError("Offset must be a number in seconds.");
+            return;
+          }
           setSaving(true);
           setSaveError(null);
           try {

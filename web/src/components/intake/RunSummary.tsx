@@ -74,7 +74,7 @@ export function RunSummary({
         <div className="ml-auto min-w-0 sm:mt-2 sm:flex sm:items-center sm:gap-3 lg:mt-2 lg:block">
           <p
             id="ns-readiness"
-            className="sr-only min-w-0 truncate text-xs text-muted sm:not-sr-only"
+            className="min-w-0 truncate text-xs text-muted"
             role="status"
             aria-live="polite"
           >

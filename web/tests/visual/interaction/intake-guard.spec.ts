@@ -20,6 +20,19 @@ test("asks before leaving a draft and Discard continues to Library", async ({ pa
   await expect(page).toHaveURL(/\/library$/);
 });
 
+test("browser Back works while the reset dialog is open", async ({ page }) => {
+  await page.goto("/library");
+  await page.goto("/new");
+  await page.getByLabel("Title (required)").fill("Draft title");
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Reset form" }).click();
+  await expect(page.getByRole("dialog", { name: "Reset this form?" })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/library$/);
+  await expect(page.getByRole("dialog", { name: "Unsaved changes" })).toHaveCount(0);
+});
+
 test("reset clears the navigation guard", async ({ page }) => {
   await page.getByLabel("Title (required)").fill("Draft title");
   await page.getByRole("button", { name: "More actions" }).click();

@@ -22,6 +22,21 @@ function storeTheme(value: ThemePreference): void {
   }
 }
 
+function withFallback<T>(fallback: T, value: unknown): T {
+  if (value === null || value === undefined) return fallback;
+  if (
+    typeof fallback === "object" &&
+    fallback !== null &&
+    !Array.isArray(fallback) &&
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  ) {
+    return { ...fallback, ...value } as T;
+  }
+  return value as T;
+}
+
 export function useUserSettings<T>(
   key: string,
   fallback: T,
@@ -32,7 +47,7 @@ export function useUserSettings<T>(
     queryKey,
     queryFn: async () => {
       const result = await settingsApi.get(key);
-      return (result.value ?? fallback) as T;
+      return withFallback(fallback, result.value);
     },
     enabled: isLive,
     initialData: isLive ? undefined : fallback,
@@ -44,7 +59,7 @@ export function useUserSettings<T>(
     mutationFn: async (next: T) => {
       if (!isLive) return next;
       const result = await settingsApi.put(key, next);
-      return (result.value ?? next) as T;
+      return withFallback(next, result.value);
     },
     onMutate: (next: T) => {
       void queryClient.cancelQueries({ queryKey });
