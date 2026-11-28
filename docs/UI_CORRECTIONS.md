@@ -1,7 +1,7 @@
 # UI Corrections
 
 Open items from the React console review at commit `d4d2532`. Scope is `web/`.
-The legacy Streamlit UI is deprecated and scheduled for removal; see
+The legacy Streamlit UI has been removed; see
 [Legacy Streamlit removal](#legacy-streamlit-removal).
 
 Baseline test status: `npm run visual` passed 108/108, but the suite only takes
@@ -226,24 +226,19 @@ the demo button.
 
 ## Legacy Streamlit removal
 
-Do not delete `ui/` wholesale. The web API and job worker import shared backend
-modules from it.
+Completed. `ui/` now holds only backend modules that the console API, worker,
+CLI, and tests import. Presentation files and dependencies are gone.
 
-Remove presentation only:
+Removed:
 
-- `streamlit_app.py`
-- `ui/pages.py`
-- `ui/shared_navigation.py`
-- `ui/ui_state.py`
-- `ui/ui_processor.py` after confirming no server import remains
+- `streamlit_app.py`, `ui/pages.py`, `ui/shared_navigation.py`,
+  `ui/ui_state.py`, `ui/ui_processor.py`
 - `ui/ui_pages/**`
-- `ui/components/audio_editor.py`
-- `ui/components/audio_preview.py`
-- `ui/components/audio_waveform.py`
-- `ui/components/processing_modes.py`
-- `ui/components/__init__.py` if it becomes empty
+- `ui/components/` (all four audio widgets plus its package init)
+- the root and `ui/` Streamlit config directories, `ui/README.md`, and
+  `ui/requirements-ui.txt`
 
-Keep or split, do not blindly delete:
+Kept:
 
 - `ui/database.py`, `ui/job_queue.py`, `ui/job_executors.py`,
   `ui/job_worker.py`, `ui/config_utils.py`, `ui/sermonaudio_api.py`,
@@ -252,24 +247,27 @@ Keep or split, do not blindly delete:
   `ui/upload_only.py`, `ui/version.py`, `ui/system_status.py`,
   `ui/performance_monitor.py`, `ui/analytics_manager.py`, `ui/media_server.py`,
   `ui/auth.py`, `ui/job_labels.py`, `ui/auto_edit_apply.py`.
-- `ui/auth.py` and `ui/config_utils.py` still import Streamlit. Remove the
-  Streamlit-only code paths while preserving the functions the API and tests
-  use.
+- Streamlit imports and widget code were stripped from `ui/auth.py`,
+  `ui/config_utils.py`, and `ui/sermon_metadata.py`; the API and tests keep
+  the remaining token, config, and metadata-cache functions. The startup
+  trash/job sweep moved from `streamlit_app.py` to `ui/job_worker.py`.
 
-Sweep the rest:
+Also completed:
 
-- `pyproject.toml`: remove the `streamlit` dependency and the
-  `streamlit_app.py` script entry.
-- `requirements/requirements.txt` and `ui/requirements-ui.txt`.
-- `docker-compose.yml`: remove `STREAMLIT_SERVER_MAX_UPLOAD_SIZE`.
-- `docker/nginx/nginx.conf`: it still proxies `/` to port 8501. Update it to the
-  web API and SPA, or delete it if the image does not use it.
-- `server/api/routers/meta.py`: `streamlit_ready` is now console readiness.
-  Rename with a compatibility alias if clients depend on it.
-- `AGENTS.md`, `README.md`, `docs/README.md`, and Streamlit-era docs. Keep
-  historical release notes; mark current guides as web-console only.
-- Tests that import Streamlit pages or components. Rewrite or delete them; keep
-  coverage for shared backend modules.
+- `pyproject.toml`: removed the `streamlit` dependency and the
+  `streamlit_app.py` script entry; `python-multipart` is now an explicit
+  dependency because FastAPI uploads previously got it transitively from
+  Streamlit.
+- `requirements/requirements.txt`, `docker-compose.yml`, and `.env.example`
+  lost their Streamlit entries.
+- `docker/nginx/nginx.conf` now proxies the console/API on port 8504.
+- `server/api/routers/meta.py` returns `console_ready` instead of
+  `streamlit_ready`; the console client was updated with it.
+- `AGENTS.md`, `README.md`, `docs/README.md`, and the Streamlit-era guides
+  were updated or marked historical. Historical release notes remain.
+- Streamlit page tests were removed; shared backend tests were kept and the
+  helpers that lived in page modules were retargeted at
+  `ui.auto_edit_apply`.
 
 Acceptance:
 
@@ -330,7 +328,7 @@ rule from `web/DESIGN.md`, and a suggested fix with the test that would catch it
 - [ ] UI-16 Light theme surfaces separated
 - [ ] UI-17 Review density reduced
 - [ ] UI-18 Demo dropzone behavior documented
-- [ ] Legacy Streamlit removal complete
+- [x] Legacy Streamlit removal complete
 - [ ] Visual QA pass on 390, 768, and 1440, dark and light
 - [ ] Final QA pass at the release cut
 - [ ] `npm run build`, `npm test`, and `npm run visual` pass

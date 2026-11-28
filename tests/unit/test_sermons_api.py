@@ -18,7 +18,7 @@ _UI_DIR = Path(__file__).resolve().parents[2] / "ui"
 
 try:  # noqa: E402 - package path (same module identity as ui.job_executors)
     from ui.job_queue import Job, JobStatus, JobType
-except ImportError:  # Streamlit entrypoint
+except ImportError:  # top-level import entrypoint
     from job_queue import Job, JobStatus, JobType  # type: ignore[no-redef]
 
 from ui.job_executors import execute_auto_edit_job  # noqa: E402

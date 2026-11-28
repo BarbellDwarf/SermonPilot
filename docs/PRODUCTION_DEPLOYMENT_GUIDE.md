@@ -1,5 +1,10 @@
 # Production Deployment Guide
 
+> Historical: the bare-metal systemd and nginx notes below were written when the
+> container ran the Streamlit UI. The container now serves the React console
+> and `/api/` on port 8504. Use [DEPLOYMENT.md](DEPLOYMENT.md) for the current
+> container flow.
+
 ## Overview
 This guide covers the steps needed to run SermonPilot in production: real
 credentials, environment configuration, the Docker Compose deployment, the
@@ -58,7 +63,7 @@ Implement production logging:
 
 ### Recommended Stack (Docker Compose)
 
-`docker-compose.yml` at the repository root runs the Streamlit UI in a
+`docker-compose.yml` at the repository root runs the console and API in a
 container from `ghcr.io/barbelldwarf/sermonpilot`. Key properties:
 
 - **Image variants**: set `SERMONPILOT_TAG` to `cpu`, `rocm`, `cuda`, a
@@ -77,8 +82,8 @@ container from `ghcr.io/barbelldwarf/sermonpilot`. Key properties:
   and anything else in `.env` via `env_file`. `HOST_BIND` controls the
   published port's bind address (default `127.0.0.1`).
 - **Startup**: the entrypoint creates and repairs volume ownership for the
-  `sermonapp` user, initializes the database, and starts Streamlit on port
-  8501 with a health check.
+  `sermonapp` user, initializes the database, and starts the API, console, and
+  worker on port 8504 with a health check.
 
 ```bash
 cp .env.example .env   # fill in real values
@@ -87,8 +92,8 @@ SERMONPILOT_TAG=cpu docker compose up -d
 
 ### Alternative Stack (bare metal)
 
-- **Application**: Streamlit served by the Streamlit server (no WSGI layer)
-- **Database**: SQLite (`sermon_processor.db`) for the UI and settings
+- **Application**: FastAPI serves the JSON API and the React console (uvicorn)
+- **Database**: SQLite (`sermon_processor.db`) for the console and settings
 - **Monitoring**: system metrics collected by `ui/performance_monitor.py`
 
 ### Environment Setup
@@ -123,7 +128,6 @@ uv sync
 
 # Or install the derived requirements files
 uv pip install -r requirements/requirements.txt
-uv pip install -r ui/requirements-ui.txt
 
 # For GPU acceleration (optional)
 uv pip install -r requirements/requirements-gpu.txt --index-strategy unsafe-best-match
@@ -145,7 +149,7 @@ User=sermonapp
 WorkingDirectory=/opt/sermon-pilot
 Environment=PYTHONPATH=/opt/sermon-pilot
 EnvironmentFile=/opt/sermon-pilot/.env
-ExecStart=/opt/sermon-pilot/.venv/bin/python -m streamlit run streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+ExecStart=/opt/sermon-pilot/.venv/bin/uvicorn server.api.app:app --host 0.0.0.0 --port 8504
 Restart=always
 RestartSec=10
 
@@ -160,16 +164,11 @@ server {
     server_name your-domain.com;
     
     location / {
-        proxy_pass http://localhost:8501;
+        proxy_pass http://localhost:8504;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # WebSocket support for Streamlit
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
     }
 }
 ```

@@ -1,6 +1,10 @@
-# Settings parity: Streamlit UI to web console
+# Settings parity: legacy Streamlit UI to web console
 
-The Streamlit settings page (`ui/ui_pages/settings.py`) had eight tabs before
+> Historical mapping. The Streamlit settings page (`ui/ui_pages/settings.py`)
+> was removed with the Streamlit presentation layer. This document records how
+> each legacy control moved to the console.
+
+The Streamlit settings page had eight tabs before
 the embeddings removal, leaving seven. The web
 console (`web/src/pages/Settings.tsx`) is the replacement front end. This
 document maps every legacy control to its console home, and names what was

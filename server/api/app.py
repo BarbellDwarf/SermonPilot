@@ -1,8 +1,8 @@
 """SermonPilot read-only API bridge (Phase 4a).
 
 Serves GET-only JSON over ``/api/*`` from the live SQLite database opened
-read-only, plus the built SPA from ``web/dist`` when present. The Streamlit
-app and the processing pipeline are untouched.
+read-only, plus the built SPA from ``web/dist`` when present. The processing
+pipeline is untouched.
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ def create_app() -> FastAPI:
         The API bridge reads ``background_jobs`` directly, so a row left at
         ``running`` by a container recreate would keep blocking its sermon
         until some later write happened. This runs before the first request
-        and is idempotent, so the Streamlit queue's own reconciliation is a
+        and is idempotent, so the queue's own reconciliation is a
         no-op after it.
         """
         try:

@@ -20,7 +20,7 @@ try:  # noqa: E402 - package path (same module identity as ui.job_executors)
         JobStatus,
         JobType,
     )
-except ImportError:  # Streamlit entrypoint
+except ImportError:  # top-level import entrypoint
     from job_queue import (
         Job,
         JobCancelledError,

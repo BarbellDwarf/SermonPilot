@@ -13,7 +13,7 @@ if str(_UI_DIR) not in sys.path:
 
 try:  # noqa: E402 - keep one module identity for ui.job_queue
     from ui.job_queue import Job, JobStatus, JobType
-except ImportError:  # Streamlit entrypoint
+except ImportError:  # top-level import entrypoint
     from job_queue import Job, JobStatus, JobType  # noqa: E402
 
 from server.api.routers.writes import _user_ingest_dir  # noqa: E402

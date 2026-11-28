@@ -1,7 +1,7 @@
 # SermonPilot Console (web/)
 
 Mock-first rebuild of the SermonPilot UI. The console is the operator interface;
-the Streamlit app is retired.
+the Streamlit app has been removed.
 
 ## Stack
 
@@ -122,7 +122,7 @@ sees everything.
 Columns are added by a PRAGMA-checked `_ensure_columns` helper in
 `server/api/accounts.py:migrate()` (the `CREATE TABLE IF NOT EXISTS` shape
 never alters existing tables) and mirrored in `SermonDatabase.init_database`
-+ `JobQueue._init_database` so Streamlit-managed databases gain them too.
++ `JobQueue._init_database` so legacy databases gain them too.
 
 One-time backfill (reassigns unowned rows to the first admin; safe to re-run;
 historical sermons become admin-owned):
@@ -135,8 +135,8 @@ Attribution: `JobQueue.add_job(..., user_id=...)` persists the owner without
 clobbering on later status saves; `SermonRepository.save_sermon()` stamps
 `user_id` from the payload only onto unowned rows; the sermon-processing and
 apply executors (`ui/job_executors.py`) fill unowned sermon rows from the
-job's `user_id` and never overwrite. The Streamlit path passes no `user_id`,
-so its rows stay `NULL` (admin-visible). Job creation currently lives behind
+job's `user_id` and never overwrite. Rows created before accounts existed pass
+no `user_id`, so they stay `NULL` (admin-visible). Job creation currently lives behind
 UI code, so API-side creation wraps at the API layer when the write-path
 increment lands.
 
@@ -206,7 +206,7 @@ Live in the console now:
   toggles, plus the auto-edit section (Edit Sermon checkbox, approval mode
   `interactive`/`auto`, ending-card picker with in-page upload via
   `POST /api/branding` to `/data/branding/<user_id>/` at 600 perms,
-  fade-to-black). Job params match the Streamlit names
+  fade-to-black). Job params keep the legacy names
   (`auto_edit_enabled`, `auto_edit_mode`, `logo_path`, `fade_to_black`).
 - Start Processing posts per path type, surfaces the job id with a toast
   and a Jobs link, and clears the form on success.
@@ -216,7 +216,7 @@ Live in the console now:
 
 Deliberately parked (not v1.7.0):
 
-- Batch update, validation, and sermon-import pages (Streamlit-only).
+- Batch update, validation, and sermon-import pages (removed with the Streamlit UI).
 - Resumable/interruptible browser uploads (chunk-session design logged, not started).
 - Per-user cloud storage mounts (Drive/Dropbox/OneDrive/S3-class OAuth, accounts phase).
 - Scripture overlay cards + audio disclaimer intro card (render-phase work).
@@ -229,7 +229,7 @@ Cutover was a one-line nginx move: upstream `127.0.0.1:8501` (Streamlit)
 
 The reverse-proxy vhost for the domain points at the console on
 `127.0.0.1:8504` (FastAPI bridge, which serves the console bundle + `/api/*`).
-The `127.0.0.1:8501` Streamlit upstream is gone; the container no longer starts
+The `127.0.0.1:8501` Streamlit upstream is gone; the container no longer runs
 Streamlit. Keep these directives on the location block:
    - websocket headers (`proxy_http_version 1.1`, `Upgrade` + `Connection`
      maps) — the console polls over HTTP but future live tails use WS;

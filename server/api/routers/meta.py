@@ -1,10 +1,10 @@
-"""Front-door cutover metadata (P6c).
+"""Console readiness metadata.
 
-GET /api/meta/retirement reports whether the Streamlit front door may be
-retired, computed from the ``web_console_ready`` key in the settings database
-(the same store the pipeline resolves). Default False; the operator flips the
-key in Settings and moves the reverse-proxy upstream. Public: single boolean,
-no secrets.
+GET /api/meta/retirement reports whether the console front door is ready,
+computed from the ``web_console_ready`` key in the settings database (the same
+store the pipeline resolves). Default False; the operator flips the key in
+Settings and moves the reverse-proxy upstream. Public: single boolean, no
+secrets.
 """
 
 from __future__ import annotations
@@ -26,4 +26,4 @@ def _db_config() -> dict:
 
 @router.get("/retirement")
 def retirement() -> dict:
-    return {"streamlit_ready": bool(_db_config().get("web_console_ready", False))}
+    return {"console_ready": bool(_db_config().get("web_console_ready", False))}

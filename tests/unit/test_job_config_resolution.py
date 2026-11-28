@@ -17,7 +17,7 @@ from unittest.mock import Mock
 
 try:  # noqa: E402 - package path so ui.* is one module identity
     from ui.job_queue import Job, JobStatus, JobType
-except ImportError:  # Streamlit entrypoint
+except ImportError:  # top-level import entrypoint
     from job_queue import Job, JobStatus, JobType
 
 from src.llm_manager import create_llm_manager

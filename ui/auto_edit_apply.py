@@ -1,13 +1,13 @@
 """Library edit-apply core shared by the page and the background worker.
 
-The Streamlit page must never run ``process_new_sermon`` inline: when the
-browser session ends mid-render, Streamlit stops the script run, the ffmpeg
+The request handler must never run ``process_new_sermon`` inline: when the
+HTTP connection ends mid-render, the ffmpeg
 child is orphaned/killed, and the apply dies with the job row stuck at
-``running``. This module holds the reusable apply callable so the page only
+``running``. This module holds the reusable apply callable so the caller only
 enqueues a ``JobType.AUTO_EDIT_APPLY`` job and the worker executes the same
 logic outside the page lifecycle.
 
-No Streamlit imports here. Progress flows to the caller-supplied callback
+No UI imports here. Progress flows to the caller-supplied callback
 (the worker wires it to ``job.update_progress``), and completion handling
 (plan status updates) happens here so the worker's own ``background_jobs``
 row is the single row per apply.

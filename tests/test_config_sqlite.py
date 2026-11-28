@@ -363,12 +363,10 @@ def test_cut_detection_template_db_override_wins(fresh_db, clear_config_env):
     assert config["prompt_templates"]["cut_detection"]["system"]
 
 
-def test_load_config_safely_uses_resolution(fresh_db, clear_config_env, monkeypatch):
+def test_load_config_uses_resolution(fresh_db, clear_config_env, monkeypatch):
     monkeypatch.setenv("SERMONAUDIO_API_KEY", "env-key")
     monkeypatch.setenv("SERMONPILOT_VARIANT", "cuda")
-    from ui.shared_navigation import load_config_safely
-
-    config = load_config_safely()
+    config = load_config_from_file()
 
     assert config["api_key"] == "env-key"
     assert config["audio_enhancement_method"] == "deepfilternet"

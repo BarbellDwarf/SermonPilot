@@ -226,7 +226,6 @@ _PROCESS_SINGLETONS: dict[str, tuple[str, ...]] = {
     "database": ("_db",),
     "ui.system_status": ("_status_manager", "_status_manager_config"),
     "ui.sermon_manager": ("_sermon_manager",),
-    "ui.ui_processor": ("_processor",),
     "ui.media_server": ("_server",),
     "ui.analytics_manager": ("_analytics_manager",),
 }
