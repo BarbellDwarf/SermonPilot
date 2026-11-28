@@ -1,13 +1,16 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   activeJobs,
   completedJobs,
   editPlans,
   failedJobs,
+  getActivityJobs,
+  jobActivityState,
   librarySermons,
   sermonCounts,
   services,
+  type ActivityJobState,
   type EditPlan,
   type Job,
   type JobState,
@@ -573,18 +576,25 @@ export interface JobsData {
   failed: Job[];
 }
 
-export function useJobDetail(id: string, enabled: boolean) {
+export function useJobDetail(id: string, enabled: boolean, poll = false) {
   const live = useQuery({
     queryKey: ["job", id],
     queryFn: () => api.job(id),
     enabled: isLive && enabled,
     staleTime: 0,
+    refetchInterval: poll
+      ? (query) => {
+          const status = query.state.data?.status;
+          return !status || status === "queued" || status === "running" ? 2000 : false;
+        }
+      : false,
   });
 
   if (!isLive) {
     return {
       logs: null as string[] | null,
       parameters: null as Record<string, unknown> | null,
+      status: null as string | null,
       isLoading: false,
       error: null as string | null,
     };
@@ -592,6 +602,7 @@ export function useJobDetail(id: string, enabled: boolean) {
   return {
     logs: live.data?.logs ?? null,
     parameters: live.data?.parameters ?? null,
+    status: live.data?.status ?? null,
     isLoading: live.isPending,
     error: describeLoadError(live.error, "The job log"),
   };
@@ -602,6 +613,118 @@ function partitionJobs(jobs: Job[]): JobsData {
     active: jobs.filter((j) => j.state === "queued" || j.state === "running"),
     completed: jobs.filter((j) => j.state === "done"),
     failed: jobs.filter((j) => j.state === "failed" || j.state === "cancelled"),
+  };
+}
+
+export type ActivityFilter = "all" | ActivityJobState;
+
+const ACTIVITY_FILTERS: ActivityFilter[] = ["all", "active", "completed", "failed", "interrupted"];
+const ACTIVITY_PAGE_SIZE = 50;
+
+function activityStateRank(job: Job): number {
+  if (job.state === "running") return 0;
+  if (job.state === "queued") return 1;
+  if (job.state === "failed") return 2;
+  if (job.state === "cancelled") return 3;
+  if (jobActivityState(job) === "interrupted") return 4;
+  return 5;
+}
+
+function sortActivityJobs(jobs: Job[]): Job[] {
+  return [...jobs].sort((a, b) => {
+    const state = activityStateRank(a) - activityStateRank(b);
+    if (state !== 0) return state;
+    return (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0);
+  });
+}
+
+export function useActivityJobs(state: ActivityFilter) {
+  const [pages, setPages] = useState<Record<ActivityFilter, number>>({
+    all: 0,
+    active: 0,
+    completed: 0,
+    failed: 0,
+    interrupted: 0,
+  });
+  const page = pages[state];
+  const queries = useQueries({
+    queries: ACTIVITY_FILTERS.map((filter) => {
+      const selected = filter === state;
+      const limit = selected ? ACTIVITY_PAGE_SIZE : 1;
+      const offset = selected ? page * ACTIVITY_PAGE_SIZE : 0;
+      return {
+        queryKey: ["jobs", "activity", filter, limit, offset],
+        queryFn: () =>
+          api.jobs({
+            ...(filter === "all" ? {} : { status: filter }),
+            limit,
+            offset,
+          }),
+        enabled: isLive,
+        staleTime: 5_000,
+        refetchInterval: 5_000,
+      };
+    }),
+  });
+  const selected = queries[ACTIVITY_FILTERS.indexOf(state)];
+  const total = selected.data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / ACTIVITY_PAGE_SIZE));
+  const counts = ACTIVITY_FILTERS.reduce(
+    (result, filter, index) => {
+      result[filter] = queries[index].data?.total ?? 0;
+      return result;
+    },
+    {} as Record<ActivityFilter, number>,
+  );
+
+  if (!isLive) {
+    const all = getActivityJobs();
+    const mockCounts = ACTIVITY_FILTERS.reduce(
+      (result, filter) => {
+        result[filter] =
+          filter === "all" ? all.length : all.filter((job) => jobActivityState(job) === filter).length;
+        return result;
+      },
+      {} as Record<ActivityFilter, number>,
+    );
+    const filtered = all.filter((job) => state === "all" || jobActivityState(job) === state);
+    const mockTotal = filtered.length;
+    const mockPageCount = Math.max(1, Math.ceil(mockTotal / ACTIVITY_PAGE_SIZE));
+    return {
+      jobs: sortActivityJobs(filtered).slice(
+        page * ACTIVITY_PAGE_SIZE,
+        (page + 1) * ACTIVITY_PAGE_SIZE,
+      ),
+      total: mockTotal,
+      counts: mockCounts,
+      isLoading: false,
+      error: null as string | null,
+      retry: () => {},
+      page,
+      pageCount: mockPageCount,
+      nextPage: () =>
+        setPages((current) => ({
+          ...current,
+          [state]: Math.min(current[state] + 1, mockPageCount - 1),
+        })),
+      previousPage: () =>
+        setPages((current) => ({ ...current, [state]: Math.max(0, current[state] - 1) })),
+    };
+  }
+
+  return {
+    jobs: sortActivityJobs((selected.data?.items ?? []).map((job) => toJob(job))),
+    total,
+    counts,
+    isLoading: selected.isPending,
+    error: describeLoadError(selected.error, "Jobs"),
+    retry: () => void selected.refetch(),
+    page,
+    pageCount,
+    nextPage: () =>
+      setPages((current) => ({ ...current, [state]: Math.min(current[state] + 1, pageCount - 1) })),
+    previousPage: () =>
+      setPages((current) => ({ ...current, [state]: Math.max(0, current[state] - 1) })),
   };
 }
 

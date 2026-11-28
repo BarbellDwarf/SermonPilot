@@ -1,6 +1,27 @@
-import { describe, expect, it } from "vitest";
-import { fmtStamp, toJob } from "./hooks";
+import { createElement, type ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fmtStamp, toJob, useActivityJobs, useJobDetail } from "./hooks";
 import type { ApiJob } from "./client";
+
+const apiMocks = vi.hoisted(() => ({
+  jobs: vi.fn(),
+  job: vi.fn(),
+}));
+
+vi.mock("./client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./client")>();
+  return {
+    ...actual,
+    isLive: true,
+    api: {
+      ...actual.api,
+      jobs: apiMocks.jobs,
+      job: apiMocks.job,
+    },
+  };
+});
 
 const base: ApiJob = {
   id: "job-1",
@@ -14,6 +35,43 @@ const base: ApiJob = {
   duration: "—",
   error: null,
 };
+
+function jsonResponse(body: unknown, status: number): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    clone() {
+      return this;
+    },
+  } as unknown as Response;
+}
+
+function queryWrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return createElement(QueryClientProvider, { client }, children);
+  };
+}
+
+beforeEach(() => {
+  apiMocks.jobs.mockResolvedValue({ items: [], total: 0 });
+  apiMocks.job.mockResolvedValue({
+    ...base,
+    status: "running",
+    logs: [],
+    parameters: {},
+    result: null,
+  });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+  vi.resetModules();
+  vi.clearAllMocks();
+});
 
 describe("toJob", () => {
   it("uses the human job label as the console headline and detail line", () => {
@@ -30,6 +88,10 @@ describe("toJob", () => {
     const job = toJob({ ...base, title: "", description: null });
     expect(job.kind).toBe("sermon_processing");
     expect(job.sermon).toBe("sermon_processing");
+  });
+
+  it("keeps interrupted as a distinct state", () => {
+    expect(toJob({ ...base, status: "interrupted" }).state).toBe("interrupted");
   });
 });
 
@@ -53,5 +115,108 @@ describe("fmtStamp", () => {
     expect(fmtStamp("2026-03-08 06:30:00", "America/New_York")).toBe("Mar 8, 01:30");
     expect(fmtStamp("2026-03-08 07:30:00", "America/New_York")).toBe("Mar 8, 03:30");
     expect(fmtStamp("2026-11-01 03:30:00", "America/New_York")).toBe("Oct 31, 23:30");
+  });
+});
+
+describe("jobs API contract", () => {
+  it("posts one retry request and returns the new job id", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      jsonResponse({ job_id: "job-2", status: "queued" }, 202),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("VITE_API_MODE", "live");
+    vi.resetModules();
+    const { writeApi } = await vi.importActual<typeof import("./client")>("./client");
+
+    await expect(writeApi.retryJob("job-1")).resolves.toEqual({
+      job_id: "job-2",
+      status: "queued",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/jobs/job-1/retry");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("POST");
+  });
+
+  it("sends status, limit, and offset to the jobs list", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      jsonResponse({ items: [], total: 125 }, 200),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("VITE_API_MODE", "live");
+    vi.resetModules();
+    const { api } = await vi.importActual<typeof import("./client")>("./client");
+
+    await expect(api.jobs({ status: "failed", limit: 50, offset: 100 })).resolves.toEqual({
+      items: [],
+      total: 125,
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/jobs?status=failed&limit=50&offset=100");
+  });
+});
+
+describe("useActivityJobs", () => {
+  it("uses the filtered total and requests the next offset", async () => {
+    apiMocks.jobs.mockImplementation(async (params: { status?: string; offset?: number }) => ({
+      items: params.status === "failed" && params.offset === 0 ? [base] : [],
+      total: params.status === "failed" ? 125 : 0,
+    }));
+
+    const { result } = renderHook(() => useActivityJobs("failed"), {
+      wrapper: queryWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(apiMocks.jobs).toHaveBeenCalledWith({ status: "failed", limit: 50, offset: 0 });
+    expect(result.current.total).toBe(125);
+    expect(result.current.counts.failed).toBe(125);
+    expect(result.current.pageCount).toBe(3);
+
+    act(() => result.current.nextPage());
+    await waitFor(() =>
+      expect(apiMocks.jobs).toHaveBeenCalledWith({ status: "failed", limit: 50, offset: 50 }),
+    );
+    expect(result.current.page).toBe(1);
+  });
+});
+
+describe("useJobDetail", () => {
+  it("polls every two seconds while open and stops after a terminal response", async () => {
+    vi.useFakeTimers();
+    apiMocks.job
+      .mockResolvedValueOnce({
+        ...base,
+        status: "running",
+        logs: [],
+        parameters: {},
+        result: null,
+      })
+      .mockResolvedValueOnce({
+        ...base,
+        status: "completed",
+        logs: ["finished"],
+        parameters: {},
+        result: null,
+      });
+
+    const { result } = renderHook(() => useJobDetail("job-1", true, true), {
+      wrapper: queryWrapper(),
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.status).toBe("running");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(apiMocks.job).toHaveBeenCalledTimes(2);
+    expect(result.current.status).toBe("completed");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(apiMocks.job).toHaveBeenCalledTimes(2);
   });
 });

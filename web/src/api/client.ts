@@ -349,7 +349,8 @@ export const api = {
   updateSermon: (id: string, patch: SermonDetailsPatch) =>
     send<ApiSermonDetail>(`/api/sermons/${encodeURIComponent(id)}`, "PATCH", patch),
   plan: (id: string) => authed<ApiSermonPlan>(`/api/sermons/${encodeURIComponent(id)}/plan`),
-  jobs: (params?: { status?: string; limit?: number }) => authed<ApiJobList>("/api/jobs", params),
+  jobs: (params?: { status?: string; limit?: number; offset?: number }) =>
+    authed<ApiJobList>("/api/jobs", params),
   job: (id: string) => authed<ApiJobDetail>(`/api/jobs/${encodeURIComponent(id)}`),
   status: () => authed<ApiStatus>("/api/status"),
 };
@@ -699,6 +700,8 @@ export const writeApi = {
       { full_push: fullPush },
     ),
   cancelJob: (id: string) => send<{ cancelled: boolean; job_id: string }>(`/api/jobs/${encodeURIComponent(id)}/cancel`, "POST"),
+  retryJob: (id: string) =>
+    send<{ job_id: string; status: string }>(`/api/jobs/${encodeURIComponent(id)}/retry`, "POST"),
 };
 
 export interface ApiPromptTemplate {

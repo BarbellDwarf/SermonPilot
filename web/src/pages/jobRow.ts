@@ -1,4 +1,4 @@
-import type { Job } from "../mock/data";
+import { jobActivityState, type Job } from "../mock/data";
 import { formatDuration } from "../utils/format";
 
 const SEP = " · ";
@@ -17,7 +17,7 @@ const TYPE_ACTIONS: Record<string, string> = {
 };
 
 const TYPE_LABELS: Record<string, string> = {
-  sermon_processing: "Sermon processing",
+  sermon_processing: "Processing",
   batch_processing: "Batch processing",
   sermon_import: "Sermon import",
   validation: "Validation",
@@ -59,7 +59,7 @@ export type JobDisplayStatus =
   | "INTERRUPTED";
 
 export const STATUS_DOT: Record<JobDisplayStatus, string> = {
-  RUNNING: "bg-accent",
+  RUNNING: "bg-info",
   QUEUED: "bg-muted",
   DONE: "bg-ok",
   FAILED: "bg-danger",
@@ -68,7 +68,7 @@ export const STATUS_DOT: Record<JobDisplayStatus, string> = {
 };
 
 export const STATUS_TEXT: Record<JobDisplayStatus, string> = {
-  RUNNING: "text-accent",
+  RUNNING: "text-info",
   QUEUED: "text-muted",
   DONE: "text-ok",
   FAILED: "text-danger",
@@ -143,8 +143,14 @@ export function jobRowTitle(job: Job): string {
   return sermon === action ? sermon : `${sermon}${SEP}${action}`;
 }
 
+export { jobActivityState } from "../mock/data";
+
+export function jobSermonId(job: Job): string | null {
+  return text(job.parameters?.sermon_id) || null;
+}
+
 export function jobStatus(job: Job): JobDisplayStatus {
-  if (job.state === "interrupted" || /interrupted by app restart/i.test(job.error ?? "")) {
+  if (jobActivityState(job) === "interrupted") {
     return "INTERRUPTED";
   }
   switch (job.state) {

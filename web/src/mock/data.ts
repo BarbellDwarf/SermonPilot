@@ -30,6 +30,17 @@ export interface Job {
   parameters?: Record<string, unknown> | null;
 }
 
+export type ActivityJobState = "active" | "completed" | "failed" | "interrupted";
+
+export function jobActivityState(job: Job): ActivityJobState {
+  if (job.state === "interrupted" || /interrupted by app restart/i.test(job.error ?? "")) {
+    return "interrupted";
+  }
+  if (job.state === "failed" || job.state === "cancelled") return "failed";
+  if (job.state === "done") return "completed";
+  return "active";
+}
+
 export const services: ServiceStatus[] = [
   { id: "api", label: "API", detail: "SermonAudio endpoint reachable", state: "ok", level: 92 },
   { id: "db", label: "Database", detail: "142 records indexed", state: "ok", level: 64 },
@@ -247,4 +258,69 @@ export const failedJobs: Job[] = [
     log: ["15:03 job accepted", "15:11 enhancement done", "15:19 upload rejected: gateway timeout"],
     parameters: { sermon_id: "s-02", form_data: { whisper_model: "base", dry_run: false } },
   },
+  {
+    id: "job-1036",
+    type: "transcript_generation",
+    title: "Transcribe · Sunday Teaching · Sample Speaker",
+    kind: "Transcription",
+    sermon: "Sunday Teaching",
+    description: 'Transcribing "Sunday Teaching" (Sample Speaker, 2026-10-23).',
+    state: "interrupted",
+    created: "Oct 23, 11:02",
+    createdAt: "2026-10-23T11:02:00",
+    finished: "Oct 23, 11:18",
+    duration: "16m",
+    progress: 31,
+    error: "Job interrupted by app restart: the worker stopped before transcription finished.",
+    log: ["11:02 job accepted", "11:08 transcription started", "11:18 worker interrupted"],
+    parameters: { sermon_id: "s-06", form_data: { whisper_model: "small" } },
+  },
+  {
+    id: "job-1035",
+    type: "metadata_update",
+    title: "Generate metadata · Midweek Class · Sample Speaker",
+    kind: "Metadata",
+    sermon: "Midweek Class",
+    description: 'Generating metadata for "Midweek Class" (Sample Speaker, 2026-10-22).',
+    state: "cancelled",
+    created: "Oct 22, 09:14",
+    createdAt: "2026-10-22T09:14:00",
+    finished: "Oct 22, 09:16",
+    duration: "2m",
+    progress: 0,
+    error: "Job cancelled by user",
+    log: ["09:14 job accepted", "09:16 job cancelled by user"],
+    parameters: { sermon_id: "s-02", actions: { generate_description: true } },
+  },
 ];
+
+let retriedJobs: Job[] = [];
+
+export function getActivityJobs(): Job[] {
+  return [...retriedJobs, ...activeJobs, ...completedJobs, ...failedJobs];
+}
+
+export function retryMockJob(job: Job): Job {
+  const highestId = getActivityJobs().reduce((highest, item) => {
+    const numeric = /^job-(\d+)$/.exec(item.id);
+    return numeric ? Math.max(highest, Number(numeric[1])) : highest;
+  }, 0);
+  const now = new Date();
+  const date = now.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const time = now.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+  const retry: Job = {
+    ...job,
+    id: `job-${highestId + 1}`,
+    title: `(Retry) ${job.title.replace(/^\(Retry\)\s*/i, "")}`,
+    state: "queued",
+    created: `${date}, ${time}`,
+    createdAt: now.toISOString(),
+    finished: null,
+    duration: "waiting",
+    progress: 0,
+    error: null,
+    log: [`${time} retry queued`],
+  };
+  retriedJobs = [retry, ...retriedJobs];
+  return retry;
+}
