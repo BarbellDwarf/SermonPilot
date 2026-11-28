@@ -154,7 +154,7 @@ export function ConfigBackupSection({
         <summary className="min-h-[44px] cursor-pointer text-sm font-semibold">
           Current data <span className="font-normal text-muted">(masked preview)</span>
         </summary>
-        <pre className="mt-2 max-h-64 overflow-auto rounded bg-ink p-3 font-mono text-xs text-mist">
+        <pre className="mt-2 max-h-64 overflow-auto rounded-sm bg-ink p-3 font-mono text-xs text-mist">
           {backup ? JSON.stringify(backup, null, 2) : MASKED_BACKUP}
         </pre>
         <div className="mt-2 flex flex-wrap gap-2">

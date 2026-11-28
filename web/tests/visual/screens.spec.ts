@@ -1,12 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 
 const PAGES = [
-  { name: "home", path: "/" },
+  { name: "inbox", path: "/" },
   { name: "library", path: "/library" },
-  { name: "jobs", path: "/jobs" },
-  { name: "settings", path: "/settings" },
+  { name: "activity", path: "/activity" },
+  { name: "settings", path: "/settings/preferences" },
   { name: "new-teaching", path: "/new" },
-  { name: "review", path: "/library/s-01" },
+  { name: "review", path: "/teaching/s-01" },
 ] as const;
 
 const THEMES = ["dark", "light"] as const;
@@ -39,4 +39,18 @@ for (const theme of THEMES) {
       });
     });
   }
+
+  test(`settings-dirty ${theme}`, async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-10-25T21:07:00Z") });
+    await page.goto("/settings/preferences");
+    await applyTheme(page, theme);
+    await expect(page.locator("html")).toHaveClass(new RegExp(theme));
+    await expect(page.getByRole("radio", { name: theme, exact: true })).toBeChecked();
+    await page.getByRole("radio", { name: theme === "dark" ? "light" : "dark", exact: true }).check();
+    await expect(page.getByRole("button", { name: "Save appearance" })).toBeVisible();
+    await page.clock.fastForward(1200);
+    await page.waitForTimeout(150);
+    await page.addStyleTag({ content: SCREENSHOT_STYLE });
+    await expect(page).toHaveScreenshot(`settings-dirty-${theme}.png`, { fullPage: true });
+  });
 }

@@ -162,7 +162,18 @@ def test_sermons_list_shape_and_default_sort(client: TestClient) -> None:
     assert body["total"] == 2
     first, second = body["items"]
     assert first["id"] == "s-02"
-    assert set(first) == {"id", "title", "speaker", "date", "duration", "series", "status"}
+    assert set(first) == {
+        "id",
+        "title",
+        "speaker",
+        "date",
+        "duration",
+        "series",
+        "status",
+        "edit_status",
+        "upload_status",
+        "plan_status",
+    }
     assert "transcript" not in json.dumps(body).lower()
     assert first["duration"] == "38:44"
     assert second["duration"] == "42:10"
@@ -171,8 +182,10 @@ def test_sermons_list_shape_and_default_sort(client: TestClient) -> None:
 def test_sermons_search_param(client: TestClient) -> None:
     body = client.get("/api/sermons", params={"search": "Teaching 1"}).json()
     assert [item["id"] for item in body["items"]] == ["s-02"]
-    body = client.get("/api/sermons", params={"search": "speaker a"}).json()
+    body = client.get("/api/sermons", params={"search": "sample 2"}).json()
     assert [item["id"] for item in body["items"]] == ["s-01"]
+    body = client.get("/api/sermons", params={"search": "speaker b"}).json()
+    assert [item["id"] for item in body["items"]] == ["s-02"]
 
 
 def test_sermons_sort_params(client: TestClient) -> None:
@@ -260,7 +273,7 @@ def test_jobs_status_and_limit_params(client: TestClient) -> None:
     body = client.get("/api/jobs", params={"status": "failed"}).json()
     assert [item["id"] for item in body["items"]] == ["job-1037"]
     body = client.get("/api/jobs", params={"limit": 1}).json()
-    assert body["total"] == 1
+    assert body["total"] == 2
 
 
 def test_job_detail_logs(client: TestClient) -> None:

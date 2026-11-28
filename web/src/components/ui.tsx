@@ -1,8 +1,10 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ButtonHTMLAttributes,
@@ -10,6 +12,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 
@@ -31,6 +34,9 @@ export function buttonClass(variant: ButtonVariant = "secondary", extra = ""): s
   return `inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-[background-color,border-color,color,filter] duration-150 ${variants[variant]} ${extra}`;
 }
 
+export const selectedClass =
+  "border-selected-line bg-selected text-mist shadow-none";
+
 export function Button({ variant = "secondary", className = "", type = "button", ...rest }: ButtonProps) {
   return (
     <button
@@ -41,16 +47,19 @@ export function Button({ variant = "secondary", className = "", type = "button",
   );
 }
 
-const chipTones: Record<string, string> = {
+const chipTones = {
   ok: "text-ok border-ok",
   warn: "text-warn border-warn",
   error: "text-danger border-danger",
+  danger: "text-danger border-danger",
   info: "text-info border-info",
   neutral: "text-muted border-line",
   accent: "text-accent border-accent",
-};
+} satisfies Record<string, string>;
 
-export function Chip({ tone = "neutral", children }: { tone?: keyof typeof chipTones | string; children: ReactNode }) {
+export type ChipTone = keyof typeof chipTones;
+
+export function Chip({ tone = "neutral", children }: { tone?: ChipTone; children: ReactNode }) {
   const toneClass = chipTones[tone] ?? chipTones.neutral;
   return (
     <span
@@ -136,6 +145,15 @@ interface MenuProps {
   triggerTestId?: string;
 }
 
+const MENU_GAP = 8;
+const VIEWPORT_MARGIN = 8;
+
+interface MenuPosition {
+  top: number;
+  left: number;
+  side: "top" | "bottom";
+}
+
 export function Menu({
   items,
   trigger,
@@ -149,37 +167,106 @@ export function Menu({
   triggerTestId,
 }: MenuProps) {
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<MenuPosition | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const pointerInsideRef = useRef(false);
   const menuId = `menu-${useId()}`;
+
+  const place = useCallback(() => {
+    const triggerEl = triggerRef.current;
+    const panelEl = panelRef.current;
+    if (!triggerEl || !panelEl) return;
+    const rect = triggerEl.getBoundingClientRect();
+    const width = panelEl.offsetWidth;
+    const height = panelEl.offsetHeight;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const below = rect.bottom + MENU_GAP;
+    const above = rect.top - MENU_GAP - height;
+    const fitsBelow = below + height <= viewportHeight - VIEWPORT_MARGIN;
+    const fitsAbove = above >= VIEWPORT_MARGIN;
+    const flipped = side === "bottom" ? !fitsBelow && fitsAbove : !fitsAbove && fitsBelow;
+    const placed = flipped ? (side === "bottom" ? "top" : "bottom") : side;
+    const rawTop = placed === "bottom" ? below : above;
+    const maxTop = Math.max(VIEWPORT_MARGIN, viewportHeight - height - VIEWPORT_MARGIN);
+    const top = Math.min(Math.max(rawTop, VIEWPORT_MARGIN), maxTop);
+    const rawLeft = align === "right" ? rect.right - width : rect.left;
+    const maxLeft = Math.max(VIEWPORT_MARGIN, viewportWidth - width - VIEWPORT_MARGIN);
+    const left = Math.min(Math.max(rawLeft, VIEWPORT_MARGIN), maxLeft);
+    setPosition((prev) =>
+      prev && prev.top === top && prev.left === left && prev.side === placed
+        ? prev
+        : { top, left, side: placed },
+    );
+  }, [align, side]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPosition(null);
+      return;
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, place]);
 
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
+      const target = event.target as Node;
+      const inside = Boolean(wrapRef.current?.contains(target) || panelRef.current?.contains(target));
+      pointerInsideRef.current = inside;
+      if (!inside) setOpen(false);
+    };
+    const onPointerUp = () => {
+      pointerInsideRef.current = false;
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setOpen(false);
       triggerRef.current?.focus();
     };
+    const onFocusOut = (event: FocusEvent) => {
+      if (pointerInsideRef.current) return;
+      const next = event.relatedTarget as Node | null;
+      if (!next) return;
+      if (wrapRef.current?.contains(next) || panelRef.current?.contains(next)) return;
+      setOpen(false);
+    };
+    const onWindowBlur = () => setOpen(false);
     document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("pointerup", onPointerUp);
     document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("focusout", onFocusOut);
+    window.addEventListener("blur", onWindowBlur);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("pointerup", onPointerUp);
       document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("focusout", onFocusOut);
+      window.removeEventListener("blur", onWindowBlur);
     };
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !position) return;
     menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
-  }, [open]);
+  }, [open, position]);
 
   const onMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Tab") {
+      event.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+      return;
+    }
     const entries = Array.from(
       menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? [],
     );
@@ -212,45 +299,53 @@ export function Menu({
       >
         {trigger}
       </button>
-      {open ? (
-        <div
-          data-side={side}
-          className={`menu-panel absolute z-40 flex w-56 flex-col rounded-lg border border-line bg-surface p-2 shadow-2xl ${
-            align === "right" ? "right-0" : "left-0"
-          } ${side === "top" ? "bottom-full mb-2 origin-bottom" : "top-full mt-2 origin-top"} ${menuClassName}`}
-        >
-          {header ? <div className="border-b border-line px-3 pb-2 pt-1">{header}</div> : null}
-          <div
-            ref={menuRef}
-            id={menuId}
-            role="menu"
-            aria-label={label}
-            data-testid={menuTestId}
-            onKeyDown={onMenuKeyDown}
-            className="flex flex-col gap-1 pt-1"
-          >
-            {items.map((item, index) => (
-              <button
-                key={index}
-                type="button"
-                role="menuitem"
-                data-testid={item.testId}
-                disabled={item.disabled}
-                aria-expanded={item.expanded}
-                aria-controls={item.controls}
-                onClick={() => {
-                  setOpen(false);
-                  triggerRef.current?.focus();
-                  item.onSelect();
-                }}
-                className={`${menuItemClass} ${item.danger ? "text-danger" : ""}`}
+      {open
+        ? createPortal(
+            <div
+              ref={panelRef}
+              data-side={position?.side ?? side}
+              style={{
+                top: position?.top ?? VIEWPORT_MARGIN,
+                left: position?.left ?? VIEWPORT_MARGIN,
+              }}
+              className={`menu-panel fixed z-40 flex max-h-[min(60vh,20rem)] w-56 flex-col overflow-y-auto rounded-lg border border-line bg-surface p-2 shadow-menu ${
+                position ? "" : "pointer-events-none opacity-0"
+              } ${menuClassName}`}
+            >
+              {header ? <div className="border-b border-line px-3 pb-2 pt-1">{header}</div> : null}
+              <div
+                ref={menuRef}
+                id={menuId}
+                role="menu"
+                aria-label={label}
+                data-testid={menuTestId}
+                onKeyDown={onMenuKeyDown}
+                className="flex flex-col gap-1 pt-1"
               >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
+                {items.map((item, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    role="menuitem"
+                    data-testid={item.testId}
+                    disabled={item.disabled}
+                    aria-expanded={item.expanded}
+                    aria-controls={item.controls}
+                    onClick={() => {
+                      setOpen(false);
+                      triggerRef.current?.focus();
+                      item.onSelect();
+                    }}
+                    className={`${menuItemClass} ${item.danger ? "text-danger" : ""}`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -484,6 +579,7 @@ export function Advanced({
 export interface DirtyRegistry {
   set: (id: string, dirty: boolean) => void;
   remove: (id: string) => void;
+  activeSave: string | null;
 }
 
 export const DirtyRegistryContext = createContext<DirtyRegistry | null>(null);
@@ -491,43 +587,68 @@ export const DirtyRegistryContext = createContext<DirtyRegistry | null>(null);
 function useDirtyRegistration(dirty: boolean) {
   const registry = useContext(DirtyRegistryContext);
   const id = useId();
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!registry) return;
     registry.set(id, dirty);
     return () => registry.remove(id);
   }, [registry, id, dirty]);
+  return { registry, id };
 }
 
 export function SaveBar({
   dirty,
-  saved,
   busy = false,
   error = null,
   onSave,
-  label = "Save",
+  label,
 }: {
   dirty: boolean;
-  saved: boolean;
   busy?: boolean;
   error?: string | null;
   onSave: () => void;
-  label?: string;
+  label: string;
 }) {
-  useDirtyRegistration(dirty);
+  const { registry, id } = useDirtyRegistration(dirty);
+  const previousDirty = useRef(dirty);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let timeout: number | undefined;
+    if (previousDirty.current && !dirty) {
+      setSaved(true);
+      timeout = window.setTimeout(() => setSaved(false), 3000);
+    } else if (dirty) {
+      setSaved(false);
+    }
+    previousDirty.current = dirty;
+    return () => {
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
+  }, [dirty]);
+
+  if ((!dirty && !saved) || (registry?.activeSave && registry.activeSave !== id)) return null;
+
   return (
-    <div className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)] z-10 -mx-4 -mb-4 mt-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface/95 px-4 py-3 shadow-[0_-8px_24px_-16px_rgba(0,0,0,0.8)] backdrop-blur md:static md:mx-0 md:mb-0 md:border-0 md:bg-transparent md:p-0 md:shadow-none">
-      <Button variant="primary" onClick={onSave} disabled={!dirty || busy} aria-busy={busy}>
-        {busy ? "Saving…" : label}
-      </Button>
+    <div
+      data-testid="settings-save-bar"
+      className="sticky bottom-[calc(var(--chrome-bottom)+0.5rem)] z-10 -mx-4 -mb-4 mt-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface/95 px-4 py-3 shadow-sticky backdrop-blur md:static md:mx-0 md:mb-0 md:border-0 md:bg-transparent md:p-0 md:shadow-none"
+    >
+      {dirty ? (
+        <Button variant="secondary" onClick={onSave} disabled={busy} aria-busy={busy}>
+          {busy ? "Saving…" : label}
+        </Button>
+      ) : null}
       {error ? (
         <span className="text-xs text-danger" role="alert">
           {error}
         </span>
-      ) : !dirty ? (
-        <span className="text-xs text-muted">{saved ? "Saved." : "No unsaved changes."}</span>
-      ) : (
+      ) : dirty ? (
         <span className="text-xs text-warn" role="status">
           Unsaved changes.
+        </span>
+      ) : (
+        <span className="text-xs text-muted" role="status">
+          Saved.
         </span>
       )}
     </div>
@@ -551,7 +672,7 @@ export function SkeletonList({
 }) {
   if (variant === "row") {
     return (
-      <div aria-hidden="true" aria-label="Loading" className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
+      <div aria-hidden="true" className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
         {Array.from({ length: rows }).map((_, i) => (
           <div key={i} className="flex items-center gap-3 px-4 py-3" style={{ height: rowHeight }}>
             <div className="min-w-0 flex-1">
@@ -566,7 +687,7 @@ export function SkeletonList({
     );
   }
   return (
-    <div aria-hidden="true" aria-label="Loading" className="flex flex-col gap-3">
+    <div aria-hidden="true" className="flex flex-col gap-3">
       {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className="rounded-lg border border-line bg-surface p-4">
           <Skeleton className="h-4 w-2/5" />
@@ -680,10 +801,72 @@ export function ConfirmDialog({
   );
 }
 
+export function Sheet({
+  open,
+  title,
+  onClose,
+  children,
+  testId,
+  closeLabel = "Done",
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  testId?: string;
+  closeLabel?: string;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const titleId = `sheet-${useId()}`;
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (open && !el.open) el.showModal();
+    if (!open && el.open) el.close();
+  }, [open]);
+
+  return (
+    <dialog
+      ref={ref}
+      aria-labelledby={titleId}
+      data-testid={testId}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClose={onClose}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (
+          event.clientX < rect.left ||
+          event.clientX > rect.right ||
+          event.clientY < rect.top ||
+          event.clientY > rect.bottom
+        ) {
+          onClose();
+        }
+      }}
+      className="sheet-panel fixed inset-x-0 bottom-0 top-auto m-0 max-h-[90dvh] w-full max-w-none overflow-y-auto overscroll-contain rounded-t-xl border-t border-line bg-surface p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-mist shadow-menu backdrop:bg-black/60"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h2 id={titleId} className="text-lg font-semibold">
+          {title}
+        </h2>
+        <Button onClick={onClose} autoFocus aria-label={`Close ${title}`}>
+          {closeLabel}
+        </Button>
+      </div>
+      <div className="mt-4 flex flex-col gap-4">{children}</div>
+    </dialog>
+  );
+}
+
 export function Meter({ level, state }: { level: number; state: "ok" | "warn" | "error" }) {
   return (
     <div
-      className="meter-track h-16 w-1.5 shrink-0 overflow-hidden rounded-full"
+      className="meter-track h-10 w-1.5 shrink-0 overflow-hidden rounded-full"
       role="img"
       aria-label={`level ${level} percent, ${state}`}
     >

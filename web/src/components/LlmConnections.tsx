@@ -10,7 +10,7 @@ import {
   type LlmRole,
   type LlmRouteRole,
 } from "../api/client";
-import { Advanced, Button, Chip, Field, SectionCard, Toggle, inputCls } from "./ui";
+import { Advanced, Button, Chip, Field, SectionCard, Toggle, inputCls, type ChipTone } from "./ui";
 
 const SLOT_ORDER: LlmRole[] = ["primary", "fallback", "validator"];
 
@@ -26,7 +26,7 @@ const SLOT_HINT: Record<LlmRole, string> = {
   validator: "Reviews drafts before they reach SermonAudio.",
 };
 
-const SLOT_TONE: Record<LlmRole, string> = {
+const SLOT_TONE: Record<LlmRole, ChipTone> = {
   primary: "accent",
   fallback: "info",
   validator: "ok",
@@ -232,7 +232,7 @@ function SlotCard({
                 onClick={onToggleKey}
                 aria-pressed={keyHidden}
                 aria-label={`${keyHidden ? "Show" : "Hide"} stored ${label} key`}
-                className="min-h-[32px] shrink-0 rounded px-2 text-xs font-semibold text-muted hover:bg-raised hover:text-mist"
+                className="min-h-[32px] shrink-0 rounded-sm px-2 text-xs font-semibold text-muted hover:bg-raised hover:text-mist"
               >
                 {keyHidden ? "Show" : "Hide"}
               </button>

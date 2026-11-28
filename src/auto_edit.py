@@ -1423,6 +1423,83 @@ def detect_hardware_encoder() -> tuple[str, list[str]]:
     return result
 
 
+_BROWSER_VIDEO_CODECS = frozenset({"h264", "vp9", "av1"})
+
+
+def probe_video_codec(source: Path) -> str | None:
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return None
+    try:
+        proc = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=codec_name",
+                "-of",
+                "csv=p=0",
+                str(source),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    lines = [line.strip().lower() for line in proc.stdout.splitlines() if line.strip()]
+    return lines[0] if lines else None
+
+
+def ensure_browser_video(
+    source: Path,
+    *,
+    cancel_check: Callable[[], None] | None = None,
+    cancel_log: Callable[[str], None] | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> Path:
+    codec = probe_video_codec(source)
+    if codec is None or codec in _BROWSER_VIDEO_CODECS:
+        return source
+    encoder, extra = detect_hardware_encoder()
+    out = source.with_name(f"{source.stem}-h264{source.suffix or '.mp4'}")
+    cmd = ["ffmpeg", "-y", *extra, "-i", str(source), "-map", "0:v:0", "-map", "0:a?"]
+    if encoder == "h264_nvenc":
+        cmd += ["-c:v", "h264_nvenc", "-preset", "p5", "-tune", "hq", "-cq", "21", "-b:v", "0"]
+    elif encoder == "h264_vaapi":
+        cmd += ["-vf", "format=nv12,hwupload", "-c:v", "h264_vaapi", "-qp", "23"]
+    else:
+        cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"]
+    cmd += [
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "160k",
+        "-movflags",
+        "+faststart",
+        str(out),
+    ]
+    ffprobe = shutil.which("ffprobe")
+    duration = _ffprobe_duration(ffprobe, source) if ffprobe else None
+    _run_ffmpeg(
+        cmd,
+        cancel_check=cancel_check,
+        cancel_log=cancel_log,
+        partial_paths=[out],
+        step="video compatibility transcode",
+        progress_callback=progress_callback,
+        expected_duration=duration,
+    )
+    return out
+
+
 def _ffprobe_duration(ffprobe: str, path: Path) -> float | None:
     proc = subprocess.run(
         [ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],

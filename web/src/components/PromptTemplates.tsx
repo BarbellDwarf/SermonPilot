@@ -126,27 +126,25 @@ export function PromptTemplatesSection({ show }: { show: (m: string) => void }) 
   const setTask = (k: TaskKey, patch: Partial<TemplateDraft>) =>
     setCur((c) => ({ ...c, [k]: { ...c[k], ...patch } }));
 
-  const save = () => {
-    setSaved(cur);
+  const save = async () => {
     if (!isLive) {
+      setSaved(cur);
       show("Prompt templates saved (demo).");
       return;
     }
     setBusy(true);
-    void promptsApi
-      .put(toUpdate(cur))
-      .then((cfg) => {
-        const next = applyPromptsConfig(cfg);
-        setCur(next.tasks);
-        setSaved(next.tasks);
-        setBuiltin(next.builtin);
-        setBusy(false);
-        show("Prompt templates saved.");
-      })
-      .catch(() => {
-        setBusy(false);
-        show("Could not save prompt templates.");
-      });
+    try {
+      const cfg = await promptsApi.put(toUpdate(cur));
+      const next = applyPromptsConfig(cfg);
+      setCur(next.tasks);
+      setSaved(next.tasks);
+      setBuiltin(next.builtin);
+      show("Prompt templates saved.");
+    } catch (error) {
+      show(`Could not save prompt templates: ${(error as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -235,7 +233,7 @@ export function PromptTemplatesSection({ show }: { show: (m: string) => void }) 
         </div>
       </div>
 
-      <SaveBar dirty={dirty} saved={!dirty} busy={busy} onSave={save} />
+      <SaveBar dirty={dirty} busy={busy} onSave={save} label="Save prompt templates" />
 
       <ConfirmDialog
         open={pendingReset !== null}

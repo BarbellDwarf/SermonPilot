@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:a11y": "VITE_API_MODE=mock npm run build && playwright test tests/visual/a11y.spec.ts",
     "visual": "VITE_API_MODE=mock npm run build && playwright test",
     "visual:update": "VITE_API_MODE=mock npm run build && playwright test --update-snapshots"
   },
@@ -26,6 +27,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.2.1",
     "autoprefixer": "^10.4.20",
+    "axe-core": "^4.14.1",
     "jsdom": "^25.0.1",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.13",

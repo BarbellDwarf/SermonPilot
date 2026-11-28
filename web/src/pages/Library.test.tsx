@@ -1,8 +1,10 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LibrarySermon } from "../mock/data";
+import { lifecycleOfSermon } from "../api/hooks";
+import { lifecycleCounts, type LifecycleCounts } from "../utils/lifecycle";
 
 const mocks = vi.hoisted(() => ({ sermons: vi.fn() }));
 
@@ -20,6 +22,13 @@ vi.mock("../api/client", () => ({
 }));
 
 import { Library } from "./Library";
+
+function countsOf(items: LibrarySermon[]): LifecycleCounts {
+  const counts = lifecycleCounts([]);
+  for (const item of items) counts[lifecycleOfSermon(item)] += 1;
+  counts.total = items.length;
+  return counts;
+}
 
 const rows: LibrarySermon[] = [
   {
@@ -61,18 +70,32 @@ function libraryData(items: LibrarySermon[] = rows) {
     hasMore: false,
     isLoadingMore: false,
     loadMore: vi.fn(),
+    counts: countsOf(items),
   };
 }
 
-function renderLibrary() {
+function renderLibrary(entry = "/library") {
   return render(
-    <MemoryRouter initialEntries={["/library"]}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/library" element={<Library />} />
-        <Route path="/library/:id" element={<p>teaching detail</p>} />
+        <Route
+          path="/library"
+          element={
+            <>
+              <Library />
+              <LocationProbe />
+            </>
+          }
+        />
+        <Route path="/teaching/:id" element={<p>teaching detail</p>} />
       </Routes>
     </MemoryRouter>,
   );
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location-search">{location.search}</output>;
 }
 
 beforeEach(() => {
@@ -163,7 +186,7 @@ describe("Library toolbar", () => {
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
 
     await user.type(screen.getByLabelText("Search teachings"), "Sample Teaching 1");
-    await user.selectOptions(screen.getByLabelText("Filter by status"), "processed");
+    await user.selectOptions(screen.getByLabelText("Filter by status"), "published");
     await user.click(screen.getByTestId("library-toolbar-menu"));
     const menu = screen.getByRole("menu", { name: "Library actions" });
     expect(within(menu).getByRole("menuitem", { name: "Export CSV" })).toBeTruthy();
@@ -185,6 +208,83 @@ describe("Library toolbar", () => {
     expect(click).toHaveBeenCalledTimes(1);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:sample");
     click.mockRestore();
+  });
+});
+
+describe("Library lifecycle", () => {
+  const cases: [string, LibrarySermon, string][] = [
+    ["needs_review", { ...rows[0], id: "s-needs", status: "rendered", edit_status: "pending_review" }, "Needs review"],
+    ["ready", { ...rows[0], id: "s-ready", status: "rendered", edit_status: "rendered" }, "Ready to publish"],
+    ["processing", { ...rows[0], id: "s-processing", status: "draft", edit_status: "applied" }, "Processing"],
+    ["failed", { ...rows[0], id: "s-failed", status: "failed", edit_status: "failed" }, "Failed"],
+    ["draft", { ...rows[0], id: "s-draft", status: "draft", edit_status: "draft" }, "Draft"],
+    ["published", { ...rows[0], id: "s-published", status: "processed", edit_status: "uploaded" }, "Published"],
+  ];
+
+  it("filters by each of the six lifecycle states and shows that label", async () => {
+    const user = userEvent.setup();
+    mocks.sermons.mockReturnValue(libraryData(cases.map(([, item]) => item)));
+    renderLibrary();
+
+    expect(screen.getAllByTestId(/^library-row-/)).toHaveLength(6);
+    expect(screen.getByRole("option", { name: "All (6)" })).toBeTruthy();
+
+    for (const [state, item, label] of cases) {
+      await user.selectOptions(screen.getByLabelText("Filter by status"), state);
+      expect(screen.getAllByTestId(/^library-row-/)).toHaveLength(1);
+      const row = screen.getByTestId(`library-row-${item.id}`);
+      expect(within(row).getByText(label)).toBeTruthy();
+      expect(screen.getByRole("option", { name: `${state === "draft" ? "Drafts" : label} (1)` })).toBeTruthy();
+    }
+  });
+});
+
+describe("Library URL state", () => {
+  it("restores search, lifecycle and sort from the URL", () => {
+    renderLibrary("/library?q=Sample%202&state=failed&sort=title");
+
+    expect((screen.getByLabelText("Search teachings") as HTMLInputElement).value).toBe("Sample 2");
+    expect((screen.getByLabelText("Filter by status") as HTMLSelectElement).value).toBe("failed");
+    expect((screen.getByLabelText("Sort teachings") as HTMLSelectElement).value).toBe("title");
+  });
+
+  it("writes search, lifecycle and sort back to the URL and clears them", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+
+    await user.type(screen.getByLabelText("Search teachings"), "Sample");
+    await user.selectOptions(screen.getByLabelText("Filter by status"), "failed");
+    await user.selectOptions(screen.getByLabelText("Sort teachings"), "title");
+    const search = screen.getByTestId("location-search").textContent ?? "";
+    expect(search).toContain("q=Sample");
+    expect(search).toContain("state=failed");
+    expect(search).toContain("sort=title");
+
+    await user.click(screen.getByTestId("library-toolbar-menu"));
+    await user.click(screen.getByRole("menuitem", { name: "Clear filters" }));
+    expect(screen.getByTestId("location-search").textContent).toBe("");
+  });
+
+  it("ignores unknown URL values and falls back to the defaults", () => {
+    renderLibrary("/library?state=mystery&sort=nope");
+
+    expect((screen.getByLabelText("Filter by status") as HTMLSelectElement).value).toBe("all");
+    expect((screen.getByLabelText("Sort teachings") as HTMLSelectElement).value).toBe("date");
+  });
+
+  it("opens the mobile filter sheet and applies its values", async () => {
+    const user = userEvent.setup();
+    renderLibrary();
+    const sheet = screen.getByTestId("library-filters-sheet") as HTMLDialogElement;
+    expect(sheet.open).toBe(false);
+
+    await user.click(screen.getByTestId("library-filters-trigger"));
+    expect(sheet.open).toBe(true);
+
+    await user.selectOptions(screen.getByLabelText("Lifecycle"), "failed");
+    expect(screen.getByTestId("location-search").textContent).toContain("state=failed");
+    await user.click(within(sheet).getByRole("button", { name: "Close Filters" }));
+    expect(sheet.open).toBe(false);
   });
 });
 

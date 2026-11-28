@@ -2,6 +2,22 @@
 
 Notable changes are documented here.
 
+## v1.9.4
+
+Replace the recording on a published sermon without losing its SermonAudio entry.
+
+- The completed teaching view has one **Replace recording** action in the overflow menu. Pick a new video or audio file and the full pipeline runs again: transcription, enhancement, auto-edit, and upload.
+- The reprocessed media uploads to the existing SermonAudio id. Title, description, hashtags, series, and publication state stay put.
+- The previous local original moves to trash through the normal deletion path. The new source becomes the retained original.
+- A replacement never stalls on the review screen. When cut detection is not confident, the full recording uploads and the old cut plan is superseded, so the review screen cannot apply cuts that described the retired recording.
+- The video offset preview mutes the original video audio while the shifted track plays, so the correction is heard once.
+- The audio offset preview now matches the render direction: positive values delay audio, negative values advance it. The control labels that direction.
+- The review player opens the original source when the stored plan extends beyond the current render, so the preview matches the source the renderer will cut.
+- A completed teaching with no edit plan offers **Detect cuts** instead of a dead-end refresh. Detection is queued, the page polls for the plan, and the normal trim and re-render flow takes over.
+- Video renders whose source uses a codec browsers cannot decode are transcoded to H.264 before upload. HEVC recordings now preview in Chrome and Brave, while H.264, VP9, and AV1 sources are left untouched.
+
+Full notes: [docs/RELEASES.md](docs/RELEASES.md#194).
+
 ## v1.9.2
 
 Patch release: circular timeline handles and a dependency-security CI fix.

@@ -15,11 +15,15 @@ export interface ApiSermonListItem {
   duration: string;
   series: string;
   status: string;
+  edit_status: string | null;
+  upload_status: string | null;
+  plan_status: string | null;
 }
 
 export interface ApiSermonList {
   items: ApiSermonListItem[];
   total: number;
+  counts: Record<string, number>;
 }
 
 export interface ApiSermonFile {
@@ -31,6 +35,8 @@ export interface ApiSermonFile {
 export interface ApiSermonDetail extends ApiSermonListItem {
   duration_seconds: number | null;
   description: string | null;
+  edit_status: string | null;
+  plan_status: string | null;
   description_needs_review: boolean;
   files: ApiSermonFile[];
   transcript_available: boolean;
@@ -343,7 +349,8 @@ export const api = {
   updateSermon: (id: string, patch: SermonDetailsPatch) =>
     send<ApiSermonDetail>(`/api/sermons/${encodeURIComponent(id)}`, "PATCH", patch),
   plan: (id: string) => authed<ApiSermonPlan>(`/api/sermons/${encodeURIComponent(id)}/plan`),
-  jobs: (params?: { status?: string; limit?: number }) => authed<ApiJobList>("/api/jobs", params),
+  jobs: (params?: { status?: string; limit?: number; offset?: number }) =>
+    authed<ApiJobList>("/api/jobs", params),
   job: (id: string) => authed<ApiJobDetail>(`/api/jobs/${encodeURIComponent(id)}`),
   status: () => authed<ApiStatus>("/api/status"),
 };
@@ -668,6 +675,16 @@ export const writeApi = {
     }>(`/api/sermons/${encodeURIComponent(id)}/plan/restore`, "POST"),
   uploadNow: (id: string) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/upload`, "POST"),
+  replaceRecording: async (id: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await authFetch(`/api/sermons/${encodeURIComponent(id)}/recording`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) throw await responseError(res, "POST", `/api/sermons/${id}/recording`);
+    return (await res.json()) as { id: string; job_id: string; status: string; filename: string };
+  },
   regenerateDescription: (id: string) =>
     send<{ job_id: string; status: string }>(`/api/sermons/${encodeURIComponent(id)}/description/regenerate`, "POST"),
   generateMetadata: (id: string, field: ApiMetadataField) =>
@@ -683,6 +700,8 @@ export const writeApi = {
       { full_push: fullPush },
     ),
   cancelJob: (id: string) => send<{ cancelled: boolean; job_id: string }>(`/api/jobs/${encodeURIComponent(id)}/cancel`, "POST"),
+  retryJob: (id: string) =>
+    send<{ job_id: string; status: string }>(`/api/jobs/${encodeURIComponent(id)}/retry`, "POST"),
 };
 
 export interface ApiPromptTemplate {
@@ -902,14 +921,20 @@ export function mediaStreamUrl(sermonId: string, kind: string): string {
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
+function emptyWaveform(): { peaks: number[]; duration: number } {
+  return { peaks: [], duration: 0 };
+}
+
 export const mediaApi = {
   list: (id: string) => send<ApiSermonMedia>(`/api/media/sermons/${encodeURIComponent(id)}`, "GET"),
   url: mediaStreamUrl,
   waveform: (id: string) =>
-    send<{ peaks: number[]; duration: number }>(
-      `/api/media/sermons/${encodeURIComponent(id)}/waveform`,
-      "GET",
-    ),
+    isLive
+      ? send<{ peaks: number[]; duration: number }>(
+          `/api/media/sermons/${encodeURIComponent(id)}/waveform`,
+          "GET",
+        )
+      : Promise.resolve(emptyWaveform()),
   fetchJson: async <T,>(id: string, kind: string): Promise<T> => {
     const res = await authFetch(
       `/api/media/sermons/${encodeURIComponent(id)}/${encodeURIComponent(kind)}`,
@@ -1006,14 +1031,14 @@ export const outputDirApi = {
 };
 
 export const metaApi = {
-  retirement: async (): Promise<{ streamlit_ready: boolean }> => {
-    if (!isLive) return { streamlit_ready: false };
+  retirement: async (): Promise<{ console_ready: boolean }> => {
+    if (!isLive) return { console_ready: false };
     const res = await fetch(`${BASE}/api/meta/retirement`, {
       headers: { Accept: "application/json" },
     });
     if (!res.ok) {
       throw await responseError(res, "GET", "/api/meta/retirement");
     }
-    return (await res.json()) as { streamlit_ready: boolean };
+    return (await res.json()) as { console_ready: boolean };
   },
 };

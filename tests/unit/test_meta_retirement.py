@@ -15,14 +15,14 @@ def _allow_tmp_output_root(tmp_path, monkeypatch):
 def test_retirement_defaults_false_and_needs_no_auth(client):
     r = client.get("/api/meta/retirement")
     assert r.status_code == 200, r.text
-    assert r.json() == {"streamlit_ready": False}
+    assert r.json() == {"console_ready": False}
 
 
 def test_retirement_reads_web_console_ready_key(client, tmp_path, monkeypatch):
     from ui.database import SermonDatabase
 
     SermonDatabase().save_config({"web_console_ready": True})
-    assert client.get("/api/meta/retirement").json() == {"streamlit_ready": True}
+    assert client.get("/api/meta/retirement").json() == {"console_ready": True}
 
 
 def test_detail_files_under_user_dir_are_downloadable(client, scoped_setup, tmp_path):

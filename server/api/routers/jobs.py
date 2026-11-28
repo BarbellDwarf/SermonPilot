@@ -3,9 +3,9 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from server.api import mapping
-from server.api.db import query_job, query_jobs
+from server.api.db import query_job, query_job_count, query_jobs
 from server.api.schemas import JobDetailOut, JobListItem, JobListOut
-from server.api.scoping import ownership_map, request_user, scope_rows, visible
+from server.api.scoping import is_admin, ownership_map, request_user, visible
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -34,12 +34,16 @@ def list_jobs(
     request: Request,
     status: str = Query(default=""),
     limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
 ) -> JobListOut:
-    rows = scope_rows(
-        query_jobs(status=status or None, limit=limit), request_user(request), "background_jobs"
-    )
+    user = request_user(request)
+    if user is None or (not is_admin(user) and user.get("id") is None):
+        return JobListOut(items=[], total=0)
+    user_id = None if is_admin(user) else user.get("id")
+    rows = query_jobs(status=status or None, limit=limit, offset=offset, user_id=user_id)
+    total = query_job_count(status=status or None, user_id=user_id)
     items = [_row_to_list_item(row) for row in rows]
-    return JobListOut(items=items, total=len(items))
+    return JobListOut(items=items, total=total)
 
 
 @router.get("/{job_id}", response_model=JobDetailOut)

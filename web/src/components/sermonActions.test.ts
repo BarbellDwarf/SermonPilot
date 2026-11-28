@@ -1,10 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { sermonViewMode } from "./sermonActions";
+import { sermonViewMode, workspacePrimary } from "./sermonActions";
 import type { LibrarySermonStatus, PlanStatus } from "../mock/data";
 
 function mode(status: LibrarySermonStatus, planStatus?: PlanStatus) {
   return sermonViewMode({ status, planStatus });
 }
+
+describe("workspacePrimary", () => {
+  it.each([
+    ["needs_review", true, true, "approve", "Approve & upload"],
+    ["ready", true, true, "publish", "Publish"],
+    ["processing", true, true, "view-job", "View job"],
+    ["draft", true, true, "publish-draft", "Publish draft"],
+    ["draft", false, false, "detect", "Run cut detection"],
+    ["published", true, true, "none", null],
+  ] as const)("maps %s to %s", (state, hasPlan, hasRender, kind, label) => {
+    expect(workspacePrimary({ state, hasPlan, hasRender })).toEqual({ kind, label });
+  });
+});
 
 describe("sermonViewMode", () => {
   it("shows the finished view for a published record", () => {

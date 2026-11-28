@@ -1,24 +1,31 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { keepPreviousData, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   activeJobs,
   completedJobs,
   editPlans,
   failedJobs,
+  getActivityJobs,
+  jobActivityState,
   librarySermons,
-  recentSermons,
+  sermonCounts,
   services,
+  type ActivityJobState,
   type EditPlan,
   type Job,
   type JobState,
   type LibrarySermon,
   type PlanStatus,
-  type Sermon,
-  type SermonStatus,
   type ServiceStatus,
 } from "../mock/data";
 import { Button, Card, useBriefLoading } from "../components/ui";
 import { formatDate, formatDateTime } from "../utils/format";
+import {
+  deriveLifecycleState,
+  lifecycleCounts,
+  type LifecycleCounts,
+  type LifecycleState,
+} from "../utils/lifecycle";
 import { api, filesApi, isLive, mediaApi, type ApiEditPlan, type ApiJob, type ApiMediaItem, type ApiSermonListItem } from "./client";
 
 export type LibrarySort = "date" | "title" | "duration";
@@ -111,7 +118,31 @@ export function toLibrarySermon(s: ApiSermonListItem): LibrarySermon {
     duration: s.duration,
     series: s.series,
     status,
+    edit_status: s.edit_status ?? null,
+    upload_status: s.upload_status ?? null,
+    plan_status: s.plan_status ?? null,
   };
+}
+
+export function lifecycleOfSermon(sermon: LibrarySermon): LifecycleState {
+  return deriveLifecycleState({
+    status: sermon.status === "failed" ? "error" : sermon.status,
+    edit_status:
+      sermon.edit_status ??
+      (sermon.status === "rendered" ? "rendered" : sermon.status === "failed" ? "failed" : null),
+    upload_status: sermon.upload_status,
+    plan_status: sermon.plan_status,
+  });
+}
+
+function toLifecycleCounts(raw: Record<string, number> | undefined): LifecycleCounts {
+  const counts = lifecycleCounts([]);
+  if (!raw) return counts;
+  for (const state of ["draft", "needs_review", "processing", "ready", "published", "failed"] as const) {
+    counts[state] = Number(raw[state]) || 0;
+  }
+  counts.total = Number(raw.total) || counts.draft + counts.needs_review + counts.processing + counts.ready + counts.published + counts.failed;
+  return counts;
 }
 
 const JOB_STATE_MAP: Record<string, JobState> = {
@@ -155,49 +186,57 @@ export function fmtStamp(value: string | null, timeZone?: string): string {
 
 const LIBRARY_PAGE_SIZE = 50;
 
+export function matchesLibraryQuery(sermon: LibrarySermon, query: string): boolean {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const fields = [sermon.title, sermon.speaker, sermon.series].map((value) =>
+    (value ?? "").toLowerCase(),
+  );
+  return tokens.every((token) => fields.some((field) => field.includes(token)));
+}
+
+function sortLibrarySermons(rows: LibrarySermon[], sort: LibrarySort): LibrarySermon[] {
+  const sorted = [...rows];
+  sorted.sort((a, b) => {
+    if (sort === "title") return a.title.localeCompare(b.title);
+    if (sort === "duration") return toSeconds(b.duration) - toSeconds(a.duration);
+    return b.date.localeCompare(a.date);
+  });
+  return sorted;
+}
+
 export function useLibrarySermons(query: string, sort: LibrarySort) {
   const briefLoading = useBriefLoading();
-  const [pages, setPages] = useState(1);
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
+  const [paging, setPaging] = useState({ query, sort, pages: 1 });
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query), 250);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+  const pages = paging.query === debouncedQuery && paging.sort === sort ? paging.pages : 1;
   const live = useQuery({
-    queryKey: ["sermons", pages],
-    queryFn: () => api.sermons({ limit: LIBRARY_PAGE_SIZE * pages }),
+    queryKey: ["sermons", { search: debouncedQuery.trim(), sort, limit: LIBRARY_PAGE_SIZE * pages }],
+    queryFn: () =>
+      api.sermons({
+        search: debouncedQuery.trim() || undefined,
+        sort,
+        limit: LIBRARY_PAGE_SIZE * pages,
+      }),
     enabled: isLive,
     staleTime: 10_000,
+    placeholderData: keepPreviousData,
   });
   const loaded = useMemo(
     () => (live.data?.items ?? []).map(toLibrarySermon),
     [live.data],
   );
   const serverTotal = live.data?.total ?? loaded.length;
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const rows = q
-      ? loaded.filter((s) =>
-          [s.title, s.speaker, s.series].some((f) => f.toLowerCase().includes(q)),
-        )
-      : [...loaded];
-    rows.sort((a, b) => {
-      if (sort === "title") return a.title.localeCompare(b.title);
-      if (sort === "duration") return toSeconds(b.duration) - toSeconds(a.duration);
-      return b.date.localeCompare(a.date);
-    });
-    return rows;
-  }, [loaded, query, sort]);
+  const filtered = useMemo(() => sortLibrarySermons(loaded, sort), [loaded, sort]);
 
-  const mockItems = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const filtered = q
-      ? librarySermons.filter((s) =>
-          [s.title, s.speaker, s.series].some((f) => f.toLowerCase().includes(q)),
-        )
-      : [...librarySermons];
-    filtered.sort((a, b) => {
-      if (sort === "title") return a.title.localeCompare(b.title);
-      if (sort === "duration") return toSeconds(b.duration) - toSeconds(a.duration);
-      return b.date.localeCompare(a.date);
-    });
-    return filtered;
-  }, [query, sort]);
+  const mockItems = useMemo(
+    () => sortLibrarySermons(librarySermons.filter((s) => matchesLibraryQuery(s, query)), sort),
+    [query, sort],
+  );
 
   if (!isLive) {
     return {
@@ -209,6 +248,7 @@ export function useLibrarySermons(query: string, sort: LibrarySort) {
       hasMore: false,
       isLoadingMore: false,
       loadMore: () => {},
+      counts: sermonCounts,
     };
   }
   return {
@@ -219,8 +259,127 @@ export function useLibrarySermons(query: string, sort: LibrarySort) {
     total: serverTotal,
     hasMore: loaded.length < serverTotal,
     isLoadingMore: live.isFetching && !live.isPending,
-    loadMore: () => setPages((p) => p + 1),
+    loadMore: () => setPaging({ query, sort, pages: pages + 1 }),
+    counts: live.data?.counts ? toLifecycleCounts(live.data.counts) : lifecycleCounts(loaded),
   };
+}
+
+export interface InboxSection {
+  state: LifecycleState;
+  items: LibrarySermon[];
+}
+
+export interface InboxData {
+  sections: InboxSection[];
+  counts: LifecycleCounts;
+  services: ServiceStatus[];
+  publishedThisWeek: number;
+  isLoading: boolean;
+  error: string | null;
+  retry: () => void;
+}
+
+const INBOX_STATES: LifecycleState[] = [
+  "needs_review",
+  "ready",
+  "processing",
+  "failed",
+  "draft",
+];
+
+function buildInboxSections(items: LibrarySermon[]): InboxSection[] {
+  return INBOX_STATES.map((state) => ({
+    state,
+    items: items.filter((item) => lifecycleOfSermon(item) === state),
+  })).filter((section) => section.items.length > 0);
+}
+
+function publishedThisWeek(items: LibrarySermon[]): number {
+  const now = Date.now();
+  return items.filter((item) => {
+    if (lifecycleOfSermon(item) !== "published") return false;
+    const date = Date.parse(item.date);
+    return Number.isFinite(date) && now - date <= 7 * 24 * 60 * 60 * 1000;
+  }).length;
+}
+
+const SERVICE_LABELS: Record<string, string> = {
+  sermonaudio_api: "API",
+  database: "Database",
+  llm_primary: "LLM",
+  local_storage: "Storage",
+};
+
+function toServiceStatus(data: { status?: Record<string, { status: string; message: string; details: string }> } | undefined): ServiceStatus[] {
+  return Object.entries(data?.status ?? {})
+    .filter(([id]) => id in SERVICE_LABELS)
+    .map(([id, s]) => ({
+      id,
+      label: SERVICE_LABELS[id],
+      detail: s.message || s.details,
+      state: s.status === "ok" ? "ok" : s.status === "warning" ? "warn" : "error",
+      level: s.status === "ok" ? 85 : s.status === "warning" ? 40 : 15,
+    }));
+}
+
+export function useInboxData(): InboxData {
+  const briefLoading = useBriefLoading();
+  const sermonsQuery = useQuery({
+    queryKey: ["sermons", { limit: 50, sort: "date" }],
+    queryFn: () => api.sermons({ limit: 50, sort: "date" }),
+    enabled: isLive,
+    staleTime: 15_000,
+  });
+  const statusQuery = useQuery({
+    queryKey: ["status"],
+    queryFn: api.status,
+    enabled: isLive,
+    staleTime: 15_000,
+  });
+
+  if (!isLive) {
+    return {
+      sections: buildInboxSections(librarySermons),
+      counts: sermonCounts,
+      services,
+      publishedThisWeek: publishedThisWeek(librarySermons),
+      isLoading: briefLoading,
+      error: null,
+      retry: () => {},
+    };
+  }
+
+  const items = (sermonsQuery.data?.items ?? []).map(toLibrarySermon);
+  return {
+    sections: buildInboxSections(items),
+    counts: sermonsQuery.data?.counts
+      ? toLifecycleCounts(sermonsQuery.data.counts)
+      : lifecycleCounts(items),
+    services: toServiceStatus(statusQuery.data),
+    publishedThisWeek: publishedThisWeek(items),
+    isLoading: sermonsQuery.isPending,
+    error: describeLoadError(sermonsQuery.error, "The inbox"),
+    retry: () => {
+      void sermonsQuery.refetch();
+      void statusQuery.refetch();
+    },
+  };
+}
+
+export function useInboxCount(): number {
+  const sermonsQuery = useQuery({
+    queryKey: ["sermons", { limit: 50, sort: "date" }],
+    queryFn: () => api.sermons({ limit: 50, sort: "date" }),
+    enabled: isLive,
+    staleTime: 15_000,
+  });
+
+  if (!isLive) return sermonCounts.needs_review;
+  const items = (sermonsQuery.data?.items ?? []).map(toLibrarySermon);
+  const counts = sermonsQuery.data?.counts
+    ? toLifecycleCounts(sermonsQuery.data.counts)
+    : lifecycleCounts(items);
+  return counts.needs_review;
 }
 
 export interface SermonDetailData {
@@ -425,18 +584,25 @@ export interface JobsData {
   failed: Job[];
 }
 
-export function useJobDetail(id: string, enabled: boolean) {
+export function useJobDetail(id: string, enabled: boolean, poll = false) {
   const live = useQuery({
     queryKey: ["job", id],
     queryFn: () => api.job(id),
     enabled: isLive && enabled,
     staleTime: 0,
+    refetchInterval: poll
+      ? (query) => {
+          const status = query.state.data?.status;
+          return !status || status === "queued" || status === "running" ? 2000 : false;
+        }
+      : false,
   });
 
   if (!isLive) {
     return {
       logs: null as string[] | null,
       parameters: null as Record<string, unknown> | null,
+      status: null as string | null,
       isLoading: false,
       error: null as string | null,
     };
@@ -444,6 +610,7 @@ export function useJobDetail(id: string, enabled: boolean) {
   return {
     logs: live.data?.logs ?? null,
     parameters: live.data?.parameters ?? null,
+    status: live.data?.status ?? null,
     isLoading: live.isPending,
     error: describeLoadError(live.error, "The job log"),
   };
@@ -454,6 +621,127 @@ function partitionJobs(jobs: Job[]): JobsData {
     active: jobs.filter((j) => j.state === "queued" || j.state === "running"),
     completed: jobs.filter((j) => j.state === "done"),
     failed: jobs.filter((j) => j.state === "failed" || j.state === "cancelled"),
+  };
+}
+
+export type ActivityFilter = "all" | ActivityJobState;
+
+const ACTIVITY_FILTERS: ActivityFilter[] = ["all", "active", "completed", "failed", "interrupted"];
+export const ACTIVITY_PAGE_SIZE = 50;
+
+function activityStateRank(job: Job): number {
+  if (job.state === "running") return 0;
+  if (job.state === "queued") return 1;
+  if (jobActivityState(job) === "interrupted") return 2;
+  if (job.state === "failed") return 3;
+  if (job.state === "cancelled") return 4;
+  return 5;
+}
+
+function sortActivityJobs(jobs: Job[]): Job[] {
+  return [...jobs].sort((a, b) => {
+    const state = activityStateRank(a) - activityStateRank(b);
+    if (state !== 0) return state;
+    return (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0);
+  });
+}
+
+export function useActivityJobs(state: ActivityFilter) {
+  const queryClient = useQueryClient();
+  const [pages, setPages] = useState<Record<ActivityFilter, number>>({
+    all: 0,
+    active: 0,
+    completed: 0,
+    failed: 0,
+    interrupted: 0,
+  });
+  const requestedPage = pages[state];
+  const queries = useQueries({
+    queries: ACTIVITY_FILTERS.map((filter) => {
+      const selected = filter === state;
+      const limit = selected ? ACTIVITY_PAGE_SIZE : 1;
+      const offset = selected ? requestedPage * ACTIVITY_PAGE_SIZE : 0;
+      return {
+        queryKey: ["jobs", "activity", filter, limit, offset],
+        queryFn: () =>
+          api.jobs({
+            ...(filter === "all" ? {} : { status: filter }),
+            limit,
+            offset,
+          }),
+        enabled: isLive,
+        staleTime: 5_000,
+        refetchInterval: 5_000,
+      };
+    }),
+  });
+  const selected = queries[ACTIVITY_FILTERS.indexOf(state)];
+  const total = selected.data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / ACTIVITY_PAGE_SIZE));
+  const page = isLive && selected.data ? Math.min(requestedPage, pageCount - 1) : requestedPage;
+  useEffect(() => {
+    if (!isLive || page === requestedPage) return;
+    setPages((current) => ({ ...current, [state]: page }));
+    void queryClient.invalidateQueries({
+      queryKey: ["jobs", "activity", state, ACTIVITY_PAGE_SIZE, page * ACTIVITY_PAGE_SIZE],
+    });
+  }, [isLive, page, queryClient, requestedPage, state]);
+  const counts = ACTIVITY_FILTERS.reduce(
+    (result, filter, index) => {
+      result[filter] = queries[index].data?.total ?? 0;
+      return result;
+    },
+    {} as Record<ActivityFilter, number>,
+  );
+
+  if (!isLive) {
+    const all = getActivityJobs();
+    const mockCounts = ACTIVITY_FILTERS.reduce(
+      (result, filter) => {
+        result[filter] =
+          filter === "all" ? all.length : all.filter((job) => jobActivityState(job) === filter).length;
+        return result;
+      },
+      {} as Record<ActivityFilter, number>,
+    );
+    const filtered = all.filter((job) => state === "all" || jobActivityState(job) === state);
+    const mockTotal = filtered.length;
+    const mockPageCount = Math.max(1, Math.ceil(mockTotal / ACTIVITY_PAGE_SIZE));
+    return {
+      jobs: sortActivityJobs(filtered).slice(
+        page * ACTIVITY_PAGE_SIZE,
+        (page + 1) * ACTIVITY_PAGE_SIZE,
+      ),
+      total: mockTotal,
+      counts: mockCounts,
+      isLoading: false,
+      error: null as string | null,
+      retry: () => {},
+      page,
+      pageCount: mockPageCount,
+      nextPage: () =>
+        setPages((current) => ({
+          ...current,
+          [state]: Math.min(current[state] + 1, mockPageCount - 1),
+        })),
+      previousPage: () =>
+        setPages((current) => ({ ...current, [state]: Math.max(0, current[state] - 1) })),
+    };
+  }
+
+  return {
+    jobs: sortActivityJobs((selected.data?.items ?? []).map((job) => toJob(job))),
+    total,
+    counts,
+    isLoading: selected.isPending,
+    error: describeLoadError(selected.error, "Jobs"),
+    retry: () => void selected.refetch(),
+    page,
+    pageCount,
+    nextPage: () =>
+      setPages((current) => ({ ...current, [state]: Math.min(current[state] + 1, pageCount - 1) })),
+    previousPage: () =>
+      setPages((current) => ({ ...current, [state]: Math.max(0, current[state] - 1) })),
   };
 }
 
@@ -503,98 +791,3 @@ export function useUserFiles(enabled: boolean) {
   };
 }
 
-export interface HomeData {
-  services: ServiceStatus[];
-  activeJobs: Job[];
-  recentSermons: Sermon[];
-  upNext: Job[];
-}
-
-const SERMON_STATUS_MAP: Record<string, SermonStatus> = {
-  processed: "ready",
-  draft: "draft",
-  pending: "processing",
-  error: "failed",
-};
-
-function toRecentSermon(s: ApiSermonListItem): Sermon {
-  return {
-    id: s.id,
-    title: s.title || "(untitled)",
-    speaker: s.speaker || "Unknown speaker",
-    duration: s.duration,
-    status: SERMON_STATUS_MAP[s.status] ?? "processing",
-    updated: fmtStamp(s.date),
-  };
-}
-
-const SERVICE_LABELS: Record<string, string> = {
-  sermonaudio_api: "API",
-  database: "Database",
-  llm_primary: "LLM",
-  local_storage: "Storage",
-};
-
-export function useHomeData() {
-  const briefLoading = useBriefLoading();
-  const statusQuery = useQuery({
-    queryKey: ["status"],
-    queryFn: api.status,
-    enabled: isLive,
-    staleTime: 15_000,
-  });
-  const jobsQuery = useQuery({
-    queryKey: ["jobs"],
-    queryFn: () => api.jobs({ limit: 100 }),
-    enabled: isLive,
-    staleTime: 5_000,
-    refetchInterval: isLive ? 5_000 : false,
-  });
-  const sermonsQuery = useQuery({
-    queryKey: ["sermons", "", "date"],
-    queryFn: () => api.sermons({ sort: "date" }),
-    enabled: isLive,
-    staleTime: 15_000,
-  });
-  const mock = useMemo(
-    () => ({
-      services,
-      activeJobs,
-      recentSermons,
-      upNext: activeJobs.filter((j) => j.state === "queued").slice(0, 3),
-    }),
-    [],
-  );
-
-  if (!isLive) {
-    return { data: mock, isLoading: briefLoading, error: null as string | null, retry: () => {} };
-  }
-  const servicesLive: ServiceStatus[] = Object.entries(statusQuery.data?.status ?? {})
-    .filter(([id]) => id in SERVICE_LABELS)
-    .map(([id, s]) => ({
-      id,
-      label: SERVICE_LABELS[id],
-      detail: s.message || s.details,
-      state: s.status === "ok" ? "ok" : s.status === "warning" ? "warn" : "error",
-      level: s.status === "ok" ? 85 : s.status === "warning" ? 40 : 15,
-    }));
-  const allJobs = (jobsQuery.data?.items ?? []).map((j) => toJob(j));
-  const data: HomeData = {
-    services: servicesLive,
-    activeJobs: allJobs.filter((j) => j.state === "queued" || j.state === "running"),
-    recentSermons: (sermonsQuery.data?.items ?? []).slice(0, 4).map(toRecentSermon),
-    upNext: allJobs.filter((j) => j.state === "queued").slice(0, 3),
-  };
-  const isLoading = statusQuery.isPending || jobsQuery.isPending || sermonsQuery.isPending;
-  const queryError = statusQuery.error ?? jobsQuery.error ?? sermonsQuery.error;
-  return {
-    data,
-    isLoading,
-    error: describeLoadError(queryError, "Home data"),
-    retry: () => {
-      void statusQuery.refetch();
-      void jobsQuery.refetch();
-      void sermonsQuery.refetch();
-    },
-  };
-}

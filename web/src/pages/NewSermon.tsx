@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, UNSAFE_DataRouterContext, useSearchParams } from "react-router-dom";
 import {
-  Advanced,
   Button,
   Chip,
   ConfirmDialog,
@@ -31,11 +30,15 @@ import {
 import { CloudBrowser, MOCK_REMOTES } from "../components/CloudBrowser";
 import { Combobox } from "../components/Combobox";
 import { FileExplorerDialog } from "../components/FileExplorer";
+import { IntakeUnsavedChangesDialog } from "../components/intake/IntakeUnsavedChangesDialog";
+import { RunSummary } from "../components/intake/RunSummary";
 import { useToast } from "../components/toast";
+import { useUserSettings } from "../api/useUserSettings";
 import { formatBytes } from "../utils/format";
 
 type SourceKind = "browser" | "server" | "cloud";
 type AutoEditMode = "interactive" | "auto";
+type FieldKey = "source" | "title" | "speaker" | "date";
 
 const sourceOptions: { id: SourceKind; label: string }[] = [
   { id: "browser", label: "Upload" },
@@ -78,13 +81,59 @@ const eventTypes = [
   "Wedding",
   "Youth",
 ];
-const supportedFormats = ["MP3", "WAV", "M4A", "MP4", "MOV"];
+const fileAccept = ".mkv,.mp4,.mov,.webm,.m4v,.mp3,.wav,.m4a,.flac,.ogg,.mpa";
+const acceptedFormats = Array.from(
+  new Set(fileAccept.split(",").map((format) => format.trim().replace(/^\./, "").toUpperCase())),
+);
 
-const initialMeta = { title: "", speaker: "", date: "", series: "", eventType: "", scripture: "" };
+interface IntakeDefaults {
+  eventType: string;
+  enhance: boolean;
+  transcribe: boolean;
+  generateMetadata: boolean;
+  dryRun: boolean;
+  autoEdit: boolean;
+  autoEditMode: AutoEditMode;
+  logoPath: string;
+  fadeBlack: boolean;
+}
+
+const defaultRun: IntakeDefaults = {
+  eventType: "Sunday Service",
+  enhance: true,
+  transcribe: true,
+  generateMetadata: true,
+  dryRun: false,
+  autoEdit: false,
+  autoEditMode: "interactive",
+  logoPath: "none",
+  fadeBlack: true,
+};
+
+const initialMeta = {
+  title: "",
+  speaker: "",
+  date: "",
+  series: "",
+  eventType: defaultRun.eventType,
+  scripture: "",
+};
 
 export function NewSermon() {
   const notify = useToast();
   const [searchParams] = useSearchParams();
+  const hasDataRouter = useContext(UNSAFE_DataRouterContext) !== null;
+  const [savedRunDefaults, saveRunDefaults, defaultsLoaded] = useUserSettings<IntakeDefaults>(
+    "intake.defaults",
+    defaultRun,
+  );
+  const [dirty, setDirty] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [savingDefaults, setSavingDefaults] = useState(false);
+  const appliedDefaults = useRef(false);
+  const defaultOutputDir = useRef("processed_sermons");
+  const defaultOutputSource = useRef<"user" | "default">("default");
+  const outputDirty = useRef(false);
   const prefilledPath = searchParams.get("server_path") ?? "";
   const prefilledCloud = prefilledCloudMatch(prefilledPath);
   const [source, setSource] = useState<SourceKind>(
@@ -96,16 +145,22 @@ export function NewSermon() {
   const [pathStat, setPathStat] = useState<ServerPathStat | null>(null);
   const [statPending, setStatPending] = useState(false);
   const [meta, setMeta] = useState(initialMeta);
-  const [enhance, setEnhance] = useState(true);
-  const [transcribe, setTranscribe] = useState(true);
-  const [generateMetadata, setGenerateMetadata] = useState(true);
-  const [dryRun, setDryRun] = useState(false);
-  const [autoEdit, setAutoEdit] = useState(false);
-  const [autoEditMode, setAutoEditMode] = useState<AutoEditMode>("interactive");
-  const [logoPath, setLogoPath] = useState<string>("none");
+  const [touched, setTouched] = useState<Record<FieldKey, boolean>>({
+    source: false,
+    title: false,
+    speaker: false,
+    date: false,
+  });
+  const [enhance, setEnhance] = useState(defaultRun.enhance);
+  const [transcribe, setTranscribe] = useState(defaultRun.transcribe);
+  const [generateMetadata, setGenerateMetadata] = useState(defaultRun.generateMetadata);
+  const [dryRun, setDryRun] = useState(defaultRun.dryRun);
+  const [autoEdit, setAutoEdit] = useState(defaultRun.autoEdit);
+  const [autoEditMode, setAutoEditMode] = useState<AutoEditMode>(defaultRun.autoEditMode);
+  const [logoPath, setLogoPath] = useState<string>(defaultRun.logoPath);
   const [brandingFiles, setBrandingFiles] = useState<BrandingItem[]>([]);
   const [uploadingCard, setUploadingCard] = useState(false);
-  const [fadeBlack, setFadeBlack] = useState(true);
+  const [fadeBlack, setFadeBlack] = useState(defaultRun.fadeBlack);
   const [confirmReset, setConfirmReset] = useState(false);
   const [starting, setStarting] = useState(false);
   const [fileObj, setFileObj] = useState<File | null>(null);
@@ -125,7 +180,7 @@ export function NewSermon() {
   );
   const [localOpen, setLocalOpen] = useState(false);
   const [outputDir, setOutputDir] = useState("processed_sermons");
-  const [outputSource, setOutputSource] = useState<"user" | "default">("default");
+  const [outputSource, setOutputSource] = useState<"user" | "default" | "run">("default");
   const [outputOpen, setOutputOpen] = useState(false);
   const [outputCloudOpen, setOutputCloudOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -133,6 +188,26 @@ export function NewSermon() {
 
   const set = (k: keyof typeof initialMeta) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setMeta((m) => ({ ...m, [k]: e.target.value }));
+
+  const markDirty = () => {
+    setDirty(true);
+    setSubmitted(false);
+  };
+
+  useEffect(() => {
+    if (!defaultsLoaded || appliedDefaults.current) return;
+    appliedDefaults.current = true;
+    if (dirty) return;
+    setMeta((m) => ({ ...m, eventType: savedRunDefaults.eventType }));
+    setEnhance(savedRunDefaults.enhance);
+    setTranscribe(savedRunDefaults.transcribe);
+    setGenerateMetadata(savedRunDefaults.generateMetadata);
+    setDryRun(savedRunDefaults.dryRun);
+    setAutoEdit(savedRunDefaults.autoEdit);
+    setAutoEditMode(savedRunDefaults.autoEditMode);
+    setLogoPath(savedRunDefaults.logoPath);
+    setFadeBlack(savedRunDefaults.fadeBlack);
+  }, [defaultsLoaded, dirty, savedRunDefaults]);
 
   // Live server-path stat: debounce the input, then ask the server to stat() it.
   useEffect(() => {
@@ -181,8 +256,12 @@ export function NewSermon() {
     void outputDirApi
       .get()
       .then((r) => {
-        setOutputDir(r.output_dir);
-        setOutputSource(r.source);
+        defaultOutputDir.current = r.output_dir;
+        defaultOutputSource.current = r.source;
+        if (!outputDirty.current) {
+          setOutputDir(r.output_dir);
+          setOutputSource(r.source);
+        }
       })
       .catch(() => undefined);
   }, []);
@@ -199,6 +278,7 @@ export function NewSermon() {
   const facetSeriesOptions = facetsQuery.data?.series ?? [];
 
   const useCloudFile = (item: ApiCloudFile) => {
+    markDirty();
     setCloudFile(item);
   };
 
@@ -209,29 +289,21 @@ export function NewSermon() {
   };
 
   const useLocalFile = (path: string) => {
+    markDirty();
     setServerPath(path);
     setLocalOpen(false);
   };
 
-  const saveOutputDir = (next: string) => {
+  const setRunOutputDir = (next: string) => {
+    markDirty();
+    outputDirty.current = true;
     setOutputDir(next);
-    setOutputSource("user");
-    if (!isLive) {
-      showToast("Output location updated (demo).");
-      return;
-    }
-    void outputDirApi
-      .put(next)
-      .then((r) => {
-        setOutputDir(r.output_dir);
-        showToast("Output location saved as your default.");
-      })
-      .catch((e) => showToast(`Could not save output location: ${(e as Error).message}`, "error"));
+    setOutputSource("run");
   };
 
   const pickOutputDir = (path: string) => {
     setOutputOpen(false);
-    saveOutputDir(path);
+    setRunOutputDir(path);
   };
 
   const outputRemoteMatch = /^remote:([A-Za-z0-9._-]{1,64}):(.*)$/.exec(outputDir.trim());
@@ -241,13 +313,52 @@ export function NewSermon() {
 
   const chooseOutputRemote = (name: string) => {
     if (!name) return;
-    saveOutputDir(`remote:${name}:`);
+    setRunOutputDir(`remote:${name}:`);
   };
 
   const pickCloudOutput = (path: string) => {
     setOutputCloudOpen(false);
     const sub = path.replace(/^\/+/, "");
-    saveOutputDir(`remote:${outputRemote}:${sub}`);
+    setRunOutputDir(`remote:${outputRemote}:${sub}`);
+  };
+
+  const saveAsDefault = async () => {
+    if (savingDefaults) return;
+    setSavingDefaults(true);
+    try {
+      await saveRunDefaults({
+        eventType: meta.eventType || defaultRun.eventType,
+        enhance,
+        transcribe,
+        generateMetadata,
+        dryRun,
+        autoEdit,
+        autoEditMode,
+        logoPath,
+        fadeBlack,
+      });
+    } catch (e) {
+      showToast(`Could not save run defaults: ${(e as Error).message}`, "error");
+      setSavingDefaults(false);
+      return;
+    }
+    try {
+      if (isLive) {
+        const result = await outputDirApi.put(outputDir);
+        defaultOutputDir.current = result.output_dir;
+        defaultOutputSource.current = result.source;
+        setOutputDir(result.output_dir);
+        setOutputSource(result.source);
+      } else {
+        defaultOutputDir.current = outputDir;
+        defaultOutputSource.current = outputSource === "run" ? "user" : outputSource;
+      }
+      showToast(isLive ? "Saved as your default." : "Defaults saved for this demo session.");
+    } catch (e) {
+      showToast(`Run defaults saved, but the output folder could not be saved: ${(e as Error).message}`, "error");
+    } finally {
+      setSavingDefaults(false);
+    }
   };
 
   const pathLooksValid = serverPath.trim().startsWith("/") && serverPath.trim().length > 3;
@@ -281,16 +392,38 @@ export function NewSermon() {
   const valid = missing.length === 0;
   const helper = valid
     ? isLive
-      ? "Ready to queue. The pipeline run appears under Jobs."
+      ? "Ready to queue. The pipeline run appears under Activity."
       : "Source and details are complete. Demo mode sends nothing."
-    : `Missing: ${missing.join(", ")}.`;
+    : `Still needed: ${missing.join(", ")}.`;
 
-  const pickMockFile = () => setFileName("sample-sermon-upload.mp3");
+  const touch = (key: FieldKey) => setTouched((t) => (t[key] ? t : { ...t, [key]: true }));
+  const titleError = touched.title && !meta.title.trim();
+  const speakerError = touched.speaker && !meta.speaker.trim();
+  const dateError = touched.date && !meta.date;
+  const sourceError = touched.source && !hasSource;
+
+  const pickMockFile = () => {
+    markDirty();
+    setFileName("sample-sermon-upload.mp3");
+  };
 
   const showToast = (
     msg: string,
     variant: "success" | "error" | "info" = "success",
   ) => notify[variant](msg);
+
+  const resetRunOptions = () => {
+    setMeta({ ...initialMeta, eventType: savedRunDefaults.eventType });
+    setTouched({ source: false, title: false, speaker: false, date: false });
+    setEnhance(savedRunDefaults.enhance);
+    setTranscribe(savedRunDefaults.transcribe);
+    setGenerateMetadata(savedRunDefaults.generateMetadata);
+    setDryRun(savedRunDefaults.dryRun);
+    setAutoEdit(savedRunDefaults.autoEdit);
+    setAutoEditMode(savedRunDefaults.autoEditMode);
+    setLogoPath(savedRunDefaults.logoPath);
+    setFadeBlack(savedRunDefaults.fadeBlack);
+  };
 
   const resetAll = () => {
     setFileName(null);
@@ -300,15 +433,13 @@ export function NewSermon() {
     setPathStat(null);
     setCloudFile(null);
     setCloudBrowse("");
-    setMeta(initialMeta);
-    setEnhance(true);
-    setTranscribe(true);
-    setGenerateMetadata(true);
-    setDryRun(false);
-    setAutoEdit(false);
-    setAutoEditMode("interactive");
-    setLogoPath("none");
-    setFadeBlack(true);
+    if (fileInput.current) fileInput.current.value = "";
+    outputDirty.current = false;
+    setOutputDir(defaultOutputDir.current);
+    setOutputSource(defaultOutputSource.current);
+    resetRunOptions();
+    setDirty(false);
+    setSubmitted(false);
   };
 
   const clearFormKeepJob = (jobId: string) => {
@@ -319,15 +450,10 @@ export function NewSermon() {
     setPathStat(null);
     setCloudFile(null);
     setCloudBrowse("");
-    setMeta(initialMeta);
-    setEnhance(true);
-    setTranscribe(true);
-    setGenerateMetadata(true);
-    setDryRun(false);
-    setAutoEdit(false);
-    setAutoEditMode("interactive");
-    setLogoPath("none");
-    setFadeBlack(true);
+    if (fileInput.current) fileInput.current.value = "";
+    resetRunOptions();
+    setDirty(false);
+    setSubmitted(true);
   };
 
   const commonPayload = () => ({
@@ -349,8 +475,31 @@ export function NewSermon() {
     output_dir: outputDir,
   });
 
-  const start = () => {
-    if (!valid || starting) return;
+  const focusFirstInvalid = () => {
+    const targetId = !hasSource
+      ? source === "browser"
+        ? "ns-choose-file"
+        : source === "server"
+          ? "server-path"
+          : "cloud-remote"
+      : !meta.title.trim()
+        ? "ns-title"
+        : !meta.speaker.trim()
+          ? "ns-speaker"
+          : "ns-date";
+    document.getElementById(targetId)?.focus();
+  };
+
+  const start = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!valid || starting) {
+      if (!valid) {
+        setTouched({ source: true, title: true, speaker: true, date: true });
+        window.setTimeout(focusFirstInvalid, 0);
+      }
+      return;
+    }
+    setSubmitted(true);
     if (!isLive) {
       showToast("Demo mode: nothing was sent.", "info");
       return;
@@ -373,6 +522,7 @@ export function NewSermon() {
         })
         .catch((e) => {
           setStarting(false);
+          setSubmitted(false);
           showToast(`Could not queue: ${(e as Error).message}`, "error");
         });
       return;
@@ -387,6 +537,7 @@ export function NewSermon() {
       })
       .catch((e) => {
         setStarting(false);
+        setSubmitted(false);
         showToast(`Could not queue: ${(e as Error).message}`, "error");
       });
   };
@@ -438,28 +589,27 @@ export function NewSermon() {
     if (source === "browser") {
       const name = isLive ? fileObj?.name : fileName;
       const size = isLive ? fileObj?.size : undefined;
-      return name ? `upload:${name}${size != null ? ` (${formatBytes(size)})` : ""}` : "upload:no file";
+      return name
+        ? `Upload · ${name}${size != null ? ` (${formatBytes(size)})` : ""}`
+        : "Upload · no file";
     }
     if (source === "server") {
-      if (!serverValid) return "server:no path";
-      return `server:${serverPath.trim()}${pathStat?.size_human ? ` (${pathStat.size_human})` : ""}`;
+      if (!serverValid) return "Server path · not set";
+      return `Server path · ${serverPath.trim()}${pathStat?.size_human ? ` (${pathStat.size_human})` : ""}`;
     }
-    if (!cloudRef) return "cloud:no file";
-    return `cloud:${cloudRef}${cloudFile?.size ? ` (${formatBytes(cloudFile.size)})` : ""}`;
+    if (!cloudRef) return "Cloud · no file";
+    return `Cloud · ${cloudPick}/${cloudFile?.path ?? ""}${cloudFile?.size ? ` (${formatBytes(cloudFile.size)})` : ""}`;
   })();
 
-  const summaryBits = [
-    sourceSummary,
-    meta.title.trim() || "untitled",
-    meta.speaker.trim() || "no speaker",
-    meta.date || "no date",
-    enhance ? "enhance" : "no enhance",
-    transcribe ? "transcribe" : "no transcribe",
-    generateMetadata ? "metadata on upload" : "no metadata on upload",
-    dryRun ? "dry run" : "live run",
-    autoEdit ? `edit:${autoEditMode}` : "no edit",
-    `out:${outputDir}`,
-  ];
+  const outputSummary = outputIsCloud
+    ? `Cloud · ${outputRemote}${outputSub ? `/${outputSub}` : " · remote root"}`
+    : `Local · ${outputDir || "not set"}`;
+  const processingSummary = [
+    enhance ? "Audio enhancement" : "Original audio",
+    transcribe ? "Transcription" : "No transcription",
+    generateMetadata ? "Metadata generated" : "Metadata left as entered",
+    autoEdit ? `Auto-edit · ${autoEditMode === "auto" ? "automatic" : "interactive review"}` : "No auto-edit",
+  ].join(" · ");
 
   return (
     <div className="flex flex-col gap-4 pb-4">
@@ -483,6 +633,15 @@ export function NewSermon() {
         }
       />
 
+      <form
+        aria-label="New teaching"
+        noValidate
+        onSubmit={start}
+        onChangeCapture={markDirty}
+        className="pb-44 lg:pb-4"
+      >
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+          <div className="flex min-w-0 flex-col gap-4">
       <SectionCard
         n={1}
         title="Source"
@@ -504,18 +663,17 @@ export function NewSermon() {
         </Field>
 
         {source === "browser" ? (
-          <div
-            id="source-panel-browser"
-            role="tabpanel"
-            aria-label="Upload source"
-            className="mt-3"
-          >
+          <section id="source-panel-browser" className="mt-3">
             <input
               ref={fileInput}
               type="file"
-              accept=".mkv,.mp4,.mov,.webm,.m4v,.mp3,.wav,.m4a,.flac,.ogg,.mpa"
+              accept={fileAccept}
               className="sr-only"
+              tabIndex={-1}
               aria-label="Choose a teaching file"
+              aria-invalid={sourceError || undefined}
+              aria-describedby={sourceError ? "ns-source-error" : undefined}
+              onBlur={() => touch("source")}
               onChange={(e) => {
                 const f = e.target.files?.[0] ?? null;
                 if (isLive) setFileObj(f);
@@ -523,13 +681,6 @@ export function NewSermon() {
               }}
             />
             <div
-              role="button"
-              tabIndex={0}
-              aria-label={
-                isLive
-                  ? "Drop a teaching file here, or press Enter to choose one"
-                  : "Drop a teaching file here, or press Enter to pick a sample file"
-              }
               onDragOver={(e) => {
                 e.preventDefault();
                 setDragOver(true);
@@ -538,24 +689,16 @@ export function NewSermon() {
               onDrop={(e) => {
                 e.preventDefault();
                 setDragOver(false);
+                touch("source");
                 const f = e.dataTransfer.files?.[0];
                 if (isLive) {
-                  if (f) setFileObj(f);
+                  if (f) {
+                    markDirty();
+                    setFileObj(f);
+                  }
                 } else {
                   pickMockFile();
                 }
-              }}
-              onKeyDown={(e) => {
-                if (e.target !== e.currentTarget) return;
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  if (isLive) fileInput.current?.click();
-                  else pickMockFile();
-                }
-              }}
-              onClick={() => {
-                if (isLive) fileInput.current?.click();
-                else pickMockFile();
               }}
               className={`flex min-h-[10rem] flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-6 text-center transition-colors ${
                 dragOver ? "border-accent bg-raised" : "border-line bg-ink"
@@ -571,9 +714,11 @@ export function NewSermon() {
                   : "Files stay local in this demo. Nothing is uploaded."}
               </p>
               <Button
-                variant="primary"
-                onClick={(e) => {
-                  e.stopPropagation();
+                id="ns-choose-file"
+                variant="secondary"
+                aria-describedby={sourceError ? "ns-source-error" : undefined}
+                onClick={() => {
+                  touch("source");
                   if (isLive) fileInput.current?.click();
                   else pickMockFile();
                 }}
@@ -582,7 +727,7 @@ export function NewSermon() {
               </Button>
             </div>
             <div className="mt-3 flex flex-wrap gap-2" aria-label="Supported formats">
-              {supportedFormats.map((f) => (
+              {acceptedFormats.map((f) => (
                 <Chip key={f} tone="neutral">
                   {f}
                 </Chip>
@@ -591,21 +736,16 @@ export function NewSermon() {
             <p className="mt-2 text-xs text-muted">
               Large files (over ~500 MB) may take a while on slow connections. Prefer Server path or Cloud file for those.
             </p>
-            {!browserHasSource ? (
-              <p role="alert" className="mt-2 text-xs text-danger">
+            {sourceError ? (
+              <p id="ns-source-error" className="mt-2 text-xs text-danger">
                 Choose a file to upload.
               </p>
             ) : null}
-          </div>
+          </section>
         ) : null}
 
         {source === "server" ? (
-          <div
-            id="source-panel-server"
-            role="tabpanel"
-            aria-label="Server path source"
-            className="mt-3 flex flex-col gap-3"
-          >
+          <section id="source-panel-server" className="mt-3 flex flex-col gap-3">
             <Field
               label="Server path"
               htmlFor="server-path"
@@ -616,6 +756,9 @@ export function NewSermon() {
                   id="server-path"
                   value={serverPath}
                   onChange={(e) => setServerPath(e.target.value)}
+                  onBlur={() => touch("source")}
+                  aria-invalid={sourceError || undefined}
+                  aria-describedby={sourceError ? "ns-server-error" : undefined}
                   placeholder="/media/sample-sermon.mp3"
                   inputMode="text"
                   autoComplete="off"
@@ -629,8 +772,8 @@ export function NewSermon() {
             <div className="flex flex-wrap gap-2" aria-live="polite" aria-label="Path validation">
               {serverChips}
             </div>
-            {!serverValid ? (
-              <p role="alert" className="text-xs text-danger">
+            {sourceError ? (
+              <p id="ns-server-error" className="text-xs text-danger">
                 Enter an absolute path that exists on the server.
               </p>
             ) : null}
@@ -639,16 +782,11 @@ export function NewSermon() {
                 The server checks the path exists, then queues the real pipeline against it. Local paths are read in place.
               </p>
             ) : null}
-          </div>
+          </section>
         ) : null}
 
         {source === "cloud" ? (
-          <div
-            id="source-panel-cloud"
-            role="tabpanel"
-            aria-label="Cloud file source"
-            className="mt-3 flex flex-col gap-3"
-          >
+          <section id="source-panel-cloud" className="mt-3 flex flex-col gap-3">
             <Field
               label="Cloud remote"
               htmlFor="cloud-remote"
@@ -658,6 +796,9 @@ export function NewSermon() {
                 id="cloud-remote"
                 value={cloudPick}
                 onChange={(e) => chooseCloudRemote(e.target.value)}
+                onBlur={() => touch("source")}
+                aria-invalid={sourceError || undefined}
+                aria-describedby={sourceError ? "ns-cloud-error" : undefined}
                 className={inputCls}
               >
                 <option value="">Choose a remote…</option>
@@ -694,129 +835,74 @@ export function NewSermon() {
                 ) : null}
               </p>
             ) : null}
-            {!cloudValid ? (
-              <p role="alert" className="text-xs text-danger">
+            {sourceError ? (
+              <p id="ns-cloud-error" className="text-xs text-danger">
                 Pick a file with “Use this file”.
               </p>
             ) : null}
             <p className="text-xs text-muted">
               The selected file is fetched into the server's work area for processing, then removed.
             </p>
-          </div>
+          </section>
         ) : null}
       </SectionCard>
-
-      <details className="rounded-md border border-line bg-ink p-3">
-        <summary className="cursor-pointer text-xs font-semibold text-muted">Output location</summary>
-        <p className="mt-2 text-sm">
-          {outputIsCloud ? "Cloud" : "Local"}:{" "}
-          <span className="font-mono text-mist">{outputDir}</span>{" "}
-          <span className="text-xs text-muted">
-            ({outputSource === "user" ? "your default" : "default"})
-          </span>
-        </p>
-        <div className="mt-2 flex flex-wrap items-center gap-2" aria-live="polite" aria-label="Destination validation">
-          {outputIsCloud ? (
-            <>
-              <Chip tone={outputRemote ? "ok" : "neutral"}>
-                {outputRemote ? "cloud remote" : "no remote"}
-              </Chip>
-              <Chip tone={outputRemote ? "info" : "neutral"}>
-                {outputSub ? `folder: ${outputSub}` : "remote root"}
-              </Chip>
-            </>
-          ) : (
-            <>
-              <Chip tone="ok">local folder</Chip>
-              <Chip tone="info">{outputDir || "no path"}</Chip>
-            </>
-          )}
-        </div>
-        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <div>
-            <label htmlFor="output-mode" className="text-xs font-semibold text-muted">
-              Destination
-            </label>
-            <select
-              id="output-mode"
-              value={outputIsCloud ? "cloud" : "local"}
-              onChange={(e) => {
-                if (e.target.value === "local") {
-                  saveOutputDir("processed_sermons");
-                } else if (cloudRemotes[0]) {
-                  chooseOutputRemote(cloudRemotes[0].name);
-                }
-              }}
-              className={inputCls}
-            >
-              <option value="local">Local folder</option>
-              <option value="cloud" disabled={cloudRemotes.length === 0}>
-                Cloud folder
-              </option>
-            </select>
-          </div>
-          {outputIsCloud ? (
-            <div>
-              <label htmlFor="output-remote" className="text-xs font-semibold text-muted">
-                Cloud remote
-              </label>
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  id="output-remote"
-                  value={outputRemote}
-                  onChange={(e) => chooseOutputRemote(e.target.value)}
-                  className={`${inputCls} min-w-0 flex-1`}
-                >
-                  <option value="">Choose a remote…</option>
-                  {cloudRemotes.map((r) => (
-                    <option key={r.name} value={r.name}>
-                      {r.name} · {r.provider}
-                    </option>
-                  ))}
-                </select>
-                <Button
-                  variant="secondary"
-                  onClick={() => setOutputCloudOpen(true)}
-                  disabled={!outputRemote}
-                >
-                  Browse cloud
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-end">
-              <Button variant="secondary" onClick={() => setOutputOpen(true)}>
-                Change local folder
-              </Button>
-            </div>
-          )}
-        </div>
-        <p className="mt-1 text-xs text-muted">
-          {outputIsCloud
-            ? "Processed files are staged locally, uploaded to the cloud folder with rclone, then the staging copy is removed."
-            : "Changing this saves it as your default for future sermons. This run is queued with the location chosen here."}
-        </p>
-      </details>
 
       <SectionCard n={2} title="Metadata" sub="Title, speaker, and date are required. The rest sharpens search and display.">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Title (required)" htmlFor="ns-title">
-            <input id="ns-title" value={meta.title} onChange={set("title")} placeholder="Sample teaching title" className={inputCls} />
+            <input
+              id="ns-title"
+              value={meta.title}
+              onChange={set("title")}
+              onBlur={() => touch("title")}
+              aria-invalid={titleError || undefined}
+              aria-describedby={titleError ? "ns-title-error" : undefined}
+              placeholder="Sample teaching title"
+              className={inputCls}
+            />
+            {titleError ? (
+              <p id="ns-title-error" className="mt-1 text-xs text-danger">
+                Add a title.
+              </p>
+            ) : null}
           </Field>
           <Field label="Speaker (required)" htmlFor="ns-speaker">
-            <Combobox
-              id="ns-speaker"
-              value={meta.speaker}
-              onChange={(value) => setMeta((m) => ({ ...m, speaker: value }))}
-              options={facetSpeakerOptions}
-              placeholder="Speaker name"
-              ariaLabel="Speaker"
-              className={inputCls}
-              required
-            />
+            <div onBlur={() => touch("speaker")}>
+              <Combobox
+                id="ns-speaker"
+                value={meta.speaker}
+                onChange={(value) => setMeta((m) => ({ ...m, speaker: value }))}
+                options={facetSpeakerOptions}
+                placeholder="Speaker name"
+                ariaLabel="Speaker"
+                className={inputCls}
+                required
+                invalid={speakerError}
+                describedBy={speakerError ? "ns-speaker-error" : undefined}
+              />
+              {speakerError ? (
+                <p id="ns-speaker-error" className="mt-1 text-xs text-danger">
+                  Add a speaker.
+                </p>
+              ) : null}
+            </div>
           </Field>
           <Field label="Date (required)" htmlFor="ns-date">
-            <input id="ns-date" type="date" value={meta.date} onChange={set("date")} className={inputCls} />
+            <input
+              id="ns-date"
+              type="date"
+              value={meta.date}
+              onChange={set("date")}
+              onBlur={() => touch("date")}
+              aria-invalid={dateError || undefined}
+              aria-describedby={dateError ? "ns-date-error" : undefined}
+              className={inputCls}
+            />
+            {dateError ? (
+              <p id="ns-date-error" className="mt-1 text-xs text-danger">
+                Add the recording date.
+              </p>
+            ) : null}
           </Field>
           <Field label="Series" htmlFor="ns-series">
             <Combobox
@@ -829,39 +915,119 @@ export function NewSermon() {
               className={inputCls}
             />
           </Field>
-          <Field label="Event type" htmlFor="ns-event">
-            <select id="ns-event" value={meta.eventType} onChange={set("eventType")} className={inputCls}>
-              <option value="">Choose an event type…</option>
-              {eventTypes.map((e) => (
-                <option key={e} value={e}>
-                  {e}
-                </option>
-              ))}
-            </select>
-          </Field>
           <Field label="Scripture" htmlFor="ns-scripture" hint="Free text, e.g. Psalm 23">
             <input id="ns-scripture" value={meta.scripture} onChange={set("scripture")} placeholder="Psalm 23" className={inputCls} />
           </Field>
         </div>
       </SectionCard>
 
-      <SectionCard n={3} title="Processing options" sub="Turn pipeline stages on or off, then reveal the advanced knobs when needed.">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Toggle checked={enhance} onChange={setEnhance} label="Enhance audio" hint="Noise cleanup before transcription." />
-          <Toggle checked={transcribe} onChange={setTranscribe} label="Transcribe" hint="Speech-to-text for captions and search." />
-          <Toggle
-            checked={generateMetadata}
-            onChange={setGenerateMetadata}
-            label="Generate metadata on upload"
-            hint="Fill any empty title, summary, and tags from the transcript."
-          />
-          <Toggle
-            checked={autoEdit}
-            onChange={setAutoEdit}
-            label="Edit teaching"
-            hint="Auto-detect cut points, trim, and fade the video before upload. Video inputs only."
-          />
-        </div>
+      <SectionCard n={3} title="Processing options" sub="These choices apply to this run. Save them as your default when they should carry forward.">
+        <fieldset className="rounded-md border border-line p-3">
+          <legend className="px-1 text-sm font-semibold">For this run</legend>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Event type" htmlFor="ns-event">
+              <select id="ns-event" value={meta.eventType} onChange={set("eventType")} className={inputCls}>
+                {eventTypes.map((e) => (
+                  <option key={e} value={e}>
+                    {e}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Destination" htmlFor="output-mode">
+              <select
+                id="output-mode"
+                value={outputIsCloud ? "cloud" : "local"}
+                onChange={(e) => {
+                  if (e.target.value === "local") {
+                    setRunOutputDir(defaultOutputDir.current);
+                  } else if (cloudRemotes[0]) {
+                    chooseOutputRemote(cloudRemotes[0].name);
+                  }
+                }}
+                className={inputCls}
+              >
+                <option value="local">Local folder</option>
+                <option value="cloud" disabled={cloudRemotes.length === 0}>
+                  Cloud folder
+                </option>
+              </select>
+            </Field>
+            <div className="sm:col-span-2">
+              <p className="text-sm">
+                <span className="font-semibold">{outputIsCloud ? "Cloud" : "Local"}</span>
+                {" · "}
+                <span className="break-all">{outputDir || "No output folder"}</span>
+                <span className="ml-2 text-xs text-muted">
+                  {outputSource === "run"
+                    ? "changed for this run"
+                    : outputSource === "user"
+                      ? "your default"
+                      : "default"}
+                </span>
+              </p>
+              {outputIsCloud ? (
+                <div className="mt-2 flex flex-wrap items-end gap-2">
+                  <Field label="Cloud remote" htmlFor="output-remote">
+                    <select
+                      id="output-remote"
+                      value={outputRemote}
+                      onChange={(e) => chooseOutputRemote(e.target.value)}
+                      className={`${inputCls} min-w-0`}
+                    >
+                      <option value="">Choose a remote…</option>
+                      {cloudRemotes.map((r) => (
+                        <option key={r.name} value={r.name}>
+                          {r.name} · {r.provider}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setOutputCloudOpen(true)}
+                    disabled={!outputRemote}
+                  >
+                    Browse cloud
+                  </Button>
+                </div>
+              ) : (
+                <div className="mt-2">
+                  <Button variant="secondary" onClick={() => setOutputOpen(true)}>
+                    Change local folder
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-3">
+            <p className="text-sm font-semibold">Pipeline stages</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Toggle checked={enhance} onChange={(v) => { markDirty(); setEnhance(v); }} label="Enhance audio" hint="Noise cleanup before transcription." />
+              <Toggle checked={transcribe} onChange={(v) => { markDirty(); setTranscribe(v); }} label="Transcribe" hint="Speech-to-text for captions and search." />
+              <Toggle
+                checked={generateMetadata}
+                onChange={(v) => { markDirty(); setGenerateMetadata(v); }}
+                label="Generate metadata on upload"
+                hint="Fill any empty title, summary, and tags from the transcript."
+              />
+              <Toggle
+                checked={autoEdit}
+                onChange={(v) => { markDirty(); setAutoEdit(v); }}
+                label="Edit teaching"
+                hint="Auto-detect cut points, trim, and fade the video before upload. Video inputs only."
+              />
+              <div className="sm:col-span-2">
+                <Toggle
+                  checked={dryRun}
+                  onChange={(v) => { markDirty(); setDryRun(v); }}
+                  label="Dry run"
+                  hint="Process locally and skip the SermonAudio upload. Off by default."
+                />
+              </div>
+            </div>
+          </div>
 
         {autoEdit ? (
           <div className="mt-4 flex flex-col gap-3">
@@ -913,7 +1079,10 @@ export function NewSermon() {
                   type="button"
                   role="radio"
                   aria-checked={logoPath === "none"}
-                  onClick={() => setLogoPath("none")}
+                  onClick={() => {
+                    markDirty();
+                    setLogoPath("none");
+                  }}
                   className={`flex min-h-[5.5rem] flex-col items-center justify-center gap-1 rounded-md border p-3 text-sm transition-colors ${
                     logoPath === "none" ? "border-accent bg-raised" : "border-line bg-ink hover:border-muted"
                   }`}
@@ -930,12 +1099,15 @@ export function NewSermon() {
                       role="radio"
                       aria-checked={selected}
                       aria-label={`Ending card ${c.name}`}
-                      onClick={() => setLogoPath(c.path)}
+                      onClick={() => {
+                        markDirty();
+                        setLogoPath(c.path);
+                      }}
                       className={`flex min-h-[5.5rem] flex-col items-center justify-center gap-1 rounded-md border p-3 transition-colors ${
                         selected ? "border-accent bg-raised" : "border-line bg-ink hover:border-muted"
                       }`}
                     >
-                      <span aria-hidden="true" className="flex h-10 w-16 items-center justify-center overflow-hidden rounded bg-raised font-mono text-xs text-muted">
+                      <span aria-hidden="true" className="flex h-10 w-16 items-center justify-center overflow-hidden rounded-sm bg-raised font-mono text-xs text-muted">
                         {c.name}
                       </span>
                       <span className="max-w-full truncate text-xs text-muted">{c.name}</span>
@@ -954,58 +1126,53 @@ export function NewSermon() {
               </div>
             </fieldset>
 
-            <Toggle checked={fadeBlack} onChange={setFadeBlack} label="Fade to black" hint="Short fade into the ending hold." />
+            <Toggle checked={fadeBlack} onChange={(v) => { markDirty(); setFadeBlack(v); }} label="Fade to black" hint="Short fade into the ending hold." />
           </div>
         ) : null}
 
-        <div className="mt-4">
-          <Advanced label="Advanced options">
-            <Toggle
-              checked={dryRun}
-              onChange={setDryRun}
-              label="Dry run"
-              hint="Process locally, skip the SermonAudio upload. Off by default."
-            />
-          </Advanced>
-        </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line pt-4">
+            <Button
+              variant="secondary"
+              onClick={() => void saveAsDefault()}
+              disabled={savingDefaults || !defaultsLoaded}
+            >
+              {savingDefaults ? "Saving…" : defaultsLoaded ? "Save as my default" : "Loading defaults…"}
+            </Button>
+            <p className="max-w-prose text-xs text-muted">
+              Stores the event type, output folder, dry run, and pipeline choices for the next teaching.
+            </p>
+          </div>
+        </fieldset>
       </SectionCard>
 
       {queuedJob ? (
         <p className="text-sm">
-          <Link to="/jobs" className="font-medium text-accent hover:underline">
-            Track job {queuedJob} under Jobs →
+          <Link to="/activity" className="font-medium text-accent hover:underline">
+            Track job {queuedJob} under Activity →
           </Link>
         </p>
       ) : null}
 
-      <div
-        aria-label="Selection summary"
-        className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)] z-20 -mx-4 border-t border-line bg-ink/95 px-4 py-3 shadow-[0_-8px_24px_-16px_rgba(0,0,0,0.8)] backdrop-blur md:bottom-0 md:shadow-none"
-      >
-        <div className="mx-auto flex max-w-shell flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p
-              className="hidden truncate font-mono text-xs text-muted sm:block"
-              aria-live="polite"
-              title={summaryBits.join(" · ")}
-            >
-              {summaryBits.join(" · ")}
-            </p>
-            <p className="truncate text-xs text-muted" role="status" aria-live="polite">
-              {helper}
-            </p>
           </div>
-          <Button
-            variant="primary"
-            onClick={start}
-            disabled={!valid || starting}
-            aria-busy={starting}
-            className="w-full shrink-0 sm:w-auto"
-          >
-            {starting ? "Queueing…" : "Start processing"}
-          </Button>
+          <RunSummary
+            source={sourceSummary}
+            title={meta.title.trim() || "Not set"}
+            speaker={meta.speaker.trim() || "Not set"}
+            date={meta.date || "Not set"}
+            eventType={meta.eventType || defaultRun.eventType}
+            output={outputSummary}
+            dryRun={dryRun}
+            processing={processingSummary}
+            readiness={helper}
+            starting={starting}
+            valid={valid}
+          />
         </div>
-      </div>
+      </form>
+
+      {hasDataRouter ? (
+        <IntakeUnsavedChangesDialog when={dirty && !submitted} suppressed={confirmReset} />
+      ) : null}
 
       <FileExplorerDialog
         open={localOpen}

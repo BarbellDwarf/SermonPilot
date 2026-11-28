@@ -13,12 +13,8 @@
   --space-4: 1rem;
   --space-6: 1.5rem;
   --space-8: 2rem;
-  --font-xs: 0.75rem;
-  --font-sm: 0.8125rem;
-  --font-base: 0.9375rem;
-  --font-lg: 1.0625rem;
-  --font-xl: 1.375rem;
-  --font-2xl: 1.875rem;
+  --chrome-bar: 56px;
+  --chrome-bottom: calc(var(--chrome-bar) + env(safe-area-inset-bottom));
 }
 
 .dark {
@@ -28,6 +24,10 @@
   --surface-rgb: 21 27 33;
   --raised: #1e262f;
   --raised-rgb: 30 38 47;
+  --selected: #26313d;
+  --selected-rgb: 38 49 61;
+  --selected-border: #3a4a5c;
+  --selected-border-rgb: 58 74 92;
   --border: #2b3540;
   --border-rgb: 43 53 64;
   --text: #e9edef;
@@ -56,6 +56,10 @@
   --surface-rgb: 255 255 255;
   --raised: #f4f6f8;
   --raised-rgb: 244 246 248;
+  --selected: #cfdae4;
+  --selected-rgb: 207 218 228;
+  --selected-border: #b3c2d2;
+  --selected-border-rgb: 179 194 210;
   --border: #d7dfe6;
   --border-rgb: 215 223 230;
   --text: #141a20;
@@ -79,13 +83,39 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
   background-color: var(--bg);
   color: var(--text);
-  font-size: var(--font-base);
+  font-size: 0.9375rem;
   line-height: 1.5;
+  overscroll-behavior-y: none;
+}
+
+button,
+a,
+summary,
+input,
+select,
+textarea,
+[role="button"],
+[role="tab"],
+[role="switch"] {
+  touch-action: manipulation;
+}
+
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+dialog {
+  overscroll-behavior: contain;
 }
 
 :focus {

@@ -1,4 +1,5 @@
 import type { LibrarySermonStatus, PlanStatus } from "../mock/data";
+import type { LifecycleState } from "../utils/lifecycle";
 
 export interface SermonActionState {
   status: LibrarySermonStatus;
@@ -21,6 +22,38 @@ export function sermonViewMode({
 }): SermonViewMode {
   if (status === "processed" || planStatus === "processed") return "completed";
   return "editing";
+}
+
+export type WorkspacePrimaryKind = "approve" | "publish" | "view-job" | "publish-draft" | "detect" | "none";
+
+export interface WorkspacePrimary {
+  kind: WorkspacePrimaryKind;
+  label: string | null;
+}
+
+export function workspacePrimary({
+  state,
+  hasPlan,
+  hasRender,
+}: {
+  state: LifecycleState;
+  hasPlan: boolean;
+  hasRender: boolean;
+}): WorkspacePrimary {
+  if (state === "published") return { kind: "none", label: null };
+  if (state === "processing") return { kind: "view-job", label: "View job" };
+  if (state === "ready") return { kind: "publish", label: "Publish" };
+  if (state === "draft") {
+    return hasRender
+      ? { kind: "publish-draft", label: "Publish draft" }
+      : { kind: "detect", label: "Run cut detection" };
+  }
+  if (state === "failed") {
+    return hasPlan
+      ? { kind: "approve", label: "Retry approval" }
+      : { kind: "detect", label: "Retry cut detection" };
+  }
+  return { kind: "approve", label: "Approve & upload" };
 }
 
 export interface SermonActions {

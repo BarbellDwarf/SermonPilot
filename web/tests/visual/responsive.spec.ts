@@ -1,20 +1,21 @@
 import { test, expect } from "@playwright/test";
 
 const PAGES = [
-  { name: "home", path: "/" },
+  { name: "inbox", path: "/" },
   { name: "library", path: "/library" },
-  { name: "jobs", path: "/jobs" },
+  { name: "activity", path: "/activity" },
   { name: "settings", path: "/settings" },
   { name: "new-teaching", path: "/new" },
-  { name: "review", path: "/library/s-01" },
+  { name: "review", path: "/teaching/s-01" },
 ] as const;
 
-const WIDTHS = [390, 768, 1024, 1440] as const;
+const WIDTHS = [320, 390, 768, 1024, 1440] as const;
 
 for (const width of WIDTHS) {
+  const height = width === 320 ? 568 : 900;
   for (const target of PAGES) {
     test(`${target.name} holds at ${width}px with one section nav`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 900 });
+      await page.setViewportSize({ width, height });
       await page.goto(target.path);
       await page.waitForLoadState("networkidle");
       await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();

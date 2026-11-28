@@ -1,6 +1,6 @@
 [project]
 name = "sermon-audio-updater"
-version = "1.9.2"
+version = "1.9.4"
 description = "Automated sermon processing tool for SermonAudio"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,8 +38,8 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "httpx>=0.27.0",
-    # UI and analytics
-    "streamlit>=1.36.0",
+    "python-multipart>=0.0.20",
+    # Analytics
     "plotly>=6.3.0",
     "pandas>=2.1.3",
     "psutil>=5.9.0",
@@ -71,7 +71,6 @@ packages = ["src", "ui"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "sermon_updater.py" = "sermon_updater.py"
-"streamlit_app.py" = "streamlit_app.py"
 
 [tool.uv]
 dev-dependencies = [

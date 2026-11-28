@@ -155,4 +155,6 @@ node_modules/
 
 # Graphify generated output (Ponytail appended)
 *.pyc
-.opencode/
+# Local OpenCode state, except versioned project agents
+.opencode/*
+!.opencode/agents/

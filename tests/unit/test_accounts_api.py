@@ -263,7 +263,18 @@ def test_new_user_starts_empty_and_logout_invalidates_session(client, scoped_set
     ).json()["token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    assert client.get("/api/sermons", headers=headers).json() == {"items": [], "total": 0}
+    assert client.get("/api/sermons", headers=headers).json() == {
+        "items": [],
+        "total": 0,
+        "counts": {
+            "draft": 0,
+            "review": 0,
+            "processing": 0,
+            "ready": 0,
+            "published": 0,
+            "failed": 0,
+        },
+    }
     assert client.get("/api/jobs", headers=headers).json() == {"items": [], "total": 0}
     assert client.get("/api/cloud/remotes", headers=headers).json()["total"] == 0
     assert client.get("/api/me/settings/audio", headers=headers).json()["value"] is None

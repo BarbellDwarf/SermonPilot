@@ -197,22 +197,98 @@ describe("MediaPlayer", () => {
 
     video.currentTime = 10;
     fireEvent.timeUpdate(video);
-    expect(audioTime).toBe(12);
+    expect(audioTime).toBe(8);
     expect(seeks).toBe(1);
 
     video.currentTime = 10.2;
     fireEvent.timeUpdate(video);
     expect(seeks).toBe(1);
 
-    video.currentTime = 30;
-    fireEvent.timeUpdate(video);
-    expect(seeks).toBe(1);
-
     video.currentTime = 5;
     Object.defineProperty(video, "paused", { configurable: true, value: false });
     fireEvent.play(video);
-    expect(audioTime).toBe(7);
+    expect(audioTime).toBe(3);
     expect(audio.play).toHaveBeenCalled();
+  });
+
+  it("keeps the offset audio silent until a positive offset delay elapses", () => {
+    render(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        contentType="video/mp4"
+        available
+        offsetSec={2}
+      />,
+    );
+    const video = document.querySelector("video") as HTMLVideoElement;
+    const audio = document.querySelector("audio") as HTMLAudioElement;
+    Object.defineProperty(audio, "readyState", { configurable: true, value: 4 });
+    const pause = vi.fn();
+    audio.pause = pause;
+    audio.currentTime = 1;
+
+    video.currentTime = 1;
+    fireEvent.timeUpdate(video);
+    expect(pause).toHaveBeenCalled();
+    expect(audio.currentTime).toBe(0);
+  });
+
+  it("holds the offset audio at the plan start until the delay elapses", () => {
+    render(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        contentType="video/mp4"
+        available
+        offsetSec={2}
+        syncStartSec={552}
+      />,
+    );
+    const video = document.querySelector("video") as HTMLVideoElement;
+    const audio = document.querySelector("audio") as HTMLAudioElement;
+    Object.defineProperty(audio, "readyState", { configurable: true, value: 4 });
+    const pause = vi.fn();
+    audio.pause = pause;
+    audio.currentTime = 700;
+
+    video.currentTime = 553;
+    fireEvent.timeUpdate(video);
+    expect(pause).toHaveBeenCalled();
+    expect(audio.currentTime).toBe(552);
+
+    video.currentTime = 554.5;
+    fireEvent.timeUpdate(video);
+    expect(audio.currentTime).toBe(552.5);
+  });
+
+  it("mutes the original video audio while the offset track plays", () => {
+    const { rerender } = render(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        contentType="video/mp4"
+        available
+        offsetSec={0}
+      />,
+    );
+    const video = document.querySelector("video") as HTMLVideoElement;
+    expect(video.muted).toBe(false);
+
+    rerender(
+      <MediaPlayer
+        sermonId="s-1"
+        kind="processed"
+        contentType="video/mp4"
+        available
+        offsetSec={0.8}
+      />,
+    );
+    expect(video.muted).toBe(true);
+
+    video.muted = false;
+    fireEvent.volumeChange(video);
+    expect(video.muted).toBe(true);
   });
 
   it("labels the readout as playback time so it does not read as a second clock", () => {

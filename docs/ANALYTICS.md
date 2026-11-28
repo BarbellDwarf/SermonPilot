@@ -1,15 +1,18 @@
-# Analytics
+# Analytics (historical)
+
+> Historical: this page was part of the removed Streamlit UI. Current run
+> status is available in the console's Home and Jobs screens.
 
 ## Overview
 
-The Streamlit web UI includes an Analytics page (`ui/ui_pages/analytics.py`)
-that reports on sermon processing from the local SQLite database and fetches
+The Streamlit web UI included an Analytics page (`ui/ui_pages/analytics.py`)
+that reported on sermon processing from the local SQLite database and fetched
 engagement data from the SermonAudio API.
 
 ## Enabling Analytics
 
-Analytics is always available: the page renders whenever the Streamlit UI runs,
-with no configuration gate.
+Analytics was always available: the page rendered whenever the Streamlit UI
+ran, with no configuration gate.
 
 The data comes from two places:
 
@@ -19,7 +22,7 @@ The data comes from two places:
 
 ## The Analytics Page
 
-Open the Streamlit UI and navigate to the Analytics page. It has five tabs:
+Open the Streamlit UI and navigate to the Analytics page. It had five tabs:
 
 | Tab | Contents |
 |-----|----------|

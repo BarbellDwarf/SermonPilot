@@ -937,9 +937,16 @@ class JobQueue:
         self._release_worker_lease()
         logger.info("Job queue stopped")
 
-    def add_job(self, job_type: JobType, title: str, description: str,
-                parameters: dict[str, Any] | None = None,
-                priority: int = 5, user_id: str | None = None) -> str:
+    def add_job(
+        self,
+        job_type: JobType,
+        title: str,
+        description: str,
+        parameters: dict[str, Any] | None = None,
+        priority: int = 5,
+        user_id: str | None = None,
+        log_lines: list[str] | None = None,
+    ) -> str:
         """Add a new job to the queue"""
         job_id = str(uuid.uuid4())
 
@@ -955,6 +962,9 @@ class JobQueue:
             priority=priority,
             user_id=user_id,
         )
+        job.add_log(f"Job created: {title}")
+        for line in log_lines or []:
+            job.add_log(line)
 
         # Persist before publishing to the queue so workers only ever see a
         # job whose initial state is already durable, and so the SQLite write
@@ -964,7 +974,6 @@ class JobQueue:
         with self._queue_lock:
             self._jobs[job_id] = job
 
-        job.add_log(f"Job created: {title}")
         logger.info(f"Added job {job_id}: {title}")
 
         return job_id
@@ -1064,6 +1073,35 @@ class JobQueue:
             finally:
                 job._retrying = False
         return retried
+
+    def retry_job_clone(self, job_id: str) -> str | None:
+        """Queue a new job from a failed or cancelled row, preserving its history."""
+        job = None
+        if self.db is not None:
+            with self.db.get_connection() as conn:
+                row = conn.execute(
+                    "SELECT * FROM background_jobs WHERE id = ?", (job_id,)
+                ).fetchone()
+            if row is not None:
+                job = self._job_from_row(row)
+        if job is None:
+            with self._queue_lock:
+                job = self._jobs.get(job_id)
+        if (
+            job is None
+            or not job.can_retry
+            or job.status not in (JobStatus.FAILED, JobStatus.CANCELLED)
+        ):
+            return None
+        return self.add_job(
+            job.type,
+            job.title,
+            job.description,
+            parameters=job.parameters,
+            priority=job.priority,
+            user_id=job.user_id,
+            log_lines=[f"Retry of job {job_id}"],
+        )
 
     def clear_completed_jobs(self) -> int:
         """Remove terminal jobs (completed, cancelled, failed) from queue"""

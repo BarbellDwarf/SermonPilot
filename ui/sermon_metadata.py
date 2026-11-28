@@ -1,8 +1,7 @@
 """
-SermonAudio Metadata Management for Streamlit UI
+SermonAudio Metadata Management
 
-Handles caching and retrieval of pastors, events, and series from the SermonAudio API
-to populate dynamic dropdowns in the UI.
+Handles caching and retrieval of pastors, events, and series from the SermonAudio API.
 """
 
 from __future__ import annotations
@@ -14,10 +13,6 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-
-import streamlit as st
-
-from ui.ui_state import managed_expander
 
 # Add src directory to Python path for imports
 ui_dir = Path(__file__).parent
@@ -109,38 +104,12 @@ def _normalize_series(data) -> list[dict[str, Any]]:
     return normalized
 
 
-def _persist_entity(key: str, name: str) -> None:
-    """Add a newly used entity name to the local metadata cache so it
-    appears in dropdowns next time (best-effort; cache refresh overwrites)."""
-    try:
-        from database import get_db
-
-        db = get_db()
-        current = get_cached_metadata().get(key, [])
-        normalized = " ".join(name.split())
-        existing_names = set()
-        for item in current:
-            if isinstance(item, dict):
-                existing_names.add(item.get("name", "").casefold())
-            elif isinstance(item, str):
-                existing_names.add(item.casefold())
-        if normalized.casefold() in existing_names:
-            return
-        if key == "series":
-            entry = {"name": normalized}
-        else:
-            entry = normalized
-        db.cache_metadata(key, [*current, entry])
-    except Exception as e:
-        logger.warning("Failed to persist %s '%s' to cache: %s", key, name, e)
-
-
 def get_cached_metadata() -> dict[str, list[str]]:
     """
     Get cached sermon metadata (pastors, events, series) from SQLite database.
     Expired rows are still returned so the last-known data survives the 24h TTL;
     hardcoded defaults are used only when the cache has never been populated.
-    Falls back to session state and defaults if database is unavailable.
+    Falls back to the hardcoded defaults if the database is unavailable.
 
     Returns:
         Dictionary with 'pastors', 'event_types', and 'series' lists, plus
@@ -180,19 +149,15 @@ def get_cached_metadata() -> dict[str, list[str]]:
         return result
 
     except Exception as e:
-        logger.warning(f"Could not access SQLite cache, falling back to session state: {e}")
+        logger.warning(f"Could not access SQLite cache, falling back to defaults: {e}")
 
-        # Fallback to session state if database fails
-        if 'sermon_metadata' not in st.session_state:
-            st.session_state.sermon_metadata = {
-                'pastors': DEFAULT_PASTORS.copy(),
-                'event_types': DEFAULT_EVENT_TYPES.copy(),
-                'series': _normalize_series(DEFAULT_SERIES.copy()),
-                'last_refresh': None,
-                'stale': False,
-            }
-
-        return st.session_state.sermon_metadata
+        return {
+            'pastors': DEFAULT_PASTORS.copy(),
+            'event_types': DEFAULT_EVENT_TYPES.copy(),
+            'series': _normalize_series(DEFAULT_SERIES.copy()),
+            'last_refresh': None,
+            'stale': False,
+        }
 
 
 def needs_metadata_refresh() -> bool:
@@ -218,7 +183,7 @@ def fetch_and_cache_metadata(
 ) -> dict[str, list[str]]:
     """Fetch pastors, event types and series from the SermonAudio API and cache them.
 
-    Pure function with no Streamlit calls, safe to run from a background thread.
+    Pure function with no UI calls, safe to run from a background thread.
     Credentials fall back to the SERMONAUDIO_API_KEY / SERMONAUDIO_BROADCASTER_ID
     environment variables when not passed explicitly.
 
@@ -293,103 +258,6 @@ def refresh_metadata_in_background() -> None:
     threading.Thread(target=_run, name='sermon-metadata-refresh', daemon=True).start()
 
 
-def _resolve_api_credentials() -> tuple[str | None, str | None]:
-    """Resolve SermonAudio credentials from session config or environment."""
-    api_key = None
-    broadcaster_id = None
-    try:
-        config = st.session_state.get('config') or {}
-        api_key = config.get('api_key')
-        broadcaster_id = config.get('broadcaster_id')
-    except Exception:
-        pass
-    api_key = api_key or os.environ.get('SERMONAUDIO_API_KEY')
-    broadcaster_id = broadcaster_id or os.environ.get('SERMONAUDIO_BROADCASTER_ID')
-    return api_key or None, broadcaster_id or None
-
-
-def refresh_metadata_from_api() -> bool:
-    """
-    Refresh metadata by fetching fresh data from SermonAudio API.
-    Stores results in SQLite cache for persistence across sessions.
-
-    Returns:
-        True if successful, False if failed (will use cached/default data)
-    """
-    try:
-        api_key, broadcaster_id = _resolve_api_credentials()
-
-        if not api_key or not broadcaster_id:
-            logger.warning(
-                "SermonAudio API credentials not configured - "
-                f"api_key: {'present' if api_key else 'missing'}, "
-                f"broadcaster_id: {'present' if broadcaster_id else 'missing'}"
-            )
-            return False
-
-        with st.spinner('Refreshing metadata from SermonAudio API...'):
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-
-            def _progress(pct: float, message: str) -> None:
-                progress_bar.progress(pct)
-                status_text.text(message)
-
-            result = fetch_and_cache_metadata(
-                api_key=api_key,
-                broadcaster_id=broadcaster_id,
-                progress_callback=_progress,
-            )
-
-            progress_bar.empty()
-            status_text.empty()
-
-            metadata = get_cached_metadata()
-
-            if result['pastors']:
-                metadata['pastors'] = result['pastors']
-                logger.info(f"Refreshed {len(result['pastors'])} pastors from API")
-            else:
-                logger.warning("No pastors found from API, keeping defaults")
-                st.warning("No pastors found - keeping default list")
-
-            if result['event_types']:
-                metadata['event_types'] = result['event_types']
-                logger.info(f"Refreshed {len(result['event_types'])} event types from API")
-            else:
-                logger.warning("No event types found from API, keeping defaults")
-                st.warning("No event types found - keeping default list")
-
-            if result['series']:
-                metadata['series'] = result['series']
-                logger.info(f"Refreshed {len(result['series'])} series from API")
-            else:
-                logger.warning("No series found from API, keeping defaults")
-                st.warning("No series found - keeping default list")
-
-            metadata['last_refresh'] = datetime.datetime.now()
-
-            # Update session state
-            st.session_state.sermon_metadata = metadata
-
-            # Stash feedback so it survives the page rerun
-            success_msg = 'Metadata refreshed successfully!\n'
-            success_msg += f'Pastors: {len(metadata["pastors"])}\n'
-            success_msg += f'Event Types: {len(metadata["event_types"])}\n'
-            success_msg += f'Series: {len(metadata["series"])}'
-            st.session_state.metadata_refresh_feedback = success_msg
-            return True
-
-    except ImportError as e:
-        logger.error(f"Could not import sermon_updater: {e}")
-        st.error("Could not load sermon processing modules")
-        return False
-    except Exception as e:
-        logger.error(f"Error refreshing metadata: {e}")
-        st.error(f"Error refreshing metadata: {str(e)}")
-        return False
-
-
 def get_pastors() -> list[str]:
     """Get list of pastors/speakers."""
     metadata = get_cached_metadata()
@@ -416,169 +284,6 @@ def get_series_map() -> dict[str, int]:
         for s in metadata['series']
         if s.get('seriesID') is not None
     }
-
-
-def show_metadata_refresh_section():
-    """
-    Show a collapsible section for refreshing metadata from API.
-    Call this in UI pages that use the metadata dropdowns.
-    """
-    with managed_expander("Refresh Metadata from SermonAudio"):
-        feedback = st.session_state.pop('metadata_refresh_feedback', None)
-        if feedback:
-            st.success(feedback)
-
-        metadata = get_cached_metadata()
-
-        # Show current counts
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Pastors", len(metadata['pastors']))
-        with col2:
-            st.metric("Event Types", len(metadata['event_types']))
-        with col3:
-            st.metric("Series", len(metadata['series']))
-
-        # Show last refresh time
-        if metadata.get('last_refresh'):
-            st.caption(f"Last refreshed: {metadata['last_refresh'].strftime('%Y-%m-%d %H:%M:%S')}")
-        else:
-            st.caption("Using default data - click refresh to load from API")
-
-        if metadata.get('stale'):
-            st.caption(
-                "Showing cached data past its 24h freshness window - click refresh to update"
-            )
-
-        # Refresh button
-        if st.button("Refresh from SermonAudio API", width='stretch'):
-            refreshed = refresh_metadata_from_api()
-            if refreshed:
-                st.rerun()
-
-
-def create_pastor_selectbox(
-    label: str = "Speaker Name", key: str = "speaker_name", **kwargs
-) -> str | None:
-    """
-    Create a selectbox for pastor selection with option to add new pastor.
-
-    Args:
-        label: Label for the selectbox
-        key: Unique key for the widget
-        **kwargs: Additional arguments passed to selectbox
-
-    Returns:
-        Selected pastor name or None
-    """
-    pastors = get_pastors()
-
-    if not pastors:
-        return st.text_input(
-            label,
-            key=f"{key}_custom",
-            placeholder="Enter pastor name"
-        ) or None
-
-    options = ["[Select Pastor]"] + pastors + ["[Add New Pastor]"]
-    selected = st.selectbox(label, options, key=f"{key}_select", **kwargs)
-
-    if selected == "[Add New Pastor]":
-        custom_pastor = st.text_input(
-            "Enter pastor name:",
-            key=f"{key}_custom",
-            placeholder="Enter pastor name"
-        )
-        if custom_pastor:
-            _persist_entity("pastors", custom_pastor)
-        return custom_pastor if custom_pastor else None
-    elif selected == "[Select Pastor]":
-        return None
-    else:
-        return selected
-
-
-def create_event_type_selectbox(
-    label: str = "Event Type",
-    key: str = "event_type",
-    value: str | None = None,
-    **kwargs,
-) -> str | None:
-    """
-    Create a selectbox for event type selection.
-
-    The picker offers only actual options from get_event_types() (plus the
-    "[Select Event Type]" placeholder). There is no free-text path: the
-    SermonAudio API rejects unknown values with 422, so anything not in the
-    allowed list cannot be submitted.
-
-    Args:
-        label: Label for the selectbox
-        key: Unique key for the widget
-        value: Currently stored value, preselected when it is a valid option.
-            A stale value outside the allowed list falls back to the
-            placeholder with a caption so the user picks a valid option.
-        **kwargs: Additional arguments passed to selectbox
-
-    Returns:
-        Selected event type or None
-    """
-    event_types = get_event_types()
-
-    options = ["[Select Event Type]", *event_types]
-
-    index = 0
-    if value and value != "[Select Event Type]":
-        try:
-            index = options.index(value)
-        except ValueError:
-            index = 0
-            st.caption(
-                f"Stored event type {value!r} is not a valid option; "
-                "select one from the list."
-            )
-
-    selected = st.selectbox(label, options, index=index, key=f"{key}_select", **kwargs)
-
-    if selected == "[Select Event Type]":
-        return None
-    return selected
-
-
-def create_series_selectbox(
-    label: str = "Series (optional)", key: str = "series", **kwargs
-) -> str | None:
-    """
-    Create a selectbox for series selection with option to add new series.
-
-    Returns the selected series name for display; the matching numeric
-    seriesID is stored in st.session_state[f"{key}_id"] for uploads.
-    """
-    series = get_series()
-    series_map = get_series_map()
-
-    # Add option for custom series and no series
-    options = ["[No Series]"] + series + ["[Add New Series]"]
-
-    selected = st.selectbox(label, options, key=f"{key}_select", **kwargs)
-
-    if selected == "[Add New Series]":
-        # Show text input for custom series
-        custom_series = st.text_input(
-            "Enter series name:",
-            key=f"{key}_custom",
-            placeholder="Book of Romans"
-        )
-        if custom_series:
-            _persist_entity("series", custom_series)
-        st.session_state[f"{key}_id"] = None
-        return custom_series if custom_series else None
-    elif selected == "[No Series]":
-        st.session_state[f"{key}_id"] = None
-        return None
-    else:
-        st.session_state[f"{key}_id"] = series_map.get(selected)
-        return selected
 
 
 _FILENAME_DATE_FORMATS = ('%Y-%m-%d', '%Y_%m_%d', '%m-%d-%Y', '%m_%d_%Y', '%d.%m.%Y')
@@ -613,74 +318,3 @@ def _parse_filename_date(value: str) -> datetime.date | None:
         except ValueError:
             continue
     return None
-
-
-def _match_option(options: list[str], value: str) -> str | None:
-    for option in options:
-        if option == value:
-            return option
-    folded = value.casefold()
-    for option in options:
-        if option.casefold() == folded:
-            return option
-    return None
-
-
-def _speaker_field_set() -> bool:
-    selected = st.session_state.get('speaker_name_select')
-    if selected and selected not in ('[Select Pastor]', '[Add New Pastor]'):
-        return True
-    return bool(st.session_state.get('speaker_name_custom'))
-
-
-def _series_field_set() -> bool:
-    selected = st.session_state.get('sermon_series_select')
-    if selected and selected not in ('[No Series]', '[Add New Series]'):
-        return True
-    return bool(st.session_state.get('sermon_series_custom'))
-
-
-def apply_filename_autodetect(filename: str) -> bool:
-    """Pre-fill metadata fields from an uploaded filename.
-
-    Call before the metadata widgets render. Only fields the user has not set
-    are touched. Returns True when any field was pre-filled.
-    """
-    parsed = parse_sermon_filename(filename)
-    applied = False
-
-    title = parsed['title']
-    if title and not st.session_state.get('sermon_title'):
-        st.session_state['sermon_title'] = title
-        applied = True
-
-    speaker = parsed['speaker']
-    if speaker and not _speaker_field_set():
-        match = _match_option(get_pastors(), speaker)
-        if match is not None:
-            st.session_state['speaker_name_select'] = match
-        else:
-            st.session_state['speaker_name_select'] = '[Add New Pastor]'
-            st.session_state['speaker_name_custom'] = speaker
-        applied = True
-
-    series = parsed['series']
-    if series and not _series_field_set():
-        match = _match_option(get_series(), series)
-        if match is not None:
-            st.session_state['sermon_series_select'] = match
-            st.session_state['sermon_series_id'] = get_series_map().get(match)
-        else:
-            st.session_state['sermon_series_select'] = '[Add New Series]'
-            st.session_state['sermon_series_custom'] = series
-            st.session_state['sermon_series_id'] = None
-        applied = True
-
-    parsed_date = parsed['date']
-    if parsed_date is not None:
-        current_date = st.session_state.get('recorded_date')
-        if current_date is None or current_date == datetime.date.today():
-            st.session_state['recorded_date'] = parsed_date
-            applied = True
-
-    return applied

@@ -30,7 +30,7 @@ sys.path.insert(0, str(project_root / "src"))
 
 try:  # noqa: E402 - prefer package path so ui.* and top-level resolve to ONE module
     from ui.job_queue import Job, JobCancelledError, JobResult, JobStatus, JobType
-except ImportError:  # Streamlit entrypoint runs from /app (top-level imports)
+except ImportError:  # container entrypoint runs from /app (top-level imports)
     from job_queue import Job, JobCancelledError, JobResult, JobStatus, JobType  # noqa: E402
 
 # Belt-and-braces: coerce str/foreign-enum job types via value lookup so a dual-module
@@ -118,6 +118,19 @@ def _stamp_sermon_owner(sermon_id: str | None, user_id: str | None) -> None:
             conn.commit()
     except Exception as e:
         logger.warning("Failed to stamp sermon owner %s: %s", sermon_id, e)
+
+
+def _mark_pending_review(sermon_id: str | None) -> None:
+    if not sermon_id:
+        return
+    try:
+        from ui.database import SermonRepository
+
+        SermonRepository().update_sermon_edit_status(sermon_id, "pending_review")
+    except Exception as exc:
+        logger.warning(
+            "Could not set edit_status=pending_review for %s: %s", sermon_id, exc
+        )
 
 
 def _raise_if_job_cancelled(job: Job) -> None:
@@ -656,8 +669,8 @@ def _log_job_llm_source(
 def _scope_sermonaudio_to_user(config: dict, user_id: str | None) -> dict:
     """Bind SermonAudio credentials to the job owner's own account.
 
-    A job with no owner keeps the resolved global fallback (legacy and
-    Streamlit jobs). A job with an owner gets that owner's account, or an
+    A job with no owner keeps the resolved global fallback (legacy jobs). A
+    job with an owner gets that owner's account, or an
     explicit empty credential when they have none, so a publish fails with a
     connect-your-account message instead of borrowing another user's account.
     The marker records the source for diagnostics and never carries a key.
@@ -746,9 +759,9 @@ def execute_validation_job(job: Job) -> JobResult:
 
         job.update_progress(20, f"Starting validation of {len(sermon_ids)} sermons...")
 
-        # Import validation components
-        from ui_processor import UIProcessor
-        processor = UIProcessor()
+        from ui.database import SermonRepository
+
+        repo = SermonRepository()
 
         # Track results
         results = {
@@ -786,7 +799,7 @@ def execute_validation_job(job: Job) -> JobResult:
 
                 if validation_result:
                     # Save to database
-                    processor.db.save_validation_result(
+                    repo.save_validation_result(
                         sermon_id,
                         validation_result.is_valid,
                         validation_result.validation_score,
@@ -996,7 +1009,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
     """Execute a sermon processing job from an uploaded file (UI flow).
 
     This handles the 'new sermon' workflow where a user uploads an audio file
-    via the Streamlit UI and it gets processed, transcribed, and uploaded
+    through the console and it gets processed, transcribed, and uploaded
     to SermonAudio.
 
     Required job parameters:
@@ -1169,6 +1182,9 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
             cancel_check=lambda: _raise_if_job_cancelled(job),
             cancel_log=job.add_log,
             existing_sermon_id=job.parameters.get("sermon_id"),
+            replace_recording=bool(job.parameters.get("replace_recording")),
+            remote_sermon_id=job.parameters.get("remote_sermon_id"),
+            existing_description_needs_review=form_data.get("description_needs_review"),
         )
         processing_temp_dir = result.get('processing_temp_dir')
 
@@ -1207,6 +1223,7 @@ def execute_sermon_processing_job(job: Job) -> JobResult:
                     )
             if plan_status == 'pending_review':
                 job.add_log("Auto-edit cut awaits manual review")
+                _mark_pending_review(sermon_id)
                 cleanup_state["keep_staged"] = True
                 return JobResult(
                     success=True,
@@ -1379,6 +1396,7 @@ def execute_auto_edit_job(job: Job) -> JobResult:
             plan_status = result.get('edit_plan_status')
             if plan_status == 'pending_review':
                 job.add_log("Auto-edit cut awaits manual review")
+                _mark_pending_review(sermon_id)
                 return JobResult(
                     success=True,
                     message=(f"Auto-edit cut awaiting manual review "

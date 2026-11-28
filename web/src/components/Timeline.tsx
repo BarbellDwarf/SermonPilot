@@ -26,7 +26,9 @@ export interface TimelineProps {
   selection?: TimelineRange | null;
   onChangeSelection?: (range: TimelineRange | null) => void;
   selected?: "start" | "end" | null;
+  selectedCut?: string | null;
   onSelect?: (handle: "start" | "end") => void;
+  onSelectCut?: (id: string | null) => void;
   onChangeStart?: (sec: number) => void;
   onChangeEnd?: (sec: number) => void;
   onSeek?: (sec: number, regionId: string) => void;
@@ -132,7 +134,9 @@ export function Timeline({
   selection: controlledSelection,
   onChangeSelection,
   selected = null,
+  selectedCut = null,
   onSelect,
+  onSelectCut,
   onChangeStart,
   onChangeEnd,
   onSeek,
@@ -497,7 +501,7 @@ export function Timeline({
                 onPlayRegion?.(clip.id, clip.startSec, clip.endSec);
               }}
               style={{ left: `${left}%`, touchAction: "none" }}
-              className="absolute bottom-0 z-20 h-11 min-w-[44px] -translate-x-1/2 rounded-t border border-transparent bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="absolute bottom-0 z-20 h-11 min-w-[44px] -translate-x-1/2 rounded-t-sm border border-transparent bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
               <span
                 aria-hidden="true"
@@ -519,7 +523,7 @@ export function Timeline({
             onPlayRegion?.("keep", startSec, endSec);
           }}
           style={{ left: `${keepLeft}%`, width: `${keepWidth}%`, touchAction: "none" }}
-          className="absolute inset-y-0 z-10 rounded-[3px] border-x border-accent/70 bg-accent/25 transition-colors hover:bg-accent/35"
+          className="absolute inset-y-0 z-10 rounded-sm border-x border-accent/70 bg-accent/25 transition-colors hover:bg-accent/35"
         />
         <div
           data-testid="timeline-selection-surface"
@@ -542,14 +546,16 @@ export function Timeline({
               data-start-sec={segment.startSec}
               data-end-sec={segment.endSec}
               aria-label={`Removal ${index + 1}, ${segment.startSec}s to ${segment.endSec}s`}
+              aria-pressed={selectedCut === `interior-${index}`}
               title={`Removal ${index + 1}`}
               onClick={(event) => {
                 event.stopPropagation();
+                onSelectCut?.(`interior-${index}`);
                 onSeek?.(segment.startSec, `removal_${index}`);
                 onPlayRegion?.(`removal_join_${index}`, segment.startSec, segment.endSec);
               }}
               style={{ left: `${left}%`, width: `${Math.max(width, 0.6)}%` }}
-              className="absolute bottom-0 z-30 h-11 min-w-[24px] bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
+              className={`absolute bottom-0 z-30 h-11 min-w-[24px] bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger ${selectedCut === `interior-${index}` ? "ring-2 ring-inset ring-warn" : ""}`}
             >
               <span
                 aria-hidden="true"
@@ -674,7 +680,7 @@ export function Timeline({
           />
           <span aria-hidden="true" className="absolute left-1/2 top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-accent" />
         </button>
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-between px-1 font-mono text-[9px] text-muted">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-between px-1 font-mono text-xs text-muted">
           <span>{shortCut(0)}</span>
           <span>{shortCut(span / 2)}</span>
           <span>{shortCut(span)}</span>
@@ -683,40 +689,40 @@ export function Timeline({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1">
-          <span className="px-1 text-[10px] font-semibold uppercase tracking-wide text-muted">Jump</span>
+          <span className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">Jump</span>
           <button
             type="button"
             onClick={() => onSeek?.(startSec, "jump-start")}
-            className="min-h-[36px] rounded-md border border-line bg-raised px-2 text-[11px] font-semibold text-mist transition-colors hover:border-accent"
+            className="min-h-[44px] rounded-md border border-line bg-raised px-2 text-xs font-semibold text-mist transition-colors hover:border-accent"
           >
             Opening
           </button>
           <button
             type="button"
             onClick={() => onSeek?.(middleJump, "jump-middle")}
-            className="min-h-[36px] rounded-md border border-line bg-raised px-2 text-[11px] font-semibold text-mist transition-colors hover:border-accent"
+            className="min-h-[44px] rounded-md border border-line bg-raised px-2 text-xs font-semibold text-mist transition-colors hover:border-accent"
           >
             Middle
           </button>
           <button
             type="button"
             onClick={() => onSeek?.(endSec, "jump-end")}
-            className="min-h-[36px] rounded-md border border-line bg-raised px-2 text-[11px] font-semibold text-mist transition-colors hover:border-accent"
+            className="min-h-[44px] rounded-md border border-line bg-raised px-2 text-xs font-semibold text-mist transition-colors hover:border-accent"
           >
             Closing
           </button>
         </div>
         <div className="flex items-center gap-1">
-          <span className="px-1 text-[10px] font-semibold uppercase tracking-wide text-muted">Zoom</span>
+          <span className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">Zoom</span>
           {ZOOM_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
               aria-pressed={zoomSec === option.value}
               onClick={() => setZoomSec(option.value)}
-              className={`min-h-[36px] rounded-md border px-2 text-[11px] font-semibold transition-colors ${
+              className={`min-h-[44px] rounded-md border px-2 text-xs font-semibold transition-colors ${
                 zoomSec === option.value
-                  ? "border-accent bg-accent/15 text-accent"
+                  ? "border-accent bg-accent/15 text-mist"
                   : "border-line bg-raised text-mist hover:border-accent"
               }`}
             >
@@ -762,21 +768,20 @@ export function Timeline({
                 <div
                   key={`detail-${segment.startSec}-${segment.endSec}-${index}`}
                   data-testid={`timeline-detail-removal-${index}`}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Cut ${index + 1}, ${shortCut(segment.startSec)} to ${shortCut(segment.endSec)}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSeek?.(segment.startSec, `detail_removal_${index}`);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" && event.key !== " ") return;
-                    event.preventDefault();
-                    onSeek?.(segment.startSec, `detail_removal_${index}`);
-                  }}
                   style={{ left: `${left}%`, width: `${width}%` }}
-                  className="absolute inset-y-0 z-10 cursor-pointer border-x-2 border-danger/80 bg-danger/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
+                  className={`absolute inset-y-0 z-10 border-x-2 border-danger/80 bg-danger/25 ${selectedCut === `interior-${index}` ? "ring-2 ring-inset ring-warn" : ""}`}
                 >
+                  <button
+                    type="button"
+                    aria-label={`Cut ${index + 1}, ${shortCut(segment.startSec)} to ${shortCut(segment.endSec)}`}
+                    aria-pressed={selectedCut === `interior-${index}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSelectCut?.(`interior-${index}`);
+                      onSeek?.(segment.startSec, `detail_removal_${index}`);
+                    }}
+                    className="absolute inset-0 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
+                  />
                   <button
                     type="button"
                     aria-label={`Delete cut ${index + 1} on timeline`}
@@ -784,7 +789,7 @@ export function Timeline({
                       event.stopPropagation();
                       onRemoveSegment?.(index);
                     }}
-                    className="absolute -top-2 right-0 z-20 grid h-6 w-6 place-items-center rounded-full border border-danger/60 bg-ink text-xs text-danger shadow"
+                    className="absolute -right-2 -top-2 z-20 grid h-11 w-11 place-items-center rounded-full border border-danger/60 bg-ink text-xs text-danger shadow"
                   >
                     ×
                   </button>
@@ -884,7 +889,7 @@ export function Timeline({
               </button>
             ) : null}
           </div>
-          <div className="mt-1 flex justify-between font-mono text-[10px] text-muted">
+          <div className="mt-1 flex justify-between font-mono text-xs text-muted">
             <span>{shortCut(windowStart)}</span>
             <span>{shortCut(windowStart + zoom / 2)}</span>
             <span>{shortCut(windowEnd)}</span>

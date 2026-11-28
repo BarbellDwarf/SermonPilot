@@ -14,6 +14,8 @@ interface ComboboxProps {
   ariaLabel?: string;
   className?: string;
   required?: boolean;
+  invalid?: boolean;
+  describedBy?: string;
 }
 
 export function Combobox({
@@ -25,6 +27,8 @@ export function Combobox({
   ariaLabel,
   className,
   required,
+  invalid,
+  describedBy,
 }: ComboboxProps) {
   const listboxId = `${id}-listbox`;
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -109,6 +113,8 @@ export function Combobox({
         aria-autocomplete="list"
         aria-activedescendant={activeId}
         aria-haspopup="listbox"
+        aria-invalid={invalid || undefined}
+        aria-describedby={describedBy}
         autoComplete="off"
         value={value}
         required={required}
@@ -135,7 +141,7 @@ export function Combobox({
           id={listboxId}
           role="listbox"
           aria-label={ariaLabel ? `${ariaLabel} suggestions` : undefined}
-          className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-md border border-line bg-surface py-1 shadow-lg"
+          className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-md border border-line bg-surface py-1 shadow-menu"
         >
           {filtered.length === 0 ? (
             <li role="presentation" className="px-3 py-2 text-xs text-muted">

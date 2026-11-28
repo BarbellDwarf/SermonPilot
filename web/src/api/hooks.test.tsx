@@ -1,9 +1,54 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ApiError } from "./client";
 import { QueryError, describeLoadError } from "./hooks";
 
 const NOT_FOUND = "This teaching is no longer in the library (it may have been applied or removed).";
+
+function jsonResponse(body: unknown, status: number): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    clone() {
+      return this;
+    },
+  } as unknown as Response;
+}
+
+describe("mediaApi.waveform", () => {
+  async function loadClient(mode: "mock" | "live") {
+    vi.stubEnv("VITE_API_MODE", mode);
+    vi.resetModules();
+    return await import("./client");
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("does not request the waveform in demo mode", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { mediaApi } = await loadClient("mock");
+    await expect(mediaApi.waveform("s-01")).resolves.toEqual({ peaks: [], duration: 0 });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("requests the waveform endpoint in live mode", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      jsonResponse({ peaks: [0.2, 0.6], duration: 30 }, 200),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { mediaApi } = await loadClient("live");
+    await expect(mediaApi.waveform("s-01")).resolves.toEqual({ peaks: [0.2, 0.6], duration: 30 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/media/sermons/s-01/waveform");
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("GET");
+  });
+});
 
 describe("describeLoadError", () => {
   it("returns null when there is no error", () => {
@@ -58,7 +103,7 @@ describe("QueryError", () => {
   it("renders the server error copy for a 500", () => {
     render(
       <QueryError
-        message={describeLoadError(new ApiError("boom", 500), "Home data") ?? ""}
+        message={describeLoadError(new ApiError("boom", 500), "Inbox data") ?? ""}
         onRetry={vi.fn()}
       />,
     );

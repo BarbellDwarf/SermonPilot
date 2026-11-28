@@ -31,8 +31,8 @@ It pulls `ghcr.io/barbelldwarf/sermonpilot:${SERMONPILOT_TAG:-latest}`, restarts
 unless stopped, and reads `.env` when present.
 
 The console, which is the API server plus the built React bundle, listens on
-**8504**. It is the only web interface; the legacy Streamlit UI is no longer
-started.
+**8504**. It is the only web interface; the legacy Streamlit UI has been
+removed.
 
 The checked-in compose file publishes 8504:
 

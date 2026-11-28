@@ -2,8 +2,8 @@
 
 ## Architecture Overview
 
-SermonPilot is a sermon processing pipeline with a CLI and a Streamlit web
-UI:
+SermonPilot is a sermon processing pipeline with a CLI and a React web
+console:
 
 1. **`sermon_updater.py`** - CLI orchestrator. Downloads sermons from the
    SermonAudio API, runs enhancement, transcription, and LLM metadata
@@ -16,8 +16,9 @@ UI:
 4. **`src/llm_manager.py`** - Multi-provider LLM abstraction (Ollama,
    OpenAI-compatible, Anthropic, xAI, Google, Groq, OpenRouter) with
    primary/fallback/validator providers.
-5. **`streamlit_app.py`** - Streamlit web UI. Page components live in
-   `ui/ui_pages/`; analytics and job infrastructure live in `ui/`.
+5. **`server/api/`** - FastAPI bridge that serves the JSON API and the
+   built React console from `web/dist`. The console source lives in `web/`;
+   shared job and analytics infrastructure lives in `ui/`.
 
 **Key Data Flow**: SermonAudio API → Audio Download → AI Enhancement →
 Transcription → LLM Summary/Hashtags → Upload Back → Analytics & Insights
@@ -94,12 +95,16 @@ uv pip install -r requirements/requirements.txt
 There is no `requirements.txt` at the repo root. Requirement files live in
 `requirements/`.
 
-### Web Interface
+### Web console
+
+The FastAPI server serves the built console from `web/dist` and the `/api/*`
+routes:
 
 ```bash
-streamlit run streamlit_app.py
-# Access at http://localhost:8501
+uvicorn server.api.app:app --port 8504
 ```
+
+Build the console first with `cd web && npm ci && npm run build`.
 
 ### Testing Workflow
 
@@ -191,8 +196,9 @@ setup examples.
   audio, transcript, and metadata files
 - `tests/` - all test files (never put tests elsewhere)
 - `docs/` - all documentation files (never put docs in the repo root)
-- `ui/` - Streamlit UI and analytics components
-- `ui/ui_pages/` - individual page components
+- `ui/` - shared backend modules for the API, worker, and CLI
+- `server/api/` - FastAPI routes, accounts, and SPA serving
+- `web/` - React console source
 - `src/` - processing, LLM, transcription, and CLI parser modules
 - `requirements/` - requirement files (CPU, GPU, ROCm, dev, models)
 - `pyproject.toml` - primary dependency manifest (UV-compatible)
@@ -211,7 +217,6 @@ setup examples.
 
 - `sermon_processor.db` - settings database; `config_cache.app_config` holds
   runtime configuration (see `config/config.example.yaml` for the key list)
-- `streamlit_app.py` - web UI entry point
 - `sermon_updater.py` - CLI engine (`process_new_sermon` at line 1348)
 - `src/cli/parser.py` - CLI argument definitions
 - `src/audio_processing.py` - audio enhancement
@@ -220,7 +225,7 @@ setup examples.
 - `ui/database.py` - `SermonDatabase`, `SermonRepository`
 - `ui/job_queue.py`, `ui/job_executors.py` - background job system
 - `ui/performance_monitor.py` - system and processing metrics
-- `ui/ui_pages/` - Streamlit pages (library, dashboard, jobs, analytics, ...)
+- `server/api/` - FastAPI routes and the served console bundle
 - `docs/LLM_Configuration_Guide.md`, `docs/PERFORMANCE_MONITORING.md`,
   `docs/GPU_INSTALLATION.md`, `docs/UV_SETUP.md`
 
