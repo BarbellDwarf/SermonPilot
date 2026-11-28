@@ -152,6 +152,8 @@ beforeEach(() => {
   vi.mocked(writeApi.applyPlan).mockResolvedValue({ job_id: "job-approve", status: "queued" });
   vi.mocked(writeApi.uploadNow).mockResolvedValue({ job_id: "job-publish", status: "queued" });
   vi.mocked(writeApi.reDetectPlan).mockResolvedValue({ job_id: "job-detect", status: "queued" });
+  vi.mocked(writeApi.refinePlan).mockResolvedValue({ job_id: "job-refine", status: "queued" });
+  vi.mocked(writeApi.uploadOnly).mockResolvedValue({ job_id: "job-upload", status: "queued" });
   mocks.jobs.mockReturnValue({ data: { active: [], completed: [], failed: [] }, isLoading: false, error: null, retry: vi.fn() });
 });
 
@@ -194,8 +196,10 @@ describe("Teaching lifecycle actions", () => {
 
   it("restores workspace actions after the queued job leaves the active list", async () => {
     const user = userEvent.setup();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(client, "invalidateQueries");
     setSermon("rendered", false);
-    renderDetail();
+    renderDetail(client);
     await user.click(screen.getByTestId("approve-primary"));
     await expect(screen.findByTestId("queued-state")).resolves.toBeTruthy();
     mocks.jobs.mockReturnValue({
@@ -210,6 +214,9 @@ describe("Teaching lifecycle actions", () => {
     });
     await user.click(screen.getByRole("tab", { name: "Transcript" }));
     await expect(pagePrimary()).toBeVisible();
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["sermon", "s-1"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["sermon-plan", "s-1"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["sermons"] });
   });
 
   it("publishes a ready render through uploadNow", async () => {
@@ -236,6 +243,51 @@ describe("Teaching lifecycle actions", () => {
     await user.click(screen.getByTestId("approve-primary"));
     await waitFor(() => expect(writeApi.reDetectPlan).toHaveBeenCalledWith("s-1"));
     await expect(screen.findByTestId("queued-state")).resolves.toBeTruthy();
+  });
+
+  it("sends the note from the real workspace dialog", async () => {
+    const user = userEvent.setup();
+    setSermon("rendered", false);
+    renderDetail();
+    await user.click(screen.getByTestId("more-actions-trigger"));
+    await user.click(within(screen.getByTestId("more-actions")).getByRole("menuitem", { name: "Send back with note" }));
+
+    const dialog = screen.getByRole("dialog");
+    const submit = within(dialog).getByRole("button", { name: "Re-run with notes" });
+    expect(submit).toBeDisabled();
+    await user.type(within(dialog).getByLabelText("Note"), "  Keep the second class only.  ");
+    await user.click(submit);
+
+    await waitFor(() => expect(writeApi.refinePlan).toHaveBeenCalledWith("s-1", "Keep the second class only."));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await expect(screen.findByTestId("queued-state")).resolves.toBeTruthy();
+  });
+
+  it("queues an existing render from the workspace menu", async () => {
+    const user = userEvent.setup();
+    setSermon("draft", true);
+    renderDetail();
+    await user.click(screen.getByTestId("more-actions-trigger"));
+    await user.click(within(screen.getByTestId("more-actions")).getByTestId("upload-existing-render"));
+
+    await waitFor(() => expect(writeApi.uploadOnly).toHaveBeenCalledWith("s-1", { confirm_missing_description: false }));
+    await expect(screen.findByTestId("queued-state")).resolves.toBeTruthy();
+  });
+
+  it("does not attach another teaching's active job", () => {
+    setSermon("draft", false, null, true, { edit_status: "applied", plan_status: "applied_local" });
+    mocks.jobs.mockReturnValue({
+      data: {
+        active: [{ id: "job-other", state: "running", parameters: { sermon_id: "s-other" } }],
+        completed: [],
+        failed: [],
+      },
+      isLoading: false,
+      error: null,
+      retry: vi.fn(),
+    });
+    renderDetail();
+    expect(screen.getByTestId("approve-primary").getAttribute("href")).toBe("/activity");
   });
 
   it("defers deletion so Undo cancels the server call", async () => {

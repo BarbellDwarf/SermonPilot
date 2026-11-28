@@ -26,14 +26,11 @@ export interface SermonReviewProps {
   isLive: boolean;
   readOnly?: boolean;
   statusChip?: ReactNode;
-  onDelete?: () => void;
-  deleting?: boolean;
   transcript?: TranscriptState;
   onSaveDetails?: (patch: DetailsPatch) => Promise<void> | void;
   onRegenerateDescription?: () => Promise<void> | void;
   onRefresh?: () => void;
   onToast: (msg: string, variant?: "success" | "error" | "info") => void;
-  onUpload?: () => void;
   enhanceDefault?: boolean;
   onShowCompleted?: () => void;
   onSendBack?: () => void;

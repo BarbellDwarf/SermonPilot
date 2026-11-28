@@ -4,7 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { SermonReview, type SermonReviewView, type TranscriptState } from "../components/SermonReview";
 import { CompletedDetails, SermonCompleted } from "../components/SermonCompleted";
 import { workspacePrimary, type WorkspacePrimary } from "../components/sermonActions";
-import { ConfirmDialog, EmptyState, Icon, Menu, PageHeader, SkeletonList, buttonClass } from "../components/ui";
+import { ConfirmDialog, EmptyState, PageHeader, SkeletonList, buttonClass, type MenuItem } from "../components/ui";
 import { useToast, dismissToast } from "../components/toast";
 import { QueryError, lifecycleOfSermon, useJobsData, useSermonDetail, useSermonMedia, useSermonPlan, useSermonTranscript } from "../api/hooks";
 import { api, isLive, type ApiTrashRecord } from "../api/client";
@@ -19,6 +19,7 @@ import { DetailsForm } from "../components/review/DetailsForm";
 import { qaCopy } from "../components/review/PlanSummary";
 import { useTeachingActions } from "../components/review/useTeachingActions";
 import { useWorkspaceDialogs } from "../components/review/useWorkspaceDialogs";
+import { WorkspaceMenu } from "../components/review/WorkspaceMenu";
 
 export function describeDeleteOutcome(records: ApiTrashRecord[]): string {
   const localMoved = records.filter((record) => record.mode === "local" && record.moved);
@@ -86,7 +87,7 @@ function TeachingWorkspace({ id }: { id?: string }) {
   const state: LifecycleState = !lifecycleSermon ? "draft" : sermon?.status === "processed" || sermon?.edit_status === "uploaded" ? "published" : lifecycleOfSermon(lifecycleSermon);
   const hasRender = !!media.byKind.processed?.available;
   const primary = workspacePrimary({ state, hasPlan: !!plan, hasRender });
-  const activeJob = jobs.data?.active.find((job) => job.parameters?.sermon_id === sermon?.id) ?? (state === "processing" ? jobs.data?.active[0] : undefined);
+  const activeJob = jobs.data?.active.find((job) => job.parameters?.sermon_id === sermon?.id);
   const jobHref = activeJob ? `/activity/${activeJob.id}` : "/activity";
   const showCompleted = state === "published" && !editingOverride;
   const selectedDuration = plan ? Math.max(0, plan.endSec - plan.startSec) : 0;
@@ -107,8 +108,15 @@ function TeachingWorkspace({ id }: { id?: string }) {
     if (!queuedJob || !jobs.data) return;
     const active = jobs.data.active.some((job) => job.id === queuedJob.id);
     const known = [...jobs.data.active, ...jobs.data.completed, ...jobs.data.failed].some((job) => job.id === queuedJob.id);
-    if (known && !active) clearQueuedJob();
-  }, [clearQueuedJob, jobs.data, queuedJob]);
+    if (known && !active) {
+      if (id) {
+        void queryClient.invalidateQueries({ queryKey: ["sermon", id] });
+        void queryClient.invalidateQueries({ queryKey: ["sermon-plan", id] });
+        void queryClient.invalidateQueries({ queryKey: ["sermons"] });
+      }
+      clearQueuedJob();
+    }
+  }, [clearQueuedJob, id, jobs.data, queryClient, queuedJob]);
 
   useEffect(() => {
     if (!detectingPlan || !id) return;
@@ -220,16 +228,7 @@ function TeachingWorkspace({ id }: { id?: string }) {
     },
   };
 
-  const moreMenu = (items: { label: string; onSelect: () => void; disabled?: boolean; danger?: boolean; testId?: string }[]) => (
-    <Menu
-      label="More actions"
-      trigger={<><span className="hidden sm:inline">More actions</span><Icon name="more" className="h-4 w-4" /></>}
-      triggerTestId="more-actions-trigger"
-      menuTestId="more-actions"
-      menuClassName="w-64"
-      items={items}
-    />
-  );
+  const moreMenu = (items: MenuItem[]) => <WorkspaceMenu items={items} />;
   const summary = <div className="flex flex-col gap-1"><p className="text-sm font-semibold">{LIFECYCLE_META[state].label}</p><p className="text-xs text-muted">{statusDetail}</p></div>;
   const shell = ({ body, tabs, actionPrimary, onPrimary, onSendBack, menu, disabled = false, busy = false }: {
     body: ReactNode;
@@ -253,7 +252,7 @@ function TeachingWorkspace({ id }: { id?: string }) {
   );
 
   const workView = (view: SermonReviewView) => {
-    dialogs.registerNotesHandler(() => view.actions.submitRefine());
+    dialogs.registerNotesHandler((note) => view.actions.submitRefine(note));
     const tabs: WorkspaceTab[] = [
       { id: "details", label: "Details", content: view.details },
       { id: "transcript", label: "Transcript", content: view.transcript },
@@ -267,8 +266,9 @@ function TeachingWorkspace({ id }: { id?: string }) {
     };
     const menu = moreMenu([
       ...(view.onShowCompleted ? [{ label: "Back to published view", onSelect: view.onShowCompleted, testId: "show-completed-view" }] : []),
-      { label: "Render only", onSelect: () => view.actions.approve(view.editor, true), disabled: view.actions.applying || state === "processing" || !!queuedJob, testId: "render-only-action" },
-      { label: "Reject with notes", onSelect: dialogs.openNotes, disabled: !!queuedJob },
+      { label: "Render only", onSelect: () => view.actions.approve(view.editor, true), disabled: view.actions.applying || state === "processing" || !!queuedJob || view.editor.errors.length > 0, testId: "render-only-action" },
+      ...(view.actions.actions.canUploadExisting ? [{ label: view.actions.uploading ? "Uploading…" : "Upload existing render", onSelect: () => view.actions.uploadExisting(false), disabled: view.actions.applying || view.actions.uploading || !!queuedJob, testId: "upload-existing-render" }] : []),
+      { label: "Send back with note", onSelect: dialogs.openNotes, disabled: !!queuedJob },
       { label: "Re-detect", onSelect: view.actions.reDetect, disabled: view.actions.refining || !!queuedJob },
       { label: "History", onSelect: () => setActiveTab("history"), testId: "open-history" },
       { label: "Regenerate description", onSelect: () => void regenerateDescription(), disabled: !!queuedJob },
@@ -302,7 +302,7 @@ function TeachingWorkspace({ id }: { id?: string }) {
     { label: "Edit teaching", onSelect: () => setEditingOverride(true), testId: "edit-sermon" },
     { label: "Regenerate description", onSelect: () => void regenerateDescription(), disabled: !!queuedJob },
     { label: "Push metadata", onSelect: () => void pushMetadata(), disabled: !!queuedJob },
-    { label: "Replace recording", onSelect: dialogs.openReplace, disabled: !!queuedJob, testId: "replace-recording" },
+    ...(detail?.sermonaudioId ? [{ label: "Replace recording", onSelect: dialogs.openReplace, disabled: !!queuedJob, testId: "replace-recording" }] : []),
     { label: "Delete", onSelect: () => setConfirmDelete(true), danger: true, testId: "delete-sermon" },
   ]);
 

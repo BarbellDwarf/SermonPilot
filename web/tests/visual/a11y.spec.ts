@@ -8,6 +8,11 @@ const PAGES = [
   { name: "settings", path: "/settings" },
   { name: "new-teaching", path: "/new" },
   { name: "review", path: "/teaching/s-01" },
+  { name: "review-failed", path: "/teaching/s-02" },
+  { name: "review-published", path: "/teaching/s-03" },
+  { name: "review-ready", path: "/teaching/s-04" },
+  { name: "review-draft", path: "/teaching/s-05" },
+  { name: "review-processing", path: "/teaching/s-06" },
 ] as const;
 
 const THEMES = ["dark", "light"] as const;

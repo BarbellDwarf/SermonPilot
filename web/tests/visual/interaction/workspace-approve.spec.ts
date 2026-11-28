@@ -39,6 +39,22 @@ test("approve is visible at scrollY 0 and queues one linked job", async ({ page 
   const jobLink = page.getByTestId("queued-job-link");
   await expect(jobLink).toHaveAttribute("href", /^\/activity\/.+/);
   await expect(page.getByTestId("approve-primary")).toHaveCount(0);
+  await expect(page.getByTestId("queued-state")).toHaveCount(0);
+  await expect(page.getByTestId("approve-primary")).toBeVisible();
+});
+
+test("send back submits the note through the real workspace dialog", async ({ page }) => {
+  await page.goto("/teaching/s-01");
+  await page.getByTestId("more-actions-trigger").click();
+  await page.getByRole("menuitem", { name: "Send back with note" }).click();
+
+  const dialog = page.getByRole("dialog");
+  const submit = dialog.getByRole("button", { name: "Re-run with notes" });
+  await expect(submit).toBeDisabled();
+  await dialog.getByLabel("Note").fill("Keep the second class only.");
+  await submit.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByTestId("queued-state")).toContainText("Re-detection queued");
 });
 
 test("a draft without a plan can queue detection", async ({ page }) => {

@@ -31,8 +31,6 @@ export function useReviewActions({
   const [uploading, setUploading] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [refining, setRefining] = useState(false);
-  const [notesText, setNotesText] = useState("");
-  const [notesOpen, setNotesOpen] = useState(false);
   const [mockNotes, setMockNotes] = useState<{ revision: number; note: string }[]>([]);
   const [statusLog, setStatusLog] = useState<string[]>([]);
   const [confirmRestore, setConfirmRestore] = useState(false);
@@ -156,15 +154,14 @@ export function useReviewActions({
       });
   };
 
-  const submitRefine = () => {
-    const note = notesText.trim();
+  const submitRefine = (noteOverride: string) => {
+    const note = noteOverride.trim();
     if (!note || refining) return;
     if (isLive) {
       setRefining(true);
       void writeApi.refinePlan(sermon.id, note)
         .then((result) => {
           setRefining(false);
-          setNotesText("");
           onRefresh?.();
           onJobQueued?.(result.job_id, "Re-detection queued with your notes.");
           onToast("Re-detection queued with your notes. The panel updates when the new proposal is ready.");
@@ -179,7 +176,6 @@ export function useReviewActions({
     setRefining(true);
     window.setTimeout(() => {
       setRefining(false);
-      setNotesText("");
       const nextRevision = plan.revision + 1;
       const jobId = nextMockJob();
       setMockNotes((rows) => [...rows, { revision: nextRevision, note }]);
@@ -227,10 +223,6 @@ export function useReviewActions({
     uploading,
     restoring,
     refining,
-    notesText,
-    setNotesText,
-    notesOpen,
-    setNotesOpen,
     mockNotes,
     statusLog,
     confirmRestore,

@@ -20,6 +20,11 @@ export function useTeachingActions({ id, onToast }: TeachingActionsOptions) {
   const clearQueuedJob = useCallback(() => setQueuedJob(null), []);
   const captureJob = useCallback((jobId: string, message: string) => {
     setQueuedJob({ id: jobId, message });
+    if (!isLive) {
+      window.setTimeout(() => {
+        setQueuedJob((current) => current?.id === jobId ? null : current);
+      }, 1200);
+    }
     void queryClient.invalidateQueries({ queryKey: ["sermon", id] });
     void queryClient.invalidateQueries({ queryKey: ["sermon-plan", id] });
     void queryClient.invalidateQueries({ queryKey: ["jobs"] });
@@ -56,6 +61,7 @@ export function useTeachingActions({ id, onToast }: TeachingActionsOptions) {
     if (!isLive) {
       setDetectingPlan(true);
       window.setTimeout(() => {
+        setDetectingPlan(false);
         captureJob(nextMockJob(), "Cut detection queued.");
         onToast("Cut detection queued (demo).", "info");
       }, 300);

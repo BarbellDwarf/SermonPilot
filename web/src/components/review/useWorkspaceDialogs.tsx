@@ -17,11 +17,19 @@ export function useWorkspaceDialogs({
 }) {
   const [statusOpen, setStatusOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [notesText, setNotesText] = useState("");
+  const [notesSubmitting, setNotesSubmitting] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
   const [replacing, setReplacing] = useState(false);
   const [replaceError, setReplaceError] = useState<string | null>(null);
-  const submitNotesRef = useRef<() => void>(() => undefined);
+  const submitNotesRef = useRef<(note: string) => void>(() => undefined);
+
+  const openNotes = () => {
+    setNotesText("");
+    setNotesSubmitting(false);
+    setNotesOpen(true);
+  };
 
   const openReplace = () => {
     setReplaceFile(null);
@@ -51,11 +59,20 @@ export function useWorkspaceDialogs({
           {plan ? <p className="font-mono text-xs text-muted">Revision {plan.revision} of {plan.revisionsTotal}</p> : null}
         </div>
       </WorkspaceDialog>
-      <WorkspaceDialog open={notesOpen} title="Send back with note" onClose={() => setNotesOpen(false)} testId="send-back-dialog" initialFocus="content">
-        <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); submitNotesRef.current(); setNotesOpen(false); }}>
+      <WorkspaceDialog open={notesOpen} title="Send back with note" onClose={() => { if (!notesSubmitting) setNotesOpen(false); }} testId="send-back-dialog" initialFocus="content">
+        <form className="flex flex-col gap-3" onSubmit={(event) => {
+          event.preventDefault();
+          const note = notesText.trim();
+          if (!note || notesSubmitting) return;
+          setNotesSubmitting(true);
+          submitNotesRef.current(note);
+          setNotesOpen(false);
+          setNotesText("");
+          setNotesSubmitting(false);
+        }}>
           <label htmlFor="send-back-note" className="text-sm font-semibold">Note</label>
-          <textarea id="send-back-note" autoFocus rows={4} className="min-h-[44px] w-full rounded-md border border-line bg-ink p-3 text-sm text-mist" placeholder="What should change in the next proposal?" />
-          <Button type="submit" variant="secondary" className="w-fit">Re-run with notes</Button>
+          <textarea id="send-back-note" autoFocus rows={4} value={notesText} onChange={(event) => setNotesText(event.target.value)} disabled={notesSubmitting} className="min-h-[44px] w-full rounded-md border border-line bg-ink p-3 text-sm text-mist" placeholder="What should change in the next proposal?" />
+          <Button type="submit" variant="secondary" className="w-fit" disabled={!notesText.trim() || notesSubmitting} aria-busy={notesSubmitting}>{notesSubmitting ? "Queueing…" : "Re-run with notes"}</Button>
         </form>
       </WorkspaceDialog>
       <WorkspaceDialog open={replaceOpen} title="Replace recording" onClose={() => { if (!replacing) setReplaceOpen(false); }} testId="replace-recording-dialog" initialFocus="content">
@@ -72,9 +89,9 @@ export function useWorkspaceDialogs({
 
   return {
     openStatus: () => setStatusOpen(true),
-    openNotes: () => setNotesOpen(true),
+    openNotes,
     openReplace,
-    registerNotesHandler: (handler: () => void) => { submitNotesRef.current = handler; },
+    registerNotesHandler: (handler: (note: string) => void) => { submitNotesRef.current = handler; },
     dialogs,
   };
 }
