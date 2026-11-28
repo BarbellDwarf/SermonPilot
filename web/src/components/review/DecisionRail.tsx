@@ -33,7 +33,7 @@ export function DecisionRail({
     <aside
       aria-label="Teaching decision"
       data-testid="approval-bar"
-      className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)] z-20 border-t border-line bg-surface/95 p-1.5 shadow-[0_-8px_24px_-16px_rgba(0,0,0,0.8)] backdrop-blur md:bottom-3 md:p-3 lg:sticky lg:inset-auto lg:bottom-auto lg:top-20 lg:rounded-lg lg:border lg:border-line lg:p-4 lg:shadow-sm"
+      className="fixed inset-x-0 bottom-[calc(var(--chrome-bottom)+0.5rem)] z-20 border-t border-line bg-surface/95 p-1.5 shadow-sticky backdrop-blur md:bottom-3 md:p-3 lg:sticky lg:inset-auto lg:bottom-auto lg:top-20 lg:rounded-lg lg:border lg:border-line lg:p-4 lg:shadow-sm"
     >
       <div className="hidden lg:block">{summary}</div>
       {queued ? (

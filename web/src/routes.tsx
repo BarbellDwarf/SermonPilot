@@ -81,6 +81,9 @@ function AppChrome({
   useLayoutEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
     document.documentElement.classList.toggle("light", !dark);
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", dark ? "#0e1216" : "#edf1f4");
   }, [dark]);
 
   const setTheme = useCallback(

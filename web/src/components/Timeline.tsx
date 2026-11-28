@@ -501,7 +501,7 @@ export function Timeline({
                 onPlayRegion?.(clip.id, clip.startSec, clip.endSec);
               }}
               style={{ left: `${left}%`, touchAction: "none" }}
-              className="absolute bottom-0 z-20 h-11 min-w-[44px] -translate-x-1/2 rounded-t border border-transparent bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              className="absolute bottom-0 z-20 h-11 min-w-[44px] -translate-x-1/2 rounded-t-sm border border-transparent bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
             >
               <span
                 aria-hidden="true"
@@ -523,7 +523,7 @@ export function Timeline({
             onPlayRegion?.("keep", startSec, endSec);
           }}
           style={{ left: `${keepLeft}%`, width: `${keepWidth}%`, touchAction: "none" }}
-          className="absolute inset-y-0 z-10 rounded-[3px] border-x border-accent/70 bg-accent/25 transition-colors hover:bg-accent/35"
+          className="absolute inset-y-0 z-10 rounded-sm border-x border-accent/70 bg-accent/25 transition-colors hover:bg-accent/35"
         />
         <div
           data-testid="timeline-selection-surface"
@@ -680,7 +680,7 @@ export function Timeline({
           />
           <span aria-hidden="true" className="absolute left-1/2 top-1/2 h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-accent" />
         </button>
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-between px-1 font-mono text-[9px] text-muted">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-between px-1 font-mono text-xs text-muted">
           <span>{shortCut(0)}</span>
           <span>{shortCut(span / 2)}</span>
           <span>{shortCut(span)}</span>
@@ -689,38 +689,38 @@ export function Timeline({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1">
-          <span className="px-1 text-[10px] font-semibold uppercase tracking-wide text-muted">Jump</span>
+          <span className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">Jump</span>
           <button
             type="button"
             onClick={() => onSeek?.(startSec, "jump-start")}
-            className="min-h-[36px] rounded-md border border-line bg-raised px-2 text-[11px] font-semibold text-mist transition-colors hover:border-accent"
+            className="min-h-[44px] rounded-md border border-line bg-raised px-2 text-xs font-semibold text-mist transition-colors hover:border-accent"
           >
             Opening
           </button>
           <button
             type="button"
             onClick={() => onSeek?.(middleJump, "jump-middle")}
-            className="min-h-[36px] rounded-md border border-line bg-raised px-2 text-[11px] font-semibold text-mist transition-colors hover:border-accent"
+            className="min-h-[44px] rounded-md border border-line bg-raised px-2 text-xs font-semibold text-mist transition-colors hover:border-accent"
           >
             Middle
           </button>
           <button
             type="button"
             onClick={() => onSeek?.(endSec, "jump-end")}
-            className="min-h-[36px] rounded-md border border-line bg-raised px-2 text-[11px] font-semibold text-mist transition-colors hover:border-accent"
+            className="min-h-[44px] rounded-md border border-line bg-raised px-2 text-xs font-semibold text-mist transition-colors hover:border-accent"
           >
             Closing
           </button>
         </div>
         <div className="flex items-center gap-1">
-          <span className="px-1 text-[10px] font-semibold uppercase tracking-wide text-muted">Zoom</span>
+          <span className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">Zoom</span>
           {ZOOM_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
               aria-pressed={zoomSec === option.value}
               onClick={() => setZoomSec(option.value)}
-              className={`min-h-[36px] rounded-md border px-2 text-[11px] font-semibold transition-colors ${
+              className={`min-h-[44px] rounded-md border px-2 text-xs font-semibold transition-colors ${
                 zoomSec === option.value
                   ? "border-accent bg-accent/15 text-mist"
                   : "border-line bg-raised text-mist hover:border-accent"
@@ -889,7 +889,7 @@ export function Timeline({
               </button>
             ) : null}
           </div>
-          <div className="mt-1 flex justify-between font-mono text-[10px] text-muted">
+          <div className="mt-1 flex justify-between font-mono text-xs text-muted">
             <span>{shortCut(windowStart)}</span>
             <span>{shortCut(windowStart + zoom / 2)}</span>
             <span>{shortCut(windowEnd)}</span>

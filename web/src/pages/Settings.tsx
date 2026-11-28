@@ -25,6 +25,7 @@ import {
   SaveBar,
   SectionCard,
   inputCls,
+  selectedClass,
   type DirtyRegistry,
 } from "../components/ui";
 import { useToast } from "../components/toast";
@@ -689,8 +690,8 @@ export function Settings({
                             aria-current={selected ? "page" : undefined}
                             className={`relative flex min-h-[44px] w-full items-center rounded-md px-3 text-left text-sm font-medium transition-colors duration-150 ${
                               selected
-                                ? "bg-raised text-mist before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-accent"
-                                : "text-muted hover:bg-raised hover:text-mist"
+                                ? `${selectedClass} before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-accent`
+                                : "text-muted hover:bg-selected hover:text-mist"
                             }`}
                           >
                             {item.label}

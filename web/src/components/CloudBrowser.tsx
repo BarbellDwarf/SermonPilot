@@ -228,12 +228,12 @@ export function CloudBrowser({
                       type="button"
                       onClick={() => selectDrive(d)}
                       aria-pressed={active}
-                      className={`rounded border px-2 py-1 text-left text-xs ${
+                      className={`rounded-sm border px-2 py-1 text-left text-xs ${
                         active ? "border-accent text-mist" : "border-line text-muted hover:text-mist"
                       }`}
                     >
                       <span className="block font-semibold">{d.name}</span>
-                      <span className="block font-mono text-[10px]">
+                      <span className="block font-mono text-xs">
                         {d.id}
                         {attached ? " · attached" : ""}
                       </span>
@@ -252,7 +252,7 @@ export function CloudBrowser({
         <button
           type="button"
           onClick={() => onPath("")}
-          className="rounded px-1 font-mono text-muted hover:text-mist"
+          className="rounded-sm px-1 font-mono text-muted hover:text-mist"
         >
           root
         </button>
@@ -264,7 +264,7 @@ export function CloudBrowser({
             <button
               type="button"
               onClick={() => onPath(segments.slice(0, i + 1).join("/"))}
-              className="rounded px-1 font-mono text-muted hover:text-mist"
+              className="rounded-sm px-1 font-mono text-muted hover:text-mist"
             >
               {seg}
             </button>
@@ -294,7 +294,7 @@ export function CloudBrowser({
                     <button
                       type="button"
                       onClick={() => onPath(full)}
-                      className="min-w-0 flex-1 truncate rounded px-1 text-left text-sm hover:text-accent"
+                      className="min-w-0 flex-1 truncate rounded-sm px-1 text-left text-sm hover:text-accent"
                     >
                       {item.name}
                     </button>

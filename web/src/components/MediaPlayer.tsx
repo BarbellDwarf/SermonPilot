@@ -326,7 +326,7 @@ export function MediaPlayer({
                 data-testid="media-marker"
                 aria-hidden="true"
                 title={`${marker.label} at ${formatCut(marker.atSec)}`}
-                className="pointer-events-none absolute bottom-0 h-2 w-1 rounded-t bg-warn"
+                className="pointer-events-none absolute bottom-0 h-2 w-1 rounded-t-sm bg-warn"
                 style={{ left: `${position(marker.atSec)}%` }}
               />
             ))

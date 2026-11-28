@@ -124,7 +124,7 @@ function LocalExplorer({ path, onPath, onUseFile, onUseFolder, pick = "file" }: 
                 type="button"
                 onClick={() => onPath(r.path)}
                 aria-pressed={active}
-                className={`rounded px-2 py-1 font-mono text-xs ${
+                className={`rounded-sm px-2 py-1 font-mono text-xs ${
                   active ? "bg-raised text-mist" : "text-muted hover:text-mist"
                 }`}
                 title={r.path}
@@ -140,7 +140,7 @@ function LocalExplorer({ path, onPath, onUseFile, onUseFolder, pick = "file" }: 
         <button
           type="button"
           onClick={() => onPath(root)}
-          className="rounded px-1 font-mono text-muted hover:text-mist"
+          className="rounded-sm px-1 font-mono text-muted hover:text-mist"
         >
           {rootLabel}
         </button>
@@ -152,7 +152,7 @@ function LocalExplorer({ path, onPath, onUseFile, onUseFolder, pick = "file" }: 
             <button
               type="button"
               onClick={() => onPath(`${root}/${crumbs.slice(0, i + 1).join("/")}`)}
-              className="rounded px-1 font-mono text-muted hover:text-mist"
+              className="rounded-sm px-1 font-mono text-muted hover:text-mist"
             >
               {seg}
             </button>
@@ -180,7 +180,7 @@ function LocalExplorer({ path, onPath, onUseFile, onUseFolder, pick = "file" }: 
                   <button
                     type="button"
                     onClick={() => onPath(item.path)}
-                    className="min-w-0 flex-1 truncate rounded px-1 text-left text-sm hover:text-accent"
+                    className="min-w-0 flex-1 truncate rounded-sm px-1 text-left text-sm hover:text-accent"
                   >
                     {item.name}
                   </button>
@@ -281,7 +281,7 @@ export function FileExplorerDialog({
       onClick={(e) => {
         if (e.target === ref.current) onClose();
       }}
-      className="w-[min(44rem,calc(100vw-2rem))] max-h-[85vh] overflow-y-auto rounded-xl border border-line bg-surface p-4 text-mist backdrop:bg-black/60"
+      className="w-[min(44rem,calc(100vw-2rem))] max-h-[90dvh] overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface p-4 text-mist backdrop:bg-black/60"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-lg font-semibold">{title}</h2>

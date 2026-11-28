@@ -232,7 +232,7 @@ function SlotCard({
                 onClick={onToggleKey}
                 aria-pressed={keyHidden}
                 aria-label={`${keyHidden ? "Show" : "Hide"} stored ${label} key`}
-                className="min-h-[32px] shrink-0 rounded px-2 text-xs font-semibold text-muted hover:bg-raised hover:text-mist"
+                className="min-h-[32px] shrink-0 rounded-sm px-2 text-xs font-semibold text-muted hover:bg-raised hover:text-mist"
               >
                 {keyHidden ? "Show" : "Hide"}
               </button>

@@ -214,14 +214,18 @@ def list_sermons(
     rows = scope_rows(repo.get_all_sermons(), request_user(request), "sermons")
     needle = search.strip().lower()
     if needle:
+        tokens = needle.split()
         rows = [
             row
             for row in rows
-            if needle
-            in " ".join(
-                str(row.get(key) or "")
-                for key in ("title", "speaker", "series_title")
-            ).lower()
+            if all(
+                token
+                in " ".join(
+                    str(row.get(key) or "")
+                    for key in ("title", "speaker", "series_title")
+                ).lower()
+                for token in tokens
+            )
         ]
     key = sort if sort in _SORT_KEYS else "date"
     if key == "title":

@@ -178,6 +178,16 @@ def test_counts_follow_search_scope(client: TestClient) -> None:
     assert body["counts"]["draft"] == 0
 
 
+def test_search_matches_every_token_in_any_order(client: TestClient) -> None:
+    body = client.get("/api/sermons", params={"search": "review speaker"}).json()
+    assert [item["id"] for item in body["items"]] == ["s-review"]
+
+
+def test_search_requires_every_token_to_match(client: TestClient) -> None:
+    body = client.get("/api/sermons", params={"search": "review missing"}).json()
+    assert body["total"] == 0
+
+
 def test_unknown_status_falls_back_to_draft() -> None:
     assert _lifecycle_state({"status": "mystery"}) == "draft"
     assert _lifecycle_state({"status": "mystery", "edit_status": "rendered"}) == "ready"

@@ -47,7 +47,7 @@ export function RunSummary({
   return (
     <aside
       aria-label="Selection summary"
-      className="fixed inset-x-0 bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 border-t border-line bg-ink/95 shadow-[0_-8px_24px_-16px_rgba(0,0,0,0.8)] backdrop-blur md:bottom-0 lg:sticky lg:inset-auto lg:top-24 lg:z-auto lg:rounded-lg lg:border lg:border-line lg:bg-surface lg:shadow-none lg:backdrop-blur-none"
+      className="fixed inset-x-0 bottom-[var(--chrome-bottom)] z-20 border-t border-line bg-ink/95 shadow-sticky backdrop-blur md:bottom-0 lg:sticky lg:inset-auto lg:top-24 lg:z-auto lg:rounded-lg lg:border lg:border-line lg:bg-surface lg:shadow-none lg:backdrop-blur-none"
     >
       <div className="flex items-center gap-3 px-4 py-1.5 sm:px-4 sm:py-3 lg:block lg:p-4">
         <div className="hidden items-center justify-between gap-3 lg:flex">

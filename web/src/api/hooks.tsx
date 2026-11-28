@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   activeJobs,
   completedJobs,
@@ -186,49 +186,48 @@ export function fmtStamp(value: string | null, timeZone?: string): string {
 
 const LIBRARY_PAGE_SIZE = 50;
 
+export function matchesLibraryQuery(sermon: LibrarySermon, query: string): boolean {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  const fields = [sermon.title, sermon.speaker, sermon.series].map((value) =>
+    (value ?? "").toLowerCase(),
+  );
+  return tokens.every((token) => fields.some((field) => field.includes(token)));
+}
+
+function sortLibrarySermons(rows: LibrarySermon[], sort: LibrarySort): LibrarySermon[] {
+  const sorted = [...rows];
+  sorted.sort((a, b) => {
+    if (sort === "title") return a.title.localeCompare(b.title);
+    if (sort === "duration") return toSeconds(b.duration) - toSeconds(a.duration);
+    return b.date.localeCompare(a.date);
+  });
+  return sorted;
+}
+
 export function useLibrarySermons(query: string, sort: LibrarySort) {
   const briefLoading = useBriefLoading();
-  const [pages, setPages] = useState(1);
+  const [paging, setPaging] = useState({ query, sort, pages: 1 });
+  const pages = paging.query === query && paging.sort === sort ? paging.pages : 1;
   const live = useQuery({
-    queryKey: ["sermons", pages],
-    queryFn: () => api.sermons({ limit: LIBRARY_PAGE_SIZE * pages }),
+    queryKey: ["sermons", { search: query.trim(), sort, limit: LIBRARY_PAGE_SIZE * pages }],
+    queryFn: () =>
+      api.sermons({ search: query.trim() || undefined, sort, limit: LIBRARY_PAGE_SIZE * pages }),
     enabled: isLive,
     staleTime: 10_000,
+    placeholderData: keepPreviousData,
   });
   const loaded = useMemo(
     () => (live.data?.items ?? []).map(toLibrarySermon),
     [live.data],
   );
   const serverTotal = live.data?.total ?? loaded.length;
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const rows = q
-      ? loaded.filter((s) =>
-          [s.title, s.speaker, s.series].some((f) => f.toLowerCase().includes(q)),
-        )
-      : [...loaded];
-    rows.sort((a, b) => {
-      if (sort === "title") return a.title.localeCompare(b.title);
-      if (sort === "duration") return toSeconds(b.duration) - toSeconds(a.duration);
-      return b.date.localeCompare(a.date);
-    });
-    return rows;
-  }, [loaded, query, sort]);
+  const filtered = useMemo(() => sortLibrarySermons(loaded, sort), [loaded, sort]);
 
-  const mockItems = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const filtered = q
-      ? librarySermons.filter((s) =>
-          [s.title, s.speaker, s.series].some((f) => f.toLowerCase().includes(q)),
-        )
-      : [...librarySermons];
-    filtered.sort((a, b) => {
-      if (sort === "title") return a.title.localeCompare(b.title);
-      if (sort === "duration") return toSeconds(b.duration) - toSeconds(a.duration);
-      return b.date.localeCompare(a.date);
-    });
-    return filtered;
-  }, [query, sort]);
+  const mockItems = useMemo(
+    () => sortLibrarySermons(librarySermons.filter((s) => matchesLibraryQuery(s, query)), sort),
+    [query, sort],
+  );
 
   if (!isLive) {
     return {
@@ -251,7 +250,7 @@ export function useLibrarySermons(query: string, sort: LibrarySort) {
     total: serverTotal,
     hasMore: loaded.length < serverTotal,
     isLoadingMore: live.isFetching && !live.isPending,
-    loadMore: () => setPages((p) => p + 1),
+    loadMore: () => setPaging({ query, sort, pages: pages + 1 }),
     counts: live.data?.counts ? toLifecycleCounts(live.data.counts) : lifecycleCounts(loaded),
   };
 }
