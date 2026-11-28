@@ -129,7 +129,7 @@ function ToastCard({ item }: { item: ToastItem }) {
       onMouseLeave={start}
       onFocus={stop}
       onBlur={start}
-      className={`toast-in pointer-events-auto flex w-full items-start gap-3 rounded-lg border border-l-4 border-line bg-raised px-4 py-3 text-sm shadow-xl ${tone[item.variant]}`}
+      className={`toast-in pointer-events-auto flex w-full items-start gap-3 rounded-lg border border-l-4 border-line bg-raised px-4 py-3 text-sm shadow-menu ${tone[item.variant]}`}
     >
       <span aria-hidden="true" className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dot[item.variant]}`} />
       <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">{item.message}</div>
@@ -164,7 +164,7 @@ export function ToastHost() {
     <div
       aria-label="Notifications"
       role="region"
-      className="pointer-events-none fixed inset-x-4 bottom-[calc(8.5rem+env(safe-area-inset-bottom))] z-50 flex flex-col items-center gap-2 md:inset-x-auto md:bottom-6 md:right-6 md:items-end"
+      className="pointer-events-none fixed inset-x-4 bottom-[calc(var(--chrome-bottom)+5rem)] z-50 flex flex-col items-center gap-2 md:inset-x-auto md:bottom-6 md:right-6 md:items-end"
     >
       {current.map((item) => (
         <div key={item.id} className="w-full max-w-sm">

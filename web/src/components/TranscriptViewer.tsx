@@ -33,7 +33,7 @@ export function TranscriptViewer({
             <button
               type="button"
               onClick={() => onSeek?.(segment.start)}
-              className="flex w-full items-start gap-2 rounded px-1 py-1 text-left text-sm text-mist transition-colors hover:bg-raised"
+              className="flex w-full items-start gap-2 rounded-sm px-1 py-1 text-left text-sm text-mist transition-colors hover:bg-raised"
             >
               <span className="shrink-0 font-mono text-xs text-accent">
                 {formatCut(segment.start)}

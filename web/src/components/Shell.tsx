@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { isLive, type AuthUser } from "../api/client";
 import { pageTitle } from "../utils/pageTitle";
-import { Chip, Icon, Menu, type IconName } from "./ui";
+import { Chip, Icon, Menu, selectedClass, type IconName } from "./ui";
 
 interface NavItem {
   to: string;
@@ -42,8 +42,8 @@ function NavBadge({ item, mobile }: { item: NavItem; mobile?: boolean }) {
       data-testid={`nav-badge-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
       className={
         mobile
-          ? "absolute right-2 top-1.5 flex min-w-4 items-center justify-center rounded-full border border-line bg-raised px-1 font-mono text-[10px] leading-4 text-muted"
-          : "ml-auto flex min-w-5 items-center justify-center rounded-full border border-line bg-raised px-1 font-mono text-[11px] leading-4 text-muted"
+          ? "absolute right-2 top-1.5 flex min-w-4 items-center justify-center rounded-full border border-line bg-raised px-1 font-mono text-xs leading-4 text-muted"
+          : "ml-auto flex min-w-5 items-center justify-center rounded-full border border-line bg-raised px-1 font-mono text-xs leading-4 text-muted"
       }
     >
       {item.badge}
@@ -78,18 +78,18 @@ export function Shell({ dark, onToggleTheme, user, onLogout, badges, children }:
     : items;
 
   return (
-    <div className="min-h-screen bg-ink text-mist">
-      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-accent focus:px-3 focus:py-2 focus:text-[var(--accent-ink)]">
+    <div className="min-h-dvh bg-ink text-mist">
+      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-sm focus:bg-accent focus:px-3 focus:py-2 focus:text-[var(--accent-ink)]">
         Skip to content
       </a>
-      <header className="sticky top-0 z-30 border-b border-line bg-ink/95 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-line bg-ink/95 pt-[env(safe-area-inset-top)] backdrop-blur">
         <div className="mx-auto flex h-16 max-w-shell items-center gap-3 px-4 lg:px-8">
           <Link to="/" className="flex min-h-[44px] min-w-0 items-center gap-2 rounded-md">
             <span className="flex h-8 w-8 items-center justify-center rounded-md bg-accent font-mono text-sm font-bold text-[var(--accent-ink)]" aria-hidden="true">
               SP
             </span>
             <span className="truncate text-base font-bold tracking-tight">SermonPilot</span>
-            <span className="shrink-0 rounded border border-line px-1.5 py-0.5 font-mono text-xs text-muted" title={isLive ? "Live data" : "Sample data, no server"}>
+            <span className="shrink-0 rounded-sm border border-line px-1.5 py-0.5 font-mono text-xs text-muted" title={isLive ? "Live data" : "Sample data, no server"}>
               {isLive ? "live" : "demo"}
             </span>
           </Link>
@@ -134,7 +134,7 @@ export function Shell({ dark, onToggleTheme, user, onLogout, badges, children }:
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-shell items-stretch gap-6 px-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-6 md:pb-6 lg:px-8">
+      <div className="mx-auto flex max-w-shell items-stretch gap-6 px-4 pb-[calc(var(--chrome-bottom)+2.5rem)] pt-6 md:pb-6 lg:px-8">
         <nav aria-label="Sections" className="sticky top-24 hidden h-fit w-52 shrink-0 flex-col gap-1 md:flex">
           {navItems.map((item) => (
             <NavLink
@@ -144,8 +144,8 @@ export function Shell({ dark, onToggleTheme, user, onLogout, badges, children }:
               className={({ isActive }) =>
                 `relative flex min-h-[44px] w-full items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors duration-150 ${
                   isActive
-                    ? "bg-raised text-mist before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-accent"
-                    : "text-muted hover:bg-raised hover:text-mist"
+                    ? `${selectedClass} before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-accent`
+                    : "text-muted hover:bg-selected hover:text-mist"
                 }`
               }
             >

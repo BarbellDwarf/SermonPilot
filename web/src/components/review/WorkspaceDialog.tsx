@@ -64,7 +64,7 @@ export function WorkspaceDialog({
         const rect = event.currentTarget.getBoundingClientRect();
         if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose();
       }}
-      className="mb-[calc(3.5rem+env(safe-area-inset-bottom))] max-h-[80dvh] w-[min(30rem,calc(100vw-2rem))] overflow-y-auto rounded-t-2xl border border-line bg-surface p-5 text-mist shadow-2xl backdrop:bg-black/60 sm:mb-auto sm:rounded-xl"
+      className="mb-[var(--chrome-bottom)] max-h-[90dvh] w-[min(30rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain rounded-t-xl border border-line bg-surface p-5 text-mist shadow-menu backdrop:bg-black/60 sm:mb-auto sm:rounded-xl"
     >
       <div className="flex items-start justify-between gap-3">
         <h2 id={titleId} className="text-lg font-semibold">{title}</h2>

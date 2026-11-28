@@ -5,7 +5,7 @@ export function artifactLabel(kind: string): string {
     case "source":
       return "Source media";
     case "processed":
-      return "Rendered output";
+      return "Final recording";
     case "keeper":
       return "Keeper";
     case "enhanced":

@@ -46,7 +46,7 @@ export function TeachingRow({ sermon, state, action, evidence, menu, index = 0 }
       className="stagger-item min-h-[112px] md:min-h-[64px]"
       style={staggerStyle(index)}
     >
-      <div className="grid min-h-[112px] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 px-4 py-2 md:min-h-[64px] md:grid-cols-[104px_minmax(0,1fr)_72px_112px_44px] md:gap-y-0 md:py-0">
+      <div className="grid min-h-[112px] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 px-4 py-2 transition-colors duration-150 hover:bg-selected md:min-h-[64px] md:grid-cols-[104px_minmax(0,1fr)_72px_112px_44px] md:gap-y-0 md:py-0">
         <div className="col-start-1 row-start-1 md:w-[104px]">
           <StatusChip state={state} />
         </div>

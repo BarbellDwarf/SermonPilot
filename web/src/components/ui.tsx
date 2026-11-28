@@ -34,6 +34,9 @@ export function buttonClass(variant: ButtonVariant = "secondary", extra = ""): s
   return `inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold transition-[background-color,border-color,color,filter] duration-150 ${variants[variant]} ${extra}`;
 }
 
+export const selectedClass =
+  "border-selected-line bg-selected text-mist shadow-none";
+
 export function Button({ variant = "secondary", className = "", type = "button", ...rest }: ButtonProps) {
   return (
     <button
@@ -253,9 +256,9 @@ export function Menu({
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !position) return;
     menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')?.focus();
-  }, [open]);
+  }, [open, position]);
 
   const onMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Tab") {
@@ -302,10 +305,10 @@ export function Menu({
               ref={panelRef}
               data-side={position?.side ?? side}
               style={{
-                top: position?.top ?? 0,
-                left: position?.left ?? 0,
+                top: position?.top ?? VIEWPORT_MARGIN,
+                left: position?.left ?? VIEWPORT_MARGIN,
               }}
-              className={`menu-panel fixed z-40 flex max-h-[min(60vh,20rem)] w-56 flex-col overflow-y-auto rounded-lg border border-line bg-surface p-2 shadow-2xl ${
+              className={`menu-panel fixed z-40 flex max-h-[min(60vh,20rem)] w-56 flex-col overflow-y-auto rounded-lg border border-line bg-surface p-2 shadow-menu ${
                 position ? "" : "pointer-events-none opacity-0"
               } ${menuClassName}`}
             >
@@ -628,7 +631,7 @@ export function SaveBar({
   return (
     <div
       data-testid="settings-save-bar"
-      className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)] z-10 -mx-4 -mb-4 mt-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface/95 px-4 py-3 shadow-[0_-8px_24px_-16px_rgba(0,0,0,0.8)] backdrop-blur md:static md:mx-0 md:mb-0 md:border-0 md:bg-transparent md:p-0 md:shadow-none"
+      className="sticky bottom-[calc(var(--chrome-bottom)+0.5rem)] z-10 -mx-4 -mb-4 mt-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface/95 px-4 py-3 shadow-sticky backdrop-blur md:static md:mx-0 md:mb-0 md:border-0 md:bg-transparent md:p-0 md:shadow-none"
     >
       {dirty ? (
         <Button variant="secondary" onClick={onSave} disabled={busy} aria-busy={busy}>
@@ -798,10 +801,72 @@ export function ConfirmDialog({
   );
 }
 
+export function Sheet({
+  open,
+  title,
+  onClose,
+  children,
+  testId,
+  closeLabel = "Done",
+}: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  testId?: string;
+  closeLabel?: string;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const titleId = `sheet-${useId()}`;
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (open && !el.open) el.showModal();
+    if (!open && el.open) el.close();
+  }, [open]);
+
+  return (
+    <dialog
+      ref={ref}
+      aria-labelledby={titleId}
+      data-testid={testId}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      onClose={onClose}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (
+          event.clientX < rect.left ||
+          event.clientX > rect.right ||
+          event.clientY < rect.top ||
+          event.clientY > rect.bottom
+        ) {
+          onClose();
+        }
+      }}
+      className="sheet-panel fixed inset-x-0 bottom-0 top-auto m-0 max-h-[90dvh] w-full max-w-none overflow-y-auto overscroll-contain rounded-t-xl border-t border-line bg-surface p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-mist shadow-menu backdrop:bg-black/60"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h2 id={titleId} className="text-lg font-semibold">
+          {title}
+        </h2>
+        <Button onClick={onClose} autoFocus aria-label={`Close ${title}`}>
+          {closeLabel}
+        </Button>
+      </div>
+      <div className="mt-4 flex flex-col gap-4">{children}</div>
+    </dialog>
+  );
+}
+
 export function Meter({ level, state }: { level: number; state: "ok" | "warn" | "error" }) {
   return (
     <div
-      className="meter-track h-16 w-1.5 shrink-0 overflow-hidden rounded-full"
+      className="meter-track h-10 w-1.5 shrink-0 overflow-hidden rounded-full"
       role="img"
       aria-label={`level ${level} percent, ${state}`}
     >

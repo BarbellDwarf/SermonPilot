@@ -1107,7 +1107,7 @@ export function NewSermon() {
                         selected ? "border-accent bg-raised" : "border-line bg-ink hover:border-muted"
                       }`}
                     >
-                      <span aria-hidden="true" className="flex h-10 w-16 items-center justify-center overflow-hidden rounded bg-raised font-mono text-xs text-muted">
+                      <span aria-hidden="true" className="flex h-10 w-16 items-center justify-center overflow-hidden rounded-sm bg-raised font-mono text-xs text-muted">
                         {c.name}
                       </span>
                       <span className="max-w-full truncate text-xs text-muted">{c.name}</span>

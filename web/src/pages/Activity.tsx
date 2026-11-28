@@ -13,6 +13,7 @@ import {
   SkeletonList,
   staggerStyle,
   buttonClass,
+  selectedClass,
 } from "../components/ui";
 import { useToast } from "../components/toast";
 import {
@@ -190,7 +191,7 @@ function JobRow({
           aria-controls={`job-detail-${job.id}`}
           data-testid={`job-row-${job.id}`}
           data-job-id={job.id}
-          className="grid min-h-[56px] min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto_1rem] items-center gap-x-3 gap-y-1 px-4 py-3 text-left transition-colors duration-150 hover:bg-raised max-sm:min-h-[84px] sm:grid-cols-[7rem_minmax(0,1fr)_auto_1rem] sm:[grid-template-areas:'status_title_time_chev'_'extra_extra_extra_extra'] [grid-template-areas:'status_status_time_chev'_'title_title_title_title'_'extra_extra_extra_extra']"
+          className="grid min-h-[56px] min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)_auto_1rem] items-center gap-x-3 gap-y-1 px-4 py-3 text-left transition-colors duration-150 hover:bg-selected max-sm:min-h-[84px] sm:grid-cols-[7rem_minmax(0,1fr)_auto_1rem] sm:[grid-template-areas:'status_title_time_chev'_'extra_extra_extra_extra'] [grid-template-areas:'status_status_time_chev'_'title_title_title_title'_'extra_extra_extra_extra']"
         >
           <span className="[grid-area:status] inline-flex min-w-0 items-center gap-2 justify-self-start">
             <span
@@ -479,7 +480,7 @@ export function Activity() {
               onClick={() => selectFilter(filter.id)}
               className={`inline-flex min-h-[44px] shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-3 text-sm font-semibold transition-colors ${
                 selected
-                  ? "border-muted bg-raised text-mist"
+                  ? selectedClass
                   : "border-line bg-surface text-muted hover:border-muted hover:text-mist"
               }`}
             >

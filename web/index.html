@@ -2,7 +2,9 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0e1216" />
+    <meta name="color-scheme" content="dark light" />
     <title>SermonPilot Console</title>
     <script>
       (() => {
@@ -20,6 +22,9 @@
                 : "dark";
           document.documentElement.classList.remove("dark", "light");
           document.documentElement.classList.add(theme);
+          document
+            .querySelector('meta[name="theme-color"]')
+            ?.setAttribute("content", theme === "light" ? "#edf1f4" : "#0e1216");
         } catch {}
       })();
     </script>
