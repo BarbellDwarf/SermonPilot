@@ -288,7 +288,7 @@ export function AudioSettingsSection({ show }: { show: (m: string) => void }) {
         </div>
       </Advanced>
 
-      <SaveBar dirty={dirty && valid} saved={!dirty} busy={saving} onSave={onSave} />
+      <SaveBar dirty={dirty && valid} busy={saving} onSave={onSave} label="Save audio settings" />
     </SectionCard>
   );
 }

@@ -92,18 +92,18 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
           [PATHS.saveTranscript]: c.saveTranscript,
         })),
       )
-      .then(() => show(isLive ? "General settings saved." : "General settings saved (demo)."))
+      .then(() => show(isLive ? "Automation settings saved." : "Automation settings saved (demo)."))
       .catch((e) => show(`Could not save: ${(e as Error).message}`))
       .finally(() => setSaving(false));
   };
 
   return (
     <SectionCard
-      title="General"
+      title="Processing and output"
       sub={
         isLive
-          ? "Processing options and output settings. Saved here is what the pipeline resolves."
-          : "Processing options and output settings (demo)."
+          ? "Default processing and output settings. Saved here is what the pipeline resolves."
+          : "Default processing and output settings (demo)."
       }
     >
       <div className="flex flex-col gap-3">
@@ -201,7 +201,7 @@ export function GeneralSettingsSection({ show }: { show: (m: string) => void }) 
         </Fieldset>
       </div>
 
-      <SaveBar dirty={dirtyAll} saved={!dirtyAll} busy={saving} onSave={onSave} />
+      <SaveBar dirty={dirtyAll} busy={saving} onSave={onSave} label="Save automation settings" />
 
       <FileExplorerDialog
         open={browseOpen}

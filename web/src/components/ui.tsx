@@ -576,6 +576,7 @@ export function Advanced({
 export interface DirtyRegistry {
   set: (id: string, dirty: boolean) => void;
   remove: (id: string) => void;
+  activeSave: string | null;
 }
 
 export const DirtyRegistryContext = createContext<DirtyRegistry | null>(null);
@@ -583,43 +584,68 @@ export const DirtyRegistryContext = createContext<DirtyRegistry | null>(null);
 function useDirtyRegistration(dirty: boolean) {
   const registry = useContext(DirtyRegistryContext);
   const id = useId();
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!registry) return;
     registry.set(id, dirty);
     return () => registry.remove(id);
   }, [registry, id, dirty]);
+  return { registry, id };
 }
 
 export function SaveBar({
   dirty,
-  saved,
   busy = false,
   error = null,
   onSave,
-  label = "Save",
+  label,
 }: {
   dirty: boolean;
-  saved: boolean;
   busy?: boolean;
   error?: string | null;
   onSave: () => void;
-  label?: string;
+  label: string;
 }) {
-  useDirtyRegistration(dirty);
+  const { registry, id } = useDirtyRegistration(dirty);
+  const previousDirty = useRef(dirty);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let timeout: number | undefined;
+    if (previousDirty.current && !dirty) {
+      setSaved(true);
+      timeout = window.setTimeout(() => setSaved(false), 3000);
+    } else if (dirty) {
+      setSaved(false);
+    }
+    previousDirty.current = dirty;
+    return () => {
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
+  }, [dirty]);
+
+  if ((!dirty && !saved) || (registry?.activeSave && registry.activeSave !== id)) return null;
+
   return (
-    <div className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)] z-10 -mx-4 -mb-4 mt-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface/95 px-4 py-3 shadow-[0_-8px_24px_-16px_rgba(0,0,0,0.8)] backdrop-blur md:static md:mx-0 md:mb-0 md:border-0 md:bg-transparent md:p-0 md:shadow-none">
-      <Button variant="primary" onClick={onSave} disabled={!dirty || busy} aria-busy={busy}>
-        {busy ? "Saving…" : label}
-      </Button>
+    <div
+      data-testid="settings-save-bar"
+      className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.5rem)] z-10 -mx-4 -mb-4 mt-4 flex flex-wrap items-center gap-2 border-t border-line bg-surface/95 px-4 py-3 shadow-[0_-8px_24px_-16px_rgba(0,0,0,0.8)] backdrop-blur md:static md:mx-0 md:mb-0 md:border-0 md:bg-transparent md:p-0 md:shadow-none"
+    >
+      {dirty ? (
+        <Button variant="secondary" onClick={onSave} disabled={busy} aria-busy={busy}>
+          {busy ? "Saving…" : label}
+        </Button>
+      ) : null}
       {error ? (
         <span className="text-xs text-danger" role="alert">
           {error}
         </span>
-      ) : !dirty ? (
-        <span className="text-xs text-muted">{saved ? "Saved." : "No unsaved changes."}</span>
-      ) : (
+      ) : dirty ? (
         <span className="text-xs text-warn" role="status">
           Unsaved changes.
+        </span>
+      ) : (
+        <span className="text-xs text-muted" role="status">
+          Saved.
         </span>
       )}
     </div>

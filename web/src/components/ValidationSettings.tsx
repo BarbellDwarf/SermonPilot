@@ -267,7 +267,7 @@ export function ValidationSettingsSection({ show }: { show: (m: string) => void 
         </div>
       </div>
 
-      <SaveBar dirty={dirty && valid} saved={!dirty} busy={saving} onSave={onSave} />
+      <SaveBar dirty={dirty && valid} busy={saving} onSave={onSave} label="Save validation settings" />
     </SectionCard>
   );
 }

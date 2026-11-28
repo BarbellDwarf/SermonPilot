@@ -137,8 +137,8 @@ export function StorageSettingsSection({
 
       <SaveBar
         dirty={isAdmin && dirty && !retentionError}
-        saved={!isAdmin || !dirty}
         busy={saving}
+        label="Save storage settings"
         onSave={() => {
           if (!isAdmin || saving) return;
           setSaving(true);

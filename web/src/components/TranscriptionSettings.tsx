@@ -283,7 +283,7 @@ export function TranscriptionSettingsSection({ show }: { show: (m: string) => vo
         </p>
       ) : null}
 
-      <SaveBar dirty={dirty && valid} saved={!dirty} busy={saving} onSave={onSave} />
+      <SaveBar dirty={dirty && valid} busy={saving} onSave={onSave} label="Save transcription settings" />
     </SectionCard>
   );
 }

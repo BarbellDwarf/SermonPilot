@@ -107,13 +107,7 @@ export function SermonAudioCredentialsSection({ show }: { show: (m: string) => v
       </div>
       </Fieldset>
 
-      <SaveBar
-        dirty={dirty}
-        saved={!dirty}
-        busy={saving}
-        onSave={onSave}
-        label="Save fallback credentials"
-      />
+      <SaveBar dirty={dirty} busy={saving} onSave={onSave} label="Save fallback credentials" />
     </SectionCard>
   );
 }

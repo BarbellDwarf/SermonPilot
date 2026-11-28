@@ -72,7 +72,7 @@ describe("PromptTemplatesSection live wiring", () => {
     await user.click(await screen.findByRole("button", { name: /Cut detection/ }));
     const box = (await screen.findByDisplayValue("detect {transcript}")) as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: "next {transcript}" } });
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(screen.getByRole("button", { name: "Save prompt templates" }));
 
     await waitFor(() => {
       const put = calls.find((c) => c.method === "PUT" && c.url.includes("/api/prompts/config"));

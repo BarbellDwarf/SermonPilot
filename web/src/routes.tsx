@@ -1,11 +1,22 @@
-import { createContext, lazy, Suspense, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  lazy,
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useState,
+} from "react";
 import { Link, Navigate, Outlet, useLocation, useParams, type RouteObject } from "react-router-dom";
 import { AuthGate } from "./components/AuthGate";
 import { Shell } from "./components/Shell";
-import { ToastHost } from "./components/toast";
+import { ToastHost, useToast } from "./components/toast";
 import { EmptyState, PageHeader, buttonClass } from "./components/ui";
 import type { AuthUser } from "./api/client";
 import { useInboxCount } from "./api/hooks";
+import { useThemePreference, type ThemePreference } from "./api/useUserSettings";
+import { legacySettingsPath } from "./pages/settingsSections";
 
 const Inbox = lazy(() => import("./pages/Inbox").then((m) => ({ default: m.Inbox })));
 const NewSermon = lazy(() => import("./pages/NewSermon").then((m) => ({ default: m.NewSermon })));
@@ -18,6 +29,9 @@ const Settings = lazy(() => import("./pages/Settings").then((m) => ({ default: m
 
 interface Chrome {
   user: AuthUser;
+  theme: ThemePreference;
+  setTheme: (theme: ThemePreference) => Promise<void>;
+  previewTheme: (theme: ThemePreference | null) => void;
 }
 
 const ChromeContext = createContext<Chrome | null>(null);
@@ -28,40 +42,93 @@ function useChrome(): Chrome {
   return chrome;
 }
 
-function RootLayout() {
-  const [dark, setDark] = useState(true);
-  const inboxCount = useInboxCount();
+function useSystemDark(): boolean {
+  const [dark, setDark] = useState(() =>
+    typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-color-scheme: dark)").matches
+      : true,
+  );
 
   useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => setDark(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  return dark;
+}
+
+function AppChrome({
+  user,
+  logout,
+  inboxCount,
+}: {
+  user: AuthUser;
+  logout: () => void;
+  inboxCount: number;
+}) {
+  const [theme, saveTheme] = useThemePreference();
+  const [preview, setPreview] = useState<ThemePreference | null>(null);
+  const systemDark = useSystemDark();
+  const notify = useToast();
+  const preference = preview ?? theme;
+  const dark =
+    preference === "system" ? systemDark : preference === "dark";
+
+  useLayoutEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
     document.documentElement.classList.toggle("light", !dark);
   }, [dark]);
 
+  const setTheme = useCallback(
+    async (next: ThemePreference) => {
+      setPreview(null);
+      await saveTheme(next);
+    },
+    [saveTheme],
+  );
+
+  return (
+    <ChromeContext.Provider value={{ user, theme, setTheme, previewTheme: setPreview }}>
+      <Shell
+        dark={dark}
+        onToggleTheme={() => {
+          const next = dark ? "light" : "dark";
+          void setTheme(next).catch((error) =>
+            notify.error(`Could not save theme: ${(error as Error).message}`),
+          );
+        }}
+        user={user}
+        onLogout={logout}
+        badges={{ Inbox: inboxCount || undefined }}
+      >
+        <Suspense fallback={<p role="status" className="text-sm text-muted">Loading…</p>}>
+          <Outlet />
+        </Suspense>
+      </Shell>
+      <ToastHost />
+    </ChromeContext.Provider>
+  );
+}
+
+function RootLayout() {
+  const inboxCount = useInboxCount();
+
   return (
     <AuthGate>
       {({ user, logout }) => (
-        <ChromeContext.Provider value={{ user }}>
-          <Shell
-            dark={dark}
-            onToggleTheme={() => setDark((d) => !d)}
-            user={user}
-            onLogout={logout}
-            badges={{ Inbox: inboxCount || undefined }}
-          >
-            <Suspense fallback={<p role="status" className="text-sm text-muted">Loading…</p>}>
-              <Outlet />
-            </Suspense>
-          </Shell>
-          <ToastHost />
-        </ChromeContext.Provider>
+        <AppChrome user={user} logout={logout} inboxCount={inboxCount} />
       )}
     </AuthGate>
   );
 }
 
 function SettingsRoute() {
-  const { user } = useChrome();
-  return <Settings user={user} />;
+  const { user, theme, setTheme, previewTheme } = useChrome();
+  return <Settings user={user} theme={theme} setTheme={setTheme} previewTheme={previewTheme} />;
 }
 
 function LegacyTeachingRedirect() {
@@ -78,7 +145,7 @@ function LegacyActivityRedirect() {
 
 function SettingsRedirect() {
   const { search, hash } = useLocation();
-  return <Navigate to={{ pathname: "/settings/preferences", search, hash }} replace />;
+  return <Navigate to={legacySettingsPath(search, hash)} replace />;
 }
 
 function NotFound() {

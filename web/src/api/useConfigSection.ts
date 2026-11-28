@@ -1,101 +1,107 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { configApi, isLive, type ApiConfigField } from "./client";
 
-function fallbackFields(fallback: Record<string, unknown>): Record<string, ApiConfigField> {
-  const fields: Record<string, ApiConfigField> = {};
+type ConfigFields = Record<string, ApiConfigField>;
+
+function fallbackFields(fallback: Record<string, unknown>): ConfigFields {
+  const fields: ConfigFields = {};
   for (const [path, value] of Object.entries(fallback)) {
     fields[path] = { value, source: "default", secret: false };
   }
   return fields;
 }
 
+function optimisticFields(fields: ConfigFields, values: Record<string, unknown>): ConfigFields {
+  const next = { ...fields };
+  for (const [path, value] of Object.entries(values)) {
+    const current = next[path];
+    const environmentSource =
+      current?.source && current.source !== "db" && current.source !== "default"
+        ? current.source
+        : "db";
+    next[path] = current?.secret
+      ? { ...current, source: environmentSource, has_value: true }
+      : { ...current, value, source: environmentSource, secret: false };
+  }
+  return next;
+}
+
 export interface ConfigSection {
-  fields: Record<string, ApiConfigField>;
+  fields: ConfigFields;
   loaded: boolean;
   error: string | null;
   save: (values: Record<string, unknown>) => Promise<void>;
 }
 
-/**
- * Read and write one config section through the console API. The section
- * fields are keyed by dotted config path; ``source`` names the environment
- * variable that is overriding a saved value, or ``db``/``default``.
- */
 export function useConfigSection(
   section: string,
   fallback: Record<string, unknown> = {},
 ): ConfigSection {
-  const [fields, setFields] = useState<Record<string, ApiConfigField>>(() => fallbackFields(fallback));
-  const [loaded, setLoaded] = useState(!isLive);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const queryKey = useMemo(() => ["config-section", section] as const, [section]);
+  const query = useQuery({
+    queryKey,
+    queryFn: async () => (await configApi.section(section)).fields,
+    enabled: isLive,
+    initialData: isLive ? undefined : fallbackFields(fallback),
+    staleTime: isLive ? 0 : Infinity,
+  });
+  const fields = query.data ?? fallbackFields(fallback);
 
-  useEffect(() => {
-    if (!isLive) return;
-    let alive = true;
-    configApi
-      .section(section)
-      .then((r) => {
-        if (!alive) return;
-        setFields(r.fields);
-        setError(null);
-      })
-      .catch((e) => {
-        if (alive) setError((e as Error).message);
-      })
-      .finally(() => {
-        if (alive) setLoaded(true);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [section]);
+  const saveMutation = useMutation({
+    mutationFn: async (values: Record<string, unknown>) =>
+      isLive ? configApi.save(section, values) : null,
+    onMutate: (values) => {
+      void queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<ConfigFields>(queryKey) ?? fields;
+      queryClient.setQueryData(queryKey, optimisticFields(previous, values));
+      return { previous };
+    },
+    onError: (_error, _values, context) => {
+      if (context) queryClient.setQueryData(queryKey, context.previous);
+    },
+    onSuccess: (result) => {
+      if (result) queryClient.setQueryData(queryKey, result.fields);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey }),
+  });
 
   const save = useCallback(
     async (values: Record<string, unknown>) => {
-      if (!isLive) {
-        setFields((f) => {
-          const next = { ...f };
-          for (const [path, value] of Object.entries(values)) {
-            next[path] = { ...next[path], value, source: "db", secret: false };
-          }
-          return next;
-        });
-        return;
-      }
-      const r = await configApi.save(section, values);
-      setFields(r.fields);
+      await saveMutation.mutateAsync(values);
     },
-    [section],
+    [saveMutation],
   );
 
-  return { fields, loaded, error, save };
+  return {
+    fields,
+    loaded: !isLive || !query.isPending,
+    error: query.error ? (query.error as Error).message : null,
+    save,
+  };
 }
 
-export function fieldValue<T>(fields: Record<string, ApiConfigField>, path: string, fallback: T): T {
+export function fieldValue<T>(fields: ConfigFields, path: string, fallback: T): T {
   const field = fields[path];
   if (!field || field.value === undefined || field.value === null) return fallback;
   return field.value as T;
 }
 
-export function fieldSource(fields: Record<string, ApiConfigField>, path: string): string {
+export function fieldSource(fields: ConfigFields, path: string): string {
   return fields[path]?.source ?? "default";
 }
 
 export interface ConfigForm<T extends object> {
   cur: T;
   saved: T;
-  fields: Record<string, ApiConfigField>;
+  fields: ConfigFields;
   loaded: boolean;
   dirty: boolean;
   set: <K extends keyof T & string>(key: K, value: T[K]) => void;
   save: (serialize: (cur: T) => Record<string, unknown>) => Promise<void>;
 }
 
-/**
- * A section form: maps a flat form-key object onto dotted config paths,
- * tracks a saved baseline loaded from the API, and writes through on save.
- * ``serialize`` turns the form state into the path -> value map to send.
- */
 export function useConfigForm<T extends object>(
   section: string,
   defaults: T,
@@ -124,11 +130,13 @@ export function useConfigForm<T extends object>(
   }, [fields, defaults, paths, normalize]);
 
   const [cur, setCur] = useState<T>(saved);
+  const saving = useRef(false);
+  const saveFailed = useRef(false);
   const savedKey = JSON.stringify(saved);
   useEffect(() => {
-    setCur(saved);
+    if (!saving.current && !saveFailed.current) setCur(saved);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedKey]);
+  }, [loaded, savedKey]);
 
   const set = useCallback(<K extends keyof T & string>(key: K, value: T[K]) => {
     setCur((c) => ({ ...c, [key]: value }));
@@ -136,7 +144,16 @@ export function useConfigForm<T extends object>(
 
   const save = useCallback(
     async (serialize: (cur: T) => Record<string, unknown>) => {
-      await apiSave(serialize(cur));
+      saving.current = true;
+      saveFailed.current = false;
+      try {
+        await apiSave(serialize(cur));
+      } catch (error) {
+        saveFailed.current = true;
+        throw error;
+      } finally {
+        saving.current = false;
+      }
     },
     [cur, apiSave],
   );
