@@ -54,27 +54,65 @@ def db_is_readable(db_path: str | None = None) -> bool:
         return False
 
 
+def _job_query_filters(status: str | None, user_id: str | None) -> tuple[str, list[Any]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if status:
+        if status == "active":
+            clauses.append("status IN ('queued', 'running')")
+        elif status in {"failed", "interrupted"}:
+            from ui.job_queue import INTERRUPTED_BY_RESTART_MARKER
+
+            marker = f"%{INTERRUPTED_BY_RESTART_MARKER}%"
+            marker_match = "(COALESCE(result, '') LIKE ? OR COALESCE(logs, '') LIKE ?)"
+            if status == "failed":
+                clauses.append(f"(status IN ('failed', 'cancelled') AND NOT {marker_match})")
+            else:
+                clauses.append(f"(status IN ('failed', 'cancelled') AND {marker_match})")
+            params.extend((marker, marker))
+        else:
+            clauses.append("status = ?")
+            params.append(status)
+    if user_id is not None:
+        clauses.append("user_id = ?")
+        params.append(user_id)
+    return (" WHERE " + " AND ".join(clauses) if clauses else "", params)
+
+
 def query_jobs(
-    status: str | None = None, limit: int = 100
+    status: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    user_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Read background_jobs rows directly; [] when the table is absent."""
+    """Read a stable page of background_jobs rows; [] when the table is absent."""
+    where, params = _job_query_filters(status, user_id)
     query = (
         "SELECT id, type, title, description, status, progress, parameters,"
         " result, logs, created_at, started_at, completed_at, user_id"
         " FROM background_jobs"
+        f"{where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
     )
-    params: list[Any] = []
-    if status:
-        query += " WHERE status = ?"
-        params.append(status)
-    query += " ORDER BY created_at DESC LIMIT ?"
-    params.append(max(1, min(limit, 1000)))
+    params.extend((max(1, min(limit, 1000)), max(0, offset)))
     try:
         with ReadOnlySermonDatabase().get_connection() as conn:
             rows = conn.execute(query, params).fetchall()
     except sqlite3.OperationalError:
         return []
     return [dict(row) for row in rows]
+
+
+def query_job_count(status: str | None = None, user_id: str | None = None) -> int:
+    """Count background_jobs rows with the same scope and filter as the page."""
+    where, params = _job_query_filters(status, user_id)
+    try:
+        with ReadOnlySermonDatabase().get_connection() as conn:
+            row = conn.execute(
+                f"SELECT COUNT(*) AS total FROM background_jobs{where}", params
+            ).fetchone()
+    except sqlite3.OperationalError:
+        return 0
+    return int(row["total"]) if row else 0
 
 
 def query_job(job_id: str) -> dict[str, Any] | None:

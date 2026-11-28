@@ -714,6 +714,21 @@ def cancel_job(job_id: str, user=Depends(require_user)):
     return {"cancelled": cancelled, "job_id": job_id}
 
 
+@router.post("/jobs/{job_id}/retry", status_code=202)
+def retry_job(job_id: str, user=Depends(require_user)) -> dict[str, str]:
+    from server.api.db import query_job
+
+    row = query_job(job_id)
+    if row is None or not visible(row.get("user_id"), user):
+        raise HTTPException(status_code=404, detail="job not found")
+    if row.get("status") not in ("failed", "cancelled"):
+        raise HTTPException(status_code=409, detail="only failed or cancelled jobs can be retried")
+    retry_id = _queue().retry_job_clone(job_id)
+    if retry_id is None:
+        raise HTTPException(status_code=409, detail="job cannot be retried")
+    return {"job_id": retry_id, "status": "queued"}
+
+
 @router.post("/sermons/{sermon_id}/upload", status_code=202)
 def upload_now(sermon_id: str, user=Depends(require_user)):
     owner = _sermon_owner(sermon_id)

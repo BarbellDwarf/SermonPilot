@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { Job } from "../mock/data";
 import {
   elapsedSince,
+  jobActivityState,
   jobContext,
   jobParameterLines,
   jobRowTitle,
+  jobSermonId,
   jobStatus,
+  jobTypeLabel,
 } from "./jobRow";
 
 function job(overrides: Partial<Job> = {}): Job {
@@ -79,6 +82,38 @@ describe("jobStatus", () => {
         job({ state: "failed", error: "Job interrupted by app restart: the worker is gone." }),
       ),
     ).toBe("INTERRUPTED");
+  });
+});
+
+describe("jobTypeLabel", () => {
+  it("uses the Processing, Metadata, and Transcription vocabulary", () => {
+    expect(jobTypeLabel(job({ type: "sermon_processing" }))).toBe("Processing");
+    expect(jobTypeLabel(job({ type: "metadata_update" }))).toBe("Metadata");
+    expect(jobTypeLabel(job({ type: "transcript_generation" }))).toBe("Transcription");
+  });
+});
+
+describe("jobActivityState", () => {
+  it("separates interrupted work and groups cancelled work with failed work", () => {
+    expect(jobActivityState(job({ state: "running" }))).toBe("active");
+    expect(jobActivityState(job({ state: "queued" }))).toBe("active");
+    expect(jobActivityState(job({ state: "done" }))).toBe("completed");
+    expect(jobActivityState(job({ state: "failed" }))).toBe("failed");
+    expect(jobActivityState(job({ state: "cancelled" }))).toBe("failed");
+    expect(jobActivityState(job({ state: "interrupted" }))).toBe("interrupted");
+    expect(
+      jobActivityState(
+        job({ state: "failed", error: "Job interrupted by app restart: the worker is gone." }),
+      ),
+    ).toBe("interrupted");
+  });
+});
+
+describe("jobSermonId", () => {
+  it("reads a teaching id from the job parameters", () => {
+    expect(jobSermonId(job({ parameters: { sermon_id: "s-02" } }))).toBe("s-02");
+    expect(jobSermonId(job({ parameters: { sermon_id: "  " } }))).toBeNull();
+    expect(jobSermonId(job({ parameters: null }))).toBeNull();
   });
 });
 

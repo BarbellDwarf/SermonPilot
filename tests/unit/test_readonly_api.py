@@ -271,7 +271,7 @@ def test_jobs_status_and_limit_params(client: TestClient) -> None:
     body = client.get("/api/jobs", params={"status": "failed"}).json()
     assert [item["id"] for item in body["items"]] == ["job-1037"]
     body = client.get("/api/jobs", params={"limit": 1}).json()
-    assert body["total"] == 1
+    assert body["total"] == 2
 
 
 def test_job_detail_logs(client: TestClient) -> None:
