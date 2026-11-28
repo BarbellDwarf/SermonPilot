@@ -22,6 +22,11 @@ describe("route table", () => {
     ["/jobs/job-1", "/activity/job-1"],
     ["/library/s-01", "/teaching/s-01"],
     ["/settings", "/settings/preferences"],
+    ["/settings?section=general", "/settings/preferences"],
+    ["/settings?section=unknown", "/settings/preferences"],
+    ["/settings?section=backup", "/settings/backup"],
+    ["/settings?section=prompts", "/settings/automation"],
+    ["/settings?cloud=connected&name=shared", "/settings/cloud"],
   ])("redirects %s to %s", async (from, to) => {
     const router = renderRoute(from);
 

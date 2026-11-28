@@ -127,8 +127,8 @@ export function ResourceSettingsSection({
 
       <SaveBar
         dirty={isAdmin && dirty && valid}
-        saved={!isAdmin || !dirty}
         busy={saving}
+        label="Save resource settings"
         onSave={() => {
           if (!isAdmin || saving) return;
           setSaving(true);

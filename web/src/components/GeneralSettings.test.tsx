@@ -1,4 +1,6 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.stubEnv("VITE_API_MODE", "live");
@@ -20,20 +22,20 @@ function stubApi() {
     save_original_audio: { value: true, source: "SA_KEEP_ORIGINAL", secret: false },
     save_transcript: { value: true, source: "db", secret: false },
   };
+  let currentFields = fields;
   vi.stubGlobal(
     "fetch",
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("/api/config/sections/general")) {
         if (init?.method === "PUT") {
-          return Promise.resolve(
-            mockResponse({
-              section: "general",
-              fields: { ...fields, dry_run: { value: false, source: "db", secret: false } },
-            }),
-          );
+          currentFields = {
+            ...fields,
+            dry_run: { value: false, source: "db", secret: false },
+          };
+          return Promise.resolve(mockResponse({ section: "general", fields: currentFields }));
         }
-        return Promise.resolve(mockResponse({ section: "general", fields }));
+        return Promise.resolve(mockResponse({ section: "general", fields: currentFields }));
       }
       if (url.includes("/api/me/output-dir")) {
         return Promise.resolve(mockResponse({ output_dir: "processed_sermons" }));
@@ -50,11 +52,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function renderSection(children: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={client}>{children}</QueryClientProvider>);
+}
+
 describe("GeneralSettingsSection environment overrides", () => {
   it("shows the override on the control row instead of a page-level callout", async () => {
     stubApi();
     const { GeneralSettingsSection } = await import("./GeneralSettings");
-    render(<GeneralSettingsSection show={() => {}} />);
+    renderSection(<GeneralSettingsSection show={() => {}} />);
 
     const toggle = await screen.findByRole("switch", { name: "Dry run mode (default)" });
     const row = toggle;
@@ -70,14 +77,14 @@ describe("GeneralSettingsSection environment overrides", () => {
   it("clears the unsaved indicator after a successful save", async () => {
     stubApi();
     const { GeneralSettingsSection } = await import("./GeneralSettings");
-    render(<GeneralSettingsSection show={() => {}} />);
+    renderSection(<GeneralSettingsSection show={() => {}} />);
 
     const toggle = await screen.findByRole("switch", { name: "Dry run mode (default)" });
     await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
     fireEvent.click(toggle);
     expect(screen.getByText("Unsaved changes.")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save automation settings" }));
 
     expect(await screen.findByText("Saved.")).toBeTruthy();
     expect(screen.queryByText("Unsaved changes.")).toBeNull();
